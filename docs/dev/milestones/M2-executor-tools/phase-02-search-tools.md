@@ -1,7 +1,7 @@
 # Phase 02: read-only search tools — find_files + search
 
 **Milestone:** M2 — Executor tools & security
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~400 lines (two tool lifts + scope adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -172,3 +172,64 @@ search:
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 12:00 (progress)
+
+Started phase. Adding dependencies, lifting find_files and search from Rexy, adapting both to use Scope for path confinement. Executor: opencode (qwen3.6-plus).
+
+### Update — 2026-05-28 12:30 (complete)
+
+**Summary:** Lifted `FindFiles` and `Search` from Rexy (`rexy/src/tools/find_files.rs` and `rexy/src/tools/search.rs`), adapted both to hold a `Scope` and resolve search roots through `self.scope.resolve()` instead of CWD. Updated `path` schema descriptions to note confinement. Added `globset`, `ignore`, and `regex` dependencies to workspace and executor Cargo.toml. Both tools default to the scope root when no `path` is given, return advisory errors on scope escape / empty pattern / invalid pattern / wrong path type, and cap results at `max_results`. `follow_links` is not enabled on the `ignore::Walk` (default off) so symlink escapes are confined.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.23s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.76s
+
+cargo test 2>&1 | tail -30
+test tools::search::tests::finds_matches_across_multiple_files ... ok
+test tools::search::tests::truncates_at_max_results ... ok
+test tools::search::tests::case_insensitive_matches ... ok
+test tools::search::tests::reports_no_matches_as_advisory ... ok
+test tools::search::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::search::tests::reports_line_and_column_in_output ... ok
+test tools::find_files::tests::respects_gitignore_for_finds ... ok
+test tools::find_files::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::find_files::tests::finds_files_by_glob ... ok
+test tools::search::tests::respects_gitignore ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.01s
+```
+
+**End-to-end verification:** Not applicable — phase ships two library tools exercised directly by their unit tests (the registry/loop that drives them lands in M4; the MCP `execute_phase` in M5).
+
+**Files changed:**
+- `Cargo.toml` — added `globset`, `ignore`, `regex` workspace dependencies
+- `executor/Cargo.toml` — added `globset.workspace`, `ignore.workspace`, `regex.workspace`
+- `executor/src/tools/find_files.rs` — lifted from Rexy, adapted with Scope, 10 tests
+- `executor/src/tools/search.rs` — lifted from Rexy, adapted with Scope, 12 tests
+- `executor/src/tools/mod.rs` — added `pub mod find_files` / `pub mod search`, re-exports
+
+**New tests:**
+- `find_files`: `finds_files_by_glob`, `finds_files_recursively`, `respects_gitignore_for_finds`, `reports_no_matches_as_advisory_finds`, `rejects_invalid_glob`, `rejects_path_that_is_a_file`, `caps_results_at_max_results`, `rejects_empty_pattern`, `rejects_path_outside_root`, `defaults_to_scope_root_when_no_path_given`
+- `search`: `finds_single_match_in_one_file`, `finds_matches_across_multiple_files`, `respects_gitignore`, `reports_no_matches_as_advisory`, `rejects_invalid_regex`, `rejects_missing_path`, `truncates_at_max_results`, `case_insensitive_matches`, `reports_line_and_column_in_output`, `rejects_empty_pattern`, `searches_single_file_when_path_is_file`, `defaults_to_scope_root_when_no_path_given`
+
+**Commits:** (pending)
+
+**Notes for review:** Symlink confinement — `ignore::Walk` does not follow symlinks by default (`follow_links` off), so the walk cannot enumerate through an in-root symlink pointing outside the scope root. No `context::`, `path_resolve`, or `std::env::current_dir` references in either tool.
+
+verification: fmt OK · clippy OK · tests 84 passed · build OK
