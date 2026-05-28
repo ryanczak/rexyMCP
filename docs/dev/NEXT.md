@@ -4,9 +4,9 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M1 / phase-01 — Workspace + config + error model](milestones/M1-foundations/phase-01-workspace-and-config.md)
+**Active phase:** [M1 / phase-02 — AI client (lift from Rexy)](milestones/M1-foundations/phase-02-ai-client.md)
 
-**Status:** in-progress (bounced from review — fix `bugs/bug-01-1.md`)
+**Status:** todo (phase-01 approved & done)
 
 **Milestone:** [M1 — Foundations](milestones/M1-foundations/README.md)
 
