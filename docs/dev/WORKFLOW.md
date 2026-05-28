@@ -110,6 +110,12 @@ scope or architecture decisions open; the executor picks implementation details
 unless the spec is explicitly prescriptive (e.g. for load-bearing types every
 later phase imports).
 
+The `Tags:` frontmatter line categorizes the phase (language, kind, size) so the
+per-phase `PhaseRun` metrics can be aggregated into the model competency matrix
+(see `docs/architecture.md` § "Model effectiveness metrics & routing"). The
+architect sets it when drafting; keep the vocabulary consistent across phases so
+the scorecard buckets cleanly.
+
 ### Phase doc template
 
 ```markdown
@@ -119,6 +125,7 @@ later phase imports).
 **Status:** todo | in-progress | blocked | review | done
 **Depends on:** phase-<m> (or "none")
 **Estimated diff:** ~<n> lines
+**Tags:** language=<rust|go|python|ts|…>, kind=<feature|refactor|bugfix|test>, size=<s|m|l>
 
 ## Goal
 

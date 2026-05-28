@@ -95,6 +95,7 @@ It is built by lifting and adapting Rexy modules. The lift/drop map:
 | Security: scope, capabilities, bash classify, redact, injection, audit | `rexy/src/security/` | **Lift.** Critical — a weak model running `bash` needs the allowlist. |
 | Secret redaction / masking | `rexy/src/security/redact.rs`, `rexy/src/ai/filter.rs` (`mask_sensitive`, `init_masking`) | **Lift.** Applied to every turn before it is written to the session log. |
 | Session JSONL log + reader | `rexy/src/store/sessions/jsonl.rs` (`SessionLogger`, `SessionRecord`, `SessionEvent`, `read_session_log`) | **Lift / adapt.** The executor's turn-by-turn record; query tools read it back. |
+| Telemetry store (per-phase metrics) | `rexy/src/store/telemetry.rs` | **Lift / adapt.** Cross-project `PhaseRun` records — the substrate for the model scorecard. |
 | Result truncation/formatting; error model | `rexy/src/result/`, `rexy/src/error/` | **Lift / adapt.** |
 | TUI (fullscreen / classic) | `rexy/src/tui/` | **Drop.** No terminal UI; progress flows over MCP. |
 | Local planner (TODO decomposition) | `rexy/src/planner/` | **Drop.** Decomposition is the architect's (Claude's) job. |
@@ -201,6 +202,65 @@ The richest signal for "why did this executor get stuck" is the
 exactly what the briefing compresses, so the log is where Claude goes when the
 compression lost the detail it needs.
 
+#### Model effectiveness metrics & routing
+
+rexyMCP is well-positioned to measure *which local model does well on which kind
+of work*, because every phase is a spec'd unit with objective gates and an
+architect grade — the labeled dataset is a byproduct of the normal workflow, not
+something to manufacture. The same session log that powers troubleshooting also
+feeds a per-phase metrics record.
+
+**The `PhaseRun` record.** At the end of each `execute_phase`, the executor emits
+one summary record (alongside the JSONL turn log) into a **cross-project**
+telemetry store — accumulate across every repo the executor has touched, not
+per-repo:
+
+```
+PhaseRun {
+  model, generation_params,             // who + how (temperature, seed)
+  phase_id, tags,                       // language, kind (feature|refactor|bugfix|test), size bucket
+  status, escalated,                    // complete|hard_fail|budget_exceeded; did it hand off to Claude?
+  // quality
+  gates: { fmt, build, lint, test },    // booleans on first completion
+  warnings, bugs_filed,                 // count + max severity (filled by the architect at review)
+  bounces_to_approval,                  // 0 = first-try; the single most telling number
+  // reliability (the small-model differentiator)
+  parse_failure_rate, repairs_per_call, // from the forgiving parser
+  verifier_retries, tool_success_rate,  // from the governor
+  // efficiency
+  turns, wall_clock_s, tokens,          // TokenBreakdown (in/out/cached)
+  // supervision label (filled at review)
+  architect_verdict,                    // approved_first_try | approved_after_N | rejected | escalated
+}
+```
+
+The executor fills the objective fields at phase end; the architect's review
+fills `bugs_filed`, `bounces_to_approval`, and `architect_verdict` — the
+supervision label that turns telemetry into an eval.
+
+**Phase tagging.** Phase-doc frontmatter carries a `Tags:` line (language, kind,
+size) so runs are categorizable. The architect sets it when drafting the phase.
+
+**Scorecard.** A Layer 2 tool, `model_scorecard(tags?)`, aggregates `PhaseRun`
+into a competency matrix — `model × tag → { n_runs, first_pass_rate, mean_turns,
+parse_failure_rate, mean_bugs, … }` with sample sizes — so the architect can see,
+e.g., "Qwen leads on `rust`/`feature`, Gemma on `go`/*." The governor's
+per-(task-type, tool) scorer (lift/drop map above) is the *within-session* seed
+of this same matrix; persisting it cross-session is what makes it durable.
+
+**Benchmark vs. telemetry.** Passive **production telemetry** (every real phase)
+gives breadth and drift detection but is confounded — each phase runs once, by
+one model, at its own difficulty. A small curated **benchmark suite** (the same
+phases run by each model) gives controlled head-to-head rankings. Both emit the
+same `PhaseRun` schema; small models are high-variance, so a routing decision
+needs a minimum sample size, never one run.
+
+**Routing** (own milestone — depends on having data). A policy maps a phase's
+tags to the best-scoring model (argmax of a chosen objective, subject to a
+minimum sample size), with an exploration policy (epsilon-greedy / bandit) so new
+models still get tried and the matrix doesn't ossify. The architect can also read
+the scorecard and choose the `model` argument to `execute_phase` directly.
+
 ### Layer 2 — `mcp` crate (binary)
 
 An MCP **stdio** server built on the `rmcp` crate. It exposes two tools:
@@ -214,6 +274,10 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes two tools:
 - **`executor_log_search`**, **`executor_log_tail`**, **`get_turn`** — read back
   the JSONL session log (see "Session log & troubleshooting tools"). Each caps
   its own output so a debugging query can't re-flood Claude's context.
+- **`model_scorecard`** — args: optional `tags` filter. Aggregates the `PhaseRun`
+  telemetry into the model × tag competency matrix (see "Model effectiveness
+  metrics & routing"). Lets the architect choose which model to dispatch a phase
+  to.
 
 Practical concerns this layer owns:
 
@@ -300,12 +364,16 @@ The project plan. Each entry becomes a milestone with its own
    `PhaseResult` + briefing contract. Includes the **JSONL session log** — every
    turn event written (redacted via the lifted `security/redact.rs` +
    `ai/filter.rs`) to `<repo>/.rexymcp/sessions/`, using the lifted
-   `store/sessions/jsonl.rs` writer.
+   `store/sessions/jsonl.rs` writer. Also emits the per-phase **`PhaseRun`
+   metrics record** (objective fields: gates, turns, tokens, parse-failure rate,
+   verifier retries) into the cross-project telemetry store — see "Model
+   effectiveness metrics & routing."
 5. **M5 — MCP server.** The `rmcp` stdio server exposing `execute_phase` and
    `executor_health`, with progress notifications and output capping. Also
    exposes the **session-log query tools** (`executor_log_search`,
    `executor_log_tail`, `get_turn`) that read the M4 log back on demand, each
-   capping its own output.
+   capping its own output, plus **`model_scorecard`** which aggregates the
+   `PhaseRun` telemetry into the model × tag competency matrix.
 6. **M6 — Plugin + architect/review skills.** The Claude Code plugin manifest,
    the `architect` / `review-phase` / `escalate` skills, the slash commands, the
    embedded generalized `STANDARDS.md` / `WORKFLOW.md`, and an end-to-end dogfood
@@ -316,3 +384,9 @@ The project plan. Each entry becomes a milestone with its own
    existing one). Milestone boundaries always stop for human sign-off. An opt-in
    autonomous loop (off by default) can chain draft → dispatch → review until a
    blocker or milestone boundary.
+7. **M7 — Model scorecard & routing.** Consume the `PhaseRun` telemetry
+   accumulated from M4 onward: a curated benchmark suite for controlled
+   model-vs-model head-to-heads, the `model_scorecard` aggregation, and a routing
+   policy that maps a phase's tags to the best-scoring model (with a minimum
+   sample size and an exploration policy). Depends on having data, so it lands
+   after the loop (M4) and server (M5) have been producing records.
