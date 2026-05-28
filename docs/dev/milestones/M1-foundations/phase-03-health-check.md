@@ -1,7 +1,7 @@
 # Phase 03: Health-check entrypoint
 
 **Milestone:** M1 — Foundations
-**Status:** review
+**Status:** done
 **Depends on:** phase-02
 **Estimated diff:** ~250 lines
 
@@ -250,3 +250,30 @@ LM Studio / Ollama / vLLM running.
 
 **Notes for review:** Live endpoint test deferred — no local LLM running.
 Failure path and default behavior verified end-to-end.
+
+### Update — 2026-05-28 (architect — live E2E completed)
+
+The deferred live `/models` round-trip (AC live) was run by the architect against
+two real OpenAI-compatible endpoints the project owner started. Both returned a
+real model list with exit 0:
+
+```
+$ rexymcp health --base-url http://127.0.0.1:1234/v1   # LM Studio
+http://127.0.0.1:1234/v1
+qwen/qwen2.5-coder-14b
+qwen/qwen3.6-35b-a3b
+google/gemma-4-31b
+google/gemma-4-26b-a4b
+qwen/qwen3.6-27b
+google/gemma-4-e4b
+text-embedding-nomic-embed-text-v1.5
+EXIT=0
+
+$ rexymcp health --base-url http://brain:8000/v1       # vLLM
+http://brain:8000/v1
+Qwen/Qwen3.6-27B-FP8
+EXIT=0
+```
+
+This proves the local-LLM connection end-to-end (M1's exit criterion) against two
+distinct backends. All AC satisfied. **Approved → done.**

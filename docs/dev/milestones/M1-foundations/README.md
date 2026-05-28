@@ -4,7 +4,7 @@
 model, the lifted AI client, and a runnable health-check entrypoint that connects
 to a live local OpenAI-compatible endpoint and lists its models.
 
-**Status:** in-progress
+**Status:** review (all phases done — awaiting project-owner sign-off before M2)
 
 **Depends on:** none
 
@@ -31,7 +31,7 @@ to a live local OpenAI-compatible endpoint and lists its models.
 |----|------------------------------------------------------------------------------|--------|
 | 01 | workspace + config + error model ([phase-01-workspace-and-config.md](phase-01-workspace-and-config.md)) | done |
 | 02 | AI client (lift from Rexy) ([phase-02-ai-client.md](phase-02-ai-client.md))  | done |
-| 03 | health-check entrypoint ([phase-03-health-check.md](phase-03-health-check.md)) | review   |
+| 03 | health-check entrypoint ([phase-03-health-check.md](phase-03-health-check.md)) | done |
 
 ## Notes
 
@@ -60,3 +60,30 @@ STANDARDS/WORKFLOW:
    `group_imports`) under a stable toolchain, so they warn and no-op. Lesson
    candidate: don't spec nightly-only formatter options without pinning a nightly
    fmt step. Fixed at the principal-engineer level (dropped the two lines).
+
+### M1 retrospective (folds?)
+
+**No STANDARDS/WORKFLOW/AGENTS folds this milestone** — the calibration items are
+first occurrences (silence is not the default; this is explicit no-action). What
+was seen, and the recurrence to watch for:
+
+- **Manual-review findings gates can't catch** drove both bounces: phase-01's
+  unauthorized `unsafe` (bug-01-1) and phase-02's missing request-shaping test
+  (bug-02-1). `cargo fmt/build/clippy/test` were green in both cases. This
+  *affirms* that the architect's manual review is load-bearing — not a doc bug.
+- **Spec test plans that mandate real external state** (env mutation in
+  phase-01) are the most likely thing to fold: if a second M2 phase plan does the
+  same (real sockets, wall-clock, global state instead of injectable fakes), fold
+  into STANDARDS §3.3 + WORKFLOW spec-writing guidance immediately.
+- **Completion-entry accuracy** (phase-02 overstated request-body coverage) —
+  first occurrence; watch for a repeat before folding a "verify your own
+  coverage claims" rule.
+- **opencode honors `.gitignore`** — ignoring `/docs`+`AGENTS.md` made the
+  workflow files invisible to the executor and caused a phantom "missing bug
+  report" blocker. Resolved at source (docs restored to tracking, commit
+  `98c0ede`); operational rule: never gitignore files the executor must read.
+
+**Phase-03** closed clean — the executor honestly deferred the live `/models`
+check rather than fabricating output; the architect ran it against live LM Studio
+and vLLM endpoints (evidence in the phase-03 Update Log) and M1's end-to-end exit
+criterion is met.
