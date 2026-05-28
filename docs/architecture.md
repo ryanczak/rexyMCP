@@ -133,12 +133,29 @@ Rexy escalates a stuck local model to a cloud provider *inside its own process*.
 rexyMCP **keeps Rexy's hard-fail detection and briefing assembly but drops the
 cloud transport**. Instead of calling Anthropic, the executor returns the
 briefing up through the MCP boundary, and **Claude — already the architect — is
-the escalation target.** Claude either:
+the escalation target.** This is itself the standard MCP "return a structured
+result, let the host re-invoke" round-trip; rexyMCP's `PhaseResult` *is* that
+round-trip, so no extra mechanism is needed for Claude to intervene.
 
-- takes a **single-turn handoff** (makes the one focused edit the executor
-  couldn't, hands control back), or
-- performs a **session takeover** (finishes the phase itself), or
-- **refines the phase doc** and re-dispatches.
+Given the briefing, the architect picks one of three levers, situationally:
+
+- **Re-dispatch with a refined spec** — Claude sharpens the phase doc (often via
+  pre-injection: bake in the missing idiom/constraint, see Layer 3) and runs the
+  phase clean from scratch. For weak models this is frequently the *most* robust
+  option: a stuck local model's conversation is often part of the problem
+  (context rot), and a clean restart with a better spec discards the confusion.
+- **Session takeover** — Claude finishes the phase itself when it's beyond the
+  local model's reach.
+- **Resume** *(candidate — not yet committed; decide later)* — a
+  `continue_phase(session_id, guidance)` tool would rehydrate the executor from
+  the session log and inject one targeted directive so the local model continues
+  from where it was, keeping the work it already did. The cheap middle lever for
+  "model was almost there, hit one specific wall." **Caveat:** resume preserves
+  the local model's accumulated context rot along with its progress, so it is a
+  situational lever, never the default. It carries a real cost — the M4 loop must
+  be able to serialize/rehydrate resumable state (message history, working set,
+  remaining turn budget) from the session log — so it is recorded here as a
+  design option, not a committed feature.
 
 The briefing is a *fresh* brief, not a transcript replay — the shape Rexy already
 defines: **goal** (verbatim), **acceptance criteria**, **current code state**
@@ -289,6 +306,12 @@ Practical concerns this layer owns:
 - **Context hygiene.** Returned output is capped (`MAX_MCP_OUTPUT_TOKENS`) so a
   phase's inner transcript can never flood Claude's context. Claude gets the
   `PhaseResult` summary + diff + (on failure) briefing — nothing more.
+- **Roots.** The server queries Claude Code's `roots/list` (and reads
+  `CLAUDE_PROJECT_DIR`) to **corroborate the target-repo root** — a second source
+  for the scope boundary alongside `execute_phase`'s `repo_path` argument, so a
+  mismatch can be caught rather than silently trusted. (Sampling and elicitation
+  are deliberately *not* used: Claude Code doesn't support server-initiated
+  sampling, and we don't pull the human into the loop mid-phase.)
 
 ### Layer 3 — Plugin package
 
@@ -298,10 +321,20 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
 - **Skills:**
   - `architect` — explore the target repo, then write the design doc, milestone
     README, and phase docs into the target repo's `docs/dev/`, following the
-    `WORKFLOW.md` templates verbatim.
+    `WORKFLOW.md` templates verbatim. **Pre-injection is an explicit
+    responsibility:** because the local model can't call back to Claude live
+    (Claude Code does not support MCP sampling) and can't reach Claude Code's web
+    tools, the architect front-loads what the weak model will need *into the
+    phase doc* — worked examples, codebase idioms, gotchas, few-shot exemplars of
+    correct tool calls for the target model, and any fetched reference/API docs
+    (Claude has web fetch/search at the architect level; the executor does not).
+    This is the primary, offline, per-phase-free way Claude's capability reaches
+    the local model.
   - `review-phase` — check executor output against the Definition of Done in
     `STANDARDS.md`, rerun the project's commands, then approve or file a bug.
-  - `escalate` — take over a stuck phase (single-turn fix or session takeover).
+  - `escalate` — given a returned briefing, pick a lever: re-dispatch with a
+    refined spec (default for weak models — see "Escalation"), session takeover,
+    or resume (candidate, if `continue_phase` is built).
 - **Commands:** `/architect`, `/dispatch <phase>`, `/review <phase>`.
 - **Embedded templates:** generalized copies of `STANDARDS.md` / `WORKFLOW.md`.
   These use `{BUILD_COMMAND}` / `{LINT_COMMAND}` / `{TEST_COMMAND}` /
@@ -373,11 +406,17 @@ The project plan. Each entry becomes a milestone with its own
    exposes the **session-log query tools** (`executor_log_search`,
    `executor_log_tail`, `get_turn`) that read the M4 log back on demand, each
    capping its own output, plus **`model_scorecard`** which aggregates the
-   `PhaseRun` telemetry into the model × tag competency matrix.
+   `PhaseRun` telemetry into the model × tag competency matrix. Queries
+   `roots/list` / `CLAUDE_PROJECT_DIR` to corroborate the target-repo root
+   against `execute_phase`'s `repo_path`.
 6. **M6 — Plugin + architect/review skills.** The Claude Code plugin manifest,
    the `architect` / `review-phase` / `escalate` skills, the slash commands, the
    embedded generalized `STANDARDS.md` / `WORKFLOW.md`, and an end-to-end dogfood
-   against a real repo. Phase progression is **gated by default** (see
+   against a real repo. The `architect` skill makes **pre-injection** an explicit
+   responsibility (worked examples, idioms, few-shot tool-call exemplars, fetched
+   reference docs baked into the phase doc) — the primary way Claude's capability
+   reaches the local model, since there's no live callback. Phase progression is
+   **gated by default** (see
    `docs/dev/WORKFLOW.md` § "Phase progression & triggers"): after a review
    passes the architect marks the phase done and stops; the user advances with
    `/architect next` (draft the next phase) or `/dispatch <phase>` (run an
