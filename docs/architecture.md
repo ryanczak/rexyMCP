@@ -93,6 +93,8 @@ It is built by lifting and adapting Rexy modules. The lift/drop map:
 | Governor: scorer, verifier, hard-fail detector | `rexy/src/governor/` | **Lift.** |
 | Context budget + compactor | `rexy/src/context/` | **Lift.** |
 | Security: scope, capabilities, bash classify, redact, injection, audit | `rexy/src/security/` | **Lift.** Critical — a weak model running `bash` needs the allowlist. |
+| Secret redaction / masking | `rexy/src/security/redact.rs`, `rexy/src/ai/filter.rs` (`mask_sensitive`, `init_masking`) | **Lift.** Applied to every turn before it is written to the session log. |
+| Session JSONL log + reader | `rexy/src/store/sessions/jsonl.rs` (`SessionLogger`, `SessionRecord`, `SessionEvent`, `read_session_log`) | **Lift / adapt.** The executor's turn-by-turn record; query tools read it back. |
 | Result truncation/formatting; error model | `rexy/src/result/`, `rexy/src/error/` | **Lift / adapt.** |
 | TUI (fullscreen / classic) | `rexy/src/tui/` | **Drop.** No terminal UI; progress flows over MCP. |
 | Local planner (TODO decomposition) | `rexy/src/planner/` | **Drop.** Decomposition is the architect's (Claude's) job. |
@@ -117,6 +119,12 @@ hits a budget cap:
 8. On clean completion, run the project's full command set
    (`{FORMAT_COMMAND}`/`{BUILD_COMMAND}`/`{LINT_COMMAND}`/`{TEST_COMMAND}`),
    capture output, and return.
+
+Every step that produces an event — the rendered prompt, the raw completion, the
+parsed `ToolCall` or `ParseFailure`, the tool result, the verifier outcome, and
+the governor/hard-fail signals — is appended (redacted) to the **session log**
+described below. Logging is a side effect of the loop; it never changes what the
+loop returns.
 
 #### Escalation = Claude Code itself
 
@@ -152,7 +160,46 @@ PhaseResult {
 ```
 
 This is the entire interface Claude reasons over. The inner loop's tokens, the
-parser's repair history, and the raw tool transcript stay inside the executor.
+parser's repair history, and the raw tool transcript stay inside the executor —
+but they are not thrown away. They go to the session log.
+
+#### Session log & troubleshooting tools
+
+The `PhaseResult` (and its briefing) is deliberately lean to protect Claude's
+context. That is the right default, but when a phase hard-fails it leaves Claude
+with only the *summary* of what went wrong. The full record needs to exist
+somewhere queryable — so the executor writes a complete **JSONL session log** to
+disk, and rexyMCP exposes tools that let Claude read it back **on demand**.
+
+The principle is **pull, not push**: the log costs nothing in Claude's context
+until Claude chooses to query it while debugging a failure. The log and the
+briefing are complementary — the briefing handles the common case, the log is
+there for the deep dive.
+
+- **Format.** One JSON object per line, one record per turn event. The event
+  schema reuses the executor's already-`Serialize`-able types (`ToolCall`,
+  `ParseFailure` with its `RepairOp` history, the verifier outcome, the
+  governor/hard-fail signals). Lifted from `rexy/src/store/sessions/jsonl.rs`
+  (`SessionLogger` / `SessionRecord` / `SessionEvent`).
+- **Redaction.** The executor reads files from the target repo, so a turn can
+  capture secrets. **Every record is passed through the lifted redaction layer
+  (`security/redact.rs` + `ai/filter.rs::mask_sensitive`) before it is written.**
+- **Location.** Under the target repo, namespaced and git-ignored:
+  `<repo_root>/.rexymcp/sessions/<phase>-<session_id>.jsonl`. The
+  `execute_phase` result reports the log path so Claude can reference it.
+- **Query tools** (exposed by Layer 2). Each tool **caps and summarizes its own
+  output** — a debugging query must never re-flood the context the lean
+  `PhaseResult` was protecting:
+  - `executor_log_search(session, query)` — grep/filter the log (by event kind,
+    tool name, error text) and return matching turns, truncated.
+  - `executor_log_tail(session, n)` — the last `n` turn events.
+  - `get_turn(session, n)` — the full record for one turn (the one place the raw
+    detail is allowed through, scoped to a single turn).
+
+The richest signal for "why did this executor get stuck" is the
+`ParseFailure`/repair history plus the verifier and hard-fail records — these are
+exactly what the briefing compresses, so the log is where Claude goes when the
+compression lost the detail it needs.
 
 ### Layer 2 — `mcp` crate (binary)
 
@@ -164,6 +211,9 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes two tools:
 - **`executor_health`** — args: optional endpoint override. Pings the configured
   OpenAI-compatible endpoint and lists available models. Lets the architect
   confirm the executor is reachable before dispatching.
+- **`executor_log_search`**, **`executor_log_tail`**, **`get_turn`** — read back
+  the JSONL session log (see "Session log & troubleshooting tools"). Each caps
+  its own output so a debugging query can't re-flood Claude's context.
 
 Practical concerns this layer owns:
 
@@ -247,9 +297,15 @@ The project plan. Each entry becomes a milestone with its own
    model-feedback formatter.
 4. **M4 — Headless agent loop + governor/verifier.** The single-phase executor
    loop: context budget, verifier, hard-fail detection, and the
-   `PhaseResult` + briefing contract.
+   `PhaseResult` + briefing contract. Includes the **JSONL session log** — every
+   turn event written (redacted via the lifted `security/redact.rs` +
+   `ai/filter.rs`) to `<repo>/.rexymcp/sessions/`, using the lifted
+   `store/sessions/jsonl.rs` writer.
 5. **M5 — MCP server.** The `rmcp` stdio server exposing `execute_phase` and
-   `executor_health`, with progress notifications and output capping.
+   `executor_health`, with progress notifications and output capping. Also
+   exposes the **session-log query tools** (`executor_log_search`,
+   `executor_log_tail`, `get_turn`) that read the M4 log back on demand, each
+   capping its own output.
 6. **M6 — Plugin + architect/review skills.** The Claude Code plugin manifest,
    the `architect` / `review-phase` / `escalate` skills, the slash commands, the
    embedded generalized `STANDARDS.md` / `WORKFLOW.md`, and an end-to-end dogfood
