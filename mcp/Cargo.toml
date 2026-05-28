@@ -1,0 +1,15 @@
+[package]
+name = "rexymcp"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "rexymcp"
+path = "src/main.rs"
+
+[dependencies]
+rexymcp-executor = { path = "../executor", package = "rexymcp-executor" }
+anyhow.workspace = true
+
+[lints]
+workspace = true
