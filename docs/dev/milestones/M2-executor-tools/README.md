@@ -35,7 +35,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | tool trait + registry + **scope confinement** + `read_file` ([phase-01-registry-scope-read.md](phase-01-registry-scope-read.md)) | done |
-| 02 | read-only search tools: `find_files` + `search` ([phase-02-search-tools.md](phase-02-search-tools.md)) | review |
+| 02 | read-only search tools: `find_files` + `search` ([phase-02-search-tools.md](phase-02-search-tools.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 

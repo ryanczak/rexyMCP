@@ -1,7 +1,7 @@
 # Phase 02: read-only search tools — find_files + search
 
 **Milestone:** M2 — Executor tools & security
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~400 lines (two tool lifts + scope adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m
