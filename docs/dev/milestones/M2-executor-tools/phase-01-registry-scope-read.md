@@ -1,7 +1,7 @@
 # Phase 01: Tool trait + registry + scope confinement + read_file
 
 **Milestone:** M2 — Executor tools & security
-**Status:** todo
+**Status:** review
 **Depends on:** M1 (done)
 **Estimated diff:** ~450 lines (registry lift + new scope layer + read_file + tests)
 **Tags:** language=rust, kind=feature, size=l
@@ -228,3 +228,70 @@ is M4, the MCP `execute_phase` is M5).
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 (progress)
+
+Lifted `Tool`, `ToolResult`, `ToolRegistry` from Rexy's `registry.rs` verbatim. Built `Scope` confinement layer from spec (canonicalized prefix check with nearest-existing-ancestor strategy for non-existent paths). Lifted `read_file` adapted to use `Scope` instead of CWD, dropped `context::*` integration entirely. Added tests for scope (7 tests), registry (2 tests), read_file (10 tests). All 62 tests pass.
+
+### Update — 2026-05-28 (complete)
+
+**Summary:** Lifted `Tool` trait + `ToolResult` + `ToolRegistry` from Rexy. Built `Scope` confinement layer (canonicalized prefix check, nearest-existing-ancestor for non-existent paths, symlink escape detection). Lifted `read_file` adapted to use `Scope` instead of CWD, dropped `context::*` integration. Added hermetic tests for all three components. No deviations from spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.31s
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+
+cargo test
+running 62 tests
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+Not applicable — phase ships no runtime-loadable artifact beyond the library APIs the unit tests exercise directly.
+
+**Files changed:**
+- `executor/src/tools/registry.rs` — lifted Tool trait, ToolResult, ToolRegistry + 2 tests
+- `executor/src/tools/read_file.rs` — lifted read_file adapted to Scope + 10 tests
+- `executor/src/tools/mod.rs` — module declarations and re-exports
+- `executor/src/security/scope.rs` — new scope confinement layer + 7 tests
+- `executor/src/security/mod.rs` — module declarations and re-exports
+- `executor/src/lib.rs` — added `pub mod tools;` and `pub mod security;`
+
+**New tests:**
+- `resolves_in_root_relative_path` in `executor/src/security/scope.rs`
+- `resolves_in_root_absolute_path` in `executor/src/security/scope.rs`
+- `rejects_dot_dot_escape` in `executor/src/security/scope.rs`
+- `rejects_absolute_path_outside_root` in `executor/src/security/scope.rs`
+- `rejects_symlink_escape` in `executor/src/security/scope.rs`
+- `resolves_nonexistent_leaf_under_root` in `executor/src/security/scope.rs`
+- `new_on_missing_dir_returns_bad_root` in `executor/src/security/scope.rs`
+- `dispatch_of_registered_tool_returns_output` in `executor/src/tools/registry.rs`
+- `dispatch_of_unknown_name_returns_advisory_error` in `executor/src/tools/registry.rs`
+- `reads_whole_file` in `executor/src/tools/read_file.rs`
+- `reports_file_not_found` in `executor/src/tools/read_file.rs`
+- `reports_directory_as_advisory` in `executor/src/tools/read_file.rs`
+- `reads_line_range` in `executor/src/tools/read_file.rs`
+- `clamps_end_line_past_eof` in `executor/src/tools/read_file.rs`
+- `rejects_start_greater_than_end` in `executor/src/tools/read_file.rs`
+- `rejects_non_utf8` in `executor/src/tools/read_file.rs`
+- `rejects_malformed_args` in `executor/src/tools/read_file.rs`
+- `rejects_path_outside_root` in `executor/src/tools/read_file.rs`
+- `no_token_count_in_metadata` in `executor/src/tools/read_file.rs`
+
+**verification:** fmt OK · clippy OK · tests 62 passed · build OK
+
+**Notes for review:** None.
