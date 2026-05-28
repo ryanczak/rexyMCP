@@ -25,6 +25,101 @@ pub(crate) fn parse_openai_usage(u: &serde_json::Map<String, Value>) -> TokenBre
     }
 }
 
+pub fn convert_messages(messages: Vec<Message>) -> Vec<Value> {
+    let mut result = Vec::new();
+    for m in messages {
+        if let Some(trs) = m.tool_results {
+            for tr in trs {
+                result.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tr.tool_call_id,
+                    "content": tr.content
+                }));
+            }
+        } else if let Some(tcs) = m.tool_calls {
+            let mut tool_calls = Vec::new();
+            for tc in tcs {
+                tool_calls.push(json!({
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": tc.arguments
+                    }
+                }));
+            }
+            result.push(json!({
+                "role": "assistant",
+                "content": m.content,
+                "tool_calls": tool_calls
+            }));
+        } else {
+            result.push(json!({
+                "role": m.role,
+                "content": m.content
+            }));
+        }
+    }
+    result
+}
+
+fn render_openai_tools(tools: &[ToolSchema]) -> Vec<Value> {
+    tools
+        .iter()
+        .map(|t| {
+            json!({
+                "type": "function",
+                "function": {
+                    "name": t.name.clone(),
+                    "description": t.description.clone(),
+                    "parameters": t.parameters.clone(),
+                }
+            })
+        })
+        .collect()
+}
+
+pub fn build_chat_body(
+    model: &str,
+    system: &str,
+    messages: Vec<Value>,
+    tools: Option<&[ToolSchema]>,
+) -> Value {
+    let mut combined_system = String::from(system);
+    let mut non_system = Vec::with_capacity(messages.len());
+    for msg in messages {
+        if msg.get("role").and_then(|r| r.as_str()) == Some("system") {
+            if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+                if !combined_system.is_empty() {
+                    combined_system.push_str("\n\n");
+                }
+                combined_system.push_str(content);
+            }
+        } else {
+            non_system.push(msg);
+        }
+    }
+    let mut full_messages = vec![json!({"role": "system", "content": combined_system})];
+    full_messages.extend(non_system);
+
+    let mut body = json!({
+        "model": model,
+        "max_tokens": 4096,
+        "stream": true,
+        "stream_options": { "include_usage": true },
+        "messages": full_messages,
+    });
+    let tool_list = tools.unwrap_or(&[]);
+    if !tool_list.is_empty() {
+        let rendered = render_openai_tools(tool_list);
+        body["tools"] = json!(rendered);
+        body["tool_choice"] = json!("auto");
+    } else {
+        body["tool_choice"] = json!("none");
+    }
+    body
+}
+
 pub struct OpenAiClient {
     api_key: String,
     model: String,
@@ -44,60 +139,6 @@ impl OpenAiClient {
             base_url: resolved_url,
         }
     }
-
-    fn convert_messages(&self, messages: Vec<Message>) -> Vec<Value> {
-        let mut result = Vec::new();
-        for m in messages {
-            if let Some(trs) = m.tool_results {
-                for tr in trs {
-                    result.push(json!({
-                        "role": "tool",
-                        "tool_call_id": tr.tool_call_id,
-                        "content": tr.content
-                    }));
-                }
-            } else if let Some(tcs) = m.tool_calls {
-                let mut tool_calls = Vec::new();
-                for tc in tcs {
-                    tool_calls.push(json!({
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": tc.arguments
-                        }
-                    }));
-                }
-                result.push(json!({
-                    "role": "assistant",
-                    "content": m.content,
-                    "tool_calls": tool_calls
-                }));
-            } else {
-                result.push(json!({
-                    "role": m.role,
-                    "content": m.content
-                }));
-            }
-        }
-        result
-    }
-}
-
-fn render_openai_tools(tools: &[ToolSchema]) -> Vec<Value> {
-    tools
-        .iter()
-        .map(|t| {
-            json!({
-                "type": "function",
-                "function": {
-                    "name": t.name.clone(),
-                    "description": t.description.clone(),
-                    "parameters": t.parameters.clone(),
-                }
-            })
-        })
-        .collect()
 }
 
 #[async_trait]
@@ -109,40 +150,8 @@ impl AiClient for OpenAiClient {
         tx: UnboundedSender<AiEvent>,
         tools: Option<&[ToolSchema]>,
     ) -> Result<()> {
-        let converted = self.convert_messages(messages);
-
-        let mut combined_system = String::from(system);
-        let mut non_system = Vec::with_capacity(converted.len());
-        for msg in converted {
-            if msg.get("role").and_then(|r| r.as_str()) == Some("system") {
-                if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
-                    if !combined_system.is_empty() {
-                        combined_system.push_str("\n\n");
-                    }
-                    combined_system.push_str(content);
-                }
-            } else {
-                non_system.push(msg);
-            }
-        }
-        let mut full_messages = vec![json!({"role": "system", "content": combined_system})];
-        full_messages.extend(non_system);
-
-        let mut body = json!({
-            "model": self.model.clone(),
-            "max_tokens": 4096,
-            "stream": true,
-            "stream_options": { "include_usage": true },
-            "messages": full_messages,
-        });
-        let tool_list = tools.unwrap_or(&[]);
-        if !tool_list.is_empty() {
-            let rendered = render_openai_tools(tool_list);
-            body["tools"] = json!(rendered);
-            body["tool_choice"] = json!("auto");
-        } else {
-            body["tool_choice"] = json!("none");
-        }
+        let converted = convert_messages(messages);
+        let body = build_chat_body(&self.model, system, converted, tools);
 
         let response = send_with_retry(|| {
             http()
@@ -272,8 +281,11 @@ fn emit_tool_call_generic(tx: &UnboundedSender<AiEvent>, id: &str, name: &str, a
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::types::{AiEvent, ToolSchema};
-    use super::{emit_tool_call_generic, parse_openai_usage, render_openai_tools};
+    use super::super::super::types::{AiEvent, Message, ToolCall, ToolResult, ToolSchema};
+    use super::{
+        build_chat_body, convert_messages, emit_tool_call_generic, parse_openai_usage,
+        render_openai_tools,
+    };
     use serde_json::{Value, json};
     use tokio::sync::mpsc;
 
@@ -377,5 +389,92 @@ mod tests {
             rendered[0]["function"]["parameters"],
             json!({ "type": "object", "properties": { "x": { "type": "string" } } })
         );
+    }
+
+    #[test]
+    fn build_chat_body_has_stream_true_and_model() {
+        let body = build_chat_body("qwen2.5", "system prompt", vec![], None);
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["model"], "qwen2.5");
+    }
+
+    #[test]
+    fn build_chat_body_tool_choice_none_when_no_tools() {
+        let body = build_chat_body("m", "sys", vec![], None);
+        assert_eq!(body["tool_choice"], "none");
+
+        let body = build_chat_body("m", "sys", vec![], Some(&[]));
+        assert_eq!(body["tool_choice"], "none");
+    }
+
+    #[test]
+    fn build_chat_body_tool_choice_auto_when_tools_present() {
+        let tools = vec![ToolSchema {
+            name: "foo".into(),
+            description: "bar".into(),
+            parameters: json!({}),
+        }];
+        let body = build_chat_body("m", "sys", vec![], Some(&tools));
+        assert_eq!(body["tool_choice"], "auto");
+        assert!(body.get("tools").is_some());
+    }
+
+    #[test]
+    fn convert_messages_plain_user_message() {
+        let msgs = vec![Message {
+            role: "user".into(),
+            content: "hello".into(),
+            tool_calls: None,
+            tool_results: None,
+            turn: None,
+        }];
+        let out = convert_messages(msgs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["role"], "user");
+        assert_eq!(out[0]["content"], "hello");
+    }
+
+    #[test]
+    fn convert_messages_tool_results_become_role_tool() {
+        let msgs = vec![Message {
+            role: "user".into(),
+            content: String::new(),
+            tool_calls: None,
+            tool_results: Some(vec![ToolResult {
+                tool_call_id: "tc_1".into(),
+                tool_name: "read_file".into(),
+                content: "file contents".into(),
+            }]),
+            turn: None,
+        }];
+        let out = convert_messages(msgs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["role"], "tool");
+        assert_eq!(out[0]["tool_call_id"], "tc_1");
+        assert_eq!(out[0]["content"], "file contents");
+    }
+
+    #[test]
+    fn convert_messages_tool_calls_become_role_assistant() {
+        let msgs = vec![Message {
+            role: "assistant".into(),
+            content: "let me help".into(),
+            tool_calls: Some(vec![ToolCall {
+                id: "tc_2".into(),
+                name: "bash".into(),
+                arguments: r#"{"cmd":"ls"}"#.into(),
+                thought_signature: None,
+            }]),
+            tool_results: None,
+            turn: None,
+        }];
+        let out = convert_messages(msgs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["role"], "assistant");
+        assert_eq!(out[0]["content"], "let me help");
+        let tcs = out[0]["tool_calls"].as_array().unwrap();
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0]["id"], "tc_2");
+        assert_eq!(tcs[0]["function"]["name"], "bash");
     }
 }
