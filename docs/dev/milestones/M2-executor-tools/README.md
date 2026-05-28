@@ -35,17 +35,19 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | tool trait + registry + **scope confinement** + `read_file` ([phase-01-registry-scope-read.md](phase-01-registry-scope-read.md)) | done |
+| 02 | read-only search tools: `find_files` + `search` ([phase-02-search-tools.md](phase-02-search-tools.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **02** — read-only tools: `find_files`, `search` (the `ignore`/`globset`
-  crates), `symbols` (tree-sitter), all scope-confined.
-- **03** — write tools: `write_file`, `patch` (the primary edit primitive;
+- **03** — `symbols` (tree-sitter, language-aware symbol search). Net-new:
+  Rexy's `symbols.rs` is a stub, so this is fresh design + a heavy dependency,
+  hence its own phase.
+- **04** — write tools: `write_file`, `patch` (the primary edit primitive;
   search-replace with fuzzy fallback), scope-confined including non-existent
   leaf paths.
-- **04** — `bash` tool + `bash_classify` (block/confirm lists) + the
+- **05** — `bash` tool + `bash_classify` (block/confirm lists) + the
   capabilities/audit layer.
-- **05** — the 2-stage tool router (categories: Read | Write | Search | Run |
+- **06** — the 2-stage tool router (categories: Read | Write | Search | Run |
   Plan) + governor-aware schema ordering hook.
 
 ## Notes
