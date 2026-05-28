@@ -36,12 +36,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 |----|-------------------------------------------------------------------|--------|
 | 01 | tool trait + registry + **scope confinement** + `read_file` ([phase-01-registry-scope-read.md](phase-01-registry-scope-read.md)) | done |
 | 02 | read-only search tools: `find_files` + `search` ([phase-02-search-tools.md](phase-02-search-tools.md)) | done |
+| 03 | `symbols` — tree-sitter symbol-definition search (Rust + Python) ([phase-03-symbols.md](phase-03-symbols.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **03** — `symbols` (tree-sitter, language-aware symbol search). Net-new:
-  Rexy's `symbols.rs` is a stub, so this is fresh design + a heavy dependency,
-  hence its own phase.
 - **04** — write tools: `write_file`, `patch` (the primary edit primitive;
   search-replace with fuzzy fallback), scope-confined including non-existent
   leaf paths.
