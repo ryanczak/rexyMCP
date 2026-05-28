@@ -1,7 +1,7 @@
 # Phase 01: Tool trait + registry + scope confinement + read_file
 
 **Milestone:** M2 — Executor tools & security
-**Status:** review
+**Status:** done
 **Depends on:** M1 (done)
 **Estimated diff:** ~450 lines (registry lift + new scope layer + read_file + tests)
 **Tags:** language=rust, kind=feature, size=l
