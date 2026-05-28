@@ -78,19 +78,23 @@ impl Config {
         Ok(config)
     }
 
-    pub fn apply_env(&mut self) -> Result<()> {
-        if let Ok(v) = std::env::var("REXYMCP_PROVIDER") {
+    pub fn apply_overrides(&mut self, get: impl Fn(&str) -> Option<String>) {
+        if let Some(v) = get("REXYMCP_PROVIDER") {
             self.executor.provider = v;
         }
-        if let Ok(v) = std::env::var("REXYMCP_MODEL") {
+        if let Some(v) = get("REXYMCP_MODEL") {
             self.executor.model = v;
         }
-        if let Ok(v) = std::env::var("REXYMCP_BASE_URL") {
+        if let Some(v) = get("REXYMCP_BASE_URL") {
             self.executor.base_url = v;
         }
-        if let Ok(v) = std::env::var("REXYMCP_API_KEY") {
+        if let Some(v) = get("REXYMCP_API_KEY") {
             self.executor.api_key = Some(v);
         }
+    }
+
+    pub fn apply_env(&mut self) -> Result<()> {
+        self.apply_overrides(|k| std::env::var(k).ok());
         Ok(())
     }
 
@@ -195,15 +199,14 @@ escalation_slots = 1
         .unwrap();
         drop(f);
 
-        // SAFETY: test-only env mutation, no concurrent threads
-        unsafe {
-            std::env::set_var("REXYMCP_MODEL", "model-b");
-        }
-        let cfg = Config::load_with_env(&path).unwrap();
-        // SAFETY: test-only env cleanup
-        unsafe {
-            std::env::remove_var("REXYMCP_MODEL");
-        }
+        let mut cfg = Config::load(&path).unwrap();
+        cfg.apply_overrides(|k| {
+            if k == "REXYMCP_MODEL" {
+                Some("model-b".into())
+            } else {
+                None
+            }
+        });
 
         assert_eq!(cfg.executor.model, "model-b");
     }

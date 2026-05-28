@@ -1,7 +1,7 @@
 # Phase 01: Workspace + config + error model
 
 **Milestone:** M1 — Foundations
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~300 lines
 
@@ -323,5 +323,59 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 **Commits:** pending
 
 **Notes for review:** None.
+
+**verification:** fmt OK · clippy OK · tests 5 passed · build OK
+
+### Update — 2026-05-28 00:00 (in-progress)
+
+**Executor:** opencode (qwen3.6-plus)
+
+Fixing bug-01-1: replaced `unsafe` env mutation in `env_override_beats_toml` test with an injectable `apply_overrides` method. The test now drives a fake getter closure instead of mutating the real process environment. `apply_env` delegates to `apply_overrides` with `std::env::var(k).ok()`, preserving production behavior.
+
+### Update — 2026-05-28 00:00 (complete)
+
+**Summary:** Fixed bug-01-1 by extracting `apply_overrides(&mut self, get: impl Fn(&str) -> Option<String>)` and reducing `apply_env` to delegate to it. The override test now uses a closure returning `Some("model-b")` for `REXYMCP_MODEL` — no `unsafe`, no real env mutation, fully hermetic.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — passes clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+
+cargo test 2>&1 | tail -30
+running 5 tests
+test config::tests::default_config_targets_local_lmstudio ... ok
+test config::tests::load_missing_file_returns_default ... ok
+test config::tests::load_malformed_toml_is_config_error ... ok
+test config::tests::load_parses_toml_executor_block ... ok
+test config::tests::env_override_beats_toml ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+- `grep -n unsafe executor/src/config.rs` → no matches ✓
+- Override test drives `apply_overrides` with a fake getter, asserts override wins ✓
+- `Config::load_with_env` still applies real env via `apply_env` → `apply_overrides` ✓
+
+**Files changed:**
+- `executor/src/config.rs` — added `apply_overrides`, simplified `apply_env`, rewrote override test
+
+**New tests:** none (existing test rewritten)
+
+**Commits:** pending
+
+**Notes for review:** Bug-01-1 fixed. No other changes.
 
 **verification:** fmt OK · clippy OK · tests 5 passed · build OK
