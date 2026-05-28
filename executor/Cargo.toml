@@ -19,6 +19,9 @@ futures-util.workspace = true
 globset.workspace = true
 ignore.workspace = true
 regex.workspace = true
+tree-sitter.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-python.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

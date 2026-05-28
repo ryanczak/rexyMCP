@@ -1,7 +1,7 @@
 # Phase 03: symbols — tree-sitter symbol-definition search
 
 **Milestone:** M2 — Executor tools & security
-**Status:** todo
+**Status:** review
 **Depends on:** phase-02 (done)
 **Estimated diff:** ~450 lines (net-new tool + two language grammars + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -337,3 +337,73 @@ Cross-cutting:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 (progress)
+
+Implemented `symbols` tool: created `executor/src/tools/symbols.rs` with `Symbols` struct holding a `Scope`, constructor `symbols(scope) -> Arc<dyn Tool>`, name `"symbols"`. Added tree-sitter dependencies (`tree-sitter = "0.25"`, `tree-sitter-rust = "0.24"`, `tree-sitter-python = "0.23"`) to workspace and executor `Cargo.toml`. Used verbatim pinned queries from spec. `tree_sitter::StreamingIterator` is re-exported in 0.25 — no separate crate needed. Wired in `tools/mod.rs`. Wrote 18 hermetic tests covering Rust/Python definitions, kind filter, exact match, gitignore, max_results truncation, unsupported extension handling, and all advisory error paths. All 102 tests pass (84 existing + 18 new).
+
+### Update — 2026-05-28 (complete)
+
+**Summary:** Implemented `symbols` tool — tree-sitter symbol-definition search across Rust and Python files. Added `tree-sitter`, `tree-sitter-rust`, `tree-sitter-python` dependencies. Created `executor/src/tools/symbols.rs` with full implementation: scope-confined path resolution, gitignore-aware directory walk (`follow_links` off), exact identifier matching via pinned tree-sitter queries, kind filtering, `max_results` capping with truncation note, advisory errors for all failure modes. Used `tree_sitter::StreamingIterator` re-export (no separate crate needed). Wired in `tools/mod.rs`. 18 hermetic tests added. No deviations from spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.41s
+
+cargo test
+running 102 tests
+test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+Not applicable — this phase ships one library tool exercised directly by its unit tests. The registry/loop that drives it lands in M4 and the MCP `execute_phase` in M5; there is no runtime-loadable artifact to exercise yet.
+
+**Files changed:**
+- `Cargo.toml` — added `tree-sitter`, `tree-sitter-rust`, `tree-sitter-python` workspace deps
+- `executor/Cargo.toml` — added tree-sitter workspace deps
+- `executor/src/tools/symbols.rs` — new file: `Symbols` tool implementation + 18 tests
+- `executor/src/tools/mod.rs` — added `mod symbols;` and re-exports
+
+**New tests:**
+- `finds_rust_function_by_name` in `executor/src/tools/symbols.rs`
+- `finds_rust_struct_and_trait` in `executor/src/tools/symbols.rs`
+- `kind_filter_returns_only_matching_kind` in `executor/src/tools/symbols.rs`
+- `exact_match_no_substring` in `executor/src/tools/symbols.rs`
+- `respects_gitignore` in `executor/src/tools/symbols.rs`
+- `caps_at_max_results` in `executor/src/tools/symbols.rs`
+- `finds_python_function_and_class` in `executor/src/tools/symbols.rs`
+- `unsupported_extension_skipped_in_dir_walk` in `executor/src/tools/symbols.rs`
+- `single_file_unsupported_extension_advisory_error` in `executor/src/tools/symbols.rs`
+- `rejects_empty_name` in `executor/src/tools/symbols.rs`
+- `rejects_invalid_kind` in `executor/src/tools/symbols.rs`
+- `rejects_max_results_zero` in `executor/src/tools/symbols.rs`
+- `rejects_path_outside_root` in `executor/src/tools/symbols.rs`
+- `rejects_nonexistent_path` in `executor/src/tools/symbols.rs`
+- `reports_line_and_column` in `executor/src/tools/symbols.rs`
+- `defaults_to_scope_root_when_no_path_given` in `executor/src/tools/symbols.rs`
+- `no_symbols_returns_advisory_error` in `executor/src/tools/symbols.rs`
+- `metadata_carries_definitions_and_files_count` in `executor/src/tools/symbols.rs`
+
+**Spec-pinned literal grep proof:**
+```
+grep "function_item name: (identifier) @function" symbols.rs → 1 match
+grep "function_definition name: (identifier) @function" symbols.rs → 1 match
+```
+
+**verification:** fmt OK · clippy OK · tests 102 passed · build OK
+
+**Notes for review:** None.
