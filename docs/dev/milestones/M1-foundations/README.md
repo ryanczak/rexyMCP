@@ -4,7 +4,7 @@
 model, the lifted AI client, and a runnable health-check entrypoint that connects
 to a live local OpenAI-compatible endpoint and lists its models.
 
-**Status:** review (all phases done — awaiting project-owner sign-off before M2)
+**Status:** done (signed off 2026-05-28)
 
 **Depends on:** none
 

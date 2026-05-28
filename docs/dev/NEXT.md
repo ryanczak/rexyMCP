@@ -4,22 +4,14 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **milestone boundary.**
+**Active phase:** [M2 / phase-01 — tool trait + registry + scope confinement + read_file](milestones/M2-executor-tools/phase-01-registry-scope-read.md)
 
-M1 — Foundations is complete (phase-01, -02, -03 all `done`; live E2E verified).
-Per WORKFLOW.md § "Phase progression & triggers", milestone boundaries stop for
-project-owner sign-off, and M2's phases are **expanded on demand**, not in
-advance. There is no active phase to execute until the architect drafts M2
-phase-01.
+**Status:** todo
 
-**Milestone:** [M1 — Foundations](milestones/M1-foundations/README.md) — awaiting
-sign-off.
-
-**Next milestone:** M2 — Executor tools & security (see `docs/architecture.md`
-Status §). Not yet expanded into phases.
+**Milestone:** [M2 — Executor tools & security](milestones/M2-executor-tools/README.md)
 
 ---
 
-Executor: do not pick up work while this says "milestone boundary." If you were
-dispatched here, stop and wait for the architect to point this file at an M2
-phase doc.
+If the linked phase doc's status is `done` or `review`, this pointer is **stale**
+— file a blocker and stop rather than guessing the next phase. The architect
+updates this file when a phase is approved and the next one is ready to dispatch.
