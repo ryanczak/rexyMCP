@@ -1,7 +1,7 @@
 # Phase 01: Workspace + config + error model
 
 **Milestone:** M1 — Foundations
-**Status:** review
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~300 lines
 

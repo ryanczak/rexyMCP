@@ -6,7 +6,7 @@ engineer (architect) maintains this file. The executor reads it first
 
 **Active phase:** [M1 / phase-01 — Workspace + config + error model](milestones/M1-foundations/phase-01-workspace-and-config.md)
 
-**Status:** todo
+**Status:** in-progress (bounced from review — fix `bugs/bug-01-1.md`)
 
 **Milestone:** [M1 — Foundations](milestones/M1-foundations/README.md)
 
