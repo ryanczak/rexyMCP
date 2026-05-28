@@ -106,7 +106,11 @@ It is built by lifting and adapting Rexy modules. The lift/drop map:
 One `execute_phase` call runs this loop until the phase completes, hard-fails, or
 hits a budget cap:
 
-1. Load `STANDARDS.md` + the phase doc; build the executor system prompt.
+1. Assemble the executor system prompt from three inputs: the **embedded
+   executor contract** (the generalized, `{…_COMMAND}`-resolved executor-behavior
+   rules — see Layer 3), the project's `STANDARDS.md`, and the phase doc (with the
+   architect's pre-injection). The local model reads none of these as files — the
+   crate assembles them in-process.
 2. Apply the context budget; compact if needed (never evict system messages).
 3. Call the local model (`AiClient::chat`) with the routed tool schemas.
 4. Run the model output through the forgiving parser → `ToolCall` or a
@@ -336,16 +340,53 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
     refined spec (default for weak models — see "Escalation"), session takeover,
     or resume (candidate, if `continue_phase` is built).
 - **Commands:** `/architect`, `/dispatch <phase>`, `/review <phase>`.
-- **Embedded templates:** generalized copies of `STANDARDS.md` / `WORKFLOW.md`.
-  These use `{BUILD_COMMAND}` / `{LINT_COMMAND}` / `{TEST_COMMAND}` /
-  `{FORMAT_COMMAND}` placeholders that resolve **per target project** from
-  rexyMCP config, which is what makes the product language-agnostic.
+- **Embedded templates:** generalized copies of `STANDARDS.md` / `WORKFLOW.md`
+  **and the executor contract** (`executor_contract.md` — the portable subset of
+  this repo's `AGENTS.md`: hard rules, phase lifecycle, blocker/completion
+  protocol, grep-for-literals. The opencode-specific operational notes in today's
+  `AGENTS.md` are dropped, because the product executor is a local LLM over an
+  OpenAI endpoint, not opencode). All three use `{BUILD_COMMAND}` /
+  `{LINT_COMMAND}` / `{TEST_COMMAND}` / `{FORMAT_COMMAND}` placeholders that
+  resolve **per target project** from rexyMCP config, which is what makes the
+  product language-agnostic. The executor contract and `STANDARDS.md` are what the
+  `executor` crate prepends to every phase's system prompt (Layer 1, turn-cycle
+  step 1); the contract is **embedded-only** — a rexyMCP-driven project never
+  carries a root `AGENTS.md` or an executor-contract file.
+
+### Project initialization (bootstrap)
+
+The `architect` skill owns getting a new target repo ready. On `/architect`
+against a repo with no `docs/dev/` scaffold, it bootstraps **before** designing,
+then proceeds to explore and write the design:
+
+1. **Resolve the command set.** Detect the project's `format`/`build`/`lint`/`test`
+   commands (e.g. `Cargo.toml` → `cargo …`, `package.json` → the package manager)
+   and/or confirm with the user; write them to rexyMCP config (`rexymcp.toml`).
+   These resolve the `{…_COMMAND}` placeholders everywhere downstream.
+2. **Lay down the process docs.** Write the resolved `docs/dev/STANDARDS.md` and
+   `WORKFLOW.md` from the embedded templates (placeholders filled in).
+3. **Write `CLAUDE.md`.** Orient Claude as the architect for this project: the
+   per-project command set, pointers to the process docs, and the note that the
+   executor is a local LLM reached through rexyMCP whose contract is embedded —
+   *not* a file in this repo.
+4. **Register the server.** Ensure the rexyMCP MCP server is in `.mcp.json` (if
+   the plugin install didn't already do it).
+
+It does **not** write an `AGENTS.md` or any executor-contract file — that content
+reaches the local model through the embedded, in-process system-prompt assembly
+(turn-cycle step 1), and reaches Claude through `CLAUDE.md` + the skills.
+Bootstrap is idempotent: an already-initialized repo is left alone (or only its
+missing pieces repaired).
 
 ## End-to-end flow
 
 1. The user gives Claude a product idea.
-2. The `architect` skill explores the target repo and writes the design doc + M1
-   README + phase docs into the target repo's `docs/dev/`.
+2. The `architect` skill **initializes the project if needed** (bootstrap:
+   resolve the command set into `rexymcp.toml`, lay down the resolved
+   `STANDARDS.md` / `WORKFLOW.md` + `CLAUDE.md`, register the MCP server — no
+   `AGENTS.md`, no executor-contract file; see "Project initialization"), then
+   explores the target repo and writes the design doc + M1 README + phase docs
+   into `docs/dev/`.
 3. `/dispatch phase-01` → Claude calls the `execute_phase` MCP tool.
 4. The MCP server runs the `executor` loop: local model drives the phase spec,
    verifier checks edits, the project's commands run at the end.
@@ -411,8 +452,13 @@ The project plan. Each entry becomes a milestone with its own
    against `execute_phase`'s `repo_path`.
 6. **M6 — Plugin + architect/review skills.** The Claude Code plugin manifest,
    the `architect` / `review-phase` / `escalate` skills, the slash commands, the
-   embedded generalized `STANDARDS.md` / `WORKFLOW.md`, and an end-to-end dogfood
-   against a real repo. The `architect` skill makes **pre-injection** an explicit
+   embedded generalized `STANDARDS.md` / `WORKFLOW.md` **and executor contract**
+   (the portable subset of `AGENTS.md`; opencode-specific notes dropped), and an
+   end-to-end dogfood against a real repo. The `architect` skill also owns
+   **project initialization** (see Layer 3): bootstrapping an uninitialized target
+   repo — resolving the per-project command set, laying down the resolved process
+   docs + `CLAUDE.md`, registering the MCP server — with no root `AGENTS.md`, since
+   the executor contract is embedded rather than a file. The `architect` skill makes **pre-injection** an explicit
    responsibility (worked examples, idioms, few-shot tool-call exemplars, fetched
    reference docs baked into the phase doc) — the primary way Claude's capability
    reaches the local model, since there's no live callback. Phase progression is
