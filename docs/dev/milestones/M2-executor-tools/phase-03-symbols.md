@@ -1,7 +1,7 @@
 # Phase 03: symbols — tree-sitter symbol-definition search
 
 **Milestone:** M2 — Executor tools & security
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (done)
 **Estimated diff:** ~450 lines (net-new tool + two language grammars + tests)
 **Tags:** language=rust, kind=feature, size=m
