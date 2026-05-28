@@ -31,7 +31,7 @@ to a live local OpenAI-compatible endpoint and lists its models.
 |----|------------------------------------------------------------------------------|--------|
 | 01 | workspace + config + error model ([phase-01-workspace-and-config.md](phase-01-workspace-and-config.md)) | done |
 | 02 | AI client (lift from Rexy) ([phase-02-ai-client.md](phase-02-ai-client.md))  | done |
-| 03 | health-check entrypoint ([phase-03-health-check.md](phase-03-health-check.md)) | todo   |
+| 03 | health-check entrypoint ([phase-03-health-check.md](phase-03-health-check.md)) | review   |
 
 ## Notes
 

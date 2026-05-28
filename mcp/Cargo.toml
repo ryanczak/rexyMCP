@@ -10,6 +10,8 @@ path = "src/main.rs"
 [dependencies]
 rexymcp-executor = { path = "../executor", package = "rexymcp-executor" }
 anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

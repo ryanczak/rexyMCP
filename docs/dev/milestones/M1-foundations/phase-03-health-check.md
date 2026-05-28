@@ -1,7 +1,7 @@
 # Phase 03: Health-check entrypoint
 
 **Milestone:** M1 — Foundations
-**Status:** todo
+**Status:** review
 **Depends on:** phase-02
 **Estimated diff:** ~250 lines
 
@@ -165,3 +165,88 @@ This phase's whole point is the live connection. Against a real local endpoint:
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 (progress)
+
+Phase started. Implementing health logic in executor/src/health.rs, adding clap
+to mcp/Cargo.toml, rewriting mcp/src/main.rs as a small CLI with health
+subcommand. Executor: opencode (qwen3.6-plus).
+
+### Update — 2026-05-28 (complete)
+
+**Summary:** Built `executor/src/health.rs` with `list_models` (async, parses
+`data[].id` from OpenAI-compatible `/models` endpoint, returns `Error::Backend`
+on failure) and `check` (never errors, returns `Health { reachable: false, .. }`
+on transport/parse failure). Added `clap` with `derive` to the workspace and
+`mcp/Cargo.toml`. Rewrote `mcp/src/main.rs` into a clap CLI with `health`
+subcommand (`--config`, `--base-url` flags) and default name+version behavior.
+Five hermetic unit tests added. One `send_with_retry` error-mapping fix needed
+(anyhow → Error::Backend).
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.61s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s
+
+cargo test 2>&1 | tail -30
+test health::tests::joins_base_url_no_trailing_slash ... ok
+test health::tests::joins_base_url_trailing_slash ... ok
+test health::tests::parse_rejects_non_list_body ... ok
+test health::tests::parses_model_ids_from_openai_list_response ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+...
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+AC (failure path): `cargo run -p rexymcp -- health --base-url http://127.0.0.1:1`
+```
+unreachable: http://127.0.0.1:1
+EXIT_CODE=1
+```
+Exits non-zero, names the unreachable URL.
+
+AC (no subcommand): `cargo run -p rexymcp`
+```
+rexymcp 0.1.0
+EXIT_CODE=0
+```
+Preserves phase-01 behavior.
+
+AC (live): No local LLM endpoint available on this machine (checked :1234,
+:11434 — neither responded). Requires manual verification by the user with
+LM Studio / Ollama / vLLM running.
+
+**Files changed:**
+- `Cargo.toml` — added `clap` workspace dependency
+- `mcp/Cargo.toml` — added `clap.workspace = true`, `tokio.workspace = true`
+- `executor/src/lib.rs` — added `pub mod health;`
+- `executor/src/health.rs` — new file: `Health` struct, `list_models`, `check`,
+  `build_models_url`, `parse_models_list`, 5 unit tests
+- `mcp/src/main.rs` — rewritten from stub to clap CLI with `health` subcommand
+
+**New tests:**
+- `parses_model_ids_from_openai_list_response` in `executor/src/health.rs`
+- `parse_rejects_non_list_body` in `executor/src/health.rs`
+- `joins_base_url_trailing_slash` in `executor/src/health.rs`
+- `joins_base_url_no_trailing_slash` in `executor/src/health.rs`
+- `check_returns_unreachable_on_connection_error` in `executor/src/health.rs`
+
+**Commits:** pending
+
+**Notes for review:** Live endpoint test deferred — no local LLM running.
+Failure path and default behavior verified end-to-end.
