@@ -328,6 +328,33 @@ README's phase table. The two **must** match.
 
 ---
 
+## Phase progression & triggers
+
+"Mark a phase done" and "write the next phase" are **separate acts**. Marking
+done — flipping the phase to `done`, updating the README phase table, committing
+— is a checkpoint. Drafting the next phase is a fresh decision that benefits from
+the just-finished work being on disk. Keeping them separate lets the human
+inspect before more work is generated.
+
+**Default: gated.** After a review passes, the architect marks the phase `done`
+and **stops**. The user advances explicitly — e.g. `/architect next` to draft the
+next phase doc, or `/dispatch <phase>` to run the next already-written phase. The
+architect does not draft or dispatch the next phase on its own. This keeps the
+review a real gate and the human in control of scope.
+
+**Milestone boundaries are always a human gate.** When a milestone's in-scope
+phases are all `done`, the architect stops for human sign-off regardless of mode.
+This is where the retrospective and doc-folding happen (see "Calibration"), which
+is human judgment — never automated.
+
+**Opt-in autonomous loop (off by default).** For hands-off runs, the user may
+turn on an autonomous mode that chains draft → dispatch → review across phases,
+stopping only on a blocker or a milestone boundary. It is explicitly enabled per
+run, never the default. When on, the architect still files blockers rather than
+improvising, and still halts at milestone boundaries.
+
+---
+
 ## What Executors Never Decide
 
 - Whether something belongs in core vs. a plugin.

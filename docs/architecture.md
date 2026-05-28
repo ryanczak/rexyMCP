@@ -309,4 +309,10 @@ The project plan. Each entry becomes a milestone with its own
 6. **M6 — Plugin + architect/review skills.** The Claude Code plugin manifest,
    the `architect` / `review-phase` / `escalate` skills, the slash commands, the
    embedded generalized `STANDARDS.md` / `WORKFLOW.md`, and an end-to-end dogfood
-   against a real repo.
+   against a real repo. Phase progression is **gated by default** (see
+   `docs/dev/WORKFLOW.md` § "Phase progression & triggers"): after a review
+   passes the architect marks the phase done and stops; the user advances with
+   `/architect next` (draft the next phase) or `/dispatch <phase>` (run an
+   existing one). Milestone boundaries always stop for human sign-off. An opt-in
+   autonomous loop (off by default) can chain draft → dispatch → review until a
+   blocker or milestone boundary.
