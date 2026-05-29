@@ -441,7 +441,13 @@ The project plan. Each entry becomes a milestone with its own
    `store/sessions/jsonl.rs` writer. Also emits the per-phase **`PhaseRun`
    metrics record** (objective fields: gates, turns, tokens, parse-failure rate,
    verifier retries) into the cross-project telemetry store — see "Model
-   effectiveness metrics & routing."
+   effectiveness metrics & routing." Also owns the **read-before-edit
+   invariant**: the loop tracks a per-session working set of files the executor
+   has read (with mtime), and `patch` refuses to edit a file the executor hasn't
+   read this session or that changed on disk underneath it. The M2 `patch` tool
+   (phase-04) deliberately ships *without* this enforcement — it lives in the
+   loop's session state, not the stateless tool — so M4 wires the check around the
+   tool rather than inside it.
 5. **M5 — MCP server.** The `rmcp` stdio server exposing `execute_phase` and
    `executor_health`, with progress notifications and output capping. Also
    exposes the **session-log query tools** (`executor_log_search`,
