@@ -51,11 +51,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 02 | context budget + compaction ([phase-02-context-budget.md](phase-02-context-budget.md)) | done |
 | 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | done |
 | 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | done |
+| 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **05** — governor: per-(task,tool) **scorer** + **hard-fail detector**
-  (repetition loops, repeated verifier failures, budget overflow).
 - **06** — `PhaseResult` + the **briefing** contract (adapt `escalation/packet.rs`:
   drop cloud transport + the planner TODO section; the brief is *returned* to
   Claude). `Origin::Native` + `parser/native.rs` + `stream.rs` (deferred from M3)
