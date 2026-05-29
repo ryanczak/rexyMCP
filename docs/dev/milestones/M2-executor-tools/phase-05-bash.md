@@ -1,7 +1,7 @@
 # Phase 05: bash tool + destructive-command classifier
 
 **Milestone:** M2 — Executor tools & security
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-04 (done)
 **Estimated diff:** ~420 lines (bash lift + net-new classifier + scope/env adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -313,6 +313,16 @@ bash security adaptations (new):
 
 Implemented bash_classify.rs with Severity { Allow, Block } + classify() function covering all curated Block patterns from §A (filesystem destruction, privilege/RCE, system control, irreversible git ops, publish, process kill). Normalization lowercases + collapses whitespace. Implemented bash.rs lifted from Rexy with three security adaptations: classifier gate (Block → advisory refusal, command never spawned), cwd-pin (Command::current_dir(scope.root())), and env-strip (env_clear + is_allowed_env_key predicate). All tests written and passing.
 
+### Update — 2026-05-28 (progress) — bug-05-1 fix
+
+Fixed classifier over-blocking benign commands (bug-05-1). Moved system-control
+words (shutdown, reboot, halt, poweroff), privilege-escalation (sudo, su), and
+process-kill (kill -9, pkill, killall) out of BLOCK_SUBSTRINGS into a
+command-position regex (DANGEROUS_CMD_RE) that matches only at string start or
+after shell separators (;, &, |, (, newline). Folded init 0/6 regexes into the
+same pattern. Added tests for benign-substring cases (cargo test shutdown, grep
+halt, echo "run with sudo", etc.) and separator-after cases (echo hi && shutdown).
+
 ### Update — 2026-05-28 (complete)
 
 **Summary:** Lifted bash tool from Rexy with security adaptations (classifier gate, cwd-pin, env-strip). Created net-new bash_classify classifier with curated Block patterns. Wired both through security/mod.rs and tools/mod.rs. Added "process" feature to tokio in root Cargo.toml. All acceptance criteria met.
@@ -328,15 +338,15 @@ cargo fmt --all --check
 cargo build 2>&1 | tail -20
    Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
    Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.48s
 
 cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
     Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
     Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.48s
 
 cargo test 2>&1 | tail -30
-test result: ok. 160 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.03s
+test result: ok. 165 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.02s
 ```
 
 **End-to-end verification:**
@@ -395,4 +405,14 @@ Not applicable — this phase ships a library tool + a pure classifier, exercise
 
 **Notes for review:** None.
 
-**verification:** fmt OK · clippy OK · tests 160 passed · build OK
+**verification:** fmt OK · clippy OK · tests 165 passed · build OK
+
+**Bug fix verification (bug-05-1):**
+- `classify("cargo test shutdown")` → Allow ✓
+- `classify("grep -rn shutdown src/")` → Allow ✓
+- `classify("./scripts/shutdown_test.sh")` → Allow ✓
+- `classify("grep halt notes.txt")` → Allow ✓
+- `classify("echo \"run with sudo\"")` → Allow ✓
+- `classify("shutdown now")` → Block ✓
+- `classify("foo && reboot")` → Block ✓
+- `classify("init 0")` → Block ✓

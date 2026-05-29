@@ -44,22 +44,23 @@ static EVAL_CURL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"eval\s+"\$
 
 static EVAL_WGET_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"eval\s+"\$\(wget"#).unwrap());
 
-static INIT_0_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"init\s+0\b").unwrap());
-
-static INIT_6_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"init\s+6\b").unwrap());
-
 static GIT_RESET_HARD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"git\s+reset\s+--hard").unwrap());
 
 static PIP_UPLOAD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"pip[0-9]*\s+.*\bupload\b").unwrap());
 
+/// Matches dangerous commands only when they appear at command position:
+/// start of string or after a shell separator (`;`, `&`, `|`, `(`, newline).
+/// Covers system-control, privilege-escalation, and process-kill commands
+/// that would otherwise false-positive as substrings in benign arguments.
+static DANGEROUS_CMD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:^|[;&|(\n])\s*(?:shutdown\b|reboot\b|halt\b|poweroff\b|sudo\b|su\s+-|su\s+root\b|kill\s+-9\b|pkill\b|killall\b|init\s+[06]\b)").unwrap()
+});
+
 /// Fixed-substring Block patterns (checked after normalization).
 const BLOCK_SUBSTRINGS: &[&str] = &[
     "mkfs",
-    "sudo ",
-    "su -",
-    "su root",
     "git push",
     "git checkout .",
     "git restore .",
@@ -67,13 +68,6 @@ const BLOCK_SUBSTRINGS: &[&str] = &[
     "cargo publish",
     "twine upload",
     "gh release create",
-    "shutdown",
-    "reboot",
-    "halt",
-    "poweroff",
-    "kill -9",
-    "pkill",
-    "killall",
 ];
 
 /// Classify a shell command string against a curated blocklist.
@@ -123,16 +117,13 @@ pub fn classify(command: &str) -> Severity {
     if EVAL_WGET_RE.is_match(&normalized) {
         return Severity::Block;
     }
-    if INIT_0_RE.is_match(&normalized) {
-        return Severity::Block;
-    }
-    if INIT_6_RE.is_match(&normalized) {
-        return Severity::Block;
-    }
     if GIT_RESET_HARD_RE.is_match(&normalized) {
         return Severity::Block;
     }
     if PIP_UPLOAD_RE.is_match(&normalized) {
+        return Severity::Block;
+    }
+    if DANGEROUS_CMD_RE.is_match(&normalized) {
         return Severity::Block;
     }
 
@@ -212,12 +203,25 @@ mod tests {
     fn blocks_sudo() {
         assert_eq!(classify("sudo rm -rf /"), Severity::Block);
         assert_eq!(classify("sudo apt update"), Severity::Block);
+        assert_eq!(classify("echo hi && sudo ls"), Severity::Block);
+    }
+
+    #[test]
+    fn allows_sudo_as_argument() {
+        assert_eq!(classify("echo \"run with sudo\""), Severity::Allow);
+        assert_eq!(classify("grep sudo config"), Severity::Allow);
     }
 
     #[test]
     fn blocks_su() {
         assert_eq!(classify("su -"), Severity::Block);
         assert_eq!(classify("su root"), Severity::Block);
+    }
+
+    #[test]
+    fn allows_su_as_argument() {
+        assert_eq!(classify("grep su root"), Severity::Allow);
+        assert_eq!(classify("echo \"switch to su root\""), Severity::Allow);
     }
 
     #[test]
@@ -245,6 +249,26 @@ mod tests {
         assert_eq!(classify("poweroff"), Severity::Block);
         assert_eq!(classify("init 0"), Severity::Block);
         assert_eq!(classify("init 6"), Severity::Block);
+    }
+
+    #[test]
+    fn blocks_system_control_after_separator() {
+        assert_eq!(classify("echo hi && shutdown now"), Severity::Block);
+        assert_eq!(classify("ls; reboot"), Severity::Block);
+        assert_eq!(classify("true || poweroff"), Severity::Block);
+        assert_eq!(classify("(halt)"), Severity::Block);
+    }
+
+    #[test]
+    fn allows_system_control_as_argument() {
+        assert_eq!(classify("cargo test shutdown"), Severity::Allow);
+        assert_eq!(classify("grep -rn shutdown src/"), Severity::Allow);
+        assert_eq!(classify("./scripts/shutdown_test.sh"), Severity::Allow);
+        assert_eq!(classify("grep halt notes.txt"), Severity::Allow);
+        assert_eq!(classify("grep asphalt file"), Severity::Allow);
+        assert_eq!(classify("echo cobalt"), Severity::Allow);
+        assert_eq!(classify("cargo test reboot"), Severity::Allow);
+        assert_eq!(classify("grep poweroff src/"), Severity::Allow);
     }
 
     #[test]
@@ -297,6 +321,13 @@ mod tests {
         assert_eq!(classify("kill -9 1234"), Severity::Block);
         assert_eq!(classify("pkill -f foo"), Severity::Block);
         assert_eq!(classify("killall node"), Severity::Block);
+        assert_eq!(classify("echo hi && kill -9 1"), Severity::Block);
+    }
+
+    #[test]
+    fn allows_kill_as_argument() {
+        assert_eq!(classify("grep kill -9 log"), Severity::Allow);
+        assert_eq!(classify("echo pkill"), Severity::Allow);
     }
 
     #[test]
