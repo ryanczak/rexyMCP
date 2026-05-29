@@ -49,23 +49,24 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 |----|-------------------------------------------------------------------|--------|
 | 01 | post-edit verifier + `Diagnostic` ([phase-01-verifier.md](phase-01-verifier.md)) | done |
 | 02 | context budget + compaction ([phase-02-context-budget.md](phase-02-context-budget.md)) | done |
+| 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **03** — the JSONL **session log** writer + reader (`store/sessions/jsonl.rs`),
-  redacted, reusing M3's `Serialize` types as the event schema. **Reserve a
-  `progress` event variant** in the schema (M5's server emits heartbeat progress
-  into it — see Notes § "Progress heartbeats").
-- **04** — governor: per-(task,tool) **scorer** + **hard-fail detector**
+- **04** — **redaction** primitive (net-new, like `scope`/`bash_classify`):
+  secret-prefix + tagged-value patterns + path-based blanket redaction, with a
+  `[REDACTED:<type>]` marker. Applied to records **upstream** of the log (by the
+  loop) — the phase-03 log writer is redaction-agnostic.
+- **05** — governor: per-(task,tool) **scorer** + **hard-fail detector**
   (repetition loops, repeated verifier failures, budget overflow).
-- **05** — `PhaseResult` + the **briefing** contract (adapt `escalation/packet.rs`:
+- **06** — `PhaseResult` + the **briefing** contract (adapt `escalation/packet.rs`:
   drop cloud transport + the planner TODO section; the brief is *returned* to
   Claude). `Origin::Native` + `parser/native.rs` + `stream.rs` (deferred from M3)
   also land around here.
-- **06** — the **turn-cycle loop** (`execute_phase`): net-new orchestration
-  composing AI client + parser + tools + governor + budget + session log. Owns the
-  **read-before-edit invariant** (working-set + mtime).
-- **07** — **`PhaseRun`** telemetry (`store/telemetry.rs`): cross-project metrics
+- **07** — the **turn-cycle loop** (`execute_phase`): net-new orchestration
+  composing AI client + parser + tools + governor + budget + session log
+  (redact → log). Owns the **read-before-edit invariant** (working-set + mtime).
+- **08** — **`PhaseRun`** telemetry (`store/telemetry.rs`): cross-project metrics
   record (gates, turns, tokens, parse-failure rate, verifier retries).
 
 ## Notes
@@ -90,9 +91,17 @@ per-compiler list (Rust/TS/Py, extensible) or becomes config-driven with a
 pluggable diagnostic parser. Lift the per-compiler verifier now; revisit when the
 loop wires it.
 
-**Redaction + the session log are M4's, but the redaction primitive itself**
-(`security/redact.rs`) is still a Rexy stub — it must be implemented (net-new,
-like `scope`) as part of the session-log phase, not assumed lifted.
+**Redaction is its own phase (04), not part of the session log.** Rexy's
+`security/redact.rs` is a stub — redaction is net-new (like `scope`/`bash_classify`).
+The session-log **writer is redaction-agnostic**: it writes whatever `SessionRecord`
+it's given. Records are redacted **upstream** (by the loop, phase-07, composing
+redact → log) so secrets never reach disk. Splitting it keeps phase-03 a tractable
+log-mechanism + schema phase and phase-04 a focused net-new redactor.
+
+**Timestamps without `chrono`.** Rexy's log uses `chrono::Utc::now()`. rexyMCP has
+no `chrono` dep, and STANDARDS forbids `Utc::now()` in production (determinism).
+The `SessionRecord.ts` is a `u64` (unix epoch millis) **set by the caller** (the
+loop injects it from a clock); the log writer never reads the clock. No `chrono`.
 
 **Progress heartbeats (design decision — implemented in M5, schema reserved in
 M4 phase-03).** MCP `notifications/progress` heartbeats during a long
