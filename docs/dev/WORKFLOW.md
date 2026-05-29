@@ -285,6 +285,29 @@ When the executor marks a phase **review**, the architect:
 4. Either **approves** (flips to `done`, updates the milestone README's phase
    table) or **rejects** (writes bug reports in the milestone's `bugs/`
    directory and flips the phase back to `in-progress`).
+5. **Records a structured review verdict** (below) — at every approval, not just
+   when something went wrong. This is the supervision label for the model eval
+   *and* the substrate for the human project review (architecture.md § "One
+   review record, two consumers"). One write, two consumers — don't keep the
+   verdict only in the commit message, where it isn't queryable.
+
+### Review verdict
+
+Append to the approved phase's Update Log (and, once `PhaseRun` exists in M4,
+populate the matching `PhaseRun` supervision fields from the same values):
+
+```markdown
+### Review verdict — YYYY-MM-DD
+
+- **Verdict:** approved_first_try | approved_after_N | rejected | escalated
+- **Bounces:** <count> (bugs: <id(s)> — <max severity>, or "none")
+- **Executor:** <local model / opencode | Claude Code (direct)>
+- **Scope deviations:** <what the phase cut/deferred vs. its sketch, or "none">
+- **Calibration:** <fold filed / lesson, or "none">
+```
+
+Keep it terse — it's a label, not a narrative. The milestone retrospective rolls
+these up at close; a future `project_review` tool (M7) reads them back.
 
 ### Bug report template
 

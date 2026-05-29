@@ -259,6 +259,18 @@ The executor fills the objective fields at phase end; the architect's review
 fills `bugs_filed`, `bounces_to_approval`, and `architect_verdict` — the
 supervision label that turns telemetry into an eval.
 
+**One review record, two consumers.** The architect's per-phase review verdict
+(the supervision fields above, plus *which executor ran it* — local model vs.
+direct — and any scope deviation / calibration note) is captured **once, as a
+structured record at approval**, and serves two readers without a second pipeline:
+the **machine eval** (`model_scorecard`, below — `model × tag` competency) and a
+**human project review** (milestone × phase: status, verdict, bounces, deferrals,
+folds — for understanding project state in depth). Same single-source discipline
+as the session log: write once, derive views; never maintain parallel narratives
+that drift. The architect writes this verdict at every approval (WORKFLOW.md §
+"Review and Bug-Report Cycle"); until `PhaseRun` exists (M4), it lives in the phase
+doc's Update Log + the milestone retrospective, which are its substrate.
+
 **Phase tagging.** Phase-doc frontmatter carries a `Tags:` line (language, kind,
 size) so runs are categorizable. The architect sets it when drafting the phase.
 
@@ -268,6 +280,14 @@ parse_failure_rate, mean_bugs, … }` with sample sizes — so the architect can
 e.g., "Qwen leads on `rust`/`feature`, Gemma on `go`/*." The governor's
 per-(task-type, tool) scorer (lift/drop map above) is the *within-session* seed
 of this same matrix; persisting it cross-session is what makes it durable.
+
+**Project review (human view).** A sibling Layer 2 view, `project_review`,
+aggregates the *same* `PhaseRun` records along the **milestone × phase** axis
+(rather than `model × tag`): per-phase status, `architect_verdict`,
+`bounces_to_approval`, bugs, executor, scope deviations, and the milestone
+retrospectives / calibration folds. It is the human's in-depth project-state lens
+— pull-on-demand, never bubbled into Claude's context per call — and reuses the
+scorecard's storage, not a parallel one.
 
 **Benchmark vs. telemetry.** Passive **production telemetry** (every real phase)
 gives breadth and drift detection but is confounded — each phase runs once, by
