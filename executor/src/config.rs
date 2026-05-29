@@ -46,6 +46,8 @@ pub struct CommandConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetConfig {
+    /// Model's context-window size in tokens.
+    pub context_length: usize,
     /// % of the model's context window the loop may fill before compacting.
     pub max_context_pct: u8,
     /// Hard cap on executor turns in one phase before budget_exceeded.
@@ -57,6 +59,7 @@ pub struct BudgetConfig {
 impl Default for BudgetConfig {
     fn default() -> Self {
         Self {
+            context_length: 32768,
             max_context_pct: 70,
             max_turns: 40,
             escalation_slots: 1,
@@ -143,6 +146,7 @@ base_url = "http://localhost:11434/v1"
 [commands]
 
 [budget]
+context_length = 128000
 max_context_pct = 80
 max_turns = 50
 escalation_slots = 2
@@ -155,6 +159,7 @@ escalation_slots = 2
         assert_eq!(cfg.executor.provider, "ollama");
         assert_eq!(cfg.executor.model, "qwen2.5-coder");
         assert_eq!(cfg.executor.base_url, "http://localhost:11434/v1");
+        assert_eq!(cfg.budget.context_length, 128000);
         assert_eq!(cfg.budget.max_context_pct, 80);
         assert_eq!(cfg.budget.max_turns, 50);
         assert_eq!(cfg.budget.escalation_slots, 2);
@@ -191,6 +196,7 @@ base_url = "http://localhost:1234/v1"
 [commands]
 
 [budget]
+context_length = 32768
 max_context_pct = 70
 max_turns = 40
 escalation_slots = 1

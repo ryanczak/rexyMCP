@@ -1,7 +1,7 @@
 # Phase 01: phase-runner wiring (config + phase doc → execute_phase)
 
 **Milestone:** M5 — MCP server
-**Status:** todo
+**Status:** review
 **Depends on:** M4 (done)
 **Estimated diff:** ~400 lines (runner module + CLI subcommand + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -295,3 +295,67 @@ Use the existing `MockAiClient` (and `NoopVerifier` / `NoopRunner` patterns from
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 14:30 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Implementing `mcp/src/runner.rs` (phase-doc parser, registry builder, `run_phase` assembler with `Seams`/`AssemblyInput` struct grouping) and the `run-phase` CLI subcommand in `mcp/src/main.rs`. Adding `context_length: usize` to `BudgetConfig` in `executor/src/config.rs` per Adaptation 5.
+
+### Update — 2026-05-29 14:35 (complete)
+
+**Summary:** Built the composition root in `mcp/src/runner.rs` with three pieces: `parse_phase_doc` (pure section/tag extractor), `build_registry` (7-tool registration + schema derivation in deterministic order), and `run_phase`/`run_phase_with` (assembler that injects `PhaseInput`/`LoopDeps` into `agent::execute_phase`). Seams grouped into `Seams<'a>` and `AssemblyInput<'a>` structs to avoid `too_many_arguments`. Added `run-phase` clap subcommand to `mcp/src/main.rs`. Added `context_length: usize` (default 32768) to `BudgetConfig` in `executor/src/config.rs` and updated TOML round-trip tests. All 10 new runner tests pass; 492 executor tests pass.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.76s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+
+cargo test 2>&1 | tail -30
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 492 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The assembler is exercised by unit tests with `MockAiClient` over a `TempDir`; the first real end-to-end dispatch lands in phase-02.
+
+**Files changed:**
+- `executor/src/config.rs` — added `context_length: usize` to `BudgetConfig` (default 32768); updated TOML tests
+- `mcp/src/runner.rs` — new: `parse_phase_doc`, `derive_phase_id`, `build_registry`, `run_phase_with`, `run_phase`, 10 tests
+- `mcp/src/main.rs` — `mod runner;` + `run-phase` clap subcommand
+- `mcp/Cargo.toml` — added `serde_json` dependency, `async-trait` + `tempfile` dev-dependencies
+
+**New tests:**
+- `parse_positive_fixture` in `mcp/src/runner.rs`
+- `parse_missing_goal_yields_empty` in `mcp/src/runner.rs`
+- `parse_missing_tags_yields_empty_vec` in `mcp/src/runner.rs`
+- `parse_spaced_tags_line_splits_cleanly` in `mcp/src/runner.rs`
+- `parse_goal_followed_immediately_by_next_heading` in `mcp/src/runner.rs`
+- `derive_phase_id_standard` in `mcp/src/runner.rs`
+- `derive_phase_id_non_matching` in `mcp/src/runner.rs`
+- `build_registry_has_seven_tools` in `mcp/src/runner.rs`
+- `run_phase_with_assembles_and_returns_result` in `mcp/src/runner.rs`
+- `run_phase_with_fails_on_nonexistent_root` in `mcp/src/runner.rs`
+
+**Commits:**
+- (pending — will be created below)
+
+**Notes for review:** No scope deviations. The `Seams`/`AssemblyInput` struct grouping was the clean path to satisfy clippy's `too_many_arguments` without `#[allow]`. `build_registry` builds schemas from a `Vec` to guarantee deterministic order (HashMap iteration is non-deterministic).
+
+verification: fmt OK · clippy OK · tests 502 passed (492 executor + 10 mcp) · build OK
