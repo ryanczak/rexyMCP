@@ -7,8 +7,9 @@
 pub mod prompt;
 pub mod verify;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use tokio::sync::mpsc;
 
@@ -97,6 +98,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut baselined_exts: HashSet<String> = HashSet::new();
     let mut recent_verifier_error_counts: Vec<usize> = Vec::new();
     let mut last_author_diagnostics: Vec<Diagnostic> = Vec::new();
+
+    // Read-before-edit working set (07d): resolved path → mtime at last read/edit.
+    let mut working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
 
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
@@ -240,20 +244,29 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // baseline can be captured *before* the model's edit lands. Otherwise
         // `capture_baseline` would record the model's own new errors as ambient.
         let edit_path = edit_target(&tool_call, deps.project_root);
-        if let Some(path) = &edit_path
-            && let Some(ext) = path.extension().and_then(|e| e.to_str())
-            && !baselined_exts.contains(ext)
-        {
-            let captured = deps
-                .verifier
-                .capture_baseline(std::slice::from_ref(path))
-                .await;
-            baseline.signatures.extend(captured.signatures);
-            baselined_exts.insert(ext.to_string());
-        }
 
-        // Step 5 — dispatch (native and text share this path) and record.
-        let (succeeded, content) = dispatch(deps.registry, &tool_call).await;
+        // Step 4.5 — read-before-edit gate (07d). A refusal short-circuits the
+        // edit: no baseline, no dispatch, no verify — but it is still a
+        // model-visible failure that feeds back and counts toward hard-fail.
+        let (succeeded, content) =
+            match read_before_edit_refusal(&tool_call, &working_set, deps.project_root) {
+                Some(refusal) => (false, refusal),
+                None => {
+                    if let Some(path) = &edit_path
+                        && let Some(ext) = path.extension().and_then(|e| e.to_str())
+                        && !baselined_exts.contains(ext)
+                    {
+                        let captured = deps
+                            .verifier
+                            .capture_baseline(std::slice::from_ref(path))
+                            .await;
+                        baseline.signatures.extend(captured.signatures);
+                        baselined_exts.insert(ext.to_string());
+                    }
+                    // Step 5 — dispatch (native and text share this path).
+                    dispatch(deps.registry, &tool_call).await
+                }
+            };
         log_event(
             &log_handle,
             &redactor,
@@ -272,6 +285,15 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             succeeded,
         });
         append_tool_exchange(&mut messages, &tool_call, &content, turns);
+
+        // Record the working set: a read makes a file patch-eligible; a successful
+        // patch refreshes its mtime so a follow-up patch needs no re-read.
+        if succeeded
+            && (tool_call.name == "read_file" || tool_call.name == "patch")
+            && let Some(path) = resolve_path(&tool_call, deps.project_root)
+        {
+            record_mtime(&mut working_set, &path);
+        }
 
         // Step 6 — post-edit verify + retry feedback. Only for a successful
         // edit-class call (verifying after a failed edit is noise).
@@ -403,19 +425,66 @@ fn output_preview(content: &str) -> String {
     }
 }
 
+/// Resolve a tool call's `"path"` argument against the project root. `None` if
+/// the call has no string `"path"`.
+fn resolve_path(tool_call: &ToolCall, project_root: &Path) -> Option<PathBuf> {
+    let path = PathBuf::from(tool_call.arguments.get("path").and_then(|v| v.as_str())?);
+    Some(if path.is_absolute() {
+        path
+    } else {
+        project_root.join(path)
+    })
+}
+
 /// The file an edit-class (`write_file` / `patch`) call targets, resolved against
 /// the project root. `None` for non-edit calls or calls missing a `"path"` arg.
 fn edit_target(tool_call: &ToolCall, project_root: &Path) -> Option<PathBuf> {
     if tool_call.name != "write_file" && tool_call.name != "patch" {
         return None;
     }
-    let path = tool_call.arguments.get("path").and_then(|v| v.as_str())?;
-    let path = PathBuf::from(path);
-    Some(if path.is_absolute() {
-        path
-    } else {
-        project_root.join(path)
-    })
+    resolve_path(tool_call, project_root)
+}
+
+/// The read-before-edit gate (07d). Refuse a `patch` on a file the model has not
+/// read this session, or one whose on-disk mtime no longer matches what was read.
+/// `None` = allowed. Pure over `working_set` so the mtime-mismatch case is
+/// unit-testable without mid-session filesystem hooks. `patch`-only — `write_file`
+/// (whole-file create/overwrite) is not gated.
+fn read_before_edit_refusal(
+    tool_call: &ToolCall,
+    working_set: &HashMap<PathBuf, SystemTime>,
+    project_root: &Path,
+) -> Option<String> {
+    if tool_call.name != "patch" {
+        return None;
+    }
+    let path = resolve_path(tool_call, project_root)?;
+    match working_set.get(&path) {
+        None => Some(format!(
+            "refusing to patch {}: you have not read it this session. Use read_file on it first.",
+            path.display()
+        )),
+        Some(recorded) => {
+            let current = std::fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok());
+            match current {
+                Some(now) if now == *recorded => None,
+                _ => Some(format!(
+                    "refusing to patch {}: it changed on disk since you read it. Re-read it with read_file first.",
+                    path.display()
+                )),
+            }
+        }
+    }
+}
+
+/// Record (or refresh) a file's mtime in the working set. Best-effort — a file
+/// that can't be stat'd is simply not recorded.
+fn record_mtime(working_set: &mut HashMap<PathBuf, SystemTime>, path: &Path) {
+    if let Ok(modified) = std::fs::metadata(path).and_then(|m| m.modified()) {
+        working_set.insert(path.to_path_buf(), modified);
+    }
 }
 
 /// Render author diagnostics into a retry message the model can act on.
@@ -567,14 +636,15 @@ mod tests {
     use crate::ai::types::TokenBreakdown;
     use crate::phase::PhaseStatus;
     use crate::security::scope::Scope;
-    use crate::tools::{read_file, write_file};
+    use crate::tools::{patch, read_file, write_file};
     use serde_json::json;
     use tempfile::TempDir;
 
     fn registry_over(scope: Scope) -> ToolRegistry {
         let mut r = ToolRegistry::new();
         r.register(read_file(scope.clone()));
-        r.register(write_file(scope));
+        r.register(write_file(scope.clone()));
+        r.register(patch(scope));
         r
     }
 
@@ -1555,5 +1625,171 @@ mod tests {
             SessionEvent::SessionEnd { status, .. } => assert_eq!(status, "hard_fail"),
             other => panic!("expected SessionEnd, got {other:?}"),
         }
+    }
+
+    // ── 07d: read-before-edit ─────────────────────────────────────────────
+
+    fn patch_call(path: &str, old: &str, new: &str) -> ToolCall {
+        ToolCall {
+            name: "patch".to_string(),
+            arguments: json!({ "path": path, "old_str": old, "new_str": new }),
+            origin: Origin::Native,
+        }
+    }
+
+    #[test]
+    fn gate_allows_non_patch_calls() {
+        let root = Path::new("/repo");
+        let ws = HashMap::new();
+        let write = ToolCall {
+            name: "write_file".to_string(),
+            arguments: json!({ "path": "a.rs", "content": "x" }),
+            origin: Origin::Native,
+        };
+        let read = ToolCall {
+            name: "read_file".to_string(),
+            arguments: json!({ "path": "a.rs" }),
+            origin: Origin::Native,
+        };
+        assert!(read_before_edit_refusal(&write, &ws, root).is_none());
+        assert!(read_before_edit_refusal(&read, &ws, root).is_none());
+    }
+
+    #[test]
+    fn gate_refuses_patch_of_unread_file() {
+        let root = Path::new("/repo");
+        let ws = HashMap::new();
+        let call = patch_call("a.rs", "x", "y");
+        let refusal = read_before_edit_refusal(&call, &ws, root).expect("should refuse");
+        assert!(refusal.contains("have not read"));
+    }
+
+    #[test]
+    fn gate_allows_patch_of_read_unchanged_file() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("a.rs");
+        std::fs::write(&file, "fn a() {}").unwrap();
+        let mtime = std::fs::metadata(&file).unwrap().modified().unwrap();
+        let mut ws = HashMap::new();
+        ws.insert(file.clone(), mtime);
+        let call = patch_call(file.to_str().unwrap(), "a", "b");
+        assert!(read_before_edit_refusal(&call, &ws, dir.path()).is_none());
+    }
+
+    #[test]
+    fn gate_refuses_patch_when_mtime_changed() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("a.rs");
+        std::fs::write(&file, "fn a() {}").unwrap();
+        // Working set holds a stale mtime (epoch) — current differs → refuse.
+        let mut ws = HashMap::new();
+        ws.insert(file.clone(), SystemTime::UNIX_EPOCH);
+        let call = patch_call(file.to_str().unwrap(), "a", "b");
+        let refusal = read_before_edit_refusal(&call, &ws, dir.path()).expect("should refuse");
+        assert!(refusal.contains("changed on disk"));
+    }
+
+    #[tokio::test]
+    async fn patch_without_prior_read_is_refused() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "edited" }),
+            )],
+            vec![token("ok")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "original",
+            "refused patch must not modify the file"
+        );
+        let second = &client.calls()[1].messages;
+        assert!(
+            second.iter().any(|m| m
+                .tool_results
+                .as_ref()
+                .is_some_and(|trs| trs.iter().any(|t| t.content.contains("have not read")))),
+            "refusal should be fed back to the model"
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_after_reading_is_allowed() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "edited" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "edited",
+            "patch after a read should apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_file_without_read_is_allowed() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("new.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "fresh" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "fresh",
+            "write_file is not gated by read-before-edit"
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_refused_patch_trips_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let mk = || {
+            native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "x" }),
+            )
+        };
+        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_with_verifier(&dir, &client, &verifier, 10).await;
+
+        assert_eq!(result.status, PhaseStatus::HardFail);
+        assert!(matches!(
+            result.briefing.unwrap().current_blocker,
+            Blocker::HardFail(HardFailSignal::IdenticalToolCallRepetition { .. })
+        ));
     }
 }

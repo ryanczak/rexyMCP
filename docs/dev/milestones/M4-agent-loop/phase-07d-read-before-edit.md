@@ -1,7 +1,7 @@
 # Phase 07d: read-before-edit invariant
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07a (loop + dispatch), 07c (the edit-class dispatch site +
 `edit_target`). All done.
 **Estimated diff:** ~220 lines (working-set + gate + tests)
@@ -192,3 +192,86 @@ stays out of the way).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md.
+
+Adding a `working_set: HashMap<PathBuf, SystemTime>` to the loop, a pure
+`read_before_edit_refusal` gate (patch-only; refuse unread / mtime-mismatch), and
+wiring: record mtime after a successful `read_file`/`patch`, evaluate the gate
+before the 07c baseline/dispatch (a refusal → `(false, msg)`, no dispatch, no
+verify, but still snapshot/score/feedback/hard-fail). Factoring a `resolve_path`
+helper shared by `edit_target`, the recorder, and the gate. Unit tests on the gate
+(incl. the mtime-mismatch negative via a stale working-set) + loop integration
+tests.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Added the read-before-edit invariant. A `working_set:
+HashMap<PathBuf, SystemTime>` is keyed by resolved path; a successful `read_file`
+or `patch` records the file's mtime. A pure `read_before_edit_refusal(tool_call,
+working_set, project_root) -> Option<String>` gate (patch-only) refuses an unread
+path or one whose current mtime differs from what was recorded. Wired at the
+dispatch site **before** the 07c baseline/dispatch: a refusal yields `(false,
+refusal)` — no baseline, no dispatch, no verify — but still logs the `ToolResult`,
+scores, snapshots, feeds back, and runs the hard-fail + turn-cap checks (so a
+repeated refused `patch` trips `IdenticalToolCallRepetition`). Factored a shared
+`resolve_path` helper (used by `edit_target`, the recorder, and the gate). The
+existing `succeeded` guard on the 07c verify block already excludes refusals (a
+refusal sets `succeeded = false`), so no extra flag was needed. `write_file` is
+not gated. Also registered the `patch` tool in the test registry (it was absent,
+which the first on-disk patch assertion surfaced). No deviations from the spec.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.13s
+
+cargo test 2>&1 | grep "test result:" (lib line)
+test result: ok. 469 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+(469 = 461 prior + 8 read-before-edit tests. `agent::` alone: 44 passed.)
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The gate is unit-tested
+as a pure function (incl. the mtime-mismatch negative via a hand-built stale
+working-set) and the wired refuse/allow paths are exercised through `execute_phase`
+over a `TempDir`. First live run is M5.
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — `working_set` state; `resolve_path` /
+  `read_before_edit_refusal` / `record_mtime` helpers; gate wired into dispatch +
+  working-set bookkeeping; `patch` registered in the test registry; 8 new tests.
+
+**New tests:** `gate_allows_non_patch_calls`, `gate_refuses_patch_of_unread_file`
+(neg), `gate_allows_patch_of_read_unchanged_file`,
+`gate_refuses_patch_when_mtime_changed` (neg), `patch_without_prior_read_is_refused`
+(neg), `patch_after_reading_is_allowed`, `write_file_without_read_is_allowed`
+(neg-for-gate), `repeated_refused_patch_trips_hard_fail`.
+
+**Commits:** (pending — committed below)
+
+**Notes for review:**
+- The gate is a pure fn over an explicit `working_set`, so the changed-underneath
+  case is unit-tested deterministically (stale `SystemTime::UNIX_EPOCH` entry) — no
+  mid-session filesystem hook needed.
+- A refusal flows through the same model-visible failure path as any failed tool
+  (snapshot/score/feedback/hard-fail), so it is **not** an `Err` and still bounds
+  loops.
+- Registering `patch` in `registry_over` was needed for the on-disk patch
+  assertion (07a/b/c never dispatched a real `patch`); harmless to other tests.
+- `scorer.record` consumer still pending → phase-08.
+
+verification: fmt OK · clippy OK · tests 469 passed · build OK
