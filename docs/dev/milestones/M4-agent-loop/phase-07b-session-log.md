@@ -1,7 +1,7 @@
 # Phase 07b: session-log integration
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a (the loop), phase-03 (`store::sessions`: `SessionLogger`,
 `SessionRecord`, `SessionEvent`, `open_session_log`, `session_log`), phase-04
 (`security::redact::Redactor`). All done.
@@ -340,3 +340,26 @@ query tools and a live run are the first real end-to-end.
   07c wires the reader.
 
 verification: fmt OK · clippy OK · tests 450 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode.
+- **Scope deviations:** none. `PhaseResult` correctly unchanged (log-path → 07d);
+  `store`/`redact`/`SessionEvent` untouched; only the seven loop-produced event
+  kinds wired.
+- **Calibration:** none new. Re-ran all four gates independently (fmt/build/clippy
+  clean, 450 passed); spot-checked the negatives — `redacts_secret_*` assert the
+  planted `sk-proj-…` is absent from the on-disk bytes and `[REDACTED:openai_key]`
+  is present; `logging_failure_does_not_change_result` forces an unwritable
+  `.rexymcp` (a file) and still returns `Complete` with no log file;
+  `injected_clock_sets_record_ts` confirms no real clock. The whole-event redaction
+  round-trip is sound (markers are JSON-safe; nested `Parsed`/`ParseFailed`
+  payloads covered). Good call including the optional `SessionEnd{error}` on the
+  infra path.
+- **Note (carry):** the 07a scorer calibration said "07c wires the reader." On
+  closer reading the scorer's real consumer is **`PhaseRun` telemetry (phase-08)**,
+  not the governor (the model selects tools; the loop does not bias selection by
+  score). Carry moved to 08; 07c does not touch the scorer. (Recorded here and in
+  07c's doc — 07a's verdict is append-only and left as written.)
