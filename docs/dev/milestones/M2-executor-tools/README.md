@@ -37,7 +37,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | tool trait + registry + **scope confinement** + `read_file` ([phase-01-registry-scope-read.md](phase-01-registry-scope-read.md)) | done |
 | 02 | read-only search tools: `find_files` + `search` ([phase-02-search-tools.md](phase-02-search-tools.md)) | done |
 | 03 | `symbols` — tree-sitter symbol-definition search (Rust + Python) ([phase-03-symbols.md](phase-03-symbols.md)) | done |
-| 04 | write tools: `write_file` + `patch` (scope-confined) ([phase-04-write-tools.md](phase-04-write-tools.md)) | in-progress |
+| 04 | write tools: `write_file` + `patch` (scope-confined) ([phase-04-write-tools.md](phase-04-write-tools.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 
