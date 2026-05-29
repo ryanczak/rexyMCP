@@ -1,7 +1,7 @@
 # Phase 07d: read-before-edit invariant
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a (loop + dispatch), 07c (the edit-class dispatch site +
 `edit_target`). All done.
 **Estimated diff:** ~220 lines (working-set + gate + tests)
@@ -275,3 +275,23 @@ over a `TempDir`. First live run is M5.
 - `scorer.record` consumer still pending → phase-08.
 
 verification: fmt OK · clippy OK · tests 469 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode.
+- **Scope deviations:** none. `write_file` correctly ungated; `tools`/`governor`/
+  `phase` unmodified; completion artifacts (07e) absent.
+- **Calibration:** none folded (one occurrence). The test registry was missing the
+  `patch` tool — invisible until 07d became the first phase to assert a real
+  on-disk edit (07a–c dispatched only `read_file`/`write_file`/natives or mocked
+  the verifier). Caught by the executor's on-disk assertion, not by a green mock —
+  a good reminder that loop tests should assert real effects, not just returned
+  values. Not yet a fold; watch whether it recurs.
+- Re-ran all four gates independently (469 passed). Verified the gate is pure over
+  an explicit `working_set` (so `gate_refuses_patch_when_mtime_changed` is
+  deterministic via a stale `UNIX_EPOCH` entry), refusal flows the model-visible
+  path (not `Err`) and still feeds hard-fail, and the `succeeded=false` on refusal
+  correctly skips the 07c verify/baseline.
+- **Carry:** `scorer.record` consumer → phase-08 (unchanged).

@@ -56,7 +56,8 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | done |
 | 07b | session log ([phase-07b-session-log.md](phase-07b-session-log.md)) | done |
 | 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | done |
-| 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | review |
+| 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | done |
+| 07e | completion artifacts ([phase-07e-completion-artifacts.md](phase-07e-completion-artifacts.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -86,10 +87,12 @@ Tentative remaining phases (draft when the prior one lands):
     `patch` on a file not read this session or changed on disk underneath it
     (working-set + mtime), via a pure `read_before_edit_refusal` gate. `write_file`
     is not gated.
-  - **07e** — **completion artifacts**: the final command set
-    (`{FORMAT,BUILD,LINT,TEST}_COMMAND` from `CommandConfig`), unified-diff
-    generation, `files_changed` / `command_outputs`, and surfacing the session-log
-    path in `PhaseResult`.
+  - **07e** *(drafted)* — **completion artifacts** (the last 07 sub-phase): the
+    final command set via an injected `CommandRunner` seam (run only on clean
+    completion), `similar`-based unified-diff generation + `files_changed` from
+    pre-edit content tracking, and the `log_path` field on `PhaseResult`. After
+    07e, `execute_phase` returns the full contract; only phase-08 (`PhaseRun`
+    telemetry) remains in M4.
 - **08** — **`PhaseRun`** telemetry (`store/telemetry.rs`): cross-project metrics
   record (gates, turns, tokens, parse-failure rate, verifier retries).
 
