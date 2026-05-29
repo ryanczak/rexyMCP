@@ -50,13 +50,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | post-edit verifier + `Diagnostic` ([phase-01-verifier.md](phase-01-verifier.md)) | done |
 | 02 | context budget + compaction ([phase-02-context-budget.md](phase-02-context-budget.md)) | done |
 | 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | done |
+| 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **04** — **redaction** primitive (net-new, like `scope`/`bash_classify`):
-  secret-prefix + tagged-value patterns + path-based blanket redaction, with a
-  `[REDACTED:<type>]` marker. Applied to records **upstream** of the log (by the
-  loop) — the phase-03 log writer is redaction-agnostic.
 - **05** — governor: per-(task,tool) **scorer** + **hard-fail detector**
   (repetition loops, repeated verifier failures, budget overflow).
 - **06** — `PhaseResult` + the **briefing** contract (adapt `escalation/packet.rs`:
@@ -97,6 +94,13 @@ The session-log **writer is redaction-agnostic**: it writes whatever `SessionRec
 it's given. Records are redacted **upstream** (by the loop, phase-07, composing
 redact → log) so secrets never reach disk. Splitting it keeps phase-03 a tractable
 log-mechanism + schema phase and phase-04 a focused net-new redactor.
+
+phase-04 is scoped to the **content redactor** (secret-prefix + tagged-value
+patterns, opt-in high-entropy, `[REDACTED:<type>]` marker). **Path-based
+read-refusal** (never *reading* `.env` / `*.pem` / `~/.ssh/**` at all) was
+originally sketched under phase-04 but is deferred: it is a read-tool / `scope`
+concern (refusing a read), distinct from redacting captured content before a
+write. Pick it up in a dedicated read-tool phase if wanted, not phase-04.
 
 **Timestamps without `chrono`.** Rexy's log uses `chrono::Utc::now()`. rexyMCP has
 no `chrono` dep, and STANDARDS forbids `Utc::now()` in production (determinism).
