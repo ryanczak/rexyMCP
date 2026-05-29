@@ -55,7 +55,8 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | done |
 | 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | done |
 | 07b | session log ([phase-07b-session-log.md](phase-07b-session-log.md)) | done |
-| 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | review |
+| 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | done |
+| 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -81,8 +82,10 @@ Tentative remaining phases (draft when the prior one lands):
     `HardFail` log events. **Read-before-edit split out to 07d** — it shares the
     edit-class dispatch site but is a distinct safety invariant with adversarial
     negative cases, too much to bundle.
-  - **07d** — **read-before-edit invariant**: the loop refuses a `patch` on a file
-    not read this session or changed on disk underneath it (working-set + mtime).
+  - **07d** *(drafted)* — **read-before-edit invariant**: the loop refuses a
+    `patch` on a file not read this session or changed on disk underneath it
+    (working-set + mtime), via a pure `read_before_edit_refusal` gate. `write_file`
+    is not gated.
   - **07e** — **completion artifacts**: the final command set
     (`{FORMAT,BUILD,LINT,TEST}_COMMAND` from `CommandConfig`), unified-diff
     generation, `files_changed` / `command_outputs`, and surfacing the session-log

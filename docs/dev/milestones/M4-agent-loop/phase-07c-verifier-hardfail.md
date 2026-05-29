@@ -1,7 +1,7 @@
 # Phase 07c: verifier retry + hard-fail detection
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a (loop), 07b (session log + `Verify`/`HardFail` events
 exist in the schema), phase-01 (`verifier`: `verify`, `capture_baseline`,
 `Baseline`, `Diagnostic`, `VerifierResult`), phase-05 (`hard_fail::evaluate`,
@@ -352,3 +352,24 @@ verifier tests. First live loop-over-real-verifier run is M5.
 - `scorer.record` still has no consumer — unchanged (→ phase-08 telemetry).
 
 verification: fmt OK · clippy OK · tests 461 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode.
+- **Scope deviations:** none material. The `succeeded` guard on post-edit verify is
+  a deliberate minor tightening of "after an edit-class dispatch" (verifying a
+  failed edit is noise) — accepted. `governor`/`phase` unmodified; read-before-edit
+  (07d) and artifacts (07e) correctly absent.
+- **Calibration:** none new. Re-ran all four gates independently (461 passed). Key
+  correctness point verified: the **baseline is captured pre-dispatch**, so the
+  model's own new errors are *not* mislabeled ambient. Spot-checked the tests are
+  real — `persistent_verifier_failure…` uses three *distinct* writes (so it trips
+  `VerifierFailurePersistent`, not `IdenticalToolCallRepetition`);
+  `ambient_diagnostics_not_fed_back` seeds the baseline with the signature and
+  asserts no feedback; `runaway_output…` reads a 110 KB file. `recent_verifier_
+  error_counts` pushed only on `Checked` correctly makes persistence count verifier
+  runs. The injected `FileVerifier` keeps every loop test off the real compiler.
+- **Carry:** `scorer.record` consumer still pending → phase-08 (`PhaseRun.
+  tool_success_rate`); unchanged here as planned.
