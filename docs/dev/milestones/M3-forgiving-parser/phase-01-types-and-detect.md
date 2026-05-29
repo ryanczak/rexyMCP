@@ -1,7 +1,7 @@
 # Phase 01: parser core types + strip_think_blocks + detect
 
 **Milestone:** M3 — Forgiving parser
-**Status:** review
+**Status:** done
 **Depends on:** M2 (done)
 **Estimated diff:** ~300 lines (type definitions + two lifted functions + tests)
 **Tags:** language=rust, kind=feature, size=s

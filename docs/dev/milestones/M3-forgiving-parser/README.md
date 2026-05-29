@@ -40,12 +40,11 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
-| 01 | parser core types + `strip_think_blocks` + `detect` ([phase-01-types-and-detect.md](phase-01-types-and-detect.md)) | review |
+| 01 | parser core types + `strip_think_blocks` + `detect` ([phase-01-types-and-detect.md](phase-01-types-and-detect.md)) | done |
+| 02 | the six format extractors ([phase-02-extractors.md](phase-02-extractors.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **02** — the six format **extractors** (`extract/`: hermes, fenced, loose_json,
-  yaml, xml, text) → `Candidate`s.
 - **03** — **score** + **validate** (rank candidates against the registry;
   validate a candidate into a `ToolCall` or a structured error).
 - **04** — the **repair** transforms (`repair/`: name fuzzy-match, param alias,

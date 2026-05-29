@@ -40,6 +40,7 @@ pub fn strip_think_blocks(s: &str) -> String {
 }
 
 pub mod detect;
+pub mod extract;
 
 /// A tool call extracted (and possibly repaired) from a model response. Produced
 /// by every successful pipeline run.
