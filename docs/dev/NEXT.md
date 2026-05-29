@@ -4,18 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M4 is closed** (all phases `done`, retrospective signed
-off 2026-05-29). At a **milestone boundary**: the next step is the human kicking
-off **M5 — MCP server** (the `rmcp` stdio server exposing `execute_phase` +
-`executor_health` + the log-query tools, plus telemetry-path resolution). The
-architect expands M5 into phases on demand; nothing is drafted yet.
+**Active phase:** [M5 / phase-01 — phase-runner wiring (config + phase doc →
+`execute_phase`)](milestones/M5-mcp-server/phase-01-phase-runner.md) — `todo`,
+**drafted, awaiting dispatch**. Net-new composition root in `mcp/src/runner.rs`
+(phase-doc parser + registry builder + the `run_phase` assembler) plus a
+`run-phase` CLI subcommand; no new dependency (`rmcp` is phase-02). Unit-testable
+with `MockAiClient`.
 
 **Last completed:** [M4 / phase-08 — `PhaseRun`
 telemetry](milestones/M4-agent-loop/phase-08-phaserun-telemetry.md) —
 approved_first_try 2026-05-29 (M4 closer; see phase doc Review verdict).
 
-**Milestone:** [M4 — Headless agent loop + governor/verifier](milestones/M4-agent-loop/README.md)
-— **done**. M1–M4 complete; M5 (MCP server) is next, awaiting human kickoff.
+**Milestone:** [M5 — MCP server](milestones/M5-mcp-server/README.md) — in
+progress (M1–M4 done). M5 wraps the M4 executor in an `rmcp` stdio server;
+phase-01 is the composition-root leaf the server's tools sit on.
 
 ---
 
