@@ -47,7 +47,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
-| 01 | post-edit verifier + `Diagnostic` ([phase-01-verifier.md](phase-01-verifier.md)) | todo |
+| 01 | post-edit verifier + `Diagnostic` ([phase-01-verifier.md](phase-01-verifier.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 
