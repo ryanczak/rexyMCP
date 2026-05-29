@@ -41,12 +41,11 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | parser core types + `strip_think_blocks` + `detect` ([phase-01-types-and-detect.md](phase-01-types-and-detect.md)) | done |
-| 02 | the six format extractors ([phase-02-extractors.md](phase-02-extractors.md)) | review |
+| 02 | the six format extractors ([phase-02-extractors.md](phase-02-extractors.md)) | done |
+| 03 | candidate scoring + validation ([phase-03-score-validate.md](phase-03-score-validate.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **03** — **score** + **validate** (rank candidates against the registry;
-  validate a candidate into a `ToolCall` or a structured error).
 - **04** — the **repair** transforms (`repair/`: name fuzzy-match, param alias,
   type coerce, default fill, JSON syntax repair, newline escape) with the
   per-candidate cap.

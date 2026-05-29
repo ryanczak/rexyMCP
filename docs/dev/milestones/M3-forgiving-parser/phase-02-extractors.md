@@ -1,7 +1,7 @@
 # Phase 02: format extractors (hermes, fenced, loose_json, yaml, xml, text)
 
 **Milestone:** M3 — Forgiving parser
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~1050 lines (six extractors + extract/mod.rs + tests)
 **Tags:** language=rust, kind=feature, size=l
