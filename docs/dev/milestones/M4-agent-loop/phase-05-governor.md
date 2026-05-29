@@ -1,7 +1,7 @@
 # Phase 05: Governor — tool scorer + hard-fail detector
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (verifier `Diagnostic`/`Severity`, done), phase-03
 (session-event types that supply the structured turn data, done).
 **Estimated diff:** ~340 lines (scorer lift + hard-fail adapt + tests)
@@ -242,4 +242,46 @@ cases").
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
-<!-- entries appended below this line -->
+### Update — 2026-05-29 16:40 (complete)
+
+**Summary:** Lifted `scorer.rs` verbatim from Rexy (Laplace-smoothed per-tool success rate). Adapted `hard_fail.rs` to structured inputs: `evaluate` now takes `recent_tool_calls` (`VecDeque<ToolCallSnapshot>`), `recent_verifier_error_counts` (`&[usize]`), and `last_tool_output` (`Option<(&str, usize)>`) instead of Rexy's `&[Message]` string scraping. Removed `extract_verifier_count`, `extract_tool_name_from_result`, and the `Message` import. Wired both modules into `governor/mod.rs` with re-exports for `Scorer`, `HardFailSignal`, `ToolCallSnapshot`, and `evaluate`.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build
+Compiling rexymcp-executor v0.1.0 ... Compiling rexymcp v0.1.0 ... Finished `dev` profile ...
+
+cargo clippy --all-targets --all-features -- -D warnings
+Finished `dev` profile ... (clean)
+
+cargo test
+test result: ok. 407 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The scorer and detector are pure library functions exercised by unit tests; the loop that calls them each turn is phase-07.
+
+**Grep for forbidden literals:** `grep '\[verifier\]\|<tool_result>\|Message' executor/src/governor/hard_fail.rs` → 0 matches (confirms no string scraping).
+
+**Files changed:**
+- `executor/src/governor/scorer.rs` — lifted from Rexy, near-verbatim (ToolCounts, Scorer, 6 tests)
+- `executor/src/governor/hard_fail.rs` — adapted to structured inputs (constants, ToolCallSnapshot, HardFailSignal, evaluate, 13 tests)
+- `executor/src/governor/mod.rs` — added module decls + re-exports
+
+**New tests:**
+- `new_scorer_is_empty`, `record_increments_successes`, `record_increments_failures`, `score_unobserved_returns_half`, `score_matches_laplace_formula`, `score_pure_successes_approaches_one_but_doesnt_reach` (scorer.rs)
+- `describe_identical_repetition`, `describe_verifier_persistence`, `describe_runaway_output`, `detects_identical_repetition`, `detects_verifier_persistence`, `detects_runaway_output`, `healthy_session_returns_none`, `no_repetition_when_arguments_differ`, `no_repetition_below_threshold`, `no_verifier_persistence_when_errors_decrease`, `no_verifier_persistence_when_a_count_is_zero`, `no_runaway_at_exact_threshold`, `check_order_repetition_precedes_verifier` (hard_fail.rs)
+
+**Commits:**
+- pending
+
+**Notes for review:** One clippy fix (`iter().any(|&c| c == 0)` → `contains(&0)`) applied during gate run. Otherwise clean lift/adapt.
+
+verification: fmt OK · clippy OK · tests 407 passed · build OK

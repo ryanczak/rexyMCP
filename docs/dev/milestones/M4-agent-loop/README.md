@@ -51,7 +51,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 02 | context budget + compaction ([phase-02-context-budget.md](phase-02-context-budget.md)) | done |
 | 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | done |
 | 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | done |
-| 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | todo |
+| 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 
