@@ -6,7 +6,7 @@ engineer (architect) maintains this file. The executor reads it first
 
 **Active phase:** [M3 / phase-01 — parser core types + `strip_think_blocks` + `detect`](milestones/M3-forgiving-parser/phase-01-types-and-detect.md)
 
-**Status:** todo
+**Status:** review — implemented by Claude Code (opencode's serializer corrupted the parser source); awaiting architect sign-off.
 
 **Milestone:** [M3 — Forgiving parser](milestones/M3-forgiving-parser/README.md) — in-progress (M2 signed off 2026-05-28).
 

@@ -40,7 +40,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
-| 01 | parser core types + `strip_think_blocks` + `detect` ([phase-01-types-and-detect.md](phase-01-types-and-detect.md)) | todo |
+| 01 | parser core types + `strip_think_blocks` + `detect` ([phase-01-types-and-detect.md](phase-01-types-and-detect.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

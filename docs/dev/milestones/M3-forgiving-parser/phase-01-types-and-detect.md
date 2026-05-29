@@ -1,7 +1,7 @@
 # Phase 01: parser core types + strip_think_blocks + detect
 
 **Milestone:** M3 — Forgiving parser
-**Status:** todo
+**Status:** review
 **Depends on:** M2 (done)
 **Estimated diff:** ~300 lines (type definitions + two lifted functions + tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -173,3 +173,62 @@ Hermetic, pure-function unit tests (no registry needed — `detect` and
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 12:00 (progress)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Lifting core types and `strip_think_blocks` from `rexy/src/agent/parser/mod.rs` (lines 1-149) and `detect` from `rexy/src/agent/parser/detect.rs` into `executor/src/parser/`. Stripping Rexy-specific plan references from doc comments. Re-rooting `crate::` paths. Adding tests per the phase spec.
+
+### Update — 2026-05-28 (progress, executor handoff)
+
+**Executor:** Claude Code (Opus 4.7) — taken over from opencode.
+
+opencode's `write` left `mod.rs` corrupted: the `'\n'` char literal in
+`strip_think_blocks` was serialized as a real newline inside the source (a syntax
+error), and the type definitions were dropped mid-file — the documented opencode
+tool-call serializer fragility (AGENTS.md § "Writing files when the opencode tool
+harness fails"), triggered here by the parser's close-tag / fence / escaped-quote
+content. Re-implemented the phase with Claude Code's tooling.
+
+### Update — 2026-05-28 (complete)
+
+**Executor:** Claude Code (Opus 4.7).
+
+**Summary:** Created `executor/src/parser/mod.rs` (core types — `ToolCall`,
+`Origin`, `Format`, `RepairOp`, `ParseFailure`, `Candidate`, `ParseResult` — with
+the pinned derives + serde attributes, and `strip_think_blocks`) and
+`executor/src/parser/detect.rs` (`detect`), and declared `pub mod parser;` in
+`lib.rs`. Faithful lift from Rexy, re-rooted; no `crate::tools` dependency yet
+(`parse()` deferred). Rexy's plan references ("Stage 2", "M2 phase 06/07",
+`session.messages`) stripped/rewritten. `Serialize` kept on the session-log types.
+
+**Acceptance criteria:** all met. Negative cases pinned per the spec (detect →
+empty on prose; PlainText suppressed when a structured marker is present;
+LooseJson suppressed on unbalanced braces).
+
+**Commands:**
+
+```
+cargo fmt --all --check        # clean (after rustfmt on the two new files)
+cargo build                    # clean, 0 warnings
+cargo clippy --all-targets --all-features -- -D warnings   # clean
+cargo test                     # 195 passed; 0 failed
+```
+
+**End-to-end verification:** N/A — pure library types + two pure functions,
+exercised by unit tests; `parse()` orchestration is M3 phase-05, the loop is M4.
+
+**Files changed:**
+- `executor/src/parser/mod.rs` — new: core types + `strip_think_blocks` + 5 tests
+- `executor/src/parser/detect.rs` — new: `detect` + 10 tests (incl. 2 negatives)
+- `executor/src/lib.rs` — `pub mod parser;`
+
+**Grep proof (spec-pinned):** `grep -niE 'phase 0|stage [0-9]|session\.messages'
+executor/src/parser/` → 0 hits (no Rexy plan references survived the lift).
+
+**Notes for review:** executed by Claude Code, not opencode, because the parser
+content trips opencode's serializer (see the handoff entry). I have **not**
+self-approved — flipped to `review` for architect sign-off.
+
+verification: fmt OK · clippy OK · tests 195 passed · build OK
