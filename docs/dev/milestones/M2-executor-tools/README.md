@@ -38,13 +38,18 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 02 | read-only search tools: `find_files` + `search` ([phase-02-search-tools.md](phase-02-search-tools.md)) | done |
 | 03 | `symbols` — tree-sitter symbol-definition search (Rust + Python) ([phase-03-symbols.md](phase-03-symbols.md)) | done |
 | 04 | write tools: `write_file` + `patch` (scope-confined) ([phase-04-write-tools.md](phase-04-write-tools.md)) | done |
+| 05 | `bash` tool + `bash_classify` (Block/Allow, cwd-pin, env-strip) ([phase-05-bash.md](phase-05-bash.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **05** — `bash` tool + `bash_classify` (block/confirm lists) + the
-  capabilities/audit layer.
 - **06** — the 2-stage tool router (categories: Read | Write | Search | Run |
   Plan) + governor-aware schema ordering hook.
+
+**Deferred out of phase-05** (the README originally bundled these into "05"): the
+`bash_classify` confirm tier collapsed to two tiers (Block/Allow) since the
+executor is headless; **capabilities** is a Rexy plugin-grant concept, not
+applicable to rexyMCP and dropped; **audit / redact / injection** ride on the
+session-log + telemetry store and land in **M4**, not here.
 
 ## Notes
 
