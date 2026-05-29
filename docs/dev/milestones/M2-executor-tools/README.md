@@ -39,7 +39,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | `symbols` — tree-sitter symbol-definition search (Rust + Python) ([phase-03-symbols.md](phase-03-symbols.md)) | done |
 | 04 | write tools: `write_file` + `patch` (scope-confined) ([phase-04-write-tools.md](phase-04-write-tools.md)) | done |
 | 05 | `bash` tool + `bash_classify` (Block/Allow, cwd-pin, env-strip) ([phase-05-bash.md](phase-05-bash.md)) | done |
-| 06 | 2-stage tool router primitive: `Category` + `categorize` + registry queries ([phase-06-router.md](phase-06-router.md)) | todo |
+| 06 | 2-stage tool router primitive: `Category` + `categorize` + registry queries ([phase-06-router.md](phase-06-router.md)) | review |
 
 Phase-06 is the **last phase in M2** — its approval closes the milestone (human
 gate: retrospective + doc-folding).
