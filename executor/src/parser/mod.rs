@@ -41,6 +41,7 @@ pub fn strip_think_blocks(s: &str) -> String {
 
 pub mod detect;
 pub mod extract;
+pub mod repair;
 pub mod score;
 pub mod validate;
 

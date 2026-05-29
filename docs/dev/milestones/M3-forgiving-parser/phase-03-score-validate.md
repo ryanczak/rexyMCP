@@ -1,7 +1,7 @@
 # Phase 03: candidate scoring + validation
 
 **Milestone:** M3 — Forgiving parser
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (done)
 **Estimated diff:** ~620 lines (score + validate + tests)
 **Tags:** language=rust, kind=feature, size=m
