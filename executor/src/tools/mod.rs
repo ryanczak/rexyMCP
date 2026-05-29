@@ -1,5 +1,6 @@
 // Built-in tools.
 
+mod bash;
 mod find_files;
 mod patch;
 mod read_file;
@@ -8,6 +9,7 @@ mod search;
 mod symbols;
 mod write_file;
 
+pub use bash::{Bash, bash, is_allowed_env_key};
 pub use find_files::{FindFiles, find_files};
 pub use patch::{Patch, patch};
 pub use read_file::{ReadFile, read_file};

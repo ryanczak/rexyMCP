@@ -1,7 +1,7 @@
 # Phase 05: bash tool + destructive-command classifier
 
 **Milestone:** M2 — Executor tools & security
-**Status:** todo
+**Status:** review
 **Depends on:** phase-04 (done)
 **Estimated diff:** ~420 lines (bash lift + net-new classifier + scope/env adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -308,3 +308,91 @@ bash security adaptations (new):
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 (progress)
+
+Implemented bash_classify.rs with Severity { Allow, Block } + classify() function covering all curated Block patterns from §A (filesystem destruction, privilege/RCE, system control, irreversible git ops, publish, process kill). Normalization lowercases + collapses whitespace. Implemented bash.rs lifted from Rexy with three security adaptations: classifier gate (Block → advisory refusal, command never spawned), cwd-pin (Command::current_dir(scope.root())), and env-strip (env_clear + is_allowed_env_key predicate). All tests written and passing.
+
+### Update — 2026-05-28 (complete)
+
+**Summary:** Lifted bash tool from Rexy with security adaptations (classifier gate, cwd-pin, env-strip). Created net-new bash_classify classifier with curated Block patterns. Wired both through security/mod.rs and tools/mod.rs. Added "process" feature to tokio in root Cargo.toml. All acceptance criteria met.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.42s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s
+
+cargo test 2>&1 | tail -30
+test result: ok. 160 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.03s
+```
+
+**End-to-end verification:**
+Not applicable — this phase ships a library tool + a pure classifier, exercised directly by their unit tests. The registry/loop that drives bash (and the governor that consults the classifier) lands in M4; the MCP execute_phase in M5. Restated from phase doc.
+
+**Files changed:**
+- `Cargo.toml` — added "process" feature to tokio workspace dependency
+- `executor/src/security/mod.rs` — added bash_classify module + re-exports
+- `executor/src/security/bash_classify.rs` — new file: Severity enum, classify(), is_allowed_env_key tests
+- `executor/src/tools/mod.rs` — added bash module + re-exports (Bash, bash, is_allowed_env_key)
+- `executor/src/tools/bash.rs` — new file: lifted from Rexy with classifier gate, cwd-pin, env-strip
+
+**New tests:**
+- `blocks_rm_rf_variants` in `bash_classify.rs`
+- `blocks_mkfs` in `bash_classify.rs`
+- `blocks_dd_to_dev` in `bash_classify.rs`
+- `blocks_write_to_dev_sd` in `bash_classify.rs`
+- `blocks_write_to_dev_nvme` in `bash_classify.rs`
+- `blocks_fork_bomb` in `bash_classify.rs`
+- `blocks_chmod_r_777_root` in `bash_classify.rs`
+- `blocks_chown_r_on_root` in `bash_classify.rs`
+- `blocks_sudo` in `bash_classify.rs`
+- `blocks_su` in `bash_classify.rs`
+- `blocks_curl_pipe_shell` in `bash_classify.rs`
+- `blocks_eval_curl` in `bash_classify.rs`
+- `blocks_eval_wget` in `bash_classify.rs`
+- `blocks_system_control` in `bash_classify.rs`
+- `blocks_git_push` in `bash_classify.rs`
+- `blocks_git_reset_hard` in `bash_classify.rs`
+- `blocks_git_clean_f` in `bash_classify.rs`
+- `blocks_git_checkout_dot` in `bash_classify.rs`
+- `blocks_git_restore_dot` in `bash_classify.rs`
+- `blocks_git_force_push` in `bash_classify.rs`
+- `blocks_publish_commands` in `bash_classify.rs`
+- `blocks_process_kill` in `bash_classify.rs`
+- `allows_benign_commands` in `bash_classify.rs`
+- `normalization_handles_extra_whitespace_and_case` in `bash_classify.rs`
+- `runs_zero_exit_command` in `bash.rs`
+- `non_zero_exit_appears_in_status_line` in `bash.rs`
+- `captures_stderr` in `bash.rs`
+- `captures_both_streams_together` in `bash.rs`
+- `truncates_long_output` in `bash.rs`
+- `does_not_truncate_short_output` in `bash.rs`
+- `times_out_advisory_failure` in `bash.rs`
+- `default_timeout_used_when_arg_absent` in `bash.rs`
+- `arg_timeout_overrides_constructor_default` in `bash.rs`
+- `rejects_empty_command` in `bash.rs`
+- `rejects_malformed_args` in `bash.rs`
+- `blocked_command_is_not_executed` in `bash.rs`
+- `cwd_is_pinned_to_scope_root` in `bash.rs`
+- `is_allowed_env_key_allows_whitelisted` in `bash.rs`
+- `is_allowed_env_key_allows_lc_prefix` in `bash.rs`
+- `is_allowed_env_key_rejects_others` in `bash.rs`
+
+**Commits:** pending
+
+**Notes for review:** None.
+
+**verification:** fmt OK · clippy OK · tests 160 passed · build OK
