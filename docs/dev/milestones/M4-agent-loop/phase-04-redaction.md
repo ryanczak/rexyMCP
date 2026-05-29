@@ -1,7 +1,7 @@
 # Phase 04: Secret redaction primitive
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (done) — supplies the `SessionRecord`/`SessionEvent` the
 redactor protects, though this phase does not wire into them (that is phase-07).
 **Estimated diff:** ~400 lines (net-new redactor + tests)
@@ -331,3 +331,23 @@ before the JSONL write is phase-07.
   SHAs are the documented false-positive the opt-in default avoids.
 
 verification: fmt OK · clippy OK · tests 388 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode (regex-saturated
+  source); the direct-execution path still went through this review gate
+- **Scope deviations:** none — path-based read-refusal was deferred by the spec
+  itself ("Out of scope"), not cut by the executor. All three layers, the exact
+  snake_case marker tags, instance-held design (no globals/counters/tracing), and
+  the no-new-dep constraint were met.
+- **Calibration:** one **nit** noted, no fold — `redacted_output_never_contains_the_raw_secret`
+  exercises the 11 prefix/structured samples but not the Layer-2 tagged/bearer/URL
+  cases (those are covered only by marker-presence in `redacts_tagged_value`). No
+  actual leak (the tagged regex replaces the whole assignment), so it is a
+  test-thoroughness gap, not a correctness bug — not worth a bounce. Architect
+  re-ran all four gates (fmt/clippy/build clean, 388 passed) and confirmed the
+  no-leak invariant is a real 8-char-window check, the negatives are realistic
+  (UUID/SHA/prose/`sktech`), and the entropy layer is genuinely gated on
+  `with_high_entropy()`.
