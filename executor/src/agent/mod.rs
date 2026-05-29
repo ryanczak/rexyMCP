@@ -4,6 +4,7 @@
 //! tools) or `budget_exceeded` (turn/context exhaustion). Session log, verifier
 //! retry, hard-fail detection, and completion artifacts are later sub-phases.
 
+pub mod command;
 pub mod prompt;
 pub mod verify;
 
@@ -11,6 +12,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use similar::{ChangeTag, TextDiff};
 use tokio::sync::mpsc;
 
 use crate::ai::AiClient;
@@ -18,6 +20,7 @@ use crate::ai::next_tool_id;
 use crate::ai::types::{
     AiEvent, Message, ToolCall as AiToolCall, ToolResult as AiToolResult, ToolSchema,
 };
+use crate::config::CommandConfig;
 use crate::context::budget::Budget;
 use crate::context::compactor::compact;
 use crate::error::{Error, Result};
@@ -26,18 +29,25 @@ use crate::governor::scorer::Scorer;
 use crate::governor::verifier::{Baseline, Diagnostic, Severity, VerifierResult};
 use crate::parser::{Origin, ParseResult, ToolCall, parse};
 use crate::phase::{
-    Artifacts, Blocker, Briefing, CommandOutputs, PhaseResult, collect_working_files,
+    Artifacts, Blocker, Briefing, CommandOutputs, FileChange, PhaseResult, collect_working_files,
     summarize_attempts,
 };
 use crate::security::redact::Redactor;
 use crate::store::sessions::event::SessionEvent;
 use crate::store::sessions::jsonl::{SessionLogHandle, open_session_log, session_log};
 use crate::tools::ToolRegistry;
+use command::CommandRunner;
 use verify::FileVerifier;
 
 /// Preview cap for a tool result's `output_preview` in the session log — enough
 /// to triage a failure, not the full (possibly huge) output.
 const OUTPUT_PREVIEW_CHARS: usize = 500;
+
+/// Cap on the combined unified diff returned in `PhaseResult.diff`.
+const MAX_DIFF_CHARS: usize = 50_000;
+
+/// Tail cap on each captured final-command-set output.
+const MAX_COMMAND_TAIL_CHARS: usize = 4_000;
 
 /// The prompt inputs and verbatim phase metadata the loop assembles into the
 /// system prompt and the escalation briefing.
@@ -70,6 +80,10 @@ pub struct LoopDeps<'a> {
     pub clock: &'a dyn Fn() -> u64,
     /// Post-edit verifier (injected so tests need not spawn a real compiler).
     pub verifier: &'a dyn FileVerifier,
+    /// Final command set (`fmt`/`build`/`lint`/`test`), run on clean completion.
+    pub commands: &'a CommandConfig,
+    /// Runner for the final command set (injected so tests need not spawn one).
+    pub runner: &'a dyn CommandRunner,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -102,6 +116,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Read-before-edit working set (07d): resolved path → mtime at last read/edit.
     let mut working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
 
+    // Completion-artifact state (07e): pre-edit content of each file the model
+    // edits, captured before the first edit lands — the "before" side of the diff.
+    let mut pre_edit_content: HashMap<PathBuf, Option<String>> = HashMap::new();
+
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
     // logging is a side effect that never changes what the loop returns). The
@@ -110,6 +128,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let log_dir = deps.project_root.join(".rexymcp").join("sessions");
     let log_handle: Option<SessionLogHandle> =
         open_session_log(&log_dir, &format!("{}-{}", input.phase, deps.session_id)).ok();
+    let log_path = log_handle
+        .as_ref()
+        .and_then(|h| h.lock().ok().map(|l| l.path().to_path_buf()));
 
     log_event(
         &log_handle,
@@ -138,12 +159,20 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             compact(&mut messages, deps.budget, &system);
             if deps.budget.would_overflow(&system, &messages) {
                 log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
+                let artifacts = build_artifacts(
+                    &pre_edit_content,
+                    deps.project_root,
+                    log_path.clone(),
+                    "budget_exceeded",
+                    turns,
+                    CommandOutputs::default(),
+                );
                 return Ok(budget_exceeded_result(
                     input,
                     &recent_tool_calls,
                     deps.project_root,
                     "context budget exhausted".to_string(),
-                    turns,
+                    artifacts,
                 ));
             }
         }
@@ -195,7 +224,18 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             match parse(&completion, deps.registry) {
                 ParseResult::NoToolCall => {
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
-                    return Ok(complete_result(turns));
+                    // Step 8 — clean completion runs the final command set.
+                    let command_outputs =
+                        run_command_set(deps.runner, deps.commands, deps.project_root).await;
+                    let artifacts = build_artifacts(
+                        &pre_edit_content,
+                        deps.project_root,
+                        log_path.clone(),
+                        "complete",
+                        turns,
+                        command_outputs,
+                    );
+                    return Ok(PhaseResult::complete(artifacts));
                 }
                 ParseResult::Found(tc) => tc,
                 ParseResult::Failed(failure) => {
@@ -218,12 +258,20 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                             "budget_exceeded",
                             turns,
                         );
+                        let artifacts = build_artifacts(
+                            &pre_edit_content,
+                            deps.project_root,
+                            log_path.clone(),
+                            "budget_exceeded",
+                            turns,
+                            CommandOutputs::default(),
+                        );
                         return Ok(budget_exceeded_result(
                             input,
                             &recent_tool_calls,
                             deps.project_root,
                             turns_line(deps.max_turns),
-                            turns,
+                            artifacts,
                         ));
                     }
                     continue;
@@ -262,6 +310,13 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                             .await;
                         baseline.signatures.extend(captured.signatures);
                         baselined_exts.insert(ext.to_string());
+                    }
+                    // 07e — capture the file's pre-edit content (the "before" side
+                    // of the diff) the first time it is edited, before the edit lands.
+                    if let Some(path) = &edit_path
+                        && !pre_edit_content.contains_key(path)
+                    {
+                        pre_edit_content.insert(path.clone(), std::fs::read_to_string(path).ok());
                     }
                     // Step 5 — dispatch (native and text share this path).
                     dispatch(deps.registry, &tool_call).await
@@ -343,25 +398,41 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 },
             );
             log_session_end(&log_handle, &redactor, deps.clock, "hard_fail", turns);
+            let artifacts = build_artifacts(
+                &pre_edit_content,
+                deps.project_root,
+                log_path.clone(),
+                "hard_fail",
+                turns,
+                CommandOutputs::default(),
+            );
             return Ok(hard_fail_result(
                 input,
                 &recent_tool_calls,
                 deps.project_root,
                 last_author_diagnostics,
                 signal,
-                turns,
+                artifacts,
             ));
         }
 
-        // Step 8 — turn cap.
+        // Step 9 — turn cap.
         if turns >= deps.max_turns {
             log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
+            let artifacts = build_artifacts(
+                &pre_edit_content,
+                deps.project_root,
+                log_path.clone(),
+                "budget_exceeded",
+                turns,
+                CommandOutputs::default(),
+            );
             return Ok(budget_exceeded_result(
                 input,
                 &recent_tool_calls,
                 deps.project_root,
                 turns_line(deps.max_turns),
-                turns,
+                artifacts,
             ));
         }
     }
@@ -515,7 +586,7 @@ fn hard_fail_result(
     project_root: &Path,
     diagnostics: Vec<Diagnostic>,
     signal: HardFailSignal,
-    turns: usize,
+    artifacts: Artifacts,
 ) -> PhaseResult {
     let briefing = Briefing {
         goal: input.goal.clone(),
@@ -524,9 +595,9 @@ fn hard_fail_result(
         working_files: collect_working_files(recent_tool_calls, project_root),
         what_was_tried: summarize_attempts(recent_tool_calls),
         current_blocker: Blocker::HardFail(signal),
-        budget_remaining: format!("halted on hard-fail at turn {turns}"),
+        budget_remaining: "halted on hard-fail".to_string(),
     };
-    PhaseResult::hard_fail(briefing, empty_artifacts("hard_fail", turns))
+    PhaseResult::hard_fail(briefing, artifacts)
 }
 
 /// Dispatch a tool call through the registry. Returns `(succeeded, content)`
@@ -597,25 +668,12 @@ fn turns_line(max_turns: usize) -> String {
     format!("0 of {max_turns} turns remaining")
 }
 
-fn empty_artifacts(status: &str, turns: usize) -> Artifacts {
-    Artifacts {
-        files_changed: Vec::new(),
-        diff: String::new(),
-        command_outputs: CommandOutputs::default(),
-        update_log: format!("Executor run: {status} after {turns} turn(s)."),
-    }
-}
-
-fn complete_result(turns: usize) -> PhaseResult {
-    PhaseResult::complete(empty_artifacts("complete", turns))
-}
-
 fn budget_exceeded_result(
     input: &PhaseInput,
     recent_tool_calls: &VecDeque<ToolCallSnapshot>,
     project_root: &Path,
     budget_remaining: String,
-    turns: usize,
+    artifacts: Artifacts,
 ) -> PhaseResult {
     let briefing = Briefing {
         goal: input.goal.clone(),
@@ -626,7 +684,114 @@ fn budget_exceeded_result(
         current_blocker: Blocker::BudgetExceeded,
         budget_remaining,
     };
-    PhaseResult::budget_exceeded(briefing, empty_artifacts("budget_exceeded", turns))
+    PhaseResult::budget_exceeded(briefing, artifacts)
+}
+
+/// Build the artifacts common to every terminal return: the unified diff +
+/// `files_changed` of what the model edited, the update-log line, the log path,
+/// and the (status-specific) command outputs.
+fn build_artifacts(
+    pre_edit_content: &HashMap<PathBuf, Option<String>>,
+    project_root: &Path,
+    log_path: Option<PathBuf>,
+    status: &str,
+    turns: usize,
+    command_outputs: CommandOutputs,
+) -> Artifacts {
+    let (diff, files_changed) = build_diff(pre_edit_content, project_root);
+    Artifacts {
+        files_changed,
+        diff,
+        command_outputs,
+        update_log: format!("Executor run: {status} after {turns} turn(s)."),
+        log_path,
+    }
+}
+
+/// Render the combined unified diff (capped) and the `files_changed` summary from
+/// the pre-edit snapshots. Files whose content is unchanged (e.g. an edit later
+/// reverted) are omitted. Deterministic order (sorted by path).
+fn build_diff(
+    pre_edit_content: &HashMap<PathBuf, Option<String>>,
+    project_root: &Path,
+) -> (String, Vec<FileChange>) {
+    let mut paths: Vec<&PathBuf> = pre_edit_content.keys().collect();
+    paths.sort();
+
+    let mut diff = String::new();
+    let mut files_changed = Vec::new();
+    for path in paths {
+        let before = pre_edit_content
+            .get(path)
+            .and_then(|b| b.clone())
+            .unwrap_or_default();
+        let after = std::fs::read_to_string(path).unwrap_or_default();
+        if before == after {
+            continue;
+        }
+        let rel = path.strip_prefix(project_root).unwrap_or(path);
+        let rel_str = rel.display().to_string();
+        let text_diff = TextDiff::from_lines(&before, &after);
+
+        let mut added = 0usize;
+        let mut removed = 0usize;
+        for change in text_diff.iter_all_changes() {
+            match change.tag() {
+                ChangeTag::Insert => added += 1,
+                ChangeTag::Delete => removed += 1,
+                ChangeTag::Equal => {}
+            }
+        }
+
+        if diff.chars().count() < MAX_DIFF_CHARS {
+            diff.push_str(
+                &text_diff
+                    .unified_diff()
+                    .header(&rel_str, &rel_str)
+                    .to_string(),
+            );
+            if diff.chars().count() > MAX_DIFF_CHARS {
+                diff = diff.chars().take(MAX_DIFF_CHARS).collect();
+                diff.push_str("\n… (diff truncated)\n");
+            }
+        }
+        files_changed.push(FileChange {
+            path: rel.to_path_buf(),
+            change_summary: format!("+{added} -{removed}"),
+        });
+    }
+    (diff, files_changed)
+}
+
+/// Run the configured final command set in `cwd`, tail-capping each output. A
+/// `None`-configured command stays `None` in the result.
+async fn run_command_set(
+    runner: &dyn CommandRunner,
+    commands: &CommandConfig,
+    cwd: &Path,
+) -> CommandOutputs {
+    CommandOutputs {
+        format: run_one(runner, commands.format.as_deref(), cwd).await,
+        build: run_one(runner, commands.build.as_deref(), cwd).await,
+        lint: run_one(runner, commands.lint.as_deref(), cwd).await,
+        test: run_one(runner, commands.test.as_deref(), cwd).await,
+    }
+}
+
+async fn run_one(runner: &dyn CommandRunner, command: Option<&str>, cwd: &Path) -> Option<String> {
+    match command {
+        Some(cmd) => Some(tail(&runner.run(cmd, cwd).await, MAX_COMMAND_TAIL_CHARS)),
+        None => None,
+    }
+}
+
+fn tail(s: &str, max_chars: usize) -> String {
+    let count = s.chars().count();
+    if count > max_chars {
+        s.chars().skip(count - max_chars).collect()
+    } else {
+        s.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -681,6 +846,24 @@ mod tests {
         }
     }
 
+    /// A command runner that is never expected to fire (no commands configured in
+    /// `deps()`); panics if called, so an accidental command run is caught.
+    struct NoopRunner;
+
+    #[async_trait::async_trait]
+    impl CommandRunner for NoopRunner {
+        async fn run(&self, _command: &str, _cwd: &Path) -> String {
+            String::new()
+        }
+    }
+
+    const EMPTY_COMMANDS: CommandConfig = CommandConfig {
+        format: None,
+        build: None,
+        lint: None,
+        test: None,
+    };
+
     fn deps<'a>(
         client: &'a dyn AiClient,
         registry: &'a ToolRegistry,
@@ -699,6 +882,8 @@ mod tests {
             session_id: SESSION_ID,
             clock: &clock_zero,
             verifier: &NoopVerifier,
+            commands: &EMPTY_COMMANDS,
+            runner: &NoopRunner,
         }
     }
 
@@ -1274,6 +1459,8 @@ mod tests {
             session_id: SESSION_ID,
             clock: &clock_fixed,
             verifier: &NoopVerifier,
+            commands: &EMPTY_COMMANDS,
+            runner: &NoopRunner,
         };
 
         execute_phase(&input(), d).await.unwrap();
@@ -1382,6 +1569,8 @@ mod tests {
             session_id: SESSION_ID,
             clock: &clock_zero,
             verifier,
+            commands: &EMPTY_COMMANDS,
+            runner: &NoopRunner,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -1791,5 +1980,238 @@ mod tests {
             result.briefing.unwrap().current_blocker,
             Blocker::HardFail(HardFailSignal::IdenticalToolCallRepetition { .. })
         ));
+    }
+
+    // ── 07e: completion artifacts ─────────────────────────────────────────
+
+    /// Records which commands ran and returns scripted output for each.
+    struct MockCommandRunner {
+        ran: Mutex<Vec<String>>,
+        output: String,
+    }
+
+    impl MockCommandRunner {
+        fn new(output: &str) -> Self {
+            Self {
+                ran: Mutex::new(Vec::new()),
+                output: output.to_string(),
+            }
+        }
+        fn ran(&self) -> Vec<String> {
+            self.ran.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandRunner for MockCommandRunner {
+        async fn run(&self, command: &str, _cwd: &Path) -> String {
+            self.ran.lock().unwrap().push(command.to_string());
+            self.output.clone()
+        }
+    }
+
+    /// Full run with injectable command runner + command config (07e).
+    async fn run_full(
+        dir: &TempDir,
+        client: &dyn AiClient,
+        verifier: &dyn FileVerifier,
+        runner: &dyn CommandRunner,
+        commands: &CommandConfig,
+        max_turns: usize,
+    ) -> PhaseResult {
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let budget = Budget::new(1_000_000);
+        let d = LoopDeps {
+            client,
+            registry: &registry,
+            tools: &[],
+            budget: &budget,
+            max_turns,
+            project_root: dir.path(),
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_zero,
+            verifier,
+            commands,
+            runner,
+        };
+        execute_phase(&input(), d).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn diff_and_files_changed_for_edited_file() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "original\n").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "edited" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+
+        assert!(result.diff.contains("-original"), "diff: {}", result.diff);
+        assert!(result.diff.contains("+edited"));
+        assert_eq!(result.files_changed.len(), 1);
+        assert!(result.files_changed[0].path.ends_with("t.txt"));
+        assert!(result.files_changed[0].change_summary.contains('+'));
+    }
+
+    #[tokio::test]
+    async fn new_file_diff_is_all_added() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("new.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "line1\nline2\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+
+        assert!(result.diff.contains("+line1"));
+        assert!(result.diff.contains("+line2"));
+        assert!(!result.diff.contains("-line"));
+        assert_eq!(result.files_changed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unchanged_file_is_absent_from_files_changed() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "same\n").unwrap();
+        let path = file.to_string_lossy().to_string();
+        // write_file with identical content → no net change.
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "same\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+
+        assert!(
+            result.files_changed.is_empty(),
+            "an unchanged file must not appear in files_changed"
+        );
+        assert!(result.diff.is_empty());
+    }
+
+    #[tokio::test]
+    async fn clean_completion_runs_configured_commands() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok-output");
+        let commands = CommandConfig {
+            format: None,
+            build: Some("cargo build".to_string()),
+            lint: None,
+            test: Some("cargo test".to_string()),
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        let ran = runner.ran();
+        assert_eq!(
+            ran,
+            vec!["cargo build".to_string(), "cargo test".to_string()]
+        );
+        assert_eq!(result.command_outputs.build.as_deref(), Some("ok-output"));
+        assert_eq!(result.command_outputs.test.as_deref(), Some("ok-output"));
+        assert!(result.command_outputs.format.is_none());
+        assert!(result.command_outputs.lint.is_none());
+    }
+
+    #[tokio::test]
+    async fn command_output_is_tail_capped() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let big = "y".repeat(MAX_COMMAND_TAIL_CHARS + 500);
+        let runner = MockCommandRunner::new(&big);
+        let commands = CommandConfig {
+            format: None,
+            build: Some("b".to_string()),
+            lint: None,
+            test: None,
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, 8).await;
+
+        assert_eq!(
+            result
+                .command_outputs
+                .build
+                .as_deref()
+                .map(|s| s.chars().count()),
+            Some(MAX_COMMAND_TAIL_CHARS)
+        );
+    }
+
+    #[tokio::test]
+    async fn hard_fail_does_not_run_command_set() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let mk = || native("read_file", json!({ "path": path }));
+        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("should-not-run");
+        let commands = CommandConfig {
+            format: None,
+            build: Some("cargo build".to_string()),
+            lint: None,
+            test: None,
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, 10).await;
+
+        assert_eq!(result.status, PhaseStatus::HardFail);
+        assert!(
+            runner.ran().is_empty(),
+            "command set must not run on hard-fail"
+        );
+        assert!(result.command_outputs.build.is_none());
+    }
+
+    #[tokio::test]
+    async fn complete_result_reports_log_path() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+
+        assert_eq!(result.log_path, Some(log_path(dir.path())));
+    }
+
+    #[tokio::test]
+    async fn log_path_is_none_when_log_unopened() {
+        let dir = TempDir::new().unwrap();
+        // `.rexymcp` as a file → sessions dir can't be created → log doesn't open.
+        std::fs::write(dir.path().join(".rexymcp"), "x").unwrap();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(result.log_path.is_none());
     }
 }

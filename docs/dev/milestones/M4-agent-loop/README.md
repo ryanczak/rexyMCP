@@ -57,7 +57,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 07b | session log ([phase-07b-session-log.md](phase-07b-session-log.md)) | done |
 | 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | done |
 | 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | done |
-| 07e | completion artifacts ([phase-07e-completion-artifacts.md](phase-07e-completion-artifacts.md)) | todo |
+| 07e | completion artifacts ([phase-07e-completion-artifacts.md](phase-07e-completion-artifacts.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

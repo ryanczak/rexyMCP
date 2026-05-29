@@ -1,7 +1,7 @@
 # Phase 07e: completion artifacts (diff, command set, result population)
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07a–07d (the loop), phase-06 (`PhaseResult`, `Artifacts`,
 `FileChange`, `CommandOutputs`), `config::CommandConfig`. All done. `similar` and
 `tokio` are already workspace deps.
@@ -220,3 +220,88 @@ output + recording which ran; `MockAiClientScript`; the 07c `MockFileVerifier` /
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md.
+
+Adding `log_path: Option<PathBuf>` to `Artifacts`/`PhaseResult` (phase/result.rs),
+`pre_edit_content` tracking at the dispatch site, a pure diff/`files_changed`
+builder (`similar::TextDiff` + `MAX_DIFF_CHARS` cap), a `CommandRunner` seam
+(`agent/command.rs`: trait + `RealCommandRunner` over `tokio::process` `sh -c`)
+injected via `LoopDeps` with `commands: &CommandConfig`, and artifact threading:
+diff/files_changed on every terminal path, command set only on clean completion.
+Tests inject a `MockCommandRunner`.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Filled in the `PhaseResult`. Added `log_path: Option<PathBuf>` to
+`Artifacts`/`PhaseResult` (the only `phase/**` edit) — set from the session-log
+handle (`None` when the log didn't open). The loop now tracks `pre_edit_content:
+HashMap<PathBuf, Option<String>>`, capturing each edited file's content **before**
+the first edit (in the 07d-allowed branch, pre-dispatch). At every terminal return
+`build_artifacts` → `build_diff` renders a `similar` unified diff (per-file header,
+`+N -M` `change_summary`, unchanged files skipped, capped at `MAX_DIFF_CHARS` with
+a truncation marker). A `CommandRunner` seam (`agent/command.rs`: trait +
+`RealCommandRunner` over `tokio::process` `sh -c`) is injected via `LoopDeps`
+alongside `commands: &CommandConfig`; `run_command_set` runs **only** on the clean-
+completion path (configured `Some` commands only, tail-capped), so `hard_fail` /
+`budget_exceeded` keep `CommandOutputs::default()`. No deviations from the spec.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.57s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.06s
+
+cargo test 2>&1 | grep "test result:" (lib line)
+test result: ok. 477 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+(477 = 469 prior + 8 completion-artifact tests. `agent::` alone: 52 passed.)
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. Diff / command-set /
+result population is exercised via `MockCommandRunner` + `MockAiClient*` over a
+`TempDir`. `RealCommandRunner` (a `sh -c` subprocess) is trivial plumbing covered
+by the first live M5 run.
+
+**Files changed:**
+- `executor/src/phase/result.rs` — `log_path` field on `Artifacts` / `PhaseResult`
+  (+ `assemble` threading + phase-06 test fixture).
+- `executor/src/agent/command.rs` — new: `CommandRunner` trait + `RealCommandRunner`.
+- `executor/src/agent/mod.rs` — `commands`/`runner` on `LoopDeps`; `pre_edit_content`
+  tracking; `build_artifacts` / `build_diff` / `run_command_set` / `run_one` /
+  `tail`; terminal returns build real artifacts (command set only on complete);
+  8 new tests + `MockCommandRunner` / `NoopRunner` / `run_full`.
+
+**New tests:** `diff_and_files_changed_for_edited_file`, `new_file_diff_is_all_added`,
+`unchanged_file_is_absent_from_files_changed`,
+`clean_completion_runs_configured_commands`, `command_output_is_tail_capped`,
+`hard_fail_does_not_run_command_set` (neg), `complete_result_reports_log_path`,
+`log_path_is_none_when_log_unopened`.
+
+**Commits:** (pending — committed below)
+
+**Notes for review:**
+- `build_diff` skips unchanged files (before == after) so a reverted edit produces
+  no `files_changed` entry; deterministic order (sorted by path).
+- The command set runs **only** on the clean-completion path — `hard_fail` /
+  `budget_exceeded` deliberately leave `command_outputs` default (the phase didn't
+  finish), but `diff` / `files_changed` are still populated everywhere.
+- `log_path` resolved once after opening the log; `None` when the best-effort open
+  failed (covered by `log_path_is_none_when_log_unopened`).
+- This is the last 07 sub-phase — `execute_phase` now returns the full contract.
+  Only phase-08 (`PhaseRun` telemetry, incl. the long-carried `scorer.record`
+  consumer) remains in M4.
+
+verification: fmt OK · clippy OK · tests 477 passed · build OK

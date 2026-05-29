@@ -32,12 +32,14 @@ pub struct CommandOutputs {
 }
 
 /// The result artifacts common to every status — grouped to keep the
-/// constructors from repeating four arguments.
+/// constructors from repeating five arguments.
 pub struct Artifacts {
     pub files_changed: Vec<FileChange>,
     pub diff: String,
     pub command_outputs: CommandOutputs,
     pub update_log: String,
+    /// Path to the on-disk JSONL session log; `None` when the log failed to open.
+    pub log_path: Option<PathBuf>,
 }
 
 /// The single structured value `execute_phase` returns across the MCP boundary —
@@ -51,6 +53,9 @@ pub struct PhaseResult {
     pub command_outputs: CommandOutputs,
     pub update_log: String,
     pub briefing: Option<Briefing>,
+    /// Path to the on-disk JSONL session log Claude can query; `None` when the log
+    /// failed to open.
+    pub log_path: Option<PathBuf>,
 }
 
 impl PhaseResult {
@@ -77,6 +82,7 @@ impl PhaseResult {
             command_outputs: artifacts.command_outputs,
             update_log: artifacts.update_log,
             briefing,
+            log_path: artifacts.log_path,
         }
     }
 }
@@ -92,6 +98,7 @@ mod tests {
             diff: String::new(),
             command_outputs: CommandOutputs::default(),
             update_log: String::new(),
+            log_path: None,
         }
     }
 
