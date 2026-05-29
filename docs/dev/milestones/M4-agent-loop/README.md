@@ -48,11 +48,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | post-edit verifier + `Diagnostic` ([phase-01-verifier.md](phase-01-verifier.md)) | done |
+| 02 | context budget + compaction ([phase-02-context-budget.md](phase-02-context-budget.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **02** — context budget + compaction (`context/`: token accounting, budget,
-  compactor; never evict system messages).
 - **03** — the JSONL **session log** writer + reader (`store/sessions/jsonl.rs`),
   redacted, reusing M3's `Serialize` types as the event schema.
 - **04** — governor: per-(task,tool) **scorer** + **hard-fail detector**
