@@ -54,6 +54,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | done |
 | 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | done |
 | 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | done |
+| 07b | session log ([phase-07b-session-log.md](phase-07b-session-log.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -66,9 +67,12 @@ Tentative remaining phases (draft when the prior one lands):
     through the same path as a text-extracted call — absorbs the old "06b", see
     Notes), the tool scorer, terminating `complete` / `budget_exceeded` (+ budget
     briefing). Control flow only.
-  - **07b** — **session log**: weave the redacted JSONL log (`store::sessions`
-    `SessionLogger` + `redact`) through the 07a steps as a side effect; the
-    `SessionEvent` kinds map to each turn event.
+  - **07b** *(drafted)* — **session log**: weave the redacted JSONL log
+    (`store::sessions` `SessionLogger` + `redact`, best-effort, clock-injected)
+    through the 07a steps as a side effect; the seven `SessionEvent` kinds the loop
+    produces (`SessionStart`/`Prompt`/`Completion`/`Parsed`/`ParseFailed`/
+    `ToolResult`/`SessionEnd`) map to each turn event. `Verify`/`HardFail` → 07c,
+    `Progress` → M5.
   - **07c** — **governance**: post-edit `verifier::verify` retry (`Baseline`
     author/ambient partition, diagnostic feedback), `hard_fail::evaluate` →
     `hard_fail` briefing (`Blocker::HardFail`, populated diagnostics), and the
