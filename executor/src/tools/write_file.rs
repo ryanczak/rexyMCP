@@ -207,8 +207,11 @@ mod tests {
 
     #[tokio::test]
     async fn scope_escape_returns_advisory_error_and_writes_nothing() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let tool = write_file(make_scope(&dir));
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        let scope = Scope::new(&root).unwrap();
+        let tool = write_file(scope);
         let result = tool
             .execute(json!({
                 "path": "../outside.txt",
@@ -221,7 +224,7 @@ mod tests {
         let err = result.error.as_ref().unwrap();
         assert!(err.contains("escapes") || err.contains("outside"));
 
-        let outside = dir.path().parent().unwrap().join("outside.txt");
+        let outside = temp.path().join("outside.txt");
         assert!(!outside.exists());
     }
 }

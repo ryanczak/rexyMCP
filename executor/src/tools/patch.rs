@@ -493,11 +493,14 @@ mod tests {
 
     #[tokio::test]
     async fn scope_escape_returns_advisory_error_and_modifies_nothing() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let outside_path = dir.path().parent().unwrap().join("outside_patch.txt");
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        let scope = Scope::new(&root).unwrap();
+        let outside_path = temp.path().join("outside_patch.txt");
         std::fs::write(&outside_path, "original outside content").unwrap();
 
-        let tool = patch(make_scope(&dir));
+        let tool = patch(scope);
         let result = tool
             .execute(json!({
                 "path": "../outside_patch.txt",

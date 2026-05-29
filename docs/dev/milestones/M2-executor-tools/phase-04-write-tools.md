@@ -1,7 +1,7 @@
 # Phase 04: write tools — write_file + patch
 
 **Milestone:** M2 — Executor tools & security
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03 (done)
 **Estimated diff:** ~480 lines (two tool lifts + scope adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -313,3 +313,62 @@ grep -r "current_dir" executor/src/tools/write_file.rs executor/src/tools/patch.
 grep -r "context::" executor/src/tools/write_file.rs executor/src/tools/patch.rs
 ```
 All three return zero matches — no forbidden references present.
+
+### Update — 2026-05-28 13:00 (progress)
+
+Fixed bug-04-1: rewrote both scope-escape tests to nest the scope root inside the
+TempDir (`temp.path().join("root")`), so `"../outside.txt"` resolves to a sibling
+directory still inside the sandbox. No production-code changes.
+
+### Update — 2026-05-28 13:15 (complete)
+
+**Summary:** Fixed bug-04-1 — both scope-escape tests now use a nested scope root
+inside the TempDir, keeping all filesystem state hermetic. No production-code changes.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.41s
+
+cargo test
+running 120 tests
+test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — this phase ships two library tools exercised directly by their
+unit tests. The registry/loop that drives them (and the verifier that runs
+after edit-class tools) lands in M4; the MCP `execute_phase` in M5.
+
+**Files changed:**
+- `executor/src/tools/write_file.rs` — fixed scope-escape test to use nested scope root
+- `executor/src/tools/patch.rs` — fixed scope-escape test to use nested scope root
+- `docs/dev/milestones/M2-executor-tools/bugs/bug-04-1.md` — status: open → fixed
+- `docs/dev/milestones/M2-executor-tools/phase-04-write-tools.md` — status + Update Log
+
+**New tests:** None (existing tests fixed).
+
+**Commits:**
+- (pending)
+
+**Notes for review:** None.
+
+**Grep verification — no `.parent()` in test code:**
+```
+grep -n "\.parent()" executor/src/tools/write_file.rs executor/src/tools/patch.rs
+```
+Only match is line 75 of write_file.rs (production parent-dir guard) — no test code references `.parent()`.
