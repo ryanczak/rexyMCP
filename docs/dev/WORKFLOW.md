@@ -371,6 +371,17 @@ The architect should **pre-route such a phase to direct execution** (the princip
 engineer / Claude implements it) rather than dispatch. The phase doc still records
 who executed it and follows the normal review gate; only the *executor* changes.
 
+> **This is an opencode limitation, not rexyMCP's — and the workaround is
+> transitional.** rexyMCP is *not* opencode and must never inherit its tooling
+> deficiencies. rexyMCP's executor ingests a weak model's messy output through
+> structured tool dispatch (`write_file` / `patch` take content as JSON args) and
+> the **forgiving parser** (M3) — which exists precisely to *repair* close-tags,
+> fences, and escaped-quote content rather than corrupt on it. So the very content
+> that breaks opencode is what rexyMCP is built to handle gracefully. This routing
+> rule applies only while opencode is the executor *building* rexyMCP; once
+> rexyMCP dogfoods itself (M6), it goes away. Never design a rexyMCP feature around
+> an opencode limitation.
+
 ---
 
 ## What Executors Never Decide
