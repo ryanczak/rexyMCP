@@ -58,6 +58,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | done |
 | 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | done |
 | 07e | completion artifacts ([phase-07e-completion-artifacts.md](phase-07e-completion-artifacts.md)) | done |
+| 08 | `PhaseRun` telemetry ([phase-08-phaserun-telemetry.md](phase-08-phaserun-telemetry.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -93,8 +94,12 @@ Tentative remaining phases (draft when the prior one lands):
     pre-edit content tracking, and the `log_path` field on `PhaseResult`. After
     07e, `execute_phase` returns the full contract; only phase-08 (`PhaseRun`
     telemetry) remains in M4.
-- **08** — **`PhaseRun`** telemetry (`store/telemetry.rs`): cross-project metrics
-  record (gates, turns, tokens, parse-failure rate, verifier retries).
+- **08** *(drafted)* — **`PhaseRun`** telemetry (`store/telemetry.rs`, net-new —
+  Rexy's is a stub): the cross-project metrics record (gates, turns, tokens,
+  parse-failure rate, repairs/call, verifier retries, `tool_success_rate` — the
+  scorer consumer). Best-effort emit; supervision fields filled by the architect at
+  review (M7). **M4 closer** — completion triggers the milestone human gate
+  (retrospective + doc folds).
 
 ## Notes
 
