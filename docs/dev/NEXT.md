@@ -4,11 +4,11 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M3 / phase-05 — feedback formatter + `parse()` orchestration](milestones/M3-forgiving-parser/phase-05-feedback-parse.md)
+**Active phase:** [M4 / phase-01 — post-edit verifier + `Diagnostic`](milestones/M4-agent-loop/phase-01-verifier.md)
 
-**Status:** review — implemented by Claude Code; awaiting architect sign-off. (phase-01 through phase-04 approved/`done`.) **Last M3 phase — approval is a milestone-boundary human gate.**
+**Status:** todo
 
-**Milestone:** [M3 — Forgiving parser](milestones/M3-forgiving-parser/README.md) — in-progress (M2 signed off 2026-05-28).
+**Milestone:** [M4 — Headless agent loop + governor/verifier](milestones/M4-agent-loop/README.md) — in-progress (M1, M2, M3 done; signed off 2026-05-28).
 
 ---
 
