@@ -53,17 +53,29 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | done |
 | 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | done |
 | 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | done |
+| 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **07** — the **turn-cycle loop** (`execute_phase`): net-new orchestration
-  composing AI client + parser + tools + governor + budget + session log
-  (redact → log). Owns the **read-before-edit invariant** (working-set + mtime).
-  Also owns the **native-call seam**: an `AiEvent::ToolCallGeneric` (the OpenAI
-  backend already extracts native `tool_calls` from the SSE deltas, `backends/
-  openai.rs`) is turned into a `parser::ToolCall { origin: Origin::Native }` so
-  the loop dispatches native and text-extracted/repaired calls through one path.
-  (This absorbs what was sketched as a separate "06b" — see Notes.)
+- **07 — the turn-cycle loop (`execute_phase`)**, split into four sub-phases
+  because the full composition (eight subsystems + read-before-edit + the native
+  seam + diff + logging) far exceeds one executor session:
+  - **07a** *(drafted)* — **loop core**: prompt assembly, budget + compaction, the
+    chat→parse→dispatch turn cycle, the **native-call seam** (`AiEvent::
+    ToolCallGeneric` → `parser::ToolCall { origin: Origin::Native }`, dispatched
+    through the same path as a text-extracted call — absorbs the old "06b", see
+    Notes), the tool scorer, terminating `complete` / `budget_exceeded` (+ budget
+    briefing). Control flow only.
+  - **07b** — **session log**: weave the redacted JSONL log (`store::sessions`
+    `SessionLogger` + `redact`) through the 07a steps as a side effect; the
+    `SessionEvent` kinds map to each turn event.
+  - **07c** — **governance**: post-edit `verifier::verify` retry (`Baseline`
+    author/ambient partition, diagnostic feedback), `hard_fail::evaluate` →
+    `hard_fail` briefing (`Blocker::HardFail`, populated diagnostics), and the
+    **read-before-edit invariant** (working-set + mtime).
+  - **07d** — **completion artifacts**: the final command set
+    (`{FORMAT,BUILD,LINT,TEST}_COMMAND` from `CommandConfig`), unified-diff
+    generation, and `files_changed` / `command_outputs` population.
 - **08** — **`PhaseRun`** telemetry (`store/telemetry.rs`): cross-project metrics
   record (gates, turns, tokens, parse-failure rate, verifier retries).
 
