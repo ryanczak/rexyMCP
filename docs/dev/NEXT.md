@@ -6,7 +6,7 @@ engineer (architect) maintains this file. The executor reads it first
 
 **Active phase:** [M2 / phase-04 — write tools (`write_file` + `patch`)](milestones/M2-executor-tools/phase-04-write-tools.md)
 
-**Status:** todo
+**Status:** review
 
 **Milestone:** [M2 — Executor tools & security](milestones/M2-executor-tools/README.md) — in-progress (phase-01, phase-02, phase-03 done).
 
