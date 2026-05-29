@@ -4,11 +4,14 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M4 / phase-01 — post-edit verifier + `Diagnostic`](milestones/M4-agent-loop/phase-01-verifier.md)
+**Active phase:** none — M4 phase-01 approved (`done`); phase-02 not yet drafted.
 
-**Status:** todo
+Per WORKFLOW.md § "Phase progression & triggers" (gated by default), the
+architect drafts the next phase on demand. M4 phase-02 (context budget +
+compaction) has not been written yet — the project owner advances with
+`/architect next` (or asks the architect to draft it).
 
-**Milestone:** [M4 — Headless agent loop + governor/verifier](milestones/M4-agent-loop/README.md) — in-progress (M1, M2, M3 done; signed off 2026-05-28).
+**Milestone:** [M4 — Headless agent loop + governor/verifier](milestones/M4-agent-loop/README.md) — in-progress (phase-01 done).
 
 ---
 

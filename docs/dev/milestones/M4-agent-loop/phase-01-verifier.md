@@ -1,7 +1,7 @@
 # Phase 01: post-edit verifier + Diagnostic
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** M3 (done)
 **Estimated diff:** ~620 lines (verifier lift + tests)
 **Tags:** language=rust, kind=feature, size=m
