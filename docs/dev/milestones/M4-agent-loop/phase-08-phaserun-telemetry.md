@@ -1,7 +1,7 @@
 # Phase 08: `PhaseRun` telemetry (M4 closer)
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a–07e (the full loop), phase-03 (`store::sessions` for the
 JSONL-append pattern + `generate_session_id`), `ai::types::TokenBreakdown`,
 `governor::scorer::Scorer`. All done.
@@ -361,3 +361,22 @@ by `execute_phase`, exercised via mocks + `TempDir` and read back with
   `review`, not advancing.
 
 verification: fmt OK · clippy OK · tests 492 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct). **Process note:** dispatched in the same turn
+  as its draft (the architect overran the draft/dispatch gate); flagged to the
+  human, who chose to keep it. Spec fidelity unaffected — recorded for honesty.
+- **Scope deviations:** none. Only `store/**` + `agent/**` touched; `governor`/
+  `parser`/`config`/`phase` untouched (scorer read via public `counts`; the
+  `CommandResult` extension is in `agent/command.rs`).
+- **Calibration:** the long-carried **scorer consumer is resolved** —
+  `tool_success_rate` reads `Scorer.counts`, so `scorer.record` is finally
+  load-bearing (no `governor` edit needed). Re-ran all four gates independently
+  (492 passed); spot-checked the negatives — best-effort `None`-dir/write-failure
+  paths still complete, `gates_none_on_hard_fail` confirms the command set is
+  clean-completion-only, `tool_success_rate_reflects_scorer` = 0.5 on 1/2.
+- **Milestone:** this is the M4 closer. With it `done`, M4's exit criteria are all
+  met → milestone human gate (retrospective + folds) follows in the README.

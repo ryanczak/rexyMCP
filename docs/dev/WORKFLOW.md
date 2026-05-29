@@ -474,3 +474,10 @@ Before pinning serde derives on a struct, ask whether it actually gets serialize
 at runtime. If yes, pin them — they're load-bearing. If no, omit them; an unused
 derive can force upstream derive additions on shared types and push the executor
 into unauthorized edits of settled phases.
+
+The same applies to **wired-in state, not just derives**: don't have a phase
+record into / populate something whose consumer doesn't exist yet. (M4: phase-07a's
+spec told the loop to `scorer.record(...)`, but nothing read the score until
+phase-08's `tool_success_rate` — a seven-phase stretch of dead, unobservable
+computation that the executor rightly flagged each review. Either pin the consumer
+in the same phase, or defer the write until the phase that consumes it.)

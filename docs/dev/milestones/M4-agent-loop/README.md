@@ -6,7 +6,7 @@ under a context budget and a hard-fail detector, and returns the structured
 `PhaseResult` (+ a `briefing` on failure). Plus the redacted JSONL **session log**
 and the per-phase **`PhaseRun`** metrics record.
 
-**Status:** in-progress
+**Status:** done — signed off 2026-05-29 (retrospective below).
 
 **Depends on:** M1 (AI client), M2 (tools + registry + scope + bash classifier),
 M3 (forgiving parser). M4 is the layer that **composes** all three into a loop.
@@ -58,7 +58,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | done |
 | 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | done |
 | 07e | completion artifacts ([phase-07e-completion-artifacts.md](phase-07e-completion-artifacts.md)) | done |
-| 08 | `PhaseRun` telemetry ([phase-08-phaserun-telemetry.md](phase-08-phaserun-telemetry.md)) | review |
+| 08 | `PhaseRun` telemetry ([phase-08-phaserun-telemetry.md](phase-08-phaserun-telemetry.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -175,3 +175,56 @@ query mid-call because `execute_phase` is synchronous and suspends Claude until
 `PhaseResult`. The live numstat reuses the loop's working-set + diff machinery
 (already needed for read-before-edit and `PhaseResult.diff`); the heartbeat is a
 *liveness summary*, never a second source of truth.
+
+## M4 retrospective (milestone close, 2026-05-29)
+
+Eleven phases (01–06, 07a–07e, 08), all `done`, all **approved_first_try**, zero
+bounces. M4 is rexyMCP's **first net-new composition**: the `execute_phase` turn
+loop (`executor/src/agent/`) drives a local model through the full cycle — prompt
+assembly → budget/compaction → chat → native-or-parsed `ToolCall` →
+read-before-edit gate → dispatch → post-edit verify → hard-fail check — writing a
+redacted JSONL session log throughout, and returning a complete `PhaseResult`
+(status, diff, files_changed, command_outputs, briefing, log_path) plus a
+cross-project `PhaseRun` telemetry record. 492 tests.
+
+**Phase-07 grew from a sketch to a–e.** The loop was correctly judged too big for
+one session and split: 07a core, 07b session log, 07c verifier+hard-fail, 07d
+read-before-edit, 07e completion artifacts — then 08 telemetry. The
+`<500-line / one-session` re-split rule held up; each sub-phase stayed reviewable
+and each later one only extended the dispatch site the prior built. Splitting on
+**cohesive seams** (observability / governance / safety / artifacts) rather than
+arbitrary line counts is what kept them clean.
+
+**Dropped, not built:** "06b" (Rexy `native.rs` + `stream.rs`) — zero callers in a
+streaming, headless design; the only real gap (native event → `Origin::Native`)
+folded into 07a. Recorded above.
+
+**Calibration learnings:**
+
+- **Fold (applied): inject subprocess/IO dependencies behind a trait seam for
+  hermetic tests.** Recurred twice in M4 — `FileVerifier` (07c, so tests don't
+  spawn `cargo`) and `CommandRunner` (07e/08, so tests don't spawn the command
+  set) — on top of M1's `AiClient`/`MockAiClient` and the injected clock. Two fresh
+  occurrences = a trend; folded a concise rule into `STANDARDS.md` §3.3.
+- **Note (one occurrence, not folded): loop tests should assert real on-disk
+  effects, not only mocked returns.** The test registry silently lacked the `patch`
+  tool until 07d became the first phase to assert a real edit. Watch for recurrence.
+- **Note (one occurrence, not folded): don't wire load-bearing-looking code before
+  its consumer exists.** `scorer.record` (07a) sat unread until 08's
+  `tool_success_rate` consumed it — a 7-phase carry. Analogous to the existing
+  WORKFLOW "Derive intentionally" note; extended that note to cover recorded/wired
+  state, not just serde derives.
+- **Confirmed (no change): best-effort side effects never alter the return.** The
+  session log (07b) and telemetry (08) both swallow open/write failures; the loop's
+  contract is unchanged by them. The pattern is consistent and already in the
+  architecture.
+
+**Process note:** phase-08 was dispatched in the same turn as its draft (the
+draft/dispatch gate was overrun by the architect); flagged to the human, who chose
+to keep the work. No spec impact; recorded in 08's verdict for honesty.
+
+**Carried forward to M5:** MCP wiring of `execute_phase` + the log-query tools +
+telemetry-path resolution; `Progress` heartbeats; the deferred path-based
+read-refusal (a read-tool/`scope` concern, see phase-04 note). The verifier
+"curated per-compiler vs config-driven" open question resolved as: per-compiler
+list, wired behind the `FileVerifier` seam — revisit only if a new language lands.

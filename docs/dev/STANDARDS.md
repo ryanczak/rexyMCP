@@ -152,6 +152,12 @@ comments above every function. Doc comments (`///`) on public APIs are fine.
 - Tests are **deterministic**: no `sleep`, no real `Utc::now()` (inject a clock),
   no unseeded RNG. If a test can't be made deterministic, mark it `#[ignore]`
   and explain why in a comment on the test.
+- **Inject subprocess / external-IO dependencies behind a trait seam.** Anything
+  that would shell out or touch a real external process (a compiler/verifier, the
+  final command set, the AI backend) goes behind a trait with a production impl and
+  a test mock, so loop/integration tests stay hermetic and fast. (M4 fold: the
+  `FileVerifier` and `CommandRunner` seams, alongside `AiClient`/`MockAiClient` —
+  injecting the seam is what let the agent-loop tests run without spawning `cargo`.)
 
 ### 3.4 Live-LLM tests
 
