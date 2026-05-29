@@ -52,13 +52,13 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | done |
 | 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | done |
 | 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | done |
+| 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **06** — `PhaseResult` + the **briefing** contract (adapt `escalation/packet.rs`:
-  drop cloud transport + the planner TODO section; the brief is *returned* to
-  Claude). `Origin::Native` + `parser/native.rs` + `stream.rs` (deferred from M3)
-  also land around here.
+- **06b** — deferred M3 native-parser items (`Origin::Native` + `parser/native.rs`
+  + `stream.rs`). Split out of phase-06: a parser concern orthogonal to the
+  briefing, would over-fill one session. Sequence before or alongside phase-07.
 - **07** — the **turn-cycle loop** (`execute_phase`): net-new orchestration
   composing AI client + parser + tools + governor + budget + session log
   (redact → log). Owns the **read-before-edit invariant** (working-set + mtime).
@@ -68,7 +68,7 @@ Tentative remaining phases (draft when the prior one lands):
 ## Notes
 
 **This milestone is the first net-new composition, not a pure lift.** The
-turn-cycle loop (phase-06) is rexyMCP's own orchestration; the pieces it composes
+turn-cycle loop (phase-07) is rexyMCP's own orchestration; the pieces it composes
 (verifier, budget, governor, session log, briefing) are lifts/adaptations.
 
 **rexyMCP is not opencode (WORKFLOW.md § "Phase progression").** The loop drives a
@@ -82,7 +82,7 @@ parses per-compiler output (cargo `--message-format=json`, `tsc`, `ruff --json`)
 The **final command set** (step 8) just runs the config-resolved
 `{FORMAT,BUILD,LINT,TEST}_COMMAND`s and captures stdout/stderr tails into
 `PhaseResult.command_outputs` — no structured parsing. **Open design question**
-(resolve at phase-06): whether the verifier's language set stays a curated
+(resolve at phase-07): whether the verifier's language set stays a curated
 per-compiler list (Rust/TS/Py, extensible) or becomes config-driven with a
 pluggable diagnostic parser. Lift the per-compiler verifier now; revisit when the
 loop wires it.
