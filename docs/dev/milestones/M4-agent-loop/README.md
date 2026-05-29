@@ -56,12 +56,14 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **06b** — deferred M3 native-parser items (`Origin::Native` + `parser/native.rs`
-  + `stream.rs`). Split out of phase-06: a parser concern orthogonal to the
-  briefing, would over-fill one session. Sequence before or alongside phase-07.
 - **07** — the **turn-cycle loop** (`execute_phase`): net-new orchestration
   composing AI client + parser + tools + governor + budget + session log
   (redact → log). Owns the **read-before-edit invariant** (working-set + mtime).
+  Also owns the **native-call seam**: an `AiEvent::ToolCallGeneric` (the OpenAI
+  backend already extracts native `tool_calls` from the SSE deltas, `backends/
+  openai.rs`) is turned into a `parser::ToolCall { origin: Origin::Native }` so
+  the loop dispatches native and text-extracted/repaired calls through one path.
+  (This absorbs what was sketched as a separate "06b" — see Notes.)
 - **08** — **`PhaseRun`** telemetry (`store/telemetry.rs`): cross-project metrics
   record (gates, turns, tokens, parse-failure rate, verifier retries).
 
@@ -70,6 +72,22 @@ Tentative remaining phases (draft when the prior one lands):
 **This milestone is the first net-new composition, not a pure lift.** The
 turn-cycle loop (phase-07) is rexyMCP's own orchestration; the pieces it composes
 (verifier, budget, governor, session log, briefing) are lifts/adaptations.
+
+**"06b" was dropped, not deferred (decided 2026-05-29).** Phase-06 originally
+sketched a follow-on "06b" lifting Rexy's `parser/native.rs` + `stream.rs`. On
+inspection neither fits rexyMCP's streaming, headless design: (1) Rexy's
+`native::extract(&Value)` parses native tool calls out of a *full non-streaming
+response* (OpenAI **and** Anthropic), but rexyMCP's `AiClient::chat` is
+streaming-only — the OpenAI backend already extracts native `tool_calls` from the
+SSE deltas and emits `AiEvent::ToolCallGeneric`, and rexyMCP never calls
+Anthropic, so the lift would have zero callers; (2) Rexy's `stream.rs`
+(`StreamRenderer`/`StreamDisplay`) is a **TUI** indicator, and rexyMCP is a
+headless MCP server whose liveness is progress notifications (M5), so it has no
+consumer. The only genuine gap — turning a native `ToolCallGeneric` event into a
+`parser::ToolCall { origin: Origin::Native }` for uniform dispatch — is a small
+adapter that belongs *in* the loop that consumes the event, so it folds into
+phase-07 rather than standing alone. `Origin::Native` already exists in the M3
+type set.
 
 **rexyMCP is not opencode (WORKFLOW.md § "Phase progression").** The loop drives a
 local model whose messy output is handled by the M3 forgiving parser + structured

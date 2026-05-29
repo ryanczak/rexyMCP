@@ -71,11 +71,17 @@ derives (and the `serde(rename_all = "snake_case")` / `tag = "kind"` attributes)
 — this is not speculative; the architecture mandates these types as the log's
 record shape.
 
-**`native` + `stream` are deferred.** Rexy's `parser/native.rs` (backend-native
-`tool_calls`/`tool_use` blocks) and `stream.rs` (streaming accumulation) couple to
-the AI-client/agent-loop, not the text pipeline. They land with the loop in **M4**,
-not M3. (`Origin::Native` is defined in the M3 type set so the schema is complete,
-but nothing constructs it until M4.)
+**`native` + `stream` were dropped, not deferred (resolved 2026-05-29 in M4).**
+At M3 close these were carried as "deferred to the loop in M4." When M4 reached
+the question (the would-be "06b"), inspection showed neither Rexy file fits
+rexyMCP's streaming, headless design and both would have zero callers: the OpenAI
+backend already extracts native `tool_calls` from the SSE deltas and emits
+`AiEvent::ToolCallGeneric` (no `native::extract(&Value)` path; rexyMCP never calls
+Anthropic), and `stream.rs`'s `StreamRenderer` is TUI-only (rexyMCP is headless).
+The only real gap — constructing a `parser::ToolCall { origin: Origin::Native }`
+from a native event for uniform dispatch — folds into the phase-07 loop that
+consumes the event. `Origin::Native` is defined in the M3 type set so the schema
+is complete. (Rationale recorded in `M4-agent-loop/README.md` § Notes.)
 
 ## M3 retrospective (milestone close, 2026-05-28)
 
