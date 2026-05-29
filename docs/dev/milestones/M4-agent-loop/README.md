@@ -53,7 +53,9 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 Tentative remaining phases (draft when the prior one lands):
 
 - **03** — the JSONL **session log** writer + reader (`store/sessions/jsonl.rs`),
-  redacted, reusing M3's `Serialize` types as the event schema.
+  redacted, reusing M3's `Serialize` types as the event schema. **Reserve a
+  `progress` event variant** in the schema (M5's server emits heartbeat progress
+  into it — see Notes § "Progress heartbeats").
 - **04** — governor: per-(task,tool) **scorer** + **hard-fail detector**
   (repetition loops, repeated verifier failures, budget overflow).
 - **05** — `PhaseResult` + the **briefing** contract (adapt `escalation/packet.rs`:
@@ -91,3 +93,21 @@ loop wires it.
 **Redaction + the session log are M4's, but the redaction primitive itself**
 (`security/redact.rs`) is still a Rexy stub — it must be implemented (net-new,
 like `scope`) as part of the session-log phase, not assumed lifted.
+
+**Progress heartbeats (design decision — implemented in M5, schema reserved in
+M4 phase-03).** MCP `notifications/progress` heartbeats during a long
+`execute_phase` carry a **files-changed + per-file `+/-` numstat summary** (turn,
+current stage/tool, top-N changed files with line counts + totals), encoded in the
+notification's `message` string (the protocol has no structured payload field).
+Confirmed: **progress notifications do not enter Claude's context** — they are
+human-facing liveness UI. Their durable value is captured by **logging each
+progress event (redacted) into the session JSONL log** as a `progress` event kind,
+queryable on demand via the M5 log-query tools (`executor_log_search` with a
+`kind`/progress filter — *no dedicated tool by default*; the model's tool surface
+stays lean). Consumer split: the **human** watches the live notifications (this is
+where mid-call **abort** decisions happen); **Claude** queries the logged progress
+**post-return** (debugging a `hard_fail`, seeing how the diff evolved) — it cannot
+query mid-call because `execute_phase` is synchronous and suspends Claude until
+`PhaseResult`. The live numstat reuses the loop's working-set + diff machinery
+(already needed for read-before-edit and `PhaseResult.diff`); the heartbeat is a
+*liveness summary*, never a second source of truth.
