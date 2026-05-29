@@ -1,7 +1,7 @@
 # Phase 03: JSONL session log — writer/reader + event schema
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (done); reuses M3 parser types + M4 phase-01 `Diagnostic`.
 **Estimated diff:** ~480 lines (writer/reader lift + net-new event schema + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -300,3 +300,22 @@ gains `Deserialize` but its `#[serde(rename_all = "snake_case")]` attribute was
 already present, so serialization format is unchanged.
 
 verification: fmt OK · clippy OK · tests 373 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none (the mid-phase `Deserialize` blocker was an authorization
+  request the executor correctly raised before editing settled M3 code, not a
+  review rejection)
+- **Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** none — schema matches the prescriptive spec exactly;
+  adaptations (no chrono/tracing/pricing, best-effort discard) all honored;
+  parser changes are precisely the six authorized `Deserialize` additions
+- **Calibration:** one occurrence noted, no fold yet — the spec pinned
+  `Deserialize` on `SessionEvent` without ensuring its embedded M3 types
+  supported it, surfacing as a blocker. Extends "Derive intentionally"
+  (consistency across embedded types), but one data point; fold only if it
+  recurs. Architect ran all four gates (fmt/clippy/build clean, 373 passed) and
+  spot-checked tests: partial-last-line truncates a real serialized record and
+  asserts 3/4 survive; poison test exercises the best-effort discard path; all
+  10 variants round-trip carrying `event_type`.
