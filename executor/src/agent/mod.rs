@@ -5,9 +5,10 @@
 //! retry, hard-fail detection, and completion artifacts are later sub-phases.
 
 pub mod prompt;
+pub mod verify;
 
-use std::collections::VecDeque;
-use std::path::Path;
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 
 use tokio::sync::mpsc;
 
@@ -19,8 +20,9 @@ use crate::ai::types::{
 use crate::context::budget::Budget;
 use crate::context::compactor::compact;
 use crate::error::{Error, Result};
-use crate::governor::hard_fail::ToolCallSnapshot;
+use crate::governor::hard_fail::{HardFailSignal, ToolCallSnapshot, evaluate};
 use crate::governor::scorer::Scorer;
+use crate::governor::verifier::{Baseline, Diagnostic, Severity, VerifierResult};
 use crate::parser::{Origin, ParseResult, ToolCall, parse};
 use crate::phase::{
     Artifacts, Blocker, Briefing, CommandOutputs, PhaseResult, collect_working_files,
@@ -30,6 +32,7 @@ use crate::security::redact::Redactor;
 use crate::store::sessions::event::SessionEvent;
 use crate::store::sessions::jsonl::{SessionLogHandle, open_session_log, session_log};
 use crate::tools::ToolRegistry;
+use verify::FileVerifier;
 
 /// Preview cap for a tool result's `output_preview` in the session log — enough
 /// to triage a failure, not the full (possibly huge) output.
@@ -64,6 +67,8 @@ pub struct LoopDeps<'a> {
     pub session_id: &'a str,
     /// Epoch-millis clock for session-log record timestamps.
     pub clock: &'a dyn Fn() -> u64,
+    /// Post-edit verifier (injected so tests need not spawn a real compiler).
+    pub verifier: &'a dyn FileVerifier,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -86,6 +91,12 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut scorer = Scorer::new();
     let mut recent_tool_calls: VecDeque<ToolCallSnapshot> = VecDeque::new();
     let mut turns: usize = 0;
+
+    // Governor feedback state (07c).
+    let mut baseline = Baseline::new();
+    let mut baselined_exts: HashSet<String> = HashSet::new();
+    let mut recent_verifier_error_counts: Vec<usize> = Vec::new();
+    let mut last_author_diagnostics: Vec<Diagnostic> = Vec::new();
 
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
@@ -225,6 +236,22 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             },
         );
 
+        // An edit-class call's target path — resolved here (pre-dispatch) so the
+        // baseline can be captured *before* the model's edit lands. Otherwise
+        // `capture_baseline` would record the model's own new errors as ambient.
+        let edit_path = edit_target(&tool_call, deps.project_root);
+        if let Some(path) = &edit_path
+            && let Some(ext) = path.extension().and_then(|e| e.to_str())
+            && !baselined_exts.contains(ext)
+        {
+            let captured = deps
+                .verifier
+                .capture_baseline(std::slice::from_ref(path))
+                .await;
+            baseline.signatures.extend(captured.signatures);
+            baselined_exts.insert(ext.to_string());
+        }
+
         // Step 5 — dispatch (native and text share this path) and record.
         let (succeeded, content) = dispatch(deps.registry, &tool_call).await;
         log_event(
@@ -246,7 +273,65 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         });
         append_tool_exchange(&mut messages, &tool_call, &content, turns);
 
-        // Step 6 — turn cap.
+        // Step 6 — post-edit verify + retry feedback. Only for a successful
+        // edit-class call (verifying after a failed edit is noise).
+        if succeeded && let Some(path) = &edit_path {
+            match deps.verifier.verify(path).await {
+                VerifierResult::Checked { diagnostics } => {
+                    let (author, _ambient) = baseline.partition(&diagnostics);
+                    let author: Vec<Diagnostic> = author.into_iter().cloned().collect();
+                    log_event(
+                        &log_handle,
+                        &redactor,
+                        deps.clock,
+                        turns,
+                        SessionEvent::Verify {
+                            diagnostics: author.clone(),
+                        },
+                    );
+                    recent_verifier_error_counts.push(author.len());
+                    if author.is_empty() {
+                        last_author_diagnostics.clear();
+                    } else {
+                        messages.push(user_text(&render_diagnostics(&author), turns));
+                        last_author_diagnostics = author;
+                    }
+                }
+                VerifierResult::Unsupported => {}
+                VerifierResult::Failed(msg) => {
+                    messages.push(user_text(&format!("verifier failed: {msg}"), turns));
+                }
+            }
+        }
+
+        // Step 7 — hard-fail detection (repetition / persistent verifier failure /
+        // runaway output). Checked before the turn cap so the specific cause wins.
+        if let Some(signal) = evaluate(
+            &recent_tool_calls,
+            &recent_verifier_error_counts,
+            Some((&tool_call.name, content.len())),
+        ) {
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::HardFail {
+                    reason: signal.describe(),
+                },
+            );
+            log_session_end(&log_handle, &redactor, deps.clock, "hard_fail", turns);
+            return Ok(hard_fail_result(
+                input,
+                &recent_tool_calls,
+                deps.project_root,
+                last_author_diagnostics,
+                signal,
+                turns,
+            ));
+        }
+
+        // Step 8 — turn cap.
         if turns >= deps.max_turns {
             log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
             return Ok(budget_exceeded_result(
@@ -316,6 +401,63 @@ fn output_preview(content: &str) -> String {
     } else {
         content.to_string()
     }
+}
+
+/// The file an edit-class (`write_file` / `patch`) call targets, resolved against
+/// the project root. `None` for non-edit calls or calls missing a `"path"` arg.
+fn edit_target(tool_call: &ToolCall, project_root: &Path) -> Option<PathBuf> {
+    if tool_call.name != "write_file" && tool_call.name != "patch" {
+        return None;
+    }
+    let path = tool_call.arguments.get("path").and_then(|v| v.as_str())?;
+    let path = PathBuf::from(path);
+    Some(if path.is_absolute() {
+        path
+    } else {
+        project_root.join(path)
+    })
+}
+
+/// Render author diagnostics into a retry message the model can act on.
+fn render_diagnostics(diagnostics: &[Diagnostic]) -> String {
+    let mut out =
+        String::from("The verifier found errors you introduced. Fix them and continue:\n");
+    for d in diagnostics {
+        let col = d.column.map(|c| format!(":{c}")).unwrap_or_default();
+        let severity = match d.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Note => "note",
+            Severity::Help => "help",
+        };
+        out.push_str(&format!(
+            "- {}:{}{col} {severity}: {}\n",
+            d.path.display(),
+            d.line,
+            d.message,
+        ));
+    }
+    out
+}
+
+fn hard_fail_result(
+    input: &PhaseInput,
+    recent_tool_calls: &VecDeque<ToolCallSnapshot>,
+    project_root: &Path,
+    diagnostics: Vec<Diagnostic>,
+    signal: HardFailSignal,
+    turns: usize,
+) -> PhaseResult {
+    let briefing = Briefing {
+        goal: input.goal.clone(),
+        acceptance_criteria: input.acceptance_criteria.clone(),
+        diagnostics,
+        working_files: collect_working_files(recent_tool_calls, project_root),
+        what_was_tried: summarize_attempts(recent_tool_calls),
+        current_blocker: Blocker::HardFail(signal),
+        budget_remaining: format!("halted on hard-fail at turn {turns}"),
+    };
+    PhaseResult::hard_fail(briefing, empty_artifacts("hard_fail", turns))
 }
 
 /// Dispatch a tool call through the registry. Returns `(succeeded, content)`
@@ -454,6 +596,21 @@ mod tests {
         }
     }
 
+    /// A verifier that is never expected to fire (existing non-edit tests). If an
+    /// edit-class call ever reaches it, `verify` returns `Unsupported` so it stays
+    /// inert rather than spawning a real compiler.
+    struct NoopVerifier;
+
+    #[async_trait::async_trait]
+    impl FileVerifier for NoopVerifier {
+        async fn verify(&self, _path: &Path) -> VerifierResult {
+            VerifierResult::Unsupported
+        }
+        async fn capture_baseline(&self, _paths: &[PathBuf]) -> Baseline {
+            Baseline::new()
+        }
+    }
+
     fn deps<'a>(
         client: &'a dyn AiClient,
         registry: &'a ToolRegistry,
@@ -471,6 +628,7 @@ mod tests {
             model: "test-model",
             session_id: SESSION_ID,
             clock: &clock_zero,
+            verifier: &NoopVerifier,
         }
     }
 
@@ -1045,6 +1203,7 @@ mod tests {
             model: "test-model",
             session_id: SESSION_ID,
             clock: &clock_fixed,
+            verifier: &NoopVerifier,
         };
 
         execute_phase(&input(), d).await.unwrap();
@@ -1066,6 +1225,335 @@ mod tests {
             SessionEvent::HardFail { .. } => "hard_fail",
             SessionEvent::Progress { .. } => "progress",
             SessionEvent::SessionEnd { .. } => "session_end",
+        }
+    }
+
+    // ── 07c: verifier retry + hard-fail ───────────────────────────────────
+
+    use crate::governor::verifier::{Baseline as Bl, Diagnostic, Severity};
+    use std::sync::Mutex;
+
+    /// Verifier mock: pops a scripted `VerifierResult` per `verify` call (an
+    /// exhausted script yields `Unsupported`), returns a configured baseline, and
+    /// records the paths it was asked to verify.
+    struct MockFileVerifier {
+        results: Mutex<VecDeque<VerifierResult>>,
+        baseline: Bl,
+        verified: Mutex<Vec<PathBuf>>,
+    }
+
+    impl MockFileVerifier {
+        fn new(results: Vec<VerifierResult>) -> Self {
+            Self {
+                results: Mutex::new(results.into_iter().collect()),
+                baseline: Bl::new(),
+                verified: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn with_baseline(mut self, baseline: Bl) -> Self {
+            self.baseline = baseline;
+            self
+        }
+
+        fn verified_paths(&self) -> Vec<PathBuf> {
+            self.verified.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl FileVerifier for MockFileVerifier {
+        async fn verify(&self, path: &Path) -> VerifierResult {
+            self.verified.lock().unwrap().push(path.to_path_buf());
+            self.results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(VerifierResult::Unsupported)
+        }
+        async fn capture_baseline(&self, _paths: &[PathBuf]) -> Bl {
+            self.baseline.clone()
+        }
+    }
+
+    fn diag(message: &str) -> Diagnostic {
+        Diagnostic {
+            path: PathBuf::from("src/lib.rs"),
+            line: 7,
+            column: Some(3),
+            severity: Severity::Error,
+            message: message.to_string(),
+            code: Some("E0425".to_string()),
+        }
+    }
+
+    fn checked(diagnostics: Vec<Diagnostic>) -> VerifierResult {
+        VerifierResult::Checked { diagnostics }
+    }
+
+    /// A loop run over `dir` driving `client` with an injected `verifier`.
+    async fn run_with_verifier(
+        dir: &TempDir,
+        client: &dyn AiClient,
+        verifier: &dyn FileVerifier,
+        max_turns: usize,
+    ) -> PhaseResult {
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let budget = Budget::new(1_000_000);
+        let d = LoopDeps {
+            client,
+            registry: &registry,
+            tools: &[],
+            budget: &budget,
+            max_turns,
+            project_root: dir.path(),
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_zero,
+            verifier,
+        };
+        execute_phase(&input(), d).await.unwrap()
+    }
+
+    /// A native `write_file` call writing `body` to `name` under the temp root.
+    fn write_call(dir: &TempDir, name: &str, body: &str) -> AiEvent {
+        let path = dir.path().join(name).to_string_lossy().to_string();
+        native("write_file", json!({ "path": path, "content": body }))
+    }
+
+    #[tokio::test]
+    async fn edit_class_call_runs_verifier() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "fn a() {}")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![checked(vec![])]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        assert_eq!(verifier.verified_paths().len(), 1);
+        assert!(
+            verifier.verified_paths()[0].ends_with("a.rs"),
+            "verifier should have run on the edited file"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_edit_call_does_not_run_verifier() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![checked(vec![])]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        assert!(verifier.verified_paths().is_empty());
+    }
+
+    #[tokio::test]
+    async fn clean_verify_produces_no_retry_message() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "fn a() {}")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![checked(vec![])]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        // The second model call's messages carry no verifier-retry user message.
+        let second = &client.calls()[1].messages;
+        assert!(
+            !second
+                .iter()
+                .any(|m| m.role == "user" && m.content.contains("verifier found errors")),
+            "clean verify must not feed a retry message"
+        );
+    }
+
+    #[tokio::test]
+    async fn author_diagnostics_fed_back_as_retry() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "fn a() { bork }")],
+            vec![token("ok I'll fix it")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![checked(vec![diag("cannot find value `bork`")])]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        let second = &client.calls()[1].messages;
+        assert!(
+            second
+                .iter()
+                .any(|m| m.role == "user" && m.content.contains("cannot find value `bork`")),
+            "author diagnostic should be fed back as a retry message"
+        );
+    }
+
+    #[tokio::test]
+    async fn ambient_diagnostics_not_fed_back() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "fn a() {}")],
+            vec![token("done")],
+        ]);
+        // The same diagnostic is in the baseline → ambient → must not feed back.
+        let ambient = diag("pre-existing error");
+        let mut bl = Bl::new();
+        bl.record(&ambient);
+        let verifier = MockFileVerifier::new(vec![checked(vec![ambient])]).with_baseline(bl);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        let second = &client.calls()[1].messages;
+        assert!(
+            !second
+                .iter()
+                .any(|m| m.role == "user" && m.content.contains("pre-existing error")),
+            "ambient (baseline) diagnostics must not be fed back"
+        );
+    }
+
+    #[tokio::test]
+    async fn unsupported_verify_is_skipped() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "notes.md", "# hi")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![VerifierResult::Unsupported]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        // No Verify event logged for an unsupported language.
+        let has_verify = records(dir.path())
+            .iter()
+            .any(|r| matches!(r.event, SessionEvent::Verify { .. }));
+        assert!(!has_verify, "Unsupported must not log a Verify event");
+    }
+
+    #[tokio::test]
+    async fn verifier_failed_appends_notice_not_err() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "fn a() {}")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![VerifierResult::Failed("spawn failed".into())]);
+
+        let result = run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        let second = &client.calls()[1].messages;
+        assert!(
+            second
+                .iter()
+                .any(|m| m.content.contains("verifier failed: spawn failed")),
+            "a verifier infra failure should append a notice, not error"
+        );
+    }
+
+    #[tokio::test]
+    async fn persistent_verifier_failure_trips_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "v1")],
+            vec![write_call(&dir, "a.rs", "v2")],
+            vec![write_call(&dir, "a.rs", "v3")],
+            vec![token("unreached")],
+        ]);
+        // Three consecutive Checked-with-author verifier runs.
+        let verifier = MockFileVerifier::new(vec![
+            checked(vec![diag("err1")]),
+            checked(vec![diag("err2")]),
+            checked(vec![diag("err3")]),
+        ]);
+
+        let result = run_with_verifier(&dir, &client, &verifier, 10).await;
+
+        assert_eq!(result.status, PhaseStatus::HardFail);
+        let briefing = result.briefing.unwrap();
+        assert!(matches!(
+            briefing.current_blocker,
+            Blocker::HardFail(HardFailSignal::VerifierFailurePersistent { .. })
+        ));
+        assert!(
+            !briefing.diagnostics.is_empty(),
+            "hard-fail briefing must carry the current diagnostics"
+        );
+    }
+
+    #[tokio::test]
+    async fn identical_tool_call_repetition_trips_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let mk = || native("read_file", json!({ "path": path }));
+        let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![token("unreached")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_with_verifier(&dir, &client, &verifier, 10).await;
+
+        assert_eq!(result.status, PhaseStatus::HardFail);
+        assert!(matches!(
+            result.briefing.unwrap().current_blocker,
+            Blocker::HardFail(HardFailSignal::IdenticalToolCallRepetition { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn runaway_output_trips_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        // A file larger than the runaway threshold; reading it overflows the cap.
+        let big = "x".repeat(110 * 1024);
+        std::fs::write(dir.path().join("big.txt"), &big).unwrap();
+        let path = dir.path().join("big.txt").to_string_lossy().to_string();
+        let client =
+            MockAiClientScript::new(vec![vec![native("read_file", json!({ "path": path }))]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_with_verifier(&dir, &client, &verifier, 10).await;
+
+        assert_eq!(result.status, PhaseStatus::HardFail);
+        assert!(matches!(
+            result.briefing.unwrap().current_blocker,
+            Blocker::HardFail(HardFailSignal::RunawayOutput { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn hard_fail_logs_hardfail_then_session_end() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let mk = || native("read_file", json!({ "path": path }));
+        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 10).await;
+
+        let kinds: Vec<&str> = records(dir.path())
+            .iter()
+            .map(|r| event_kind(&r.event))
+            .collect();
+        let hf = kinds.iter().position(|k| *k == "hard_fail").unwrap();
+        let se = kinds.iter().position(|k| *k == "session_end").unwrap();
+        assert!(hf < se, "HardFail must be logged before SessionEnd");
+        match &records(dir.path()).last().unwrap().event {
+            SessionEvent::SessionEnd { status, .. } => assert_eq!(status, "hard_fail"),
+            other => panic!("expected SessionEnd, got {other:?}"),
         }
     }
 }

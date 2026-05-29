@@ -1,7 +1,7 @@
 # Phase 07c: verifier retry + hard-fail detection
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07a (loop), 07b (session log + `Verify`/`HardFail` events
 exist in the schema), phase-01 (`verifier`: `verify`, `capture_baseline`,
 `Baseline`, `Diagnostic`, `VerifierResult`), phase-05 (`hard_fail::evaluate`,
@@ -254,3 +254,101 @@ registry over a `TempDir`. Pin negatives.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md.
+
+Adding `agent/verify.rs` (`FileVerifier` trait + `RealVerifier` delegating to
+`governor::verifier`), a `verifier` field on `LoopDeps`, and the governor feedback
+into the loop: **pre-dispatch** lazy baseline capture per file extension (must
+precede the edit, else the model's own errors baseline as ambient), **post-dispatch**
+`verify` with `Baseline::partition` feeding author diagnostics back as a retry +
+`Verify` log event, and `hard_fail::evaluate` each turn → a `hard_fail` briefing
+(`Blocker::HardFail`, `last_author_diagnostics`) + `HardFail`/`SessionEnd` events.
+Tests inject a `MockFileVerifier`; a `NoopVerifier` keeps existing tests'
+non-edit runs from spawning a real compiler.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Added `agent/verify.rs` (`FileVerifier` trait + `RealVerifier`
+delegating to `governor::verifier::{verify, capture_baseline}`) and a `verifier:
+&dyn FileVerifier` field on `LoopDeps`. Threaded the governor feedback into the
+loop: an `edit_target` helper resolves a `write_file`/`patch` call's `"path"`
+(absolute or project-root-relative); **before** dispatch, the first edit per file
+extension lazily captures a `Baseline` (merged via `baseline.signatures.extend`)
+so pre-existing diagnostics are ambient; **after** a *successful* edit, `verify`
+runs and `Baseline::partition` splits author vs ambient — author diagnostics are
+fed back as a rendered `user` retry message, logged as a `Verify` event, and
+counted into `recent_verifier_error_counts` (only on `Checked`). `Unsupported` is
+skipped; `Failed(msg)` appends a notice (not an `Err`, not counted). Each turn,
+`hard_fail::evaluate(recent_tool_calls, verifier_counts, Some((name, content.len())))`
+runs before the turn cap; on a signal it logs `HardFail` + `SessionEnd{hard_fail}`
+and returns `PhaseResult::hard_fail` with a briefing carrying `Blocker::HardFail`
+and the last author diagnostics. Tests inject `MockFileVerifier`; existing
+non-edit tests use a `NoopVerifier`. No deviations from the spec.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.71s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.09s
+
+cargo test 2>&1 | grep "test result:" (lib line)
+test result: ok. 461 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+(461 = 450 prior + 11 verifier/hard-fail tests. `agent::` alone: 36 passed.)
+
+**Spec-pinned literal grep** (the wired log events):
+
+```
+grep -c 'SessionEvent::HardFail\|SessionEvent::Verify' executor/src/agent/mod.rs → 5
+(2 emit sites + the test event_kind matcher + 2 test assertions)
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. Verifier-retry and the
+three hard-fail signals are exercised via `MockFileVerifier` + `MockAiClientScript`
+over a `TempDir`; the real `cargo`/`tsc`/`ruff` path is covered by phase-01's
+verifier tests. First live loop-over-real-verifier run is M5.
+
+**Files changed:**
+- `executor/src/agent/verify.rs` — new: `FileVerifier` trait + `RealVerifier`.
+- `executor/src/agent/mod.rs` — `verify` module; `LoopDeps.verifier`; baseline +
+  verify + hard-fail threaded into the loop; `edit_target` / `render_diagnostics`
+  / `hard_fail_result` helpers; 11 new tests + `MockFileVerifier` / `NoopVerifier`.
+
+**New tests:** `edit_class_call_runs_verifier`, `non_edit_call_does_not_run_verifier`,
+`clean_verify_produces_no_retry_message`, `author_diagnostics_fed_back_as_retry`,
+`ambient_diagnostics_not_fed_back` (negative), `unsupported_verify_is_skipped`,
+`verifier_failed_appends_notice_not_err`,
+`persistent_verifier_failure_trips_hard_fail`,
+`identical_tool_call_repetition_trips_hard_fail`, `runaway_output_trips_hard_fail`,
+`hard_fail_logs_hardfail_then_session_end`.
+
+**Commits:** (pending — committed below)
+
+**Notes for review:**
+- **Baseline is captured pre-dispatch** (before the edit lands), not at session
+  start — capturing after the edit would record the model's own new errors as
+  ambient. Lazy per-extension; `capture_baseline` dedups internally.
+- Post-edit verify is guarded on `succeeded` (verifying after a failed edit is
+  noise); the spec said "after an edit-class dispatch" without conditioning on
+  success — this is a deliberate, minor tightening, flagged here.
+- `recent_verifier_error_counts` is pushed **only** on `Checked`, so
+  `VerifierFailurePersistent` counts consecutive verifier *runs* (not turns).
+- `render_diagnostics` is a small local renderer (not `phase::briefing`'s private
+  one, which the phase may not import).
+- `scorer.record` still has no consumer — unchanged (→ phase-08 telemetry).
+
+verification: fmt OK · clippy OK · tests 461 passed · build OK
