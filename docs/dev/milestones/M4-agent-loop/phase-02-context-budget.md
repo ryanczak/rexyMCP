@@ -181,7 +181,7 @@ test result: ok. 359 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 - `compactor::tests` — 8 tests (signaturize tool result, preserve system, evict oldest first, idempotent, no-op under target, stops at fraction, correct counts, system-only survival)
 
 **Commits:**
-- (pending — will commit after this entry)
+- `6d7472b` — feat: lift context budget engine (tokens, budget, compactor) from Rexy
 
 **Grep proofs:**
 - `[compacted: ` found in `compactor.rs:111` (comment) and `compactor.rs:120` (format string) ✓
