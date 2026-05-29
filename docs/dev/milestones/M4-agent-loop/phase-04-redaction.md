@@ -1,7 +1,7 @@
 # Phase 04: Secret redaction primitive
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-03 (done) — supplies the `SessionRecord`/`SessionEvent` the
 redactor protects, though this phase does not wire into them (that is phase-07).
 **Estimated diff:** ~400 lines (net-new redactor + tests)
@@ -236,3 +236,98 @@ look secret-ish but are not):
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md (regex-
+literal-saturated source corrupts opencode's serializer).
+
+Implementing the net-new `Redactor` in `executor/src/security/redact.rs`:
+`SecretKind` + marker tags, `LazyLock<Regex>` patterns (bash_classify
+convention), three layers (prefix shapes, tagged values, opt-in entropy), and the
+re-export from `security/mod.rs`. Then unit tests for positives, the security
+invariant, the boundary negatives, and the entropy on/off behavior.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Added `executor/src/security/redact.rs` — a net-new `Redactor` with
+`SecretKind` (11 variants) and the `[REDACTED:<type>]` marker. `redact` applies
+patterns in specificity order: Layer 1 prefix shapes (OpenAI `sk-`/`sk-ant-`,
+GitHub classic + `github_pat_`, AWS `AKIA`, Slack `xox*`, Google `ya29.`, Stripe
+`[sr]k_live_`, JWT, PEM private-key blocks), Layer 2 tagged values (credential
+DB URLs, `key=value`/`key: value` assignments, URL query secrets, `bearer …`),
+and Layer 3 a Shannon-entropy heuristic (≥4.0 bits/char over runs ≥24 chars)
+that is **off** under `new()` and **on** under `with_high_entropy()`. Patterns
+are `static LazyLock<Regex>` (bash_classify convention); the redactor is
+instance-held with no globals, no atomic counters, and no `tracing`. No new
+dependency (`regex` was already present). No deviations from the spec. Per the
+spec's "Out of scope," path-based read-refusal was **not** implemented.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.20s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.27s
+
+cargo test 2>&1 | grep "test result:"
+test result: ok. 388 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Spec-pinned literal grep** (AGENTS.md § "Grep for spec-pinned literals"):
+
+```
+grep -c "REDACTED:" executor/src/security/redact.rs
+# markers present for all 11 kinds (openai_key … high_entropy)
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The redactor is a
+library primitive exercised by unit tests; the loop that calls it on each record
+before the JSONL write is phase-07.
+
+**Files changed:**
+- `executor/src/security/redact.rs` — new: `SecretKind`, `Redactor`, the layered
+  patterns, the entropy heuristic, and 15 tests
+- `executor/src/security/mod.rs` — added `pub mod redact;` + re-exported
+  `Redactor`, `SecretKind`
+
+**New tests:**
+- `redacts_openai_key`, `redacts_github_token`, `redacts_aws_access_key`,
+  `redacts_slack_token`, `redacts_google_token`, `redacts_stripe_key`,
+  `redacts_jwt`, `redacts_private_key_pem_block`,
+  `redacts_db_url_with_embedded_credentials`, `redacts_tagged_value`
+- `redacted_output_never_contains_the_raw_secret` (the security invariant —
+  asserts no full secret and no 8-char slice survives, across all 11 sample secrets)
+- `leaves_plain_prose_untouched`, `does_not_redact_uuid_or_git_sha_without_entropy_layer`,
+  `does_not_redact_normal_identifier` (boundary negatives)
+- `high_entropy_layer_masks_only_when_enabled` (entropy off/on + UUID survives on)
+
+**Commits:** (pending — will commit below)
+
+**Notes for review:**
+- **Combined prefix-in-tagged case:** when a known-prefix secret appears as a
+  tagged value (e.g. `api_key=sk-…`), Layer 1 masks the secret first, then Layer 2
+  may relabel the whole assignment `[REDACTED:tagged_value]`. The specific kind is
+  lost but the secret is gone either way — the security invariant holds (verified).
+  The spec said not to over-pin this case.
+- **Path-based read-refusal deferred** (spec "Out of scope") — refusing to *read*
+  `.env`/`*.pem`/`~/.ssh/**` is a read-tool/`scope` concern, recorded in NEXT.md
+  and the README for a future read-tool phase. Not implemented here.
+- The high-entropy threshold (4.0 bits/char, min run 24) is tuned so dashed UUIDs
+  stay below the candidate length and survive even with the layer enabled; git
+  SHAs are the documented false-positive the opt-in default avoids.
+
+verification: fmt OK · clippy OK · tests 388 passed · build OK
