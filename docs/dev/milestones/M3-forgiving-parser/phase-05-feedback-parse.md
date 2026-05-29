@@ -1,7 +1,7 @@
 # Phase 05: feedback formatter + parse() orchestration
 
 **Milestone:** M3 — Forgiving parser
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (done)
 **Estimated diff:** ~700 lines (feedback + parse orchestration + tests)
 **Tags:** language=rust, kind=feature, size=l

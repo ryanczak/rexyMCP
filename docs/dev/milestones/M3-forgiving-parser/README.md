@@ -4,7 +4,7 @@
 local model's messy output into a validated `ToolCall`, or, when it can't, into
 actionable feedback the model can recover from.
 
-**Status:** in-progress
+**Status:** done — all five phases complete; signed off 2026-05-28 (retrospective below).
 
 **Depends on:** M2 (done — the parser validates candidates against the M2
 `ToolRegistry` and reads tool schemas for scoring/repair).
@@ -44,10 +44,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 02 | the six format extractors ([phase-02-extractors.md](phase-02-extractors.md)) | done |
 | 03 | candidate scoring + validation ([phase-03-score-validate.md](phase-03-score-validate.md)) | done |
 | 04 | the repair transforms ([phase-04-repair.md](phase-04-repair.md)) | done |
-| 05 | feedback formatter + `parse()` orchestration ([phase-05-feedback-parse.md](phase-05-feedback-parse.md)) | review |
-
-Phase-05 is the **last phase in M3** — its approval closes the milestone (human
-gate: retrospective + doc-folding).
+| 05 | feedback formatter + `parse()` orchestration ([phase-05-feedback-parse.md](phase-05-feedback-parse.md)) | done |
 
 ## Notes
 
@@ -79,3 +76,32 @@ record shape.
 the AI-client/agent-loop, not the text pipeline. They land with the loop in **M4**,
 not M3. (`Origin::Native` is defined in the M3 type set so the schema is complete,
 but nothing constructs it until M4.)
+
+## M3 retrospective (milestone close, 2026-05-28)
+
+Five phases, all `done`; the full forgiving parser (~3.3k lines lifted from Rexy)
+landed: `parse(response, &registry) -> ParseResult` composing detect → extract (6
+formats) → score → repair (6 transforms, cap 4) → validate → feedback. 303 tests.
+
+**Zero bounces.** Every phase passed review first-try. Lift discipline held: Rexy
+stage/plan doc references stripped throughout (grep-verified per phase), the
+`Serialize` types kept for the M4 session-log schema, `find_balanced_end` /
+`levenshtein` / `type_matches` kept per-file (vendored, not de-duplicated).
+
+**Lift-time defects fixed** (not ported): a production `.unwrap()` in `yaml`
+extraction and in `validate`'s name handling (rebound from the `if let`); `yaml`'s
+redundant double `detect_region` call and bare `use serde_yaml;`; leftover DEBUG
+`eprintln!`s. Adapted every test off Rexy's `build_default` (absent here) to a
+real-tools-over-`TempDir`-`Scope` registry.
+
+**Executor note — folded.** All five M3 phases were executed by **Claude Code
+directly, not opencode**: the parser's content (close-tags, ```fences, escaped
+quotes inside JSON-in-Rust string literals) reliably corrupts opencode's
+tool-call serializer — it left phase-01's `mod.rs` syntactically broken before
+handoff. This is now a recurring, predictable pattern (5/5 phases), so the
+architect-side routing lesson is folded into `WORKFLOW.md` § "Phase progression":
+pre-route opencode-hostile content to direct execution rather than
+dispatch-then-recover.
+
+**New dependency:** `serde_yaml = "0.9"` (YAML extractor; unmaintained upstream,
+acceptable for the lift, swappable later).
