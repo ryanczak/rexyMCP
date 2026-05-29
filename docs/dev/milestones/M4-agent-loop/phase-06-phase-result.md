@@ -1,7 +1,7 @@
 # Phase 06: `PhaseResult` + briefing contract
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (`Diagnostic`/`Severity`), phase-05
 (`HardFailSignal`, `ToolCallSnapshot`). All done.
 **Estimated diff:** ~450 lines (result + briefing types + renderer + assembly
@@ -382,3 +382,17 @@ they are types + renderer exercised by unit tests.
   are phase-07 — this phase only defines the fields.
 
 verification: fmt OK · clippy OK · tests 425 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode (markdown fences in `render()`)
+- **Scope deviations:** none. Native-parser items (06b) and the loop (07) were
+  architect-split out of this phase up front, not cut by the executor.
+- **Calibration:** none. Re-ran all four gates (fmt/build/clippy clean, 425 passed
+  incl. 18 phase tests); confirmed the status↔briefing invariant is constructor-
+  enforced, `Blocker` carries only the two pinned variants, the renderer omits the
+  TODO subheader (negative test present), and no `security::redact`/`Session`/
+  planner/`tracing` import or new dependency was introduced. `verifier.rs`/
+  `hard_fail.rs` untouched.
