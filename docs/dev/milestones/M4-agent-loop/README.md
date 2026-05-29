@@ -49,7 +49,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 |----|-------------------------------------------------------------------|--------|
 | 01 | post-edit verifier + `Diagnostic` ([phase-01-verifier.md](phase-01-verifier.md)) | done |
 | 02 | context budget + compaction ([phase-02-context-budget.md](phase-02-context-budget.md)) | done |
-| 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | in-progress |
+| 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

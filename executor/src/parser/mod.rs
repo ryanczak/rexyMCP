@@ -6,7 +6,7 @@
 // `strip_think_blocks` and `detect`. Extraction, scoring, repair, validation,
 // feedback, and the `parse` orchestration that composes them land in later phases.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Strip `<think>…</think>` blocks from text. Backends wrap reasoning deltas in
@@ -48,7 +48,7 @@ pub mod validate;
 
 /// A tool call extracted (and possibly repaired) from a model response. Produced
 /// by every successful pipeline run.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub name: String,
     pub arguments: Value,
@@ -57,7 +57,7 @@ pub struct ToolCall {
 
 /// Where a `ToolCall` came from — the audit trail the telemetry layer uses to
 /// tune the parser.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Origin {
     /// Backend emitted a native tool_calls / tool_use block.
     Native,
@@ -72,7 +72,7 @@ pub enum Origin {
 
 /// The six text formats the parser recognizes. Order here is **not** priority
 /// order — priority lives in `detect`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Format {
     Hermes,
@@ -84,7 +84,7 @@ pub enum Format {
 }
 
 /// One repair transform applied to a candidate during the repair pass.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum RepairOp {
     /// Fuzzy match of the tool name (Levenshtein ≤ 2).
@@ -108,7 +108,7 @@ pub enum RepairOp {
 
 /// What the parser returns when every stage fails. `feedback` is the advisory
 /// message sent back to the model when no candidate could be validated.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParseFailure {
     pub raw: String,
     pub detected_format: Option<Format>,
@@ -119,7 +119,7 @@ pub struct ParseFailure {
 /// A scored, possibly-repaired extraction candidate. The highest-scoring
 /// candidate that validates wins; the rest accumulate in
 /// `ParseFailure.candidates` for telemetry.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Candidate {
     pub format: Format,
     pub name: Option<String>,

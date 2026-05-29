@@ -6,4 +6,5 @@ pub mod governor;
 pub mod health;
 pub mod parser;
 pub mod security;
+pub mod store;
 pub mod tools;
