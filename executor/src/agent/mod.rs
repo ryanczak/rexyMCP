@@ -26,7 +26,14 @@ use crate::phase::{
     Artifacts, Blocker, Briefing, CommandOutputs, PhaseResult, collect_working_files,
     summarize_attempts,
 };
+use crate::security::redact::Redactor;
+use crate::store::sessions::event::SessionEvent;
+use crate::store::sessions::jsonl::{SessionLogHandle, open_session_log, session_log};
 use crate::tools::ToolRegistry;
+
+/// Preview cap for a tool result's `output_preview` in the session log — enough
+/// to triage a failure, not the full (possibly huge) output.
+const OUTPUT_PREVIEW_CHARS: usize = 500;
 
 /// The prompt inputs and verbatim phase metadata the loop assembles into the
 /// system prompt and the escalation briefing.
@@ -36,10 +43,13 @@ pub struct PhaseInput {
     pub phase_doc: String,
     pub goal: String,
     pub acceptance_criteria: String,
+    /// Short phase identifier (e.g. `"phase-07b"`) — used for the `SessionStart`
+    /// record and the session-log filename.
+    pub phase: String,
 }
 
-/// The injected dependencies the loop drives — explicit, no globals, no real
-/// clock (the loop here reads no time).
+/// The injected dependencies the loop drives — explicit, no globals. The `clock`
+/// is injected (no real `Utc::now()`); session logging reads its `ts` from it.
 pub struct LoopDeps<'a> {
     pub client: &'a dyn AiClient,
     pub registry: &'a ToolRegistry,
@@ -47,6 +57,13 @@ pub struct LoopDeps<'a> {
     pub budget: &'a Budget,
     pub max_turns: usize,
     pub project_root: &'a Path,
+    /// Model identifier, for the `SessionStart` record.
+    pub model: &'a str,
+    /// Caller-provided session id (M5 uses `generate_session_id()`); the loop
+    /// never generates it.
+    pub session_id: &'a str,
+    /// Epoch-millis clock for session-log record timestamps.
+    pub clock: &'a dyn Fn() -> u64,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -70,11 +87,42 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut recent_tool_calls: VecDeque<ToolCallSnapshot> = VecDeque::new();
     let mut turns: usize = 0;
 
+    // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
+    // setup failure on purpose (a non-writable repo must not fail the phase —
+    // logging is a side effect that never changes what the loop returns). The
+    // composed id puts both phase and session_id in the filename.
+    let redactor = Redactor::new();
+    let log_dir = deps.project_root.join(".rexymcp").join("sessions");
+    let log_handle: Option<SessionLogHandle> =
+        open_session_log(&log_dir, &format!("{}-{}", input.phase, deps.session_id)).ok();
+
+    log_event(
+        &log_handle,
+        &redactor,
+        deps.clock,
+        0,
+        SessionEvent::SessionStart {
+            session_id: deps.session_id.to_string(),
+            model: deps.model.to_string(),
+            phase: input.phase.clone(),
+        },
+    );
+    log_event(
+        &log_handle,
+        &redactor,
+        deps.clock,
+        0,
+        SessionEvent::Prompt {
+            rendered: system.clone(),
+        },
+    );
+
     loop {
         // Step 2 — budget: compact on overflow, give up if still over.
         if deps.budget.would_overflow(&system, &messages) {
             compact(&mut messages, deps.budget, &system);
             if deps.budget.would_overflow(&system, &messages) {
+                log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
                 return Ok(budget_exceeded_result(
                     input,
                     &recent_tool_calls,
@@ -107,10 +155,22 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     }
                 }
                 AiEvent::Done(_) => {}
-                AiEvent::Error(e) => return Err(Error::Backend(e)),
+                AiEvent::Error(e) => {
+                    log_session_end(&log_handle, &redactor, deps.clock, "error", turns);
+                    return Err(Error::Backend(e));
+                }
             }
         }
         turns += 1;
+        log_event(
+            &log_handle,
+            &redactor,
+            deps.clock,
+            turns,
+            SessionEvent::Completion {
+                raw: completion.clone(),
+            },
+        );
 
         // Step 4 — turn the output into a ToolCall (native event wins; otherwise
         // run the forgiving text parser).
@@ -118,12 +178,31 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             tc
         } else {
             match parse(&completion, deps.registry) {
-                ParseResult::NoToolCall => return Ok(complete_result(turns)),
+                ParseResult::NoToolCall => {
+                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
+                    return Ok(complete_result(turns));
+                }
                 ParseResult::Found(tc) => tc,
                 ParseResult::Failed(failure) => {
+                    log_event(
+                        &log_handle,
+                        &redactor,
+                        deps.clock,
+                        turns,
+                        SessionEvent::ParseFailed {
+                            failure: failure.clone(),
+                        },
+                    );
                     messages.push(assistant_text(&completion, turns));
                     messages.push(user_text(&failure.feedback, turns));
                     if turns >= deps.max_turns {
+                        log_session_end(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            "budget_exceeded",
+                            turns,
+                        );
                         return Ok(budget_exceeded_result(
                             input,
                             &recent_tool_calls,
@@ -136,9 +215,29 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 }
             }
         };
+        log_event(
+            &log_handle,
+            &redactor,
+            deps.clock,
+            turns,
+            SessionEvent::Parsed {
+                tool_call: tool_call.clone(),
+            },
+        );
 
         // Step 5 — dispatch (native and text share this path) and record.
         let (succeeded, content) = dispatch(deps.registry, &tool_call).await;
+        log_event(
+            &log_handle,
+            &redactor,
+            deps.clock,
+            turns,
+            SessionEvent::ToolResult {
+                name: tool_call.name.clone(),
+                succeeded,
+                output_preview: output_preview(&content),
+            },
+        );
         scorer.record(&tool_call.name, succeeded);
         recent_tool_calls.push_back(ToolCallSnapshot {
             tool: tool_call.name.clone(),
@@ -149,6 +248,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
         // Step 6 — turn cap.
         if turns >= deps.max_turns {
+            log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
             return Ok(budget_exceeded_result(
                 input,
                 &recent_tool_calls,
@@ -157,6 +257,64 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 turns,
             ));
         }
+    }
+}
+
+/// Redact an event (round-tripping its JSON through the redactor so every string
+/// field is covered) and write it best-effort. A `None` handle (the log failed to
+/// open) is a silent no-op — logging never changes loop behavior.
+fn log_event(
+    handle: &Option<SessionLogHandle>,
+    redactor: &Redactor,
+    clock: &dyn Fn() -> u64,
+    turn: usize,
+    event: SessionEvent,
+) {
+    let Some(handle) = handle else {
+        return;
+    };
+    session_log(handle, clock(), turn, redact_event(redactor, event));
+}
+
+fn log_session_end(
+    handle: &Option<SessionLogHandle>,
+    redactor: &Redactor,
+    clock: &dyn Fn() -> u64,
+    status: &str,
+    turns: usize,
+) {
+    log_event(
+        handle,
+        redactor,
+        clock,
+        turns,
+        SessionEvent::SessionEnd {
+            status: status.to_string(),
+            turns,
+        },
+    );
+}
+
+/// Round-trip an event through the redactor: serialize → redact the JSON →
+/// deserialize. This redacts every string the event carries (prompt, completion,
+/// tool output, the nested `ParseFailure` / `ToolCall` payloads) in one pass; the
+/// `[REDACTED:<kind>]` markers are JSON-safe, so the parse round-trips. On the
+/// can't-happen serde failure, fall back to the un-redacted event's structure
+/// only after redaction was attempted — but serialization of these types is
+/// effectively infallible, so this is a safety net, not a swallow.
+fn redact_event(redactor: &Redactor, event: SessionEvent) -> SessionEvent {
+    let Ok(json) = serde_json::to_string(&event) else {
+        return event;
+    };
+    let redacted = redactor.redact(&json);
+    serde_json::from_str(&redacted).unwrap_or(event)
+}
+
+fn output_preview(content: &str) -> String {
+    if content.chars().count() > OUTPUT_PREVIEW_CHARS {
+        content.chars().take(OUTPUT_PREVIEW_CHARS).collect()
+    } else {
+        content.to_string()
     }
 }
 
@@ -278,6 +436,13 @@ mod tests {
         r
     }
 
+    const SESSION_ID: &str = "testsid";
+    const PHASE_SLUG: &str = "phase-07b";
+
+    fn clock_zero() -> u64 {
+        0
+    }
+
     fn input() -> PhaseInput {
         PhaseInput {
             executor_contract: "CONTRACT".to_string(),
@@ -285,6 +450,7 @@ mod tests {
             phase_doc: "PHASE".to_string(),
             goal: "make it compile".to_string(),
             acceptance_criteria: "cargo build passes".to_string(),
+            phase: PHASE_SLUG.to_string(),
         }
     }
 
@@ -302,7 +468,17 @@ mod tests {
             budget,
             max_turns,
             project_root: root,
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_zero,
         }
+    }
+
+    /// The on-disk log path for a run driven by `deps()` over `root`.
+    fn log_path(root: &Path) -> std::path::PathBuf {
+        root.join(".rexymcp")
+            .join("sessions")
+            .join(format!("session-{PHASE_SLUG}-{SESSION_ID}.jsonl"))
     }
 
     fn token(s: &str) -> AiEvent {
@@ -628,5 +804,268 @@ mod tests {
             result.is_err(),
             "AiEvent::Error must surface as Err, not a PhaseResult"
         );
+    }
+
+    // ── 07b: session log ──────────────────────────────────────────────────
+
+    use crate::store::sessions::jsonl::read_session_log;
+
+    fn records(root: &Path) -> Vec<crate::store::sessions::event::SessionRecord> {
+        read_session_log(&log_path(root)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn creates_log_file_named_with_phase_and_session_id() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let path = log_path(dir.path());
+        assert!(path.exists(), "log file not created");
+        let name = path.file_name().unwrap().to_string_lossy();
+        assert!(name.contains(PHASE_SLUG) && name.contains(SESSION_ID));
+    }
+
+    #[tokio::test]
+    async fn logs_session_start_first_then_prompt() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let recs = records(dir.path());
+        assert!(matches!(recs[0].event, SessionEvent::SessionStart { .. }));
+        assert!(matches!(recs[1].event, SessionEvent::Prompt { .. }));
+        match &recs[0].event {
+            SessionEvent::SessionStart {
+                session_id,
+                model,
+                phase,
+            } => {
+                assert_eq!(session_id, SESSION_ID);
+                assert_eq!(model, "test-model");
+                assert_eq!(phase, PHASE_SLUG);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[tokio::test]
+    async fn logs_completion_parsed_and_tool_result_for_dispatched_turn() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let kinds: Vec<&str> = records(dir.path())
+            .iter()
+            .map(|r| event_kind(&r.event))
+            .collect();
+        // SessionStart, Prompt, then turn 1: Completion, Parsed, ToolResult, then
+        // turn 2 Completion, then SessionEnd.
+        assert_eq!(kinds[0], "session_start");
+        assert_eq!(kinds[1], "prompt");
+        assert_eq!(kinds[2], "completion");
+        assert_eq!(kinds[3], "parsed");
+        assert_eq!(kinds[4], "tool_result");
+        assert_eq!(*kinds.last().unwrap(), "session_end");
+    }
+
+    #[tokio::test]
+    async fn logs_parse_failed_for_malformed_turn() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![
+            vec![token("{\"name\":\"nonexistent\",\"arguments\":{}}")],
+            vec![token("stopping")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        assert!(
+            records(dir.path())
+                .iter()
+                .any(|r| matches!(r.event, SessionEvent::ParseFailed { .. })),
+            "expected a ParseFailed event"
+        );
+    }
+
+    #[tokio::test]
+    async fn logs_session_end_complete_on_clean_finish() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let recs = records(dir.path());
+        match &recs.last().unwrap().event {
+            SessionEvent::SessionEnd { status, turns } => {
+                assert_eq!(status, "complete");
+                assert_eq!(*turns, 1);
+            }
+            other => panic!("expected SessionEnd, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn logs_session_end_budget_exceeded_on_turn_cap() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path.clone() }))],
+            vec![native("read_file", json!({ "path": path }))],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 1, dir.path()))
+            .await
+            .unwrap();
+
+        match &records(dir.path()).last().unwrap().event {
+            SessionEvent::SessionEnd { status, .. } => assert_eq!(status, "budget_exceeded"),
+            other => panic!("expected SessionEnd, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn redacts_secret_in_tool_output_before_writing() {
+        const SECRET: &str = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("creds.txt"), SECRET).unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let path = dir.path().join("creds.txt").to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let raw = std::fs::read_to_string(log_path(dir.path())).unwrap();
+        assert!(!raw.contains(SECRET), "secret leaked into the session log");
+        assert!(
+            raw.contains("[REDACTED:openai_key]"),
+            "redaction marker missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn redacts_secret_in_completion_before_writing() {
+        const SECRET: &str = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client =
+            MockAiClientScript::new(vec![vec![token(&format!("here is the key {SECRET} ok"))]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let raw = std::fs::read_to_string(log_path(dir.path())).unwrap();
+        assert!(!raw.contains(SECRET), "secret leaked via completion");
+        assert!(raw.contains("[REDACTED:openai_key]"));
+    }
+
+    #[tokio::test]
+    async fn logging_failure_does_not_change_result() {
+        let dir = TempDir::new().unwrap();
+        // Pre-create `.rexymcp` as a *file* so the sessions dir cannot be created
+        // and the log fails to open — the run must still complete normally.
+        std::fs::write(dir.path().join(".rexymcp"), "not a dir").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        let result = execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(!log_path(dir.path()).exists());
+    }
+
+    #[tokio::test]
+    async fn injected_clock_sets_record_ts() {
+        const TS: u64 = 1_717_000_000_000;
+        fn clock_fixed() -> u64 {
+            TS
+        }
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+        let d = LoopDeps {
+            client: &client,
+            registry: &registry,
+            tools: &[],
+            budget: &budget,
+            max_turns: 8,
+            project_root: dir.path(),
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_fixed,
+        };
+
+        execute_phase(&input(), d).await.unwrap();
+
+        let recs = records(dir.path());
+        assert!(!recs.is_empty());
+        assert!(recs.iter().all(|r| r.ts == TS));
+    }
+
+    fn event_kind(event: &SessionEvent) -> &'static str {
+        match event {
+            SessionEvent::SessionStart { .. } => "session_start",
+            SessionEvent::Prompt { .. } => "prompt",
+            SessionEvent::Completion { .. } => "completion",
+            SessionEvent::Parsed { .. } => "parsed",
+            SessionEvent::ParseFailed { .. } => "parse_failed",
+            SessionEvent::ToolResult { .. } => "tool_result",
+            SessionEvent::Verify { .. } => "verify",
+            SessionEvent::HardFail { .. } => "hard_fail",
+            SessionEvent::Progress { .. } => "progress",
+            SessionEvent::SessionEnd { .. } => "session_end",
+        }
     }
 }

@@ -54,7 +54,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | done |
 | 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | done |
 | 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | done |
-| 07b | session log ([phase-07b-session-log.md](phase-07b-session-log.md)) | todo |
+| 07b | session log ([phase-07b-session-log.md](phase-07b-session-log.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

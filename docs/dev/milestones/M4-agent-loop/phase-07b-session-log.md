@@ -1,7 +1,7 @@
 # Phase 07b: session-log integration
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07a (the loop), phase-03 (`store::sessions`: `SessionLogger`,
 `SessionRecord`, `SessionEvent`, `open_session_log`, `session_log`), phase-04
 (`security::redact::Redactor`). All done.
@@ -242,3 +242,101 @@ injected counter/constant clock). Pin the redaction **negative**.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md
+(`<tool_call>` fixtures + JSON-in-Rust + planted secret literals).
+
+Adding `model` / `session_id` / `clock` to `LoopDeps` and a `phase` slug to
+`PhaseInput`, opening the log best-effort under
+`<root>/.rexymcp/sessions/session-<phase>-<id>.jsonl`, and threading
+`SessionStart`/`Prompt`/`Completion`/`Parsed`/`ParseFailed`/`ToolResult`/
+`SessionEnd` through the loop via a `log_event` helper that round-trips each event
+through `Redactor::new()`. Redaction test uses the OpenAI-key sample
+(`sk-proj-…` → `[REDACTED:openai_key]`). Existing 07a tests adapt via the shared
+`input()` / `deps()` helpers (a `'static` zero clock keeps call sites unchanged).
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Threaded the redacted JSONL session log through the 07a loop.
+`PhaseInput` gained a `phase` slug; `LoopDeps` gained `model` / `session_id` /
+`clock: &dyn Fn() -> u64` (injected — no `Utc::now`). At loop start the log is
+opened best-effort under `<root>/.rexymcp/sessions/` with a `{phase}-{session_id}`
+composed id (`.ok()` drops a setup failure on purpose, with a comment citing the
+"logging never changes the return" contract), then `SessionStart` + `Prompt` are
+logged. Per turn: `Completion` (after drain), `Parsed` (native or `Found`) or
+`ParseFailed`, and `ToolResult` (with a 500-char `output_preview`); every
+`Ok`-returning path logs `SessionEnd` with the matching status (`complete` /
+`budget_exceeded`), and the infra-`Err` path logs `SessionEnd{status:"error"}`
+best-effort. A single `log_event` helper redacts every record by round-tripping
+its JSON through `Redactor::new()` (`to_string → redact → from_str`, falling back
+to the original on the can't-happen serde error), so no log site can bypass
+redaction. The returned `PhaseResult` is unchanged from 07a (log-path surfacing is
+07d). No deviations from the spec.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.64s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.03s
+
+cargo test 2>&1 | grep "test result:" (lib line)
+test result: ok. 450 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+(450 = 440 prior + 10 session-log tests. `agent::` alone: 25 passed.)
+
+**Spec-pinned literal grep** (redaction marker + event kinds):
+
+```
+grep -c '\[REDACTED:openai_key\]' executor/src/agent/mod.rs → 2 (both redaction negatives assert it)
+grep -c 'SessionEvent::' executor/src/agent/mod.rs        → all seven logged kinds + the test event_kind matcher
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The log is written by
+`execute_phase` and read back with `read_session_log` over a `TempDir`; the M5
+query tools and a live run are the first real end-to-end.
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — `PhaseInput.phase`; `LoopDeps.{model,session_id,
+  clock}`; log open + `log_event` / `log_session_end` / `redact_event` /
+  `output_preview` helpers; logging threaded through every loop path; 10 new tests
+  + updated `input()` / `deps()` helpers + a `log_path` / `event_kind` test helper.
+
+**New tests:** `creates_log_file_named_with_phase_and_session_id`,
+`logs_session_start_first_then_prompt`,
+`logs_completion_parsed_and_tool_result_for_dispatched_turn`,
+`logs_parse_failed_for_malformed_turn`, `logs_session_end_complete_on_clean_finish`,
+`logs_session_end_budget_exceeded_on_turn_cap`,
+`redacts_secret_in_tool_output_before_writing` (negative),
+`redacts_secret_in_completion_before_writing` (negative),
+`logging_failure_does_not_change_result`, `injected_clock_sets_record_ts`.
+
+**Commits:** (pending — committed below)
+
+**Notes for review:**
+- Redaction is whole-event round-trip (covers nested `Parsed`/`ParseFailed`
+  payloads, not just top-level strings), per the spec's recommended approach. The
+  `unwrap_or(event)` fallback is a safety net for an infallible serialize, not a
+  swallow (STANDARDS §2.1).
+- `Prompt` logs the assembled system prompt once at start (not per turn); per-turn
+  context is reconstructable from the `Completion` / `ToolResult` sequence, as the
+  spec directs.
+- The infra-`Err` path logs `SessionEnd{status:"error"}` (the spec made this
+  optional; included it so every opened log closes with a terminal record). The
+  `chat().await` map_err path returns before any drain and is left unlogged.
+- `scorer.record` still has no consumer (07a calibration note) — unchanged here;
+  07c wires the reader.
+
+verification: fmt OK · clippy OK · tests 450 passed · build OK
