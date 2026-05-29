@@ -52,7 +52,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | JSONL session log: writer/reader + event schema ([phase-03-session-log.md](phase-03-session-log.md)) | done |
 | 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | done |
 | 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | done |
-| 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | todo |
+| 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

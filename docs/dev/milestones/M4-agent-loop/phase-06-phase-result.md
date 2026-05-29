@@ -1,7 +1,7 @@
 # Phase 06: `PhaseResult` + briefing contract
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (`Diagnostic`/`Severity`), phase-05
 (`HardFailSignal`, `ToolCallSnapshot`). All done.
 **Estimated diff:** ~450 lines (result + briefing types + renderer + assembly
@@ -286,3 +286,99 @@ functions. Pin positives **and** negatives (WORKFLOW § "Pin negative cases").
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md
+(`render()` embeds markdown fences).
+
+Creating `executor/src/phase/` with `result.rs` (PhaseResult + status + artifacts
+constructors) and `briefing.rs` (Briefing + Blocker + helpers + renderer),
+decoupled from Rexy's `Session`/planner. Then unit tests for the serde contract,
+the status↔briefing invariant, the renderer sections (incl. the no-TODO
+negative), and the assembly helpers.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Added `executor/src/phase/` (wired `pub mod phase;` into `lib.rs`).
+`result.rs`: `PhaseStatus` (`#[serde(rename_all = "snake_case")]`), `FileChange`,
+`CommandOutputs`, `PhaseResult`, and an `Artifacts` carrier feeding three
+constructors (`complete` → `briefing: None`; `hard_fail` / `budget_exceeded` →
+`Some`) that enforce the status↔briefing invariant. `briefing.rs`: `Briefing`,
+two-variant `Blocker` (`HardFail(HardFailSignal)` | `BudgetExceeded`),
+`AttemptSummary`, `WorkingFile`, the `MAX_*` consts, the six-section markdown
+`render()` (Goal → Acceptance criteria → Current code state {Diagnostics, Files
+in the working set — **no TODO**} → What was tried → Current blocker → Budget
+remaining), and the `summarize_attempts` / `collect_working_files` helpers lifted
+from Rexy's `packet.rs` and decoupled from `Session`. Dropped the cloud transport,
+planner/TODO section, and escalation-slot budget directive. No `security::redact`
+import (briefing returned to Claude, not redacted). No deviations from the spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.29s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.39s
+
+cargo test 2>&1 | grep "test result:"
+test result: ok. 425 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Spec-pinned literal grep** (AGENTS.md § "Grep for spec-pinned literals"):
+
+```
+# PhaseStatus contract strings:
+grep -o 'complete\|hard_fail\|budget_exceeded' (serialized via #[serde(rename_all)]) → asserted by status_serializes_to_snake_case
+# Markdown fences landed in the renderer:
+grep -c '```' executor/src/phase/briefing.rs → 2 (open + close)
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. `PhaseResult` /
+`Briefing` are returned by the loop (phase-07) and surfaced over MCP (M5); here
+they are types + renderer exercised by unit tests.
+
+**Files changed:**
+- `executor/src/lib.rs` — added `pub mod phase;`
+- `executor/src/phase/mod.rs` — new, module decls + re-exports
+- `executor/src/phase/result.rs` — new, PhaseResult + status + Artifacts + constructors + 6 tests
+- `executor/src/phase/briefing.rs` — new, Briefing + Blocker + helpers + render + 12 tests
+
+**New tests:**
+- result.rs: `status_serializes_to_snake_case`, `complete_has_no_briefing`,
+  `hard_fail_has_briefing`, `budget_exceeded_has_briefing`,
+  `command_outputs_serialize_with_pinned_keys`,
+  `phase_result_with_briefing_round_trips_through_json`
+- briefing.rs: `render_emits_six_section_headers_in_order`,
+  `render_code_state_has_diagnostics_and_files_subheaders`,
+  `render_omits_todo_state`, `render_hard_fail_blocker_uses_signal_describe`,
+  `render_budget_exceeded_blocker_states_exhaustion`,
+  `render_budget_remaining_echoes_the_line`,
+  `render_diagnostic_includes_path_line_severity_message`,
+  `summarize_attempts_marks_succeeded_and_failed`,
+  `summarize_attempts_truncates_long_summaries`,
+  `collect_working_files_caps_at_five`,
+  `collect_working_files_dedupes_repeated_paths`,
+  `collect_working_files_skips_unreadable`
+
+**Commits:** (pending — will commit below)
+
+**Notes for review:**
+- `Blocker` has the two variants the spec pinned (`HardFail`, `BudgetExceeded`);
+  Rexy's `Diagnostic`/`FailingToolCall` variants intentionally omitted.
+- `compact_args` keeps Rexy's `unwrap_or_else(|| "{}")` on
+  `serde_json::to_string(&Value)` — `Value` serialization is infallible, so this
+  is a fallback for a can't-happen case, not a swallowed error (STANDARDS §2.1).
+- Diff capping, `files_changed`/`command_outputs` population, and diff generation
+  are phase-07 — this phase only defines the fields.
+
+verification: fmt OK · clippy OK · tests 425 passed · build OK
