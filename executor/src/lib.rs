@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod config;
+pub mod context;
 pub mod error;
 pub mod governor;
 pub mod health;

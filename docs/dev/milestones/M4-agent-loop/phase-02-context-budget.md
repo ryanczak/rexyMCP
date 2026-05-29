@@ -1,7 +1,7 @@
 # Phase 02: context budget + compaction
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~620 lines (tokens + budget + compactor + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -136,4 +136,57 @@ workaround (AGENTS.md) or fall back to direct execution.
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
-<!-- entries appended below this line -->
+### Update — 2026-05-28 (started)
+
+**Executor:** Qwen3.6-27B-FP8 / opencode
+
+Lifting `tokens.rs`, `budget.rs`, `compactor.rs` from Rexy's `context/` module with adaptations: dropped `Profile`/`Config`/`Session` dependencies, replaced `from_config` with `new` + `from_context`, adapted `compact` to operate on `&mut Vec<Message>`.
+
+### Update — 2026-05-28 (complete)
+
+**Summary:** Lifted three modules from Rexy's context engine with minimal adaptations. `tokens.rs` is a pure copy. `budget.rs` drops the `Profile` dependency and provides `new(ceiling)` + `from_context(context_length, max_context_pct)` constructors. `compactor.rs` operates on `&mut Vec<Message>` instead of Rexy's `Session`. All Rexy-specific references (`profiles`, `Session`, `TurnEvent`, `memory`) removed.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) built in 0.48s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+cargo test 2>&1 | tail -30
+test result: ok. 359 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:** Not applicable — pure library functions exercised by unit tests. The loop that calls `budget`/`compact` between turns is M4 phase-06.
+
+**Files changed:**
+- `executor/src/context/mod.rs` — declares `pub mod tokens; pub mod budget; pub mod compactor;`
+- `executor/src/context/tokens.rs` — pure lift of `count()` heuristic + tests
+- `executor/src/context/budget.rs` — adapted `Budget` with `new`/`from_context` + tests
+- `executor/src/context/compactor.rs` — adapted `compact` over `&mut Vec<Message>` + tests
+- `executor/src/lib.rs` — added `pub mod context;`
+
+**New tests:**
+- `tokens::tests` — 6 tests (empty, short word, long word, punctuation, CJK, mixed content)
+- `budget::tests` — 8 tests (default, new, from_context formula, saturate, estimate, overflow true/false, fraction ratio, sentinel zero)
+- `compactor::tests` — 8 tests (signaturize tool result, preserve system, evict oldest first, idempotent, no-op under target, stops at fraction, correct counts, system-only survival)
+
+**Commits:**
+- (pending — will commit after this entry)
+
+**Grep proofs:**
+- `[compacted: ` found in `compactor.rs:111` (comment) and `compactor.rs:120` (format string) ✓
+- `profiles` / `Session` / `TurnEvent` / `memory` → 0 matches in new files ✓
+
+**Notes for review:** None. Lift is straightforward; tests adapted from Rexy with `Session` replaced by `Vec<Message>` and `from_config` replaced by `from_context`.
+
+**verification: fmt OK · clippy OK · tests 359 passed · build OK**
