@@ -39,11 +39,16 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | `symbols` — tree-sitter symbol-definition search (Rust + Python) ([phase-03-symbols.md](phase-03-symbols.md)) | done |
 | 04 | write tools: `write_file` + `patch` (scope-confined) ([phase-04-write-tools.md](phase-04-write-tools.md)) | done |
 | 05 | `bash` tool + `bash_classify` (Block/Allow, cwd-pin, env-strip) ([phase-05-bash.md](phase-05-bash.md)) | done |
+| 06 | 2-stage tool router primitive: `Category` + `categorize` + registry queries ([phase-06-router.md](phase-06-router.md)) | todo |
 
-Tentative remaining phases (draft when the prior one lands):
+Phase-06 is the **last phase in M2** — its approval closes the milestone (human
+gate: retrospective + doc-folding).
 
-- **06** — the 2-stage tool router (categories: Read | Write | Search | Run |
-  Plan) + governor-aware schema ordering hook.
+**Deferred out of phase-06** (the README originally bundled these into "06"): the
+actual 2-stage *presentation* (model picks a category → sees only its schemas) is
+an M4 agent-loop behavior; **governor-aware schema ordering** is M4 (needs the
+governor's scorer); the **`Plan` category** is omitted (rexyMCP has no
+plan/memory executor tool — categories are Read | Write | Search | Run).
 
 **Deferred out of phase-05** (the README originally bundled these into "05"): the
 `bash_classify` confirm tier collapsed to two tiers (Block/Allow) since the

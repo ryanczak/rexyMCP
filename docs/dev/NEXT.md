@@ -4,15 +4,11 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M2 phase-05 approved (`done`, after one bounce); phase-06 not yet drafted.
+**Active phase:** [M2 / phase-06 — 2-stage tool router primitive](milestones/M2-executor-tools/phase-06-router.md)
 
-Per WORKFLOW.md § "Phase progression & triggers" (gated by default), the
-architect drafts the next phase on demand. M2 phase-06 (the 2-stage tool router)
-is the **last phase in M2** — has not been written yet. The project owner advances
-with `/architect next` (or asks the architect to draft it). Note: after phase-06
-the M2 milestone closes, which is a human gate (retrospective + doc-folding).
+**Status:** todo
 
-**Milestone:** [M2 — Executor tools & security](milestones/M2-executor-tools/README.md) — in-progress (phase-01 through phase-05 done; phase-06 remaining).
+**Milestone:** [M2 — Executor tools & security](milestones/M2-executor-tools/README.md) — in-progress (phase-01 through phase-05 done; phase-06 is the **last** — its approval closes M2, a human gate).
 
 ---
 
