@@ -1,7 +1,7 @@
 # Phase 02: context budget + compaction
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~620 lines (tokens + budget + compactor + tests)
 **Tags:** language=rust, kind=feature, size=m
