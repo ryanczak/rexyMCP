@@ -1,7 +1,7 @@
 # Phase 06: 2-stage tool router — category primitive + registry queries
 
 **Milestone:** M2 — Executor tools & security
-**Status:** review
+**Status:** done
 **Depends on:** phase-05 (done)
 **Estimated diff:** ~190 lines (router lift + registry category methods + tests)
 **Tags:** language=rust, kind=feature, size=s
