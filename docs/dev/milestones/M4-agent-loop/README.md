@@ -58,7 +58,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 07c | verifier retry + hard-fail ([phase-07c-verifier-hardfail.md](phase-07c-verifier-hardfail.md)) | done |
 | 07d | read-before-edit ([phase-07d-read-before-edit.md](phase-07d-read-before-edit.md)) | done |
 | 07e | completion artifacts ([phase-07e-completion-artifacts.md](phase-07e-completion-artifacts.md)) | done |
-| 08 | `PhaseRun` telemetry ([phase-08-phaserun-telemetry.md](phase-08-phaserun-telemetry.md)) | todo |
+| 08 | `PhaseRun` telemetry ([phase-08-phaserun-telemetry.md](phase-08-phaserun-telemetry.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

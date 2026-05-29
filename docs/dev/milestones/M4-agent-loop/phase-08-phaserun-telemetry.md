@@ -1,7 +1,7 @@
 # Phase 08: `PhaseRun` telemetry (M4 closer)
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07a–07e (the full loop), phase-03 (`store::sessions` for the
 JSONL-append pattern + `generate_session_id`), `ai::types::TokenBreakdown`,
 `governor::scorer::Scorer`. All done.
@@ -260,3 +260,104 @@ Hermetic (`TempDir` telemetry dir; read back with a `read` helper), deterministi
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md.
+
+Adding `store/telemetry.rs` (`PhaseRun`/`GenerationParams`/`Gates` + `append`/`read`),
+extending `agent/command.rs`'s `CommandRunner` to return `CommandResult { output,
+success }` (gates need exit status), and threading metrics through the loop: a
+`RunMetrics` carrier (parse attempts/failures, repairs, calls, verifier_retries,
+accumulated `tokens`, `start_ms`), token accumulation on `AiEvent::Done`, and a
+best-effort `emit_phase_run` at every terminal computing `tool_success_rate` from
+`Scorer.counts`. New `LoopDeps` fields `generation_params` + `telemetry_dir`;
+`PhaseInput.tags`. Fixing the 07e `NoopRunner` comment nit en route.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Net-new `store/telemetry.rs` — `PhaseRun` / `GenerationParams` /
+`Gates` + `append` (JSONL to `<telemetry_dir>/phase_runs.jsonl`, dir created) +
+`read`. Extended `agent/command.rs`'s `CommandRunner::run` to return
+`CommandResult { output, success }` (07e `command_outputs` keeps `output`; `Gates`
+take `success`). The loop accumulates a `RunMetrics` carrier (parse
+attempts/failures, repairs from `Origin::Repaired`, dispatched calls,
+`verifier_retries`, `tokens` folded from `AiEvent::Done`, `start_ms`) and, at every
+terminal return, `emit_phase_run` builds the `PhaseRun` and appends it best-effort
+— computing `tool_success_rate` from `Scorer.counts` (the long-carried scorer
+consumer, now load-bearing). `escalated = status != "complete"`; `gates` populated
+only on the clean-completion path (from command exit status), `None` elsewhere.
+Supervision fields (`bugs_filed`/`bounces_to_approval`/`architect_verdict`/
+`warnings`) left `None` for the architect/M7. New `LoopDeps.{generation_params,
+telemetry_dir}`, `PhaseInput.tags`. `PhaseRun` omits `PartialEq` (`TokenBreakdown`
+lacks it; the round-trip test compares serialized JSON). Fixed the 07e `NoopRunner`
+doc-comment nit. No deviations from the spec.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.71s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.28s
+
+cargo test 2>&1 | grep "test result:" (lib line)
+test result: ok. 492 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+(492 = 477 prior + 12 loop telemetry tests + 3 store tests. `agent::` alone: 64.)
+
+**Spec-pinned literal grep** (the scorer consumer):
+
+```
+grep -c 'scorer.counts' executor/src/agent/mod.rs → 1 (emit_phase_run reads it for tool_success_rate)
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The `PhaseRun` is written
+by `execute_phase`, exercised via mocks + `TempDir` and read back with
+`telemetry::read`. M7 consumers + a live cross-project store are the first real E2E.
+
+**Files changed:**
+- `executor/src/store/telemetry.rs` — new: `PhaseRun`/`GenerationParams`/`Gates` +
+  `append`/`read` + 3 tests.
+- `executor/src/store/mod.rs` — `pub mod telemetry;`.
+- `executor/src/agent/command.rs` — `CommandRunner::run` → `CommandResult`.
+- `executor/src/agent/mod.rs` — `RunMetrics`, token accumulation, parse/repair/
+  verifier counters, `emit_phase_run`, `run_command_set` returns `Gates`, new
+  `LoopDeps`/`PhaseInput` fields, terminal emits; updated test harness + 12 tests;
+  `NoopRunner` comment fix.
+
+**New tests:** (store) `phase_run_round_trips_through_json`,
+`append_writes_one_line_per_run`, `read_missing_file_is_empty`; (loop)
+`run_appends_one_phase_run_line`, `telemetry_none_dir_is_noop_and_completes`,
+`telemetry_write_failure_does_not_change_result`, `hard_fail_run_is_escalated`,
+`gates_populated_on_complete_from_exit_status`, `gates_none_on_hard_fail`,
+`tool_success_rate_reflects_scorer`, `parse_failure_rate_counts_only_parse_attempts`,
+`repairs_per_call_counts_repaired_origin`, `verifier_retries_counts_author_failures`,
+`tokens_accumulate_across_done_events`, `wall_clock_zero_under_constant_clock`.
+
+**Commits:** (pending — committed below)
+
+**Notes for review:**
+- **Scorer consumer resolved:** `tool_success_rate` = Σsucc/Σtotal over
+  `scorer.counts`; the 07a calibration carry is closed (no `governor` edit needed —
+  `counts` is public).
+- Gates need exit status, so `CommandRunner` was extended (within `agent/**`); the
+  07e `command_outputs` contract is unchanged (still the tail string).
+- `PhaseRun` is not `PartialEq` (TokenBreakdown isn't, and `ai/types.rs` is out of
+  scope); round-trip test compares JSON.
+- Telemetry is best-effort (`None` dir or write error → run unaffected), mirroring
+  the session log.
+- **Milestone closer:** this is the last in-scope M4 phase. Approving it hits the
+  M4 milestone boundary → human gate (retrospective + doc folds). I am stopping at
+  `review`, not advancing.
+
+verification: fmt OK · clippy OK · tests 492 passed · build OK

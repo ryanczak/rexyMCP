@@ -1,8 +1,10 @@
-//! The core `execute_phase` turn loop (turn-cycle steps 1–5). Drives the local
-//! model through budget-bounded turns — chat → drain events → native-or-parsed
-//! `ToolCall` → dispatch → score — terminating `complete` (model stops calling
-//! tools) or `budget_exceeded` (turn/context exhaustion). Session log, verifier
-//! retry, hard-fail detection, and completion artifacts are later sub-phases.
+//! The `execute_phase` turn loop — the full turn cycle. Drives the local model
+//! through budget-bounded turns (chat → drain events → native-or-parsed `ToolCall`
+//! → read-before-edit gate → dispatch → post-edit verify → hard-fail check),
+//! writing a redacted session log throughout, and on termination returns a
+//! `PhaseResult` (diff, files_changed, command_outputs, briefing) and emits a
+//! `PhaseRun` telemetry record. Terminates `complete` (model stops calling tools),
+//! `hard_fail` (a hard-fail signal), or `budget_exceeded` (turn/context cap).
 
 pub mod command;
 pub mod prompt;
@@ -18,7 +20,8 @@ use tokio::sync::mpsc;
 use crate::ai::AiClient;
 use crate::ai::next_tool_id;
 use crate::ai::types::{
-    AiEvent, Message, ToolCall as AiToolCall, ToolResult as AiToolResult, ToolSchema,
+    AiEvent, Message, TokenBreakdown, ToolCall as AiToolCall, ToolResult as AiToolResult,
+    ToolSchema,
 };
 use crate::config::CommandConfig;
 use crate::context::budget::Budget;
@@ -35,8 +38,9 @@ use crate::phase::{
 use crate::security::redact::Redactor;
 use crate::store::sessions::event::SessionEvent;
 use crate::store::sessions::jsonl::{SessionLogHandle, open_session_log, session_log};
+use crate::store::telemetry::{self, Gates, GenerationParams, PhaseRun};
 use crate::tools::ToolRegistry;
-use command::CommandRunner;
+use command::{CommandResult, CommandRunner};
 use verify::FileVerifier;
 
 /// Preview cap for a tool result's `output_preview` in the session log — enough
@@ -60,6 +64,8 @@ pub struct PhaseInput {
     /// Short phase identifier (e.g. `"phase-07b"`) — used for the `SessionStart`
     /// record and the session-log filename.
     pub phase: String,
+    /// Phase-doc tags (language / kind / size) for the `PhaseRun` record.
+    pub tags: Vec<String>,
 }
 
 /// The injected dependencies the loop drives — explicit, no globals. The `clock`
@@ -84,6 +90,10 @@ pub struct LoopDeps<'a> {
     pub commands: &'a CommandConfig,
     /// Runner for the final command set (injected so tests need not spawn one).
     pub runner: &'a dyn CommandRunner,
+    /// Generation knobs recorded in the `PhaseRun` (M5 populates; default here).
+    pub generation_params: GenerationParams,
+    /// Cross-project telemetry dir for the `PhaseRun` record; `None` disables it.
+    pub telemetry_dir: Option<&'a Path>,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -119,6 +129,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Completion-artifact state (07e): pre-edit content of each file the model
     // edits, captured before the first edit lands — the "before" side of the diff.
     let mut pre_edit_content: HashMap<PathBuf, Option<String>> = HashMap::new();
+
+    // Telemetry accumulation (08): metrics folded into the PhaseRun at terminal.
+    let mut metrics = RunMetrics::started_at((deps.clock)());
 
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
@@ -159,6 +172,15 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             compact(&mut messages, deps.budget, &system);
             if deps.budget.would_overflow(&system, &messages) {
                 log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
+                emit_phase_run(
+                    &deps,
+                    input,
+                    "budget_exceeded",
+                    Gates::default(),
+                    &metrics,
+                    &scorer,
+                    turns,
+                );
                 let artifacts = build_artifacts(
                     &pre_edit_content,
                     deps.project_root,
@@ -198,7 +220,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         });
                     }
                 }
-                AiEvent::Done(_) => {}
+                AiEvent::Done(breakdown) => metrics.add_tokens(&breakdown),
                 AiEvent::Error(e) => {
                     log_session_end(&log_handle, &redactor, deps.clock, "error", turns);
                     return Err(Error::Backend(e));
@@ -221,12 +243,14 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         let tool_call = if let Some(tc) = native_call {
             tc
         } else {
+            metrics.parse_attempts += 1;
             match parse(&completion, deps.registry) {
                 ParseResult::NoToolCall => {
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     // Step 8 — clean completion runs the final command set.
-                    let command_outputs =
+                    let (command_outputs, gates) =
                         run_command_set(deps.runner, deps.commands, deps.project_root).await;
+                    emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
                     let artifacts = build_artifacts(
                         &pre_edit_content,
                         deps.project_root,
@@ -239,6 +263,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 }
                 ParseResult::Found(tc) => tc,
                 ParseResult::Failed(failure) => {
+                    metrics.parse_failures += 1;
                     log_event(
                         &log_handle,
                         &redactor,
@@ -256,6 +281,15 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                             &redactor,
                             deps.clock,
                             "budget_exceeded",
+                            turns,
+                        );
+                        emit_phase_run(
+                            &deps,
+                            input,
+                            "budget_exceeded",
+                            Gates::default(),
+                            &metrics,
+                            &scorer,
                             turns,
                         );
                         let artifacts = build_artifacts(
@@ -334,6 +368,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             },
         );
         scorer.record(&tool_call.name, succeeded);
+        metrics.total_calls += 1;
+        if let Origin::Repaired { repairs, .. } = &tool_call.origin {
+            metrics.total_repairs += repairs.len();
+        }
         recent_tool_calls.push_back(ToolCallSnapshot {
             tool: tool_call.name.clone(),
             arguments: tool_call.arguments.clone(),
@@ -370,6 +408,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     if author.is_empty() {
                         last_author_diagnostics.clear();
                     } else {
+                        metrics.verifier_retries += 1;
                         messages.push(user_text(&render_diagnostics(&author), turns));
                         last_author_diagnostics = author;
                     }
@@ -398,6 +437,15 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 },
             );
             log_session_end(&log_handle, &redactor, deps.clock, "hard_fail", turns);
+            emit_phase_run(
+                &deps,
+                input,
+                "hard_fail",
+                Gates::default(),
+                &metrics,
+                &scorer,
+                turns,
+            );
             let artifacts = build_artifacts(
                 &pre_edit_content,
                 deps.project_root,
@@ -419,6 +467,15 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // Step 9 — turn cap.
         if turns >= deps.max_turns {
             log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
+            emit_phase_run(
+                &deps,
+                input,
+                "budget_exceeded",
+                Gates::default(),
+                &metrics,
+                &scorer,
+                turns,
+            );
             let artifacts = build_artifacts(
                 &pre_edit_content,
                 deps.project_root,
@@ -763,25 +820,44 @@ fn build_diff(
     (diff, files_changed)
 }
 
-/// Run the configured final command set in `cwd`, tail-capping each output. A
-/// `None`-configured command stays `None` in the result.
+/// Run the configured final command set in `cwd`, tail-capping each output and
+/// recording pass/fail. A `None`-configured command stays `None` in both outputs.
 async fn run_command_set(
     runner: &dyn CommandRunner,
     commands: &CommandConfig,
     cwd: &Path,
-) -> CommandOutputs {
-    CommandOutputs {
-        format: run_one(runner, commands.format.as_deref(), cwd).await,
-        build: run_one(runner, commands.build.as_deref(), cwd).await,
-        lint: run_one(runner, commands.lint.as_deref(), cwd).await,
-        test: run_one(runner, commands.test.as_deref(), cwd).await,
-    }
+) -> (CommandOutputs, Gates) {
+    let (format, fmt_ok) = run_one(runner, commands.format.as_deref(), cwd).await;
+    let (build, build_ok) = run_one(runner, commands.build.as_deref(), cwd).await;
+    let (lint, lint_ok) = run_one(runner, commands.lint.as_deref(), cwd).await;
+    let (test, test_ok) = run_one(runner, commands.test.as_deref(), cwd).await;
+    (
+        CommandOutputs {
+            format,
+            build,
+            lint,
+            test,
+        },
+        Gates {
+            fmt: fmt_ok,
+            build: build_ok,
+            lint: lint_ok,
+            test: test_ok,
+        },
+    )
 }
 
-async fn run_one(runner: &dyn CommandRunner, command: Option<&str>, cwd: &Path) -> Option<String> {
+async fn run_one(
+    runner: &dyn CommandRunner,
+    command: Option<&str>,
+    cwd: &Path,
+) -> (Option<String>, Option<bool>) {
     match command {
-        Some(cmd) => Some(tail(&runner.run(cmd, cwd).await, MAX_COMMAND_TAIL_CHARS)),
-        None => None,
+        Some(cmd) => {
+            let CommandResult { output, success } = runner.run(cmd, cwd).await;
+            (Some(tail(&output, MAX_COMMAND_TAIL_CHARS)), Some(success))
+        }
+        None => (None, None),
     }
 }
 
@@ -792,6 +868,109 @@ fn tail(s: &str, max_chars: usize) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Telemetry counters accumulated across the turn cycle, folded into the
+/// `PhaseRun` at the terminal return.
+struct RunMetrics {
+    parse_attempts: usize,
+    parse_failures: usize,
+    total_repairs: usize,
+    total_calls: usize,
+    verifier_retries: usize,
+    tokens: TokenBreakdown,
+    start_ms: u64,
+}
+
+impl RunMetrics {
+    fn started_at(start_ms: u64) -> Self {
+        Self {
+            parse_attempts: 0,
+            parse_failures: 0,
+            total_repairs: 0,
+            total_calls: 0,
+            verifier_retries: 0,
+            tokens: TokenBreakdown::default(),
+            start_ms,
+        }
+    }
+
+    fn add_tokens(&mut self, b: &TokenBreakdown) {
+        self.tokens.input_tokens = self.tokens.input_tokens.saturating_add(b.input_tokens);
+        self.tokens.output_tokens = self.tokens.output_tokens.saturating_add(b.output_tokens);
+        self.tokens.cache_read_tokens = self
+            .tokens
+            .cache_read_tokens
+            .saturating_add(b.cache_read_tokens);
+        self.tokens.cache_write_tokens = self
+            .tokens
+            .cache_write_tokens
+            .saturating_add(b.cache_write_tokens);
+    }
+}
+
+/// Build and append (best-effort) the per-phase `PhaseRun` telemetry record.
+/// `tool_success_rate` is computed from the loop's `Scorer` — the consumer that
+/// makes `scorer.record` load-bearing. A `None` telemetry dir or a write error is
+/// swallowed: telemetry, like the session log, never changes what the loop returns.
+fn emit_phase_run(
+    deps: &LoopDeps<'_>,
+    input: &PhaseInput,
+    status: &str,
+    gates: Gates,
+    metrics: &RunMetrics,
+    scorer: &Scorer,
+    turns: usize,
+) {
+    let Some(dir) = deps.telemetry_dir else {
+        return;
+    };
+
+    let (mut successes, mut total) = (0u64, 0u64);
+    for counts in scorer.counts.values() {
+        successes += counts.successes as u64;
+        total += counts.successes as u64 + counts.failures as u64;
+    }
+    let tool_success_rate = if total > 0 {
+        successes as f64 / total as f64
+    } else {
+        0.0
+    };
+    let parse_failure_rate = if metrics.parse_attempts > 0 {
+        metrics.parse_failures as f64 / metrics.parse_attempts as f64
+    } else {
+        0.0
+    };
+    let repairs_per_call = if metrics.total_calls > 0 {
+        metrics.total_repairs as f64 / metrics.total_calls as f64
+    } else {
+        0.0
+    };
+    let now = (deps.clock)();
+    let wall_clock_s = now.saturating_sub(metrics.start_ms) as f64 / 1000.0;
+
+    let run = PhaseRun {
+        ts: now,
+        model: deps.model.to_string(),
+        generation_params: deps.generation_params.clone(),
+        phase_id: input.phase.clone(),
+        tags: input.tags.clone(),
+        status: status.to_string(),
+        escalated: status != "complete",
+        gates,
+        parse_failure_rate,
+        repairs_per_call,
+        verifier_retries: metrics.verifier_retries,
+        tool_success_rate,
+        turns,
+        wall_clock_s,
+        tokens: metrics.tokens.clone(),
+        warnings: None,
+        bugs_filed: None,
+        bounces_to_approval: None,
+        architect_verdict: None,
+    };
+    let _ = telemetry::append(dir, &run);
 }
 
 #[cfg(test)]
@@ -828,6 +1007,7 @@ mod tests {
             goal: "make it compile".to_string(),
             acceptance_criteria: "cargo build passes".to_string(),
             phase: PHASE_SLUG.to_string(),
+            tags: vec!["rust".to_string(), "feature".to_string()],
         }
     }
 
@@ -846,14 +1026,17 @@ mod tests {
         }
     }
 
-    /// A command runner that is never expected to fire (no commands configured in
-    /// `deps()`); panics if called, so an accidental command run is caught.
+    /// A command runner for runs with no commands configured (`EMPTY_COMMANDS`),
+    /// where `run` is never actually reached; returns an empty success if it is.
     struct NoopRunner;
 
     #[async_trait::async_trait]
     impl CommandRunner for NoopRunner {
-        async fn run(&self, _command: &str, _cwd: &Path) -> String {
-            String::new()
+        async fn run(&self, _command: &str, _cwd: &Path) -> CommandResult {
+            CommandResult {
+                output: String::new(),
+                success: true,
+            }
         }
     }
 
@@ -884,6 +1067,11 @@ mod tests {
             verifier: &NoopVerifier,
             commands: &EMPTY_COMMANDS,
             runner: &NoopRunner,
+            generation_params: GenerationParams {
+                temperature: None,
+                seed: None,
+            },
+            telemetry_dir: None,
         }
     }
 
@@ -1461,6 +1649,8 @@ mod tests {
             verifier: &NoopVerifier,
             commands: &EMPTY_COMMANDS,
             runner: &NoopRunner,
+            generation_params: GenerationParams::default(),
+            telemetry_dir: None,
         };
 
         execute_phase(&input(), d).await.unwrap();
@@ -1571,6 +1761,8 @@ mod tests {
             verifier,
             commands: &EMPTY_COMMANDS,
             runner: &NoopRunner,
+            generation_params: GenerationParams::default(),
+            telemetry_dir: None,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -1984,10 +2176,12 @@ mod tests {
 
     // ── 07e: completion artifacts ─────────────────────────────────────────
 
-    /// Records which commands ran and returns scripted output for each.
+    /// Records which commands ran and returns scripted output; commands named in
+    /// `failing` return `success: false` (for gate tests).
     struct MockCommandRunner {
         ran: Mutex<Vec<String>>,
         output: String,
+        failing: HashSet<String>,
     }
 
     impl MockCommandRunner {
@@ -1995,7 +2189,12 @@ mod tests {
             Self {
                 ran: Mutex::new(Vec::new()),
                 output: output.to_string(),
+                failing: HashSet::new(),
             }
+        }
+        fn failing(mut self, command: &str) -> Self {
+            self.failing.insert(command.to_string());
+            self
         }
         fn ran(&self) -> Vec<String> {
             self.ran.lock().unwrap().clone()
@@ -2004,19 +2203,23 @@ mod tests {
 
     #[async_trait::async_trait]
     impl CommandRunner for MockCommandRunner {
-        async fn run(&self, command: &str, _cwd: &Path) -> String {
+        async fn run(&self, command: &str, _cwd: &Path) -> CommandResult {
             self.ran.lock().unwrap().push(command.to_string());
-            self.output.clone()
+            CommandResult {
+                output: self.output.clone(),
+                success: !self.failing.contains(command),
+            }
         }
     }
 
-    /// Full run with injectable command runner + command config (07e).
+    /// Full run with injectable command runner + command config + telemetry dir.
     async fn run_full(
         dir: &TempDir,
         client: &dyn AiClient,
         verifier: &dyn FileVerifier,
         runner: &dyn CommandRunner,
         commands: &CommandConfig,
+        telemetry_dir: Option<&Path>,
         max_turns: usize,
     ) -> PhaseResult {
         let scope = Scope::new(dir.path()).unwrap();
@@ -2035,6 +2238,8 @@ mod tests {
             verifier,
             commands,
             runner,
+            generation_params: GenerationParams::default(),
+            telemetry_dir,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -2055,7 +2260,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            None,
+            8,
+        )
+        .await;
 
         assert!(result.diff.contains("-original"), "diff: {}", result.diff);
         assert!(result.diff.contains("+edited"));
@@ -2078,7 +2292,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            None,
+            8,
+        )
+        .await;
 
         assert!(result.diff.contains("+line1"));
         assert!(result.diff.contains("+line2"));
@@ -2102,7 +2325,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            None,
+            8,
+        )
+        .await;
 
         assert!(
             result.files_changed.is_empty(),
@@ -2124,7 +2356,7 @@ mod tests {
             test: Some("cargo test".to_string()),
         };
 
-        let result = run_full(&dir, &client, &verifier, &runner, &commands, 8).await;
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
 
         assert_eq!(result.status, PhaseStatus::Complete);
         let ran = runner.ran();
@@ -2152,7 +2384,7 @@ mod tests {
             test: None,
         };
 
-        let result = run_full(&dir, &client, &verifier, &runner, &commands, 8).await;
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
 
         assert_eq!(
             result
@@ -2180,7 +2412,7 @@ mod tests {
             test: None,
         };
 
-        let result = run_full(&dir, &client, &verifier, &runner, &commands, 10).await;
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 10).await;
 
         assert_eq!(result.status, PhaseStatus::HardFail);
         assert!(
@@ -2196,7 +2428,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            None,
+            8,
+        )
+        .await;
 
         assert_eq!(result.log_path, Some(log_path(dir.path())));
     }
@@ -2209,9 +2450,351 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(&dir, &client, &verifier, &NoopRunner, &EMPTY_COMMANDS, 8).await;
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            None,
+            8,
+        )
+        .await;
 
         assert_eq!(result.status, PhaseStatus::Complete);
         assert!(result.log_path.is_none());
+    }
+
+    // ── 08: PhaseRun telemetry ────────────────────────────────────────────
+
+    fn read_runs(telem: &Path) -> Vec<PhaseRun> {
+        crate::store::telemetry::read(&telem.join("phase_runs.jsonl")).unwrap()
+    }
+
+    #[tokio::test]
+    async fn run_appends_one_phase_run_line() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].status, "complete");
+        assert!(!runs[0].escalated);
+    }
+
+    #[tokio::test]
+    async fn telemetry_none_dir_is_noop_and_completes() {
+        let dir = TempDir::new().unwrap();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            None,
+            8,
+        )
+        .await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+    }
+
+    #[tokio::test]
+    async fn telemetry_write_failure_does_not_change_result() {
+        let dir = TempDir::new().unwrap();
+        // Telemetry "dir" is actually a file → create_dir_all fails → append errs.
+        let telem_file = dir.path().join("telem_is_a_file");
+        std::fs::write(&telem_file, "x").unwrap();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        let result = run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem_file),
+            8,
+        )
+        .await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+    }
+
+    #[tokio::test]
+    async fn hard_fail_run_is_escalated() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let mk = || native("read_file", json!({ "path": path }));
+        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            10,
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs[0].status, "hard_fail");
+        assert!(runs[0].escalated);
+    }
+
+    #[tokio::test]
+    async fn gates_populated_on_complete_from_exit_status() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("out").failing("cargo test");
+        let commands = CommandConfig {
+            format: None,
+            build: Some("cargo build".to_string()),
+            lint: None,
+            test: Some("cargo test".to_string()),
+        };
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &runner,
+            &commands,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let gates = read_runs(&telem)[0].gates.clone();
+        assert_eq!(gates.build, Some(true));
+        assert_eq!(gates.test, Some(false));
+        assert_eq!(gates.fmt, None);
+        assert_eq!(gates.lint, None);
+    }
+
+    #[tokio::test]
+    async fn gates_none_on_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let mk = || native("read_file", json!({ "path": path }));
+        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("out");
+        let commands = CommandConfig {
+            format: None,
+            build: Some("cargo build".to_string()),
+            lint: None,
+            test: None,
+        };
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &runner,
+            &commands,
+            Some(&telem),
+            10,
+        )
+        .await;
+
+        let gates = read_runs(&telem)[0].gates.clone();
+        assert_eq!(gates.build, None, "no gate should be set on hard-fail");
+        assert!(runner.ran().is_empty());
+    }
+
+    #[tokio::test]
+    async fn tool_success_rate_reflects_scorer() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        // one failure (unknown tool) + one success (read_file), then complete.
+        let client = MockAiClientScript::new(vec![
+            vec![native("does_not_exist", json!({}))],
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let rate = read_runs(&telem)[0].tool_success_rate;
+        assert!((rate - 0.5).abs() < 1e-9, "expected 0.5, got {rate}");
+    }
+
+    #[tokio::test]
+    async fn parse_failure_rate_counts_only_parse_attempts() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        // native turn (no parse), then a malformed text turn (parse fail), then a
+        // plain-text turn (parse attempt, NoToolCall) → attempts=2, failures=1.
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("{\"name\":\"nonexistent\",\"arguments\":{}}")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let rate = read_runs(&telem)[0].parse_failure_rate;
+        assert!((rate - 0.5).abs() < 1e-9, "expected 0.5, got {rate}");
+    }
+
+    #[tokio::test]
+    async fn repairs_per_call_counts_repaired_origin() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        // A close-typo tool name the parser fuzzy-repairs → Origin::Repaired.
+        let hermes = format!(
+            "<tool_call>{{\"name\":\"read_fil\",\"arguments\":{{\"path\":\"{}\"}}}}</tool_call>",
+            path
+        );
+        let client = MockAiClientScript::new(vec![vec![token(&hermes)], vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        assert!(
+            read_runs(&telem)[0].repairs_per_call > 0.0,
+            "a repaired call should count repairs"
+        );
+    }
+
+    #[tokio::test]
+    async fn verifier_retries_counts_author_failures() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "bad")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![checked(vec![diag("err")])]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        assert_eq!(read_runs(&telem)[0].verifier_retries, 1);
+    }
+
+    #[tokio::test]
+    async fn tokens_accumulate_across_done_events() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let tb = |n: u32| {
+            AiEvent::Done(TokenBreakdown {
+                input_tokens: n,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+            })
+        };
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path })), tb(10)],
+            vec![token("done"), tb(5)],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        assert_eq!(read_runs(&telem)[0].tokens.input_tokens, 15);
+    }
+
+    #[tokio::test]
+    async fn wall_clock_zero_under_constant_clock() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        assert_eq!(read_runs(&telem)[0].wall_clock_s, 0.0);
     }
 }
