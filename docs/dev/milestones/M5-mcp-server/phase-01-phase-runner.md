@@ -131,7 +131,11 @@ pub async fn run_phase(
 3. `Scope::new(repo_path)` — propagate a scope error as `Err` (a real
    infra/usage failure, not a model-visible outcome).
 4. `build_registry(&scope, cfg…)` → `(registry, tools)`.
-5. `Budget::from_context(...)` from `cfg.budget` (context length + `max_context_pct`).
+5. `Budget::from_context(cfg.budget.context_length, cfg.budget.max_context_pct)`.
+   **`context_length` does not exist on `BudgetConfig` yet — add it** (see
+   Adaptation 5 + the authorized `config.rs` edit): the model's context-window
+   size in tokens, from which the ceiling is `context_length × max_context_pct /
+   100`.
 6. Build `PhaseInput { executor_contract, standards, phase_doc, goal,
    acceptance_criteria, phase, tags }` (`phase_doc` = the raw file text).
 7. Build `LoopDeps { client, registry: &registry, tools: &tools, budget: &budget,
@@ -140,9 +144,13 @@ pub async fn run_phase(
    generation_params: GenerationParams::default(), telemetry_dir }`.
 8. `agent::execute_phase(&input, deps).await` → return the `PhaseResult`.
 
-`run_phase` (production) builds: `OpenAiClient::new(cfg.executor.api_key cloned /
-unwrap_or_default, model, cfg.executor.base_url)` where `model = model_override
-unwrap_or &cfg.executor.model`; `RealVerifier`; `RealCommandRunner`; a system
+`run_phase` (production) builds the client as
+`OpenAiClient::new(cfg.executor.api_key.clone().unwrap_or_default(), model,
+cfg.executor.base_url.clone())` where `model = model_override.unwrap_or(&cfg.
+executor.model)`. `api_key` is `Option<String>` — an empty string when absent is
+correct (local endpoints ignore it). `base_url` is passed as-is; the
+`ExecutorConfig::default()` already supplies `http://localhost:1234/v1`, so no
+further fallback belongs here. Then `RealVerifier`; `RealCommandRunner`; a system
 clock closure `|| SystemTime::now().duration_since(UNIX_EPOCH).map(|d|
 d.as_millis() as u64).unwrap_or(0)` — then delegates to `run_phase_with`.
 
@@ -177,7 +185,18 @@ real, useful manual-execution entry point that phase-02's MCP tool will sit besi
 3. **`telemetry_dir` is a plumbed `Option<&Path>`.** Do not hardcode it under the
    repo or pick a cross-project location here — that policy is phase-02. `None`
    simply disables `PhaseRun` emission (the loop already treats it that way).
-4. **Errors:** file-read / scope-construction / config failures are
+5. **`BudgetConfig` gains a `context_length` field (authorized `executor/`
+   edit).** `Budget::from_context` needs the model's context-window size, which
+   `BudgetConfig` doesn't carry today. Hardcoding a constant in `runner.rs` would
+   be throwaway, so add the field where it belongs: `pub context_length: usize`
+   on `BudgetConfig` in `executor/src/config.rs`, defaulted in its `Default` impl
+   to **`32768`** (a conservative local-model window — the user raises it per
+   model; under-estimating compacts early/safely, over-estimating risks
+   overflowing the real endpoint). Update the existing `config.rs` TOML
+   round-trip test(s) to include/assert the new field. This is the **only**
+   permitted `executor/` change in this phase. Per-model resolution from the
+   endpoint's `/models` metadata is **not** in scope — phase-02 may revisit.
+6. **Errors:** file-read / scope-construction / config failures are
    infra/usage failures → `executor::error::Error` via `?` (or `anyhow` only in
    `main`'s subcommand handler, the binary entry). Model-visible outcomes stay
    inside `PhaseResult` as M4 already models them. No new `unwrap`/`expect` in
@@ -187,6 +206,9 @@ real, useful manual-execution entry point that phase-02's MCP tool will sit besi
 
 - [ ] `mcp/src/runner.rs` exists; `mod runner;` is wired into `mcp/src/main.rs`;
       `run_phase` + `parse_phase_doc` + `build_registry` are reachable.
+- [ ] `BudgetConfig` has a `context_length: usize` field, defaulted to `32768`;
+      `cfg.budget.context_length` feeds `Budget::from_context`; the `config.rs`
+      TOML round-trip test covers it.
 - [ ] `parse_phase_doc` extracts the `## Goal` and `## Acceptance criteria` section
       bodies and the `**Tags:**` line into `Vec<String>`; a doc missing any of
       them yields empty string / empty Vec (no panic).
@@ -245,8 +267,12 @@ Use the existing `MockAiClient` (and `NoopVerifier` / `NoopRunner` patterns from
 
 - [x] **May create** `mcp/src/runner.rs`; **may modify** `mcp/src/main.rs`
       (`mod runner;` + the `run-phase` clap subcommand + its handler).
+- [x] **May modify `executor/src/config.rs`** solely to add
+      `context_length: usize` to `BudgetConfig` (+ its `Default` = `32768`, +
+      the TOML test) — see Adaptation 5. **Nothing else in `executor/`.**
 - [ ] **No new dependencies.** `rmcp` is phase-02.
-- [ ] May **NOT** modify `executor/` — every seam it needs is already public.
+- [ ] May **NOT** modify any other part of `executor/` — every other seam it
+      needs is already public.
 - [ ] May **NOT** build the rmcp server / MCP tools (02), log-query tools (03),
       `model_scorecard` (04), progress notifications (05), or roots corroboration
       (06).
