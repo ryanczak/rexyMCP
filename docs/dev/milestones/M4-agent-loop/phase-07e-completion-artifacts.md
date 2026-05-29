@@ -1,7 +1,7 @@
 # Phase 07e: completion artifacts (diff, command set, result population)
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a–07d (the loop), phase-06 (`PhaseResult`, `Artifacts`,
 `FileChange`, `CommandOutputs`), `config::CommandConfig`. All done. `similar` and
 `tokio` are already workspace deps.
@@ -305,3 +305,25 @@ by the first live M5 run.
   consumer) remains in M4.
 
 verification: fmt OK · clippy OK · tests 477 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode.
+- **Scope deviations:** none. Only `phase/result.rs` touched outside `agent/**`
+  (the authorized `log_path` field); command set runs only on clean completion.
+- **Calibration:** none folded. Re-ran all four gates independently (477 passed).
+  Verified: `build_diff` skips unchanged files (real negative
+  `unchanged_file_is_absent_from_files_changed`), the command runner is injected
+  (no real subprocess in tests), `clean_completion_runs_configured_commands`
+  asserts the exact ran-vector + that `None`-configured fields stay `None`,
+  `hard_fail_does_not_run_command_set` asserts zero runs, and `log_path` is
+  `Some`/`None` correctly. **Nit (non-blocking):** the test `NoopRunner`'s doc
+  comment says "panics if called" but the impl returns `String::new()` — harmless
+  (never invoked under `EMPTY_COMMANDS`); fix opportunistically in phase-08, which
+  also edits this file's tests.
+- **M4 status:** with 07e done, `execute_phase` returns the full contract. Only
+  phase-08 (`PhaseRun` telemetry) remains — its draft carries the **scorer.record
+  consumer** (`tool_success_rate`) and closes the milestone (a human gate:
+  retrospective + doc-fold review).
