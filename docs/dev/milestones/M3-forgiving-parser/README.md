@@ -43,12 +43,11 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | parser core types + `strip_think_blocks` + `detect` ([phase-01-types-and-detect.md](phase-01-types-and-detect.md)) | done |
 | 02 | the six format extractors ([phase-02-extractors.md](phase-02-extractors.md)) | done |
 | 03 | candidate scoring + validation ([phase-03-score-validate.md](phase-03-score-validate.md)) | done |
-| 04 | the repair transforms ([phase-04-repair.md](phase-04-repair.md)) | review |
+| 04 | the repair transforms ([phase-04-repair.md](phase-04-repair.md)) | done |
+| 05 | feedback formatter + `parse()` orchestration ([phase-05-feedback-parse.md](phase-05-feedback-parse.md)) | review |
 
-Tentative remaining phases (draft when the prior one lands):
-
-- **05** — the **feedback** formatter + the `parse()` **orchestration** that
-  composes detect → extract → score → repair → validate → feedback.
+Phase-05 is the **last phase in M3** — its approval closes the milestone (human
+gate: retrospective + doc-folding).
 
 ## Notes
 

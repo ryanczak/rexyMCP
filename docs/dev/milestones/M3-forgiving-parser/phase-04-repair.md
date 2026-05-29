@@ -1,7 +1,7 @@
 # Phase 04: the repair transforms
 
 **Milestone:** M3 — Forgiving parser
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (done)
 **Estimated diff:** ~1450 lines (orchestrator + six transforms + tests)
 **Tags:** language=rust, kind=feature, size=l

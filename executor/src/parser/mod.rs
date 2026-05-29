@@ -41,6 +41,7 @@ pub fn strip_think_blocks(s: &str) -> String {
 
 pub mod detect;
 pub mod extract;
+pub mod feedback;
 pub mod repair;
 pub mod score;
 pub mod validate;
@@ -143,6 +144,85 @@ pub enum ParseResult {
     Failed(ParseFailure),
 }
 
+/// Run the full parser pipeline on a model response.
+///
+/// Composes detect → extract (all detected formats) → score → repair → validate,
+/// with a feedback message on failure. Returns `NoToolCall` when nothing looked
+/// like a tool call, `Found` for a validated (possibly repaired) call, or
+/// `Failed` with model-readable feedback when a call was attempted but couldn't
+/// be validated.
+pub fn parse(response: &str, registry: &crate::tools::ToolRegistry) -> ParseResult {
+    use detect::detect;
+    use extract::{fenced, hermes, loose_json, text, xml, yaml};
+    use feedback::format_failure;
+    use repair::apply;
+    use score::score;
+    use validate::validate;
+
+    let formats = detect(response);
+
+    let mut candidates: Vec<Candidate> = Vec::new();
+    for fmt in &formats {
+        let mut extracted = match fmt {
+            Format::Hermes => hermes::extract(response),
+            Format::FencedJson => fenced::extract(response),
+            Format::LooseJson => loose_json::extract(response),
+            Format::Yaml => yaml::extract(response),
+            Format::XmlVariant => xml::extract(response),
+            Format::PlainText => text::extract(response),
+        };
+        candidates.append(&mut extracted);
+    }
+
+    if candidates.is_empty() {
+        return ParseResult::NoToolCall;
+    }
+
+    for candidate in &mut candidates {
+        candidate.score = score(candidate, registry);
+    }
+
+    candidates.sort_by_key(|c| -c.score);
+
+    let mut last_error = None;
+    for candidate in &candidates {
+        let mut repaired = candidate.clone();
+        apply(&mut repaired, registry);
+        match validate(&repaired, registry) {
+            Ok(tool_call) => return ParseResult::Found(tool_call),
+            Err(err) => {
+                last_error = Some((repaired, err));
+            }
+        }
+    }
+
+    // Safe: `candidates` is non-empty (checked above) and the loop above ran
+    // `validate` on every candidate without returning, so at least one error was
+    // recorded in `last_error`.
+    let (best_repaired, best_err) =
+        last_error.expect("candidates non-empty, so an error was recorded");
+    let detected_format = formats.first().copied();
+
+    let mut failed_candidates: Vec<Candidate> = candidates
+        .iter()
+        .map(|c| {
+            let mut repaired = c.clone();
+            apply(&mut repaired, registry);
+            repaired
+        })
+        .collect();
+    failed_candidates.sort_by_key(|c| -c.score);
+
+    let feedback = format_failure(&best_repaired, &best_err, registry);
+
+    ParseResult::Failed(ParseFailure {
+        raw: response.to_string(),
+        detected_format,
+        candidates: failed_candidates,
+        feedback,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +257,142 @@ mod tests {
             strip_think_blocks(input),
             "<tool_call>{\"name\":\"x\"}</tool_call>"
         );
+    }
+
+    use crate::security::scope::Scope;
+    use crate::tools::{bash, find_files, patch, read_file, search, symbols, write_file};
+
+    fn test_registry() -> crate::tools::ToolRegistry {
+        let dir = tempfile::TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let mut r = crate::tools::ToolRegistry::new();
+        for t in [
+            read_file(scope.clone()),
+            write_file(scope.clone()),
+            patch(scope.clone()),
+            search(scope.clone()),
+            find_files(scope.clone()),
+            symbols(scope.clone()),
+            bash(scope, 30),
+        ] {
+            r.register(t);
+        }
+        r
+    }
+
+    #[test]
+    fn vllm_qwen3_end_to_end_round_trip_dispatches_bash() {
+        // Mirrors the bytes the OpenAI backend accumulates for Qwen3 served by
+        // vLLM with auto-tool-choice: reasoning wrapped in <think>, then a
+        // synthetic <tool_call>.
+        let registry = test_registry();
+        let full_response = "<think>The user wants me to run id and share the output. I will use the bash tool to execute `id`.\n</think>\n\n\n<tool_call>{\"name\":\"bash\",\"arguments\":{\"command\":\"id\"}}</tool_call>";
+        let stripped = strip_think_blocks(full_response);
+        match parse(&stripped, &registry) {
+            ParseResult::Found(tc) => {
+                assert_eq!(tc.name, "bash");
+                assert_eq!(tc.arguments["command"], "id");
+            }
+            other => panic!("expected Found(bash), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_returns_no_tool_call_for_plain_prose() {
+        let registry = test_registry();
+        let result = parse("Just a chat response, no tool call.", &registry);
+        assert!(matches!(result, ParseResult::NoToolCall));
+    }
+
+    #[test]
+    fn parse_returns_found_for_valid_hermes() {
+        let registry = test_registry();
+        let result = parse(
+            "{\"name\":\"read_file\",\"arguments\":{\"path\":\"x\"}}",
+            &registry,
+        );
+        match result {
+            ParseResult::Found(tc) => assert_eq!(tc.name, "read_file"),
+            other => panic!("expected Found, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_returns_found_for_valid_fenced_json() {
+        let registry = test_registry();
+        let result = parse(
+            "```json\n{\"name\":\"read_file\",\"arguments\":{\"path\":\"x\"}}\n```",
+            &registry,
+        );
+        match result {
+            ParseResult::Found(tc) => assert_eq!(tc.name, "read_file"),
+            other => panic!("expected Found, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_returns_failed_for_unknown_tool() {
+        let registry = test_registry();
+        let result = parse("{\"name\":\"nonexistent\",\"arguments\":{}}", &registry);
+        match result {
+            ParseResult::Failed(f) => assert!(f.feedback.contains("unknown")),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_returns_failed_for_missing_required() {
+        let registry = test_registry();
+        let result = parse("{\"name\":\"read_file\",\"arguments\":{}}", &registry);
+        match result {
+            ParseResult::Failed(f) => assert!(f.feedback.contains("requires")),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_picks_highest_scoring_candidate_when_multiple() {
+        let registry = test_registry();
+        let result = parse(
+            "some text {\"name\":\"bad\"} more {\"name\":\"read_file\",\"arguments\":{\"path\":\"x\"}}",
+            &registry,
+        );
+        match result {
+            ParseResult::Found(tc) => assert_eq!(tc.name, "read_file"),
+            other => panic!("expected Found, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_repairs_close_typo() {
+        let registry = test_registry();
+        let result = parse(
+            "{\"name\":\"read_fil\",\"arguments\":{\"path\":\"x\"}}",
+            &registry,
+        );
+        match result {
+            ParseResult::Found(tc) => assert_eq!(tc.name, "read_file"),
+            other => panic!("expected Found, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_includes_format_in_parse_failure() {
+        let registry = test_registry();
+        let result = parse("{\"name\":\"nonexistent\",\"arguments\":{}}", &registry);
+        match result {
+            ParseResult::Failed(f) => assert!(f.detected_format.is_some()),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_returns_failed_for_empty_object() {
+        let registry = test_registry();
+        let result = parse("<tool_call>{}</tool_call>", &registry);
+        match result {
+            ParseResult::Failed(f) => assert!(f.feedback.contains("lacked a name field")),
+            other => panic!("expected Failed, got {other:?}"),
+        }
     }
 }
