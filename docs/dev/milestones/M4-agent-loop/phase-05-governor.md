@@ -1,7 +1,7 @@
 # Phase 05: Governor — tool scorer + hard-fail detector
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (verifier `Diagnostic`/`Severity`, done), phase-03
 (session-event types that supply the structured turn data, done).
 **Estimated diff:** ~340 lines (scorer lift + hard-fail adapt + tests)
@@ -285,3 +285,24 @@ Not applicable — phase ships no runtime-loadable artifact. The scorer and dete
 **Notes for review:** One clippy fix (`iter().any(|&c| c == 0)` → `contains(&0)`) applied during gate run. Otherwise clean lift/adapt.
 
 verification: fmt OK · clippy OK · tests 407 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** opencode (per NEXT.md routing; the Update Log omitted the
+  required "started" entry, so the specific model is unrecorded — see Calibration)
+- **Scope deviations:** none — scorer lifted verbatim; hard-fail adapted to
+  structured inputs exactly as specified (no `Message`/`[verifier]`/`<tool_result>`
+  scraping — verified by grep, 0 matches); no `TaskType`/`classify` lifted; serde
+  both-sides on all four types; check order repetition→verifier→runaway confirmed
+  by test; no new dep/`tracing`.
+- **Calibration:** two **nits**, no fold (one occurrence each) — (1) two
+  restating comments in `check_verifier_persistence` (`// Must all be > 0`,
+  `// Must be non-decreasing …`) violate STANDARDS §2.3 (don't restate what the
+  code does); (2) the Update Log jumped straight to a "complete" entry, skipping
+  the AGENTS.md "started" entry that names the executor — so the run's model is
+  unrecorded for the scorecard. Architect re-ran all four gates (fmt/clippy/build
+  clean, 407 passed, +19 governor tests) and confirmed the boundary negatives are
+  real (args-differ, below-threshold, decreasing errors, zero-in-window, exact-
+  threshold runaway, check-order precedence).
