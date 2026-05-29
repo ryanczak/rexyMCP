@@ -53,7 +53,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 04 | secret redaction primitive ([phase-04-redaction.md](phase-04-redaction.md)) | done |
 | 05 | governor: tool scorer + hard-fail detector ([phase-05-governor.md](phase-05-governor.md)) | done |
 | 06 | `PhaseResult` + briefing contract ([phase-06-phase-result.md](phase-06-phase-result.md)) | done |
-| 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | todo |
+| 07a | turn-loop core ([phase-07a-loop-core.md](phase-07a-loop-core.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

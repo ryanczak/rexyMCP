@@ -92,6 +92,54 @@ impl AiClient for MockAiClientEvents {
     }
 }
 
+/// Event-scripted mock that yields one inner script **per `chat` call** — unlike
+/// `MockAiClientEvents`, which drains its whole script in a single call. Each
+/// `chat` pops the next `Vec<AiEvent>` and sends it; an exhausted script sends
+/// nothing (an empty completion). Lets a test drive a multi-turn loop where each
+/// turn emits its own native/text/done sequence.
+#[derive(Clone)]
+pub struct MockAiClientScript {
+    turns: Arc<Mutex<VecDeque<Vec<AiEvent>>>>,
+    calls: Arc<Mutex<Vec<MockCall>>>,
+}
+
+impl MockAiClientScript {
+    pub fn new(turns: Vec<Vec<AiEvent>>) -> Self {
+        Self {
+            turns: Arc::new(Mutex::new(turns.into_iter().collect())),
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn calls(&self) -> Vec<MockCall> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl AiClient for MockAiClientScript {
+    async fn chat(
+        &self,
+        system_prompt: &str,
+        messages: Vec<Message>,
+        tx: UnboundedSender<AiEvent>,
+        tools: Option<&[ToolSchema]>,
+    ) -> anyhow::Result<()> {
+        self.calls.lock().unwrap().push(MockCall {
+            system_prompt: system_prompt.to_string(),
+            messages,
+            tool_count: tools.map(|t| t.len()).unwrap_or(0),
+        });
+        let next = self.turns.lock().unwrap().pop_front();
+        if let Some(events) = next {
+            for event in events {
+                let _ = tx.send(event);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

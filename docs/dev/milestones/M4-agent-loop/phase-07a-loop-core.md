@@ -1,7 +1,7 @@
 # Phase 07a: executor turn-loop core
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01–06 (all done). Composes: `ai` (`AiClient`, `AiEvent`,
 `Message`, `make_client`), `parser::parse`, `tools` (`ToolRegistry`, `Tool`,
 `ToolResult`), `governor::scorer::Scorer`, `context::{budget, compactor}`,
@@ -335,3 +335,112 @@ model (`messages` / `MockCall` inspection), per STANDARDS §3.1. Pin negatives.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-29 (started)
+
+**Executor:** Claude Code (direct) — pre-routed off opencode per NEXT.md (test
+fixtures embed `<tool_call>`/`<think>` close-tags + escaped quotes inside
+JSON-in-Rust string literals).
+
+Creating `executor/src/agent/` with `prompt.rs` (system-prompt assembly) and
+`mod.rs` (`PhaseInput` + `LoopDeps` + `execute_phase` turn loop). Adding a
+per-call event-scripted mock (`MockAiClientScript`) to `ai/testing.rs` for
+multi-turn native-event tests. Backend errors map to `Error::Backend` (no new
+error variant). Then the integration test suite per the phase doc's test plan.
+
+### Update — 2026-05-29 (complete)
+
+**Summary:** Added `executor/src/agent/` (`pub mod agent;` in `lib.rs`).
+`prompt.rs`: `assemble_system_prompt` composing contract → standards → phase-doc.
+`mod.rs`: `PhaseInput` (prompt strings + verbatim goal/acceptance), `LoopDeps`
+(client / registry / tools / budget / max_turns / project_root), and the async
+`execute_phase` turn loop — budget check + `compactor::compact` on overflow, a
+`chat` call drained over an unbounded channel (`Token` accumulates completion
+text, the first `ToolCallGeneric` becomes a `ToolCall { origin: Origin::Native }`,
+`Done` ends the turn, `Error` → `Err(Error::Backend)`), then native-or-`parse`
+into a `ToolCall` dispatched through one shared path (`registry.get` →
+`Tool::execute`, mapping a missing tool / `error` / `Err` to a model-visible
+failure fed back into `messages`), `Scorer::record` + a `ToolCallSnapshot`, and
+termination: `NoToolCall` → `complete`; `turns >= max_turns` or post-compaction
+overflow → `budget_exceeded` with a `Blocker::BudgetExceeded` briefing built from
+`summarize_attempts` / `collect_working_files`. `files_changed` / `diff` /
+`command_outputs` left empty/default (07d); no logging (07b); no
+verifier/hard-fail (07c). Added `MockAiClientScript` (one event script per `chat`
+call) to `ai/testing.rs`. No deviations from the spec.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.64s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.01s
+
+cargo test 2>&1 | grep "test result:" (lib line)
+test result: ok. 440 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+(440 = 425 prior + 14 loop tests + 1 prompt test.)
+
+**Spec-pinned literal grep** (the native seam):
+
+```
+grep -n 'Origin::Native\|ToolCallGeneric' executor/src/agent/mod.rs
+100:  AiEvent::ToolCallGeneric { name, args, .. } => {
+105:      origin: Origin::Native,
+313:  AiEvent::ToolCallGeneric { ...quad (test fixture)
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. `execute_phase` is a
+library entry the MCP server exposes in M5; here it is composition logic
+exercised by `MockAiClient*` integration tests (first live end-to-end is M5).
+
+**Files changed:**
+- `executor/src/lib.rs` — added `pub mod agent;`
+- `executor/src/agent/prompt.rs` — new: `assemble_system_prompt` + 1 test
+- `executor/src/agent/mod.rs` — new: `PhaseInput`, `LoopDeps`, `execute_phase`,
+  helpers + 14 tests
+- `executor/src/ai/testing.rs` — added `MockAiClientScript` (per-call event mock)
+
+**New tests:** `assembles_system_prompt_in_contract_standards_phase_order`;
+`no_tool_call_first_turn_completes_immediately`, `complete_result_has_no_briefing`,
+`tool_call_then_no_tool_call_completes`,
+`native_tool_call_event_dispatches_as_origin_native`,
+`native_tool_call_skips_text_parser`, `native_unknown_tool_feeds_failure_not_err`,
+`text_tool_call_is_parsed_and_dispatched`,
+`parse_failure_feeds_feedback_and_continues`,
+`turn_cap_returns_budget_exceeded_with_briefing`,
+`budget_briefing_carries_goal_and_attempts`,
+`budget_overflow_after_compaction_returns_budget_exceeded`,
+`budget_with_headroom_runs_without_compaction`,
+`tool_outcomes_distinguish_success_and_failure`, `ai_event_error_propagates_as_err`.
+
+**Commits:** (pending — committed below)
+
+**Notes for review:**
+- **Scorer has no observable surface in 07a.** `scorer.record` is wired per spec
+  step 5, but nothing consumes the score yet (routing/governor is a later concern)
+  and `execute_phase` does not expose the `Scorer`. So the success/failure
+  computation is tested via its *other* consumer — the `ToolCallSnapshot` →
+  `what_was_tried` path (`tool_outcomes_distinguish_success_and_failure`), which is
+  observable through the briefing. Flagging in case the architect would rather drop
+  the premature `scorer.record` until its consumer lands.
+- The drain awaits `chat` to completion, then reads buffered events
+  (`rx.recv().await` until the sender is dropped). Correct for the unbounded
+  channel; if 07b/M5 needs *live* progress mid-stream it can drain concurrently —
+  not needed here.
+- `serde_json::to_string(&tc.arguments)` keeps an `unwrap_or_else(|| "{}")`
+  fallback for the infallible `Value` serialization (STANDARDS §2.1, same pattern
+  as phase-06 `compact_args`).
+- Native and text dispatch share one post-construction path (`dispatch` +
+  `append_tool_exchange`); `origin` is recorded but does not branch dispatch.
+
+verification: fmt OK · clippy OK · tests 440 passed · build OK
