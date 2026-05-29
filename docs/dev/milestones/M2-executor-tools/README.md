@@ -5,7 +5,7 @@ tools, the registry, and the 2-stage router — with every filesystem and shell
 operation confined to the configured **target-repo root** by a path-scope
 security layer.
 
-**Status:** review — all six phases `done`; awaiting human sign-off + retrospective (milestone-close gate).
+**Status:** done — all six phases complete; signed off 2026-05-28 (retrospective below).
 
 **Depends on:** M1 (done)
 
@@ -74,3 +74,27 @@ scope. Do not read the process CWD.
 to `context::file_cache` and counts tokens via `context::tokens`. The context
 module is M4; drop that integration when lifting (a `// TODO(M4)` is *not*
 allowed — just omit it; re-add when M4 exists).
+
+## M2 retrospective (milestone close, 2026-05-28)
+
+Six phases, all `done`; all exit criteria met (registry dispatch, scope
+confinement, classifier-gated bash, full tool set, category router). 180 tests.
+
+**Scope adjustments vs. the original milestone sketch** (each recorded in its
+phase doc + the Deferred notes above):
+- `Plan` router category dropped — rexyMCP has no plan/memory executor tool.
+- `bash_classify` is Block/Allow (no confirm tier) — the executor is headless.
+- `capabilities` dropped — a Rexy plugin-grant concept, not applicable here.
+- `audit` / `redact` / `injection`, the **read-before-edit** invariant, the
+  2-stage *presentation*, and governor-aware schema ordering all moved to **M4**
+  (they need the session-log/telemetry store, the loop, or the governor). M4 owns
+  read-before-edit explicitly (architecture.md § Status, M4).
+
+**Bounces:** two, both minor and fixed first-try — bug-04-1 (non-hermetic
+scope-escape tests) and bug-05-1 (classifier over-blocked benign commands). Both
+were architect-side: specs that pinned only positive cases and under-specified the
+boundary.
+
+**Fold:** that pattern is folded into `WORKFLOW.md` § "Specs pin behavior, not
+rendering" — *pin negative cases too*. No `STANDARDS.md` fold warranted (the
+executor's implementations were sound; the gap was spec-writing).

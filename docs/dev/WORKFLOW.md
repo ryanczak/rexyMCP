@@ -412,6 +412,17 @@ structural calls. When pinning a grep literal in the E2E block, pin user-visible
 markdown formatting marks). If you can't decouple content from rendering, use a
 prose behavioral assertion and verify by inspection instead of grep.
 
+**Pin negative cases, not just positive ones.** For specs that hinge on
+string-matching, path resolution, or escape/confinement semantics, the boundary
+is where the bugs live: give explicit *must-NOT-match* / *must-stay-hermetic*
+examples and require tests for them, not only the positive cases. The executor
+implements the spec literally, so an under-specified boundary leaks straight
+through. (M2 calibration: two bounces traced to positive-only specs — bug-04-1, an
+escape test whose scope root *was* the `TempDir`, so "outside the root" wrote
+outside the sandbox; and bug-05-1, a classifier that matched `shutdown` as a bare
+substring and so blocked `cargo test shutdown`. Both would have been caught by a
+single pinned negative example.)
+
 ### Derive intentionally
 
 Before pinning serde derives on a struct, ask whether it actually gets serialized
