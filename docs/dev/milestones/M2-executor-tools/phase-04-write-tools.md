@@ -1,7 +1,7 @@
 # Phase 04: write tools — write_file + patch
 
 **Milestone:** M2 — Executor tools & security
-**Status:** review
+**Status:** in-progress
 **Depends on:** phase-03 (done)
 **Estimated diff:** ~480 lines (two tool lifts + scope adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m
