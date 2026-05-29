@@ -6,9 +6,11 @@ engineer (architect) maintains this file. The executor reads it first
 
 **Active phase:** [M4 / phase-03 — JSONL session log (writer/reader + event schema)](milestones/M4-agent-loop/phase-03-session-log.md)
 
-**Status:** todo — to be dispatched to opencode. (Writer is a clean lift; the
-event schema is net-new, reusing M3 `ToolCall`/`ParseFailure` + `Diagnostic` and
-reserving the `Progress` variant. Redaction is split out to phase-04.)
+**Status:** in-progress — opencode filed a blocker (`SessionEvent` needs
+`Deserialize`, but the embedded M3 parser types only derive `Serialize`).
+**Resolved by the architect:** authorized adding `Deserialize` to the six parser
+types (see phase doc § "Deserialize round-trip" + Update Log). Re-dispatch to
+opencode to resume.
 
 **Milestone:** [M4 — Headless agent loop + governor/verifier](milestones/M4-agent-loop/README.md) — in-progress (phase-01, phase-02 done).
 

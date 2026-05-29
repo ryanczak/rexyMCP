@@ -1,7 +1,7 @@
 # Phase 03: JSONL session log — writer/reader + event schema
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-02 (done); reuses M3 parser types + M4 phase-01 `Diagnostic`.
 **Estimated diff:** ~480 lines (writer/reader lift + net-new event schema + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -83,6 +83,17 @@ This schema is **prescriptive** (load-bearing — M5's query tools and the M4
 `"event_type"`). Reuse the M3/phase-01 types directly — do not redefine `ToolCall`
 / `ParseFailure` / `Diagnostic`.
 
+**`Deserialize` round-trip (blocker resolution, 2026-05-28).** `read_session_log`
+deserializes records, so `SessionEvent` (and its embedded types) must derive
+`Deserialize`, not just `Serialize`. `Diagnostic` already has both. The M3 parser
+types (`ToolCall`, `Origin`, `Format`, `RepairOp`, `ParseFailure`, `Candidate` in
+`executor/src/parser/mod.rs`) derive only `Serialize` — **add `Deserialize` to all
+six** (a one-token addition per type, zero behavior change). This is correct, not a
+hack: the session log round-trips these types, so they are genuinely
+`Deserialize`-able by design. Authorized below. (Architect note: M3's "derive
+intentionally" pinned `Serialize` for the write-side log and didn't anticipate the
+read-side — this completes their serde story.)
+
 ### Writer/reader — lift `jsonl.rs`
 
 - `SessionLogger::open(log_dir, session_id) -> io::Result<Self>` (creates dir,
@@ -150,6 +161,10 @@ M3-type-bearing variants (`Parsed`/`ParseFailed`/`Verify`) and `Progress`.
 
 - [x] **May create** `executor/src/store/**`; **may modify** `executor/src/lib.rs`
       (`pub mod store;`).
+- [x] **May modify `executor/src/parser/mod.rs`** solely to add `Deserialize` to
+      the derive list of `ToolCall`, `Origin`, `Format`, `RepairOp`, `ParseFailure`,
+      and `Candidate` (blocker resolution above — derive additions only, no other
+      change to those types).
 - [ ] **No new dependencies** (no `chrono`, no `tracing`).
 - [ ] May **NOT** implement redaction (phase-04), the loop, `PhaseRun` telemetry,
       or pricing/cost.
@@ -167,3 +182,35 @@ M3-type-bearing variants (`Parsed`/`ParseFailed`/`Verify`) and `Progress`.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-28 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Reading Rexy source and preparing to lift `jsonl.rs` and build the net-new event schema.
+
+### Update — 2026-05-28 (blocker)
+
+**Blocked on:** `SessionEvent` requires `Deserialize` on M3 parser types that only derive `Serialize`.
+
+**Detail:** The spec prescribes `#[derive(Debug, Clone, Serialize, Deserialize)]` on `SessionEvent`. The variants `Parsed { tool_call: crate::parser::ToolCall }`, `ParseFailed { failure: crate::parser::ParseFailure }`, and `Verify { diagnostics: Vec<crate::governor::verifier::Diagnostic> }` embed types from M3 phase-02. `Diagnostic` already derives both `Serialize` and `Deserialize`. But `ToolCall`, `ParseFailure`, and their dependencies (`Origin`, `Candidate`, `Format`, `RepairOp`) in `executor/src/parser/mod.rs` only derive `Serialize` — not `Deserialize`.
+
+For `SessionEvent` to compile with `Deserialize`, all six parser types must also derive `Deserialize`. This is a one-word addition per type with zero behavioral change, but it touches settled M3 code outside this phase's authorization.
+
+**What I need:** Authorization to add `Deserialize` to `ToolCall`, `ParseFailure`, `Origin`, `Candidate`, `Format`, and `RepairOp` in `executor/src/parser/mod.rs`, or an alternative approach (e.g., a wrapper type in `store::sessions` that is `Deserialize` and converts to/from the M3 types).
+
+### Update — 2026-05-28 (blocker resolved — architect)
+
+**Resolution:** Granted — **add `Deserialize`** to the six parser types
+(`ToolCall`, `Origin`, `Format`, `RepairOp`, `ParseFailure`, `Candidate`). Not the
+wrapper-type alternative: a wrapper would duplicate the schema and risk drift,
+whereas the session log is *meant* to round-trip these types, so making them
+`Deserialize` is the correct completion of their serde story (not a hack). See the
+Spec § "`Deserialize` round-trip" and the new Authorization. Derive additions
+only — no other change to those types; the M3 parser tests must still pass
+unchanged.
+
+Good catch refusing to edit settled M3 code without authorization — that's exactly
+the contract. The miss was the spec's (it prescribed `Deserialize` on
+`SessionEvent` without ensuring the embedded types supported it). Resume phase-03
+with the authorization above; status stays `in-progress`.
