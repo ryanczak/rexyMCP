@@ -1,7 +1,7 @@
 # Phase 07a: executor turn-loop core
 
 **Milestone:** M4 — Headless agent loop + governor/verifier
-**Status:** review
+**Status:** done
 **Depends on:** phase-01–06 (all done). Composes: `ai` (`AiClient`, `AiEvent`,
 `Message`, `make_client`), `parser::parse`, `tools` (`ToolRegistry`, `Tool`,
 `ToolResult`), `governor::scorer::Scorer`, `context::{budget, compactor}`,
@@ -444,3 +444,28 @@ exercised by `MockAiClient*` integration tests (first live end-to-end is M5).
   `append_tool_exchange`); `origin` is recorded but does not branch dispatch.
 
 verification: fmt OK · clippy OK · tests 440 passed · build OK
+
+### Review verdict — 2026-05-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — pre-routed off opencode (`<tool_call>` /
+  escaped-quote test fixtures).
+- **Scope deviations:** none. Implemented exactly to spec; `diff` /
+  `files_changed` / `command_outputs` correctly left empty/default (07d), no
+  logging (07b), no verifier/hard-fail (07c).
+- **Calibration:** one note, not yet a fold (one occurrence). The spec mandated
+  `scorer.record` in step 5, but 07a has no consumer of the score and does not
+  expose the `Scorer`, so it is currently dead computation (the executor flagged
+  this honestly and covered success/failure via the observable `ToolCallSnapshot`
+  → `what_was_tried` path). **Decision: keep it** — the `Scorer` is loop-running
+  state whose natural write-site is where outcomes occur, and **07c will wire the
+  reader** (governor tool-selection biasing) so it stops being dead. Action carried
+  to 07c's spec. If 07c does not consume it, drop it there. (If a *second*
+  spec mandates a write with no consumer, fold a "derive/record intentionally"
+  rule into STANDARDS § "Derive intentionally", which already warns the analogous
+  case for serde derives.)
+- Re-ran all four gates independently (fmt/build/clippy clean, 440 passed);
+  spot-checked tests are real — `budget_overflow…` asserts zero model calls,
+  `native_unknown_tool…` inspects the fed-back tool-result content,
+  `ai_event_error…` asserts `Err`.
