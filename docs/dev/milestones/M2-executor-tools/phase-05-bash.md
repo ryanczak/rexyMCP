@@ -1,7 +1,7 @@
 # Phase 05: bash tool + destructive-command classifier
 
 **Milestone:** M2 — Executor tools & security
-**Status:** review
+**Status:** in-progress
 **Depends on:** phase-04 (done)
 **Estimated diff:** ~420 lines (bash lift + net-new classifier + scope/env adaptation + tests)
 **Tags:** language=rust, kind=feature, size=m

@@ -6,7 +6,7 @@ engineer (architect) maintains this file. The executor reads it first
 
 **Active phase:** [M2 / phase-05 — `bash` tool + destructive-command classifier](milestones/M2-executor-tools/phase-05-bash.md)
 
-**Status:** review
+**Status:** in-progress — bounced from review; one open bug to fix: [bug-05-1](milestones/M2-executor-tools/bugs/bug-05-1.md) (classifier over-blocks benign commands like `cargo test shutdown`).
 
 **Milestone:** [M2 — Executor tools & security](milestones/M2-executor-tools/README.md) — in-progress (phase-01 through phase-04 done).
 
