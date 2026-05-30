@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::cap;
 use crate::log_query;
 use crate::runner;
+use crate::scorecard;
 
 // Per-tool timeout is enforced client-side by Claude Code via .mcp.json
 // per-server config (M6), not by the server itself.
@@ -197,6 +198,71 @@ pub(crate) fn get_turn_inner(params: &GetTurnParams) -> Result<LogQueryOutput, S
     })
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ModelScorecardParams {
+    /// Tags the run must contain (AND-ed). Empty = no filter.
+    pub tags: Option<Vec<String>>,
+    /// Restrict to one model. `None` = all models.
+    pub model: Option<String>,
+    /// Drop buckets with fewer than this many runs. `None` = 0.
+    pub min_runs: Option<usize>,
+    /// Override the cross-project `phase_runs.jsonl` path. `None` = resolve
+    /// from `cfg.telemetry.dir`.
+    pub telemetry_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ModelScorecardOutput {
+    pub rows: Vec<scorecard::ScorecardRow>,
+    pub total_runs_considered: usize,
+    /// True iff the row count was clipped by `MAX_ROWS`.
+    pub truncated: bool,
+}
+
+/// Inner logic for `model_scorecard`.
+pub(crate) fn model_scorecard_inner(
+    config_path: &Path,
+    params: &ModelScorecardParams,
+) -> Result<ModelScorecardOutput, String> {
+    let cfg = rexymcp_executor::config::Config::load_with_env(config_path)
+        .map_err(|e| format!("failed to load config: {}", e))?;
+
+    let telemetry_file = if let Some(ref p) = params.telemetry_path {
+        PathBuf::from(p)
+    } else if let Some(ref dir) = cfg.telemetry.dir {
+        dir.join("phase_runs.jsonl")
+    } else {
+        return Err(
+            "telemetry disabled: cfg.telemetry.dir not set and no telemetry_path provided"
+                .to_string(),
+        );
+    };
+
+    let runs =
+        rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+
+    let total_runs_considered = runs.len();
+
+    let filter = scorecard::ScorecardFilter {
+        tags: params.tags.as_deref().unwrap_or(&[]),
+        model: params.model.as_deref(),
+        min_runs: params.min_runs.unwrap_or(0),
+    };
+
+    let mut rows = scorecard::aggregate(&runs, &filter);
+
+    let truncated = rows.len() > scorecard::MAX_ROWS;
+    if truncated {
+        rows.truncate(scorecard::MAX_ROWS);
+    }
+
+    Ok(ModelScorecardOutput {
+        rows,
+        total_runs_considered,
+        truncated,
+    })
+}
+
 #[rmcp::tool_router(server_handler)]
 impl RexyMcpServer {
     #[rmcp::tool(
@@ -251,6 +317,16 @@ impl RexyMcpServer {
         Parameters(params): Parameters<GetTurnParams>,
     ) -> Result<Json<LogQueryOutput>, String> {
         get_turn_inner(&params).map(Json)
+    }
+
+    #[rmcp::tool(
+        description = "Aggregate the cross-project PhaseRun telemetry into a model × tag competency matrix. Returns per-bucket gates pass rate, reliability means (parse-failure / repairs / tool-success / verifier-retries), efficiency (turns / wall-clock), escalation rate, and supervision metrics (approved_first_try_rate, bounces_to_approval_mean). Filter by tags (AND semantics, exact match), model, or min_runs. Output capped at 500 rows."
+    )]
+    async fn model_scorecard(
+        &self,
+        Parameters(params): Parameters<ModelScorecardParams>,
+    ) -> Result<Json<ModelScorecardOutput>, String> {
+        model_scorecard_inner(&self.config_path, &params).map(Json)
     }
 }
 
@@ -590,5 +666,214 @@ escalation_slots = 1
         let result = executor_log_search_inner(&params);
 
         assert!(result.is_err());
+    }
+
+    fn make_config_with_telemetry(temp_dir: &TempDir) -> PathBuf {
+        let config_path = temp_dir.path().join("rexymcp.toml");
+        let telemetry_dir = temp_dir.path().join("telemetry");
+        let telemetry_dir_str = telemetry_dir.to_str().unwrap();
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"[executor]
+provider = "openai"
+model = "test-model"
+base_url = "http://127.0.0.1:1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[telemetry]
+dir = "{}"
+"#,
+                telemetry_dir_str
+            ),
+        )
+        .unwrap();
+        config_path
+    }
+
+    fn write_telemetry_fixture(temp_dir: &TempDir) -> PathBuf {
+        let telemetry_dir = temp_dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        let path = telemetry_dir.join("phase_runs.jsonl");
+        let lines = [
+            r#"{"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust","feature"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#,
+            r#"{"ts":1717000001000,"model":"m2","generation_params":{"temperature":null,"seed":null},"phase_id":"p2","tags":["rust","bugfix"],"status":"complete","escalated":true,"gates":{"fmt":true,"build":true,"lint":false,"test":true},"parse_failure_rate":0.2,"repairs_per_call":1.0,"verifier_retries":3,"tool_success_rate":0.8,"turns":10,"wall_clock_s":20.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":1,"architect_verdict":"rejected"}"#,
+        ];
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+        path
+    }
+
+    #[test]
+    fn model_scorecard_success_via_config_telemetry_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = make_config_with_telemetry(&temp_dir);
+        write_telemetry_fixture(&temp_dir);
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: None,
+        };
+        let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+        assert_eq!(result.total_runs_considered, 2);
+        assert!(!result.truncated);
+        assert!(!result.rows.is_empty());
+    }
+
+    #[test]
+    fn model_scorecard_success_via_telemetry_path_override() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = make_config_with_telemetry(&temp_dir);
+        let fixture = write_telemetry_fixture(&temp_dir);
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: Some(fixture.to_str().unwrap().to_string()),
+        };
+        let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+        assert_eq!(result.total_runs_considered, 2);
+        assert!(!result.rows.is_empty());
+    }
+
+    #[test]
+    fn model_scorecard_telemetry_path_override_takes_precedence() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = make_config_with_telemetry(&temp_dir);
+        write_telemetry_fixture(&temp_dir);
+
+        let alt_dir = temp_dir.path().join("alt_telemetry");
+        std::fs::create_dir_all(&alt_dir).unwrap();
+        let alt_path = alt_dir.join("phase_runs.jsonl");
+        let line = r#"{"ts":1717000002000,"model":"m3","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["go"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+        std::fs::write(&alt_path, format!("{}\n", line)).unwrap();
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: Some(alt_path.to_str().unwrap().to_string()),
+        };
+        let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+        assert_eq!(result.total_runs_considered, 1);
+        assert_eq!(result.rows[0].model, "m3");
+    }
+
+    #[test]
+    fn model_scorecard_telemetry_disabled_returns_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("rexymcp.toml");
+        std::fs::write(
+            &config_path,
+            r#"[executor]
+provider = "openai"
+model = "test-model"
+base_url = "http://127.0.0.1:1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: None,
+        };
+        let result = model_scorecard_inner(&config_path, &params);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("telemetry disabled"));
+    }
+
+    #[test]
+    fn model_scorecard_missing_file_returns_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = make_config_with_telemetry(&temp_dir);
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: None,
+        };
+        let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+        assert_eq!(result.total_runs_considered, 0);
+        assert!(result.rows.is_empty());
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn model_scorecard_malformed_jsonl_survivors_contribute() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = make_config_with_telemetry(&temp_dir);
+        let telemetry_dir = temp_dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        let path = telemetry_dir.join("phase_runs.jsonl");
+        let good_line = r#"{"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+        std::fs::write(&path, format!("GARBAGE LINE\n{}\n", good_line)).unwrap();
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: None,
+        };
+        let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+        assert_eq!(result.total_runs_considered, 1);
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].model, "m1");
+    }
+
+    #[test]
+    fn model_scorecard_truncated_flag_when_over_max_rows() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = make_config_with_telemetry(&temp_dir);
+        let telemetry_dir = temp_dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        let path = telemetry_dir.join("phase_runs.jsonl");
+
+        let mut lines = Vec::new();
+        for i in 0..scorecard::MAX_ROWS + 10 {
+            let tag = format!("tag{}", i);
+            lines.push(format!(
+                r#"{{"ts":1717000000000,"model":"m1","generation_params":{{"temperature":null,"seed":null}},"phase_id":"p{}","tags":["{}"],"status":"complete","escalated":false,"gates":{{"fmt":true,"build":true,"lint":true,"test":true}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"prompt":0,"completion":0,"total":0}},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}}"#,
+                i, tag
+            ));
+        }
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+
+        let params = ModelScorecardParams {
+            tags: None,
+            model: None,
+            min_runs: None,
+            telemetry_path: None,
+        };
+        let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+        assert_eq!(result.rows.len(), scorecard::MAX_ROWS);
+        assert!(result.truncated);
     }
 }

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 mod cap;
 mod log_query;
 mod runner;
+mod scorecard;
 mod server;
 
 #[derive(Parser)]
