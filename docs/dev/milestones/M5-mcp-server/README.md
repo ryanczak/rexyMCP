@@ -61,12 +61,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | phase-runner wiring (config + phase doc → `execute_phase`) ([phase-01-phase-runner.md](phase-01-phase-runner.md)) | done |
 | 02 | rmcp server scaffold + `execute_phase` + `executor_health` ([phase-02-rmcp-scaffold.md](phase-02-rmcp-scaffold.md)) | done |
 | 03 | session-log query tools (`executor_log_search` / `executor_log_tail` / `get_turn`) ([phase-03-log-query.md](phase-03-log-query.md)) | done |
+| 04 | `model_scorecard` (model × tag competency matrix) ([phase-04-model-scorecard.md](phase-04-model-scorecard.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **04 — `model_scorecard`.** Aggregate `telemetry::read` into the model × tag
-  competency matrix (gates, bounces, parse-failure rate, `tool_success_rate`, …),
-  optional `tags` filter. Read-only over the cross-project store.
 - **05 — progress notifications + `Progress` log events.** Emit MCP
   `notifications/progress` heartbeats (turn, stage/tool, files-changed `+/-`
   numstat encoded in the `message` string) and log each as a `Progress` session

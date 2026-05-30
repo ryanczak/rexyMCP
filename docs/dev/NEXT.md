@@ -4,13 +4,16 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M5 phase-03 closed (`done`, approved_first_try on
-2026-05-30, the cleanest M5 phase yet: zero `executor/` edits, zero new deps,
-zero scope deviations). The three log-query tools are live: Claude can now
-grep / tail / drill into a phase's JSONL session log on demand without
-re-flooding context. Next step is the architect drafting **M5 phase-04 —
-`model_scorecard`** (aggregate `store::telemetry::read` into the model × tag
-competency matrix; read-only over the cross-project store).
+**Active phase:** [M5 / phase-04 — `model_scorecard` (model × tag competency
+matrix)](milestones/M5-mcp-server/phase-04-model-scorecard.md) — `todo`,
+**drafted, awaiting dispatch**. Aggregates the cross-project `phase_runs.jsonl`
+into the (model, tag) competency matrix — gates pass rate, reliability means
+(parse-failure / repairs / tool-success / verifier-retries), efficiency
+(turns / wall-clock), escalation rate, and (where the architect has filled
+them) supervision metrics (`approved_first_try_rate`,
+`bounces_to_approval_mean`). Read-only; routing is M7. **`ScorecardRow`
+derives `JsonSchema` directly** — small mcp-owned schema tree, per the
+matured derive-vs-wrap rule (phases 02–03). No new deps, no `executor/` edits.
 
 **Last completed:** [M5 / phase-03 — session-log query
 tools](milestones/M5-mcp-server/phase-03-log-query.md) — approved_first_try
