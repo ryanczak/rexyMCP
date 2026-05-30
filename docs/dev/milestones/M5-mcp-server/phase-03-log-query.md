@@ -1,7 +1,7 @@
 # Phase 03: session-log query tools (executor_log_search / executor_log_tail / get_turn)
 
 **Milestone:** M5 — MCP server
-**Status:** todo
+**Status:** review
 **Depends on:** M5 phase-02 (done) — extends the same `#[rmcp::tool_router]` on `RexyMcpServer`. M4 phase-03 (the JSONL log + `read_session_log` + `SessionRecord` schema with `Serialize+Deserialize` already in place).
 **Estimated diff:** ~450 lines (log_query module + cap extension + three tool handlers + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -367,3 +367,101 @@ In `mcp/src/server.rs` `#[cfg(test)] mod tests` (extend):
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-30 12:00 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Starting phase-03: session-log query tools. Will implement `log_query` module, extend `cap.rs` with `cap_session_record`, add three tool handlers to `server.rs`, and wire `mod log_query;` in `main.rs`.
+
+### Update — 2026-05-30 12:30 (complete)
+
+**Summary:** Built three session-log query MCP tools (`executor_log_search`, `executor_log_tail`, `get_turn`) plus supporting `log_query` module and `cap_session_record`. All spec tasks implemented in order: (1) `mcp/src/log_query.rs` with `SearchFilter`, `search`, `tail`, `get_turn`, `event_type_str`, and limit constants; (2) `cap_session_record` in `cap.rs` with `cap_string` promoted to `pub(crate)`; (3) three tool handlers in `server.rs` with param structs, `LogQueryOutput`, and `pub(crate)` inner fns; (4) `mod log_query;` wired in `main.rs`. No scope deviations.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.92s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
+
+cargo test 2>&1 | grep "test result:"
+test result: ok. 71 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 495 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The handler logic is exercised by unit tests over `TempDir` fixtures; the rmcp transport is M6 dogfood.
+
+**Files changed:**
+- `mcp/src/log_query.rs` — new module: `SearchFilter`, `event_type_str`, `search`, `tail`, `get_turn`, limit constants, + 18 unit tests
+- `mcp/src/cap.rs` — promoted `cap_string` to `pub(crate)`, added `cap_session_record` + 12 tests
+- `mcp/src/server.rs` — added `ExecutorLogSearchParams`, `ExecutorLogTailParams`, `GetTurnParams`, `LogQueryOutput`, three `*_inner` fns, three `#[rmcp::tool]` methods, + 13 handler tests
+- `mcp/src/main.rs` — declared `mod log_query;`
+
+**New tests:**
+- `event_type_str_round_trips_all_variants`, `search_no_filters_returns_first_limit_records`, `search_event_type_filter`, `search_tool_name_filter_matches_parsed_and_tool_result`, `search_tool_name_filter_rejects_non_tool_events`, `search_query_text_substring`, `search_combined_filters_and`, `search_limit_clamped_to_max`, `search_limit_zero_uses_default`, `search_limit_small`, `tail_returns_last_n_in_order`, `tail_default_n_when_zero`, `tail_clamped_to_max`, `tail_more_than_available_returns_all`, `get_turn_returns_all_events_for_turn`, `get_turn_empty_when_no_records`, `get_turn_turn_zero` (in `log_query.rs`)
+- `cap_session_record_truncates_prompt_rendered`, `cap_session_record_truncates_completion_raw`, `cap_session_record_truncates_tool_result_output_preview`, `cap_session_record_truncates_hard_fail_reason`, `cap_session_record_truncates_progress_message`, `cap_session_record_passes_through_session_start`, `cap_session_record_passes_through_parsed`, `cap_session_record_passes_through_parse_failed`, `cap_session_record_passes_through_verify`, `cap_session_record_passes_through_session_end`, `cap_session_record_short_fields_untouched` (in `cap.rs`)
+- `executor_log_search_returns_matching_records`, `executor_log_search_filter_by_tool_name`, `executor_log_search_filter_by_query_text`, `executor_log_search_returns_empty_for_missing_file`, `executor_log_tail_returns_last_n_records`, `executor_log_tail_default_n`, `executor_log_tail_clamped_to_max`, `executor_log_tail_returns_empty_for_missing_file`, `get_turn_returns_all_events_for_turn`, `get_turn_empty_when_no_records`, `get_turn_returns_empty_for_missing_file`, `get_turn_uncapped_vs_tail_capped`, `executor_log_search_directory_path_returns_error` (in `server.rs`)
+
+**Commits:**
+- (pending — will commit below)
+
+**Notes for review:** No scope deviations. `cap_string` promoted to `pub(crate)` as authorized. Zero `executor/` edits. No new dependencies.
+
+verification: fmt OK · clippy OK · tests 566 passed · build OK
+
+### Update — 2026-05-30 12:30 (complete)
+
+**Summary:** Built three session-log query MCP tools (`executor_log_search`, `executor_log_tail`, `get_turn`) plus supporting `log_query` module and `cap_session_record`. All spec tasks implemented in order: (1) `mcp/src/log_query.rs` with `SearchFilter`, `search`, `tail`, `get_turn`, `event_type_str`, and limit constants; (2) `cap_session_record` in `cap.rs` with `cap_string` promoted to `pub(crate)`; (3) three tool handlers in `server.rs` with param structs, `LogQueryOutput`, and `pub(crate)` inner fns; (4) `mod log_query;` wired in `main.rs`. No scope deviations.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.92s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.24s
+
+cargo test 2>&1 | grep "test result:"
+test result: ok. 71 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 495 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The handler logic is exercised by unit tests over `TempDir` fixtures; the rmcp transport is M6 dogfood.
+
+**Files changed:**
+- `mcp/src/log_query.rs` — new module: `SearchFilter`, `event_type_str`, `search`, `tail`, `get_turn`, limit constants, + 18 unit tests
+- `mcp/src/cap.rs` — promoted `cap_string` to `pub(crate)`, added `cap_session_record` + 12 tests
+- `mcp/src/server.rs` — added `ExecutorLogSearchParams`, `ExecutorLogTailParams`, `GetTurnParams`, `LogQueryOutput`, three `*_inner` fns, three `#[rmcp::tool]` methods, + 13 handler tests
+- `mcp/src/main.rs` — declared `mod log_query;`
+
+**New tests:**
+- `event_type_str_round_trips_all_variants`, `search_no_filters_returns_first_limit_records`, `search_event_type_filter`, `search_tool_name_filter_matches_parsed_and_tool_result`, `search_tool_name_filter_rejects_non_tool_events`, `search_query_text_substring`, `search_combined_filters_and`, `search_limit_clamped_to_max`, `search_limit_zero_uses_default`, `search_limit_small`, `tail_returns_last_n_in_order`, `tail_default_n_when_zero`, `tail_clamped_to_max`, `tail_more_than_available_returns_all`, `get_turn_returns_all_events_for_turn`, `get_turn_empty_when_no_records`, `get_turn_turn_zero` (in `log_query.rs`)
+- `cap_session_record_truncates_prompt_rendered`, `cap_session_record_truncates_completion_raw`, `cap_session_record_truncates_tool_result_output_preview`, `cap_session_record_truncates_hard_fail_reason`, `cap_session_record_truncates_progress_message`, `cap_session_record_passes_through_session_start`, `cap_session_record_passes_through_parsed`, `cap_session_record_passes_through_parse_failed`, `cap_session_record_passes_through_verify`, `cap_session_record_passes_through_session_end`, `cap_session_record_short_fields_untouched` (in `cap.rs`)
+- `executor_log_search_returns_matching_records`, `executor_log_search_filter_by_tool_name`, `executor_log_search_filter_by_query_text`, `executor_log_search_returns_empty_for_missing_file`, `executor_log_tail_returns_last_n_records`, `executor_log_tail_default_n`, `executor_log_tail_clamped_to_max`, `executor_log_tail_returns_empty_for_missing_file`, `get_turn_returns_all_events_for_turn`, `get_turn_empty_when_no_records`, `get_turn_returns_empty_for_missing_file`, `get_turn_uncapped_vs_tail_capped`, `executor_log_search_directory_path_returns_error` (in `server.rs`)
+
+**Commits:**
+- (pending — will commit below)
+
+**Notes for review:** No scope deviations. `cap_string` promoted to `pub(crate)` as authorized. Zero `executor/` edits. No new dependencies.
+
+verification: fmt OK · clippy OK · tests 566 passed · build OK

@@ -1,4 +1,5 @@
 use rexymcp_executor::phase::{CommandOutputs, PhaseResult};
+use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 
 /// Per-field byte budget for output capping. ~12.5K tokens at 4 bytes/token
 /// heuristic, well under any reasonable MCP per-tool ceiling.
@@ -6,7 +7,7 @@ pub const MAX_FIELD_BYTES: usize = 50_000;
 
 /// Truncate a string to at most `MAX_FIELD_BYTES` bytes on a UTF-8 character
 /// boundary, appending the truncation marker when truncation occurs.
-fn cap_string(s: String) -> String {
+pub(crate) fn cap_string(s: String) -> String {
     if s.len() <= MAX_FIELD_BYTES {
         return s;
     }
@@ -62,11 +63,54 @@ pub fn cap_phase_result(result: PhaseResult) -> PhaseResult {
     }
 }
 
+/// Cap long-string fields inside a `SessionRecord`'s `SessionEvent` so MCP
+/// return values stay within a per-field byte budget.
+pub fn cap_session_record(record: SessionRecord) -> SessionRecord {
+    let event = match record.event {
+        SessionEvent::Prompt { rendered } => SessionEvent::Prompt {
+            rendered: cap_string(rendered),
+        },
+        SessionEvent::Completion { raw } => SessionEvent::Completion {
+            raw: cap_string(raw),
+        },
+        SessionEvent::ToolResult {
+            name,
+            succeeded,
+            output_preview,
+        } => SessionEvent::ToolResult {
+            name,
+            succeeded,
+            output_preview: cap_string(output_preview),
+        },
+        SessionEvent::HardFail { reason } => SessionEvent::HardFail {
+            reason: cap_string(reason),
+        },
+        SessionEvent::Progress {
+            turn,
+            stage,
+            files_changed,
+            message,
+        } => SessionEvent::Progress {
+            turn,
+            stage,
+            files_changed,
+            message: cap_string(message),
+        },
+        other => other,
+    };
+    SessionRecord {
+        ts: record.ts,
+        turn: record.turn,
+        event,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rexymcp_executor::phase::PhaseStatus;
     use rexymcp_executor::phase::briefing::{Briefing, WorkingFile};
+    use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 
     fn long_string(len: usize) -> String {
         "x".repeat(len)
@@ -256,5 +300,197 @@ mod tests {
         let capped = cap_phase_result(r);
         let tried = &capped.briefing.as_ref().unwrap().what_was_tried[0];
         assert_eq!(tried.one_line, "Tried patch on src/lib.rs; succeeded.");
+    }
+
+    fn make_session_record(event: SessionEvent, turn: usize) -> SessionRecord {
+        SessionRecord {
+            ts: 1_717_000_000_000,
+            turn,
+            event,
+        }
+    }
+
+    #[test]
+    fn cap_session_record_truncates_prompt_rendered() {
+        let record = make_session_record(
+            SessionEvent::Prompt {
+                rendered: long_string(60_000),
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::Prompt { rendered } => {
+                assert!(rendered.len() <= MAX_FIELD_BYTES + 100);
+                assert!(rendered.contains("[truncated:"));
+            }
+            _ => panic!("expected Prompt"),
+        }
+    }
+
+    #[test]
+    fn cap_session_record_truncates_completion_raw() {
+        let record = make_session_record(
+            SessionEvent::Completion {
+                raw: long_string(60_000),
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::Completion { raw } => {
+                assert!(raw.len() <= MAX_FIELD_BYTES + 100);
+                assert!(raw.contains("[truncated:"));
+            }
+            _ => panic!("expected Completion"),
+        }
+    }
+
+    #[test]
+    fn cap_session_record_truncates_tool_result_output_preview() {
+        let record = make_session_record(
+            SessionEvent::ToolResult {
+                name: "read_file".into(),
+                succeeded: true,
+                output_preview: long_string(60_000),
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::ToolResult { output_preview, .. } => {
+                assert!(output_preview.len() <= MAX_FIELD_BYTES + 100);
+                assert!(output_preview.contains("[truncated:"));
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn cap_session_record_truncates_hard_fail_reason() {
+        let record = make_session_record(
+            SessionEvent::HardFail {
+                reason: long_string(60_000),
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::HardFail { reason } => {
+                assert!(reason.len() <= MAX_FIELD_BYTES + 100);
+                assert!(reason.contains("[truncated:"));
+            }
+            _ => panic!("expected HardFail"),
+        }
+    }
+
+    #[test]
+    fn cap_session_record_truncates_progress_message() {
+        let record = make_session_record(
+            SessionEvent::Progress {
+                turn: 1,
+                stage: "verify".into(),
+                files_changed: vec![],
+                message: long_string(60_000),
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::Progress { message, .. } => {
+                assert!(message.len() <= MAX_FIELD_BYTES + 100);
+                assert!(message.contains("[truncated:"));
+            }
+            _ => panic!("expected Progress"),
+        }
+    }
+
+    #[test]
+    fn cap_session_record_passes_through_session_start() {
+        let record = make_session_record(
+            SessionEvent::SessionStart {
+                session_id: "s1".into(),
+                model: "test".into(),
+                phase: "p1".into(),
+            },
+            0,
+        );
+        let capped = cap_session_record(record.clone());
+        assert!(matches!(capped.event, SessionEvent::SessionStart { .. }));
+    }
+
+    #[test]
+    fn cap_session_record_passes_through_parsed() {
+        let tool_call = rexymcp_executor::parser::ToolCall {
+            name: "read_file".into(),
+            arguments: serde_json::json!({ "path": "x.rs" }),
+            origin: rexymcp_executor::parser::Origin::Extracted {
+                format: rexymcp_executor::parser::Format::Hermes,
+            },
+        };
+        let record = make_session_record(SessionEvent::Parsed { tool_call }, 1);
+        let capped = cap_session_record(record);
+        assert!(matches!(capped.event, SessionEvent::Parsed { .. }));
+    }
+
+    #[test]
+    fn cap_session_record_passes_through_parse_failed() {
+        let failure = rexymcp_executor::parser::ParseFailure {
+            raw: "bad".into(),
+            detected_format: None,
+            candidates: vec![],
+            feedback: "no tool".into(),
+        };
+        let record = make_session_record(SessionEvent::ParseFailed { failure }, 1);
+        let capped = cap_session_record(record);
+        assert!(matches!(capped.event, SessionEvent::ParseFailed { .. }));
+    }
+
+    #[test]
+    fn cap_session_record_passes_through_verify() {
+        let diag = rexymcp_executor::governor::verifier::Diagnostic {
+            path: std::path::PathBuf::from("src/lib.rs"),
+            line: 1,
+            column: None,
+            severity: rexymcp_executor::governor::verifier::Severity::Warning,
+            message: "unused".into(),
+            code: None,
+        };
+        let record = make_session_record(
+            SessionEvent::Verify {
+                diagnostics: vec![diag],
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        assert!(matches!(capped.event, SessionEvent::Verify { .. }));
+    }
+
+    #[test]
+    fn cap_session_record_passes_through_session_end() {
+        let record = make_session_record(
+            SessionEvent::SessionEnd {
+                status: "ok".into(),
+                turns: 5,
+            },
+            5,
+        );
+        let capped = cap_session_record(record);
+        assert!(matches!(capped.event, SessionEvent::SessionEnd { .. }));
+    }
+
+    #[test]
+    fn cap_session_record_short_fields_untouched() {
+        let record = make_session_record(
+            SessionEvent::Prompt {
+                rendered: "short".into(),
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::Prompt { rendered } => assert_eq!(rendered, "short"),
+            _ => panic!("expected Prompt"),
+        }
     }
 }

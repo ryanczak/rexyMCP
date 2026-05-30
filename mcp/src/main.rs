@@ -4,6 +4,7 @@ use rexymcp_executor::health;
 use std::path::PathBuf;
 
 mod cap;
+mod log_query;
 mod runner;
 mod server;
 
