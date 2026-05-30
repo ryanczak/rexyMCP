@@ -4,14 +4,16 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M5 phase-04 closed (`done`, approved_first_try on
-2026-05-30; second consecutive zero-deviation phase). The `model_scorecard`
-tool is live: the (model, tag) competency matrix is queryable on demand.
-Next step is the architect drafting **M5 phase-05 — progress notifications
-+ `Progress` log events** (the only remaining M5 phase that requires an
-executor change — a progress-callback seam in the loop, since the M4 turn
-cycle has no progress hook today; `SessionEvent::Progress` + `FileNumstat`
-were reserved in M4 phase-03 for exactly this).
+**Active phase:** [M5 / phase-05a — progress callback seam + `Progress` log
+events (executor side)](milestones/M5-mcp-server/phase-05a-progress-callback.md)
+— `todo`, **drafted, awaiting dispatch**. The only M5 phase that touches
+`executor/` substantively. Adds `progress: Option<&'a dyn ProgressCallback>`
+to `LoopDeps`, four emission sites in the turn cycle (`turn_start` /
+`tool:<name>` / `verify` / `command:<name>`), a numstat helper reusing the
+existing working-set + `similar` machinery, and logs each emission as a
+`SessionEvent::Progress` record (the durable half of the consumer split). M5
+phase-05 split into 05a+05b along the cohesive seam (executor producer vs
+mcp consumer) — 05b drafts when 05a lands.
 
 **Last completed:** [M5 / phase-04 — `model_scorecard` (model × tag
 competency matrix)](milestones/M5-mcp-server/phase-04-model-scorecard.md) —

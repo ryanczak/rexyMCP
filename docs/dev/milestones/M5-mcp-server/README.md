@@ -62,17 +62,25 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 02 | rmcp server scaffold + `execute_phase` + `executor_health` ([phase-02-rmcp-scaffold.md](phase-02-rmcp-scaffold.md)) | done |
 | 03 | session-log query tools (`executor_log_search` / `executor_log_tail` / `get_turn`) ([phase-03-log-query.md](phase-03-log-query.md)) | done |
 | 04 | `model_scorecard` (model × tag competency matrix) ([phase-04-model-scorecard.md](phase-04-model-scorecard.md)) | done |
+| 05a | progress callback seam + `Progress` log events (executor side) ([phase-05a-progress-callback.md](phase-05a-progress-callback.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **05 — progress notifications + `Progress` log events.** Emit MCP
-  `notifications/progress` heartbeats (turn, stage/tool, files-changed `+/-`
-  numstat encoded in the `message` string) and log each as a `Progress` session
-  event. **Requires a progress-callback seam in the loop** (an executor change —
-  authorize in that phase): the M4 loop has no progress hook today, and
-  `SessionEvent::Progress` + `FileNumstat` were reserved in M4 phase-03 for exactly
-  this. Reuses the loop's working-set + diff machinery; the heartbeat is a liveness
-  summary, never a second source of truth (see M4 README § "Progress heartbeats").
+- **05** — progress notifications + `Progress` log events, **split into 05a +
+  05b** because the work crosses a clean cohesive seam (executor producer vs
+  mcp consumer), each session-sized and independently reviewable. Mirrors M4
+  phase-07's splitting wisdom.
+  - **05a** *(drafted)* — **executor side**: progress-callback seam on
+    `LoopDeps`, four emission sites (`turn_start` / `tool:<name>` / `verify`
+    / `command:<name>`), numstat helper reusing the working-set + `similar`
+    machinery, `SessionEvent::Progress` log entries at each emission. Pins
+    the callback contract that 05b consumes. The only M5 phase that touches
+    `executor/` substantively — authorized inline.
+  - **05b** *(drafts when 05a lands)* — **mcp consumer side**: the
+    `execute_phase` handler builds a `ProgressCallback` that emits MCP
+    `notifications/progress`, plumbed through `runner::run_phase`. Real
+    wire-level liveness; the durable half (log events) was already live after
+    05a.
 - **06 — roots corroboration.** Query `roots/list` + read `CLAUDE_PROJECT_DIR` to
   cross-check `execute_phase`'s `repo_path`; flag a mismatch rather than trusting
   it. (Sampling + elicitation are deliberately **not** used — see architecture.)
