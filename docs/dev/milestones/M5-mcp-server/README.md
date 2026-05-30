@@ -61,7 +61,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | phase-runner wiring (config + phase doc → `execute_phase`) ([phase-01-phase-runner.md](phase-01-phase-runner.md)) | done |
 | 02 | rmcp server scaffold + `execute_phase` + `executor_health` ([phase-02-rmcp-scaffold.md](phase-02-rmcp-scaffold.md)) | done |
 | 03 | session-log query tools (`executor_log_search` / `executor_log_tail` / `get_turn`) ([phase-03-log-query.md](phase-03-log-query.md)) | done |
-| 04 | `model_scorecard` (model × tag competency matrix) ([phase-04-model-scorecard.md](phase-04-model-scorecard.md)) | review |
+| 04 | `model_scorecard` (model × tag competency matrix) ([phase-04-model-scorecard.md](phase-04-model-scorecard.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 

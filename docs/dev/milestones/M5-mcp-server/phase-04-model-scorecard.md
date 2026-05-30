@@ -1,7 +1,7 @@
 # Phase 04: model_scorecard — model × tag competency matrix
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M5 phase-02 (done) — same `RexyMcpServer` tool router, `[telemetry] dir` config field already wired. M4 phase-08 (done) — emits the `PhaseRun` records this aggregates. M4 telemetry module — `store::telemetry::{PhaseRun, Gates, read}` already `Serialize+Deserialize`.
 **Estimated diff:** ~400 lines (scorecard module + handler + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -454,3 +454,56 @@ Not applicable — same as phases 02 and 03. Handler logic exercised by unit tes
 **Notes for review:** Zero scope deviations. All acceptance criteria met. `ScorecardRow` derives `JsonSchema` directly (per Adaptation 1). No `executor/` edits. No new dependencies. `gates_pass_rate` requires all four `Some(true)` (per Adaptation 3, negative case tested in `gates_pass_rate_none_gate_counts_as_fail`).
 
 verification: fmt OK · clippy OK · tests 495 passed · build OK
+
+### Update — 2026-05-30 (approved — architect)
+
+**Verdict:** approved_first_try. Second consecutive zero-deviation phase, and
+phase-03's discipline carried forward intact. `model_scorecard` lands as a
+clean read-only tool on top of the M4 telemetry store; `ScorecardRow` derives
+`JsonSchema` directly (the *derive-when-small* half of the maturing
+derive-vs-wrap rule); `BTreeMap` bucketing gives deterministic output. Gates:
+fmt ✓ · build ✓ · clippy ✓ · tests **591** (495 executor + 96 mcp, up from
+566).
+
+**Hard constraints held (third phase running).** Zero `executor/` edits,
+zero new deps — the diff is entirely in `mcp/` + the docs (verified via
+`git diff --stat HEAD~1 HEAD`). The `truncated` flag now appears in three
+output types (`LogQueryOutput`, `ExecutePhaseOutput`-style implicit via cap
+markers, `ModelScorecardOutput`) — a coherent pull-not-push pattern is
+forming across M5.
+
+**All Adaptation 3 negative cases tested.** The "`gates_pass_rate` requires
+all four `Some(true)`" rule has a pinned negative test
+(`gates_pass_rate_none_gate_counts_as_fail`); the supervision-aggregation
+optionality (`approved_first_try_rate` / `bounces_to_approval_mean` → `None`
+when no architect verdict yet) has both presence and absence tests. The "pin
+negative cases" fold (M2 calibration) shows up routinely now — no longer a
+recurring miss.
+
+**Handler tests (the phase-03 hardened rule still holding):** 7 server tests
+cover success-via-config-dir, success-via-explicit-path, the override
+precedence, telemetry-disabled (`Err`), missing-file (`Ok` empty rows),
+malformed-JSONL skipping, and the `truncated` flag firing at `MAX_ROWS`. The
+success path isn't a single test — it's tested through multiple lenses,
+including the "is `total_runs_considered` pre-aggregation" semantics from
+the spec.
+
+**Bounces:** 0.
+**Scope deviations:** 0 (Notes for review accurately says so).
+**Tests added:** 25 (18 `scorecard` aggregation + 7 `server` handler).
+
+**Derive-vs-wrap rule fully exercised across M5.**
+- **Wrap** with `serde_json::Value`: phase-02 `ExecutePhaseOutput` (PhaseResult
+  has a large foreign schema tree); phase-03 `LogQueryOutput` (SessionRecord +
+  SessionEvent + ToolCall + Diagnostic + …).
+- **Derive directly:** phase-02 `Health` (one small type); **phase-04
+  `ScorecardRow`** (one small mcp-owned struct of primitives).
+Both halves now live in the codebase. Worth folding the rule into
+`docs/dev/STANDARDS.md` or `WORKFLOW.md` at M5 close — the cross-boundary-
+trait-bounds calibration tally is now M4 phase-03 (Deserialize on parser
+types, retroactive) + M5 phase-02 (Send+Sync + JsonSchema-on-small-type) +
+M5 phase-03 (Value-wrapper-for-large-tree) + M5 phase-04 (Derive-for-small-
+mcp-owned-tree). The pattern is mature; the rule is "wrap when the schema
+tree is large or foreign; derive when small and locally-owned."
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try.
