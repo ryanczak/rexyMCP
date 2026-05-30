@@ -5,11 +5,12 @@ engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
 **Active phase:** [M5 / phase-01 — phase-runner wiring (config + phase doc →
-`execute_phase`)](milestones/M5-mcp-server/phase-01-phase-runner.md) — `todo`,
-**drafted, awaiting dispatch**. Net-new composition root in `mcp/src/runner.rs`
-(phase-doc parser + registry builder + the `run_phase` assembler) plus a
-`run-phase` CLI subcommand; no new dependency (`rmcp` is phase-02). Unit-testable
-with `MockAiClient`.
+`execute_phase`)](milestones/M5-mcp-server/phase-01-phase-runner.md) —
+**in-progress** (bounced 2026-05-29; see
+[bug-01-1](milestones/M5-mcp-server/bugs/bug-01-1.md): missing CLI-parse test
+for the `run-phase` subcommand — Acceptance criterion 5). All gates clean and
+the code is structurally right; a small follow-up test closes the gap.
+**Re-dispatch to opencode** to address the bug.
 
 **Last completed:** [M4 / phase-08 — `PhaseRun`
 telemetry](milestones/M4-agent-loop/phase-08-phaserun-telemetry.md) —
