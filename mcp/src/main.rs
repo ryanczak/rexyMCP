@@ -115,3 +115,73 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Commands};
+    use clap::Parser;
+    use std::path::PathBuf;
+
+    #[test]
+    fn cli_parse_run_phase_with_all_args() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "run-phase",
+            "--config",
+            "rexymcp.toml",
+            "--phase-doc",
+            "docs/dev/milestones/M5-mcp-server/phase-01-phase-runner.md",
+            "--repo",
+            "/tmp/repo",
+            "--model",
+            "qwen2.5-coder",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::RunPhase {
+                config,
+                phase_doc,
+                repo,
+                model,
+            }) => {
+                assert_eq!(config, PathBuf::from("rexymcp.toml"));
+                assert_eq!(
+                    phase_doc,
+                    PathBuf::from("docs/dev/milestones/M5-mcp-server/phase-01-phase-runner.md")
+                );
+                assert_eq!(repo, PathBuf::from("/tmp/repo"));
+                assert_eq!(model.as_deref(), Some("qwen2.5-coder"));
+            }
+            _ => panic!("expected RunPhase"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_run_phase_model_optional() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "run-phase",
+            "--config",
+            "rexymcp.toml",
+            "--phase-doc",
+            "phase-doc.md",
+            "--repo",
+            "/tmp/repo",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::RunPhase { model, .. }) => {
+                assert_eq!(model, None);
+            }
+            _ => panic!("expected RunPhase"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_run_phase_missing_required_arg_fails() {
+        let result = Cli::try_parse_from(["rexymcp", "run-phase", "--config", "rexymcp.toml"]);
+        assert!(result.is_err());
+    }
+}

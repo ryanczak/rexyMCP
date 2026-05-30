@@ -58,7 +58,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
-| 01 | phase-runner wiring (config + phase doc → `execute_phase`) ([phase-01-phase-runner.md](phase-01-phase-runner.md)) | in-progress ([bug-01-1](bugs/bug-01-1.md)) |
+| 01 | phase-runner wiring (config + phase doc → `execute_phase`) ([phase-01-phase-runner.md](phase-01-phase-runner.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

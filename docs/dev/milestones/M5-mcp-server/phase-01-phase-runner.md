@@ -1,7 +1,7 @@
 # Phase 01: phase-runner wiring (config + phase doc → execute_phase)
 
 **Milestone:** M5 — MCP server
-**Status:** in-progress (bounced — see [bug-01-1](bugs/bug-01-1.md))
+**Status:** review
 **Depends on:** M4 (done)
 **Estimated diff:** ~400 lines (runner module + CLI subcommand + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -402,3 +402,71 @@ phases 01–07 of M4. First M5 phase, first phase-01-class bounce since M2.
 
 **Re-dispatch to opencode** to address bug-01-1; on return, the verdict block
 finalizes (done, approved_after_1).
+
+### Update — 2026-05-29 15:00 (complete — bug-01-1 fix)
+
+**Summary:** Added three CLI-parse tests to `mcp/src/main.rs` in a
+`#[cfg(test)] mod tests` block: `cli_parse_run_phase_with_all_args` (all four
+flags present, values asserted), `cli_parse_run_phase_model_optional`
+(`--model` omitted, asserts `None`), and
+`cli_parse_run_phase_missing_required_arg_fails` (missing `--phase-doc` and
+`--repo` returns `Err` from `try_parse_from`). This satisfies Acceptance
+criterion 5 and closes bug-01-1.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+    Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.30s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+
+cargo test -p rexymcp 2>&1 | tail -30
+running 13 tests
+test runner::tests::derive_phase_id_non_matching ... ok
+test runner::tests::derive_phase_id_standard ... ok
+test runner::tests::parse_missing_goal_yields_empty ... ok
+test runner::tests::parse_goal_followed_immediately_by_next_heading ... ok
+test runner::tests::parse_spaced_tags_line_splits_cleanly ... ok
+test runner::tests::parse_positive_fixture ... ok
+test runner::tests::build_registry_has_seven_tools ... ok
+test runner::tests::parse_missing_tags_yields_empty_vec ... ok
+test tests::cli_parse_run_phase_model_optional ... ok
+test tests::cli_parse_run_phase_missing_required_arg_fails ... ok
+test tests::cli_parse_run_phase_with_all_args ... ok
+test runner::tests::run_phase_with_fails_on_nonexistent_root ... ok
+test runner::tests::run_phase_with_assembles_and_returns_result ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The assembler is
+exercised by unit tests with `MockAiClient` over a `TempDir`; the first real
+end-to-end dispatch lands in phase-02.
+
+**Files changed:**
+- `mcp/src/main.rs` — added `#[cfg(test)] mod tests` with 3 CLI-parse tests
+
+**New tests:**
+- `cli_parse_run_phase_with_all_args` in `mcp/src/main.rs`
+- `cli_parse_run_phase_model_optional` in `mcp/src/main.rs`
+- `cli_parse_run_phase_missing_required_arg_fails` in `mcp/src/main.rs`
+
+**Commits:**
+- `0d88ed1` — fix: add CLI-parse tests for run-phase subcommand (bug-01-1)
+
+**Notes for review:** Minimal fix — 3 tests, no structural changes. The
+`Commands` enum does not derive `Debug`, so the `panic!` arms use `_` instead
+of `{other:?}`.
+
+verification: fmt OK · clippy OK · tests 13 passed (mcp) · build OK
