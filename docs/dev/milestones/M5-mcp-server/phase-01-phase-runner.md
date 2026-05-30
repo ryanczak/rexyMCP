@@ -1,7 +1,7 @@
 # Phase 01: phase-runner wiring (config + phase doc → execute_phase)
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M4 (done)
 **Estimated diff:** ~400 lines (runner module + CLI subcommand + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -470,3 +470,24 @@ end-to-end dispatch lands in phase-02.
 of `{other:?}`.
 
 verification: fmt OK · clippy OK · tests 13 passed (mcp) · build OK
+
+### Update — 2026-05-29 (approved after bounce — architect)
+
+**Verdict:** approved_after_1. Bug-01-1 fixed cleanly — three CLI-parse tests
+covering exactly what the bug doc prescribed (happy path with all four flags;
+`--model` omitted → `None`; invalid arg shape → `Err`). Diff is contained to
+`mcp/src/main.rs` and the docs; no other code touched. Gates: fmt ✓ · build ✓
+· clippy ✓ · tests **505** (492 executor + 13 mcp, up from 502).
+
+The minor "no `Debug` on `Commands`, so `panic!` arms drop `{other:?}`" note
+is reasonable — deriving `Debug` purely for a test message would be tail-wags-
+dog. Accepted as-is.
+
+**Bounces:** 1 (bug-01-1, fixed → verified).
+**Scope deviations:** none in the fix commit. (The original-pass deviations —
+three workspace-existing deps + the `bash_timeout_secs=30` hardcode — are
+retroactively accepted per the bounce verdict above; no fresh deviations.)
+**Calibration carried forward:** *declare even-defensible deviations* and
+*self-review accuracy* — flag any recurrence in future M5 phases.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Phase-01 close: status → done.
