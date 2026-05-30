@@ -4,13 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M5 phase-02 closed (`done`, approved_first_try on
-2026-05-30). The `rmcp` 1.7 stdio MCP server is live (`rexymcp serve`), the
-two core tools are wired (`execute_phase` + `executor_health`), output
-capping is in place, and `[telemetry] dir` config plumbs through. Next step
-is the architect drafting **M5 phase-03 — session-log query tools**
-(`executor_log_search` / `executor_log_tail` / `get_turn` over
-`store::sessions::read_session_log`, each capping its own output).
+**Active phase:** [M5 / phase-03 — session-log query tools
+(`executor_log_search` / `executor_log_tail` /
+`get_turn`)](milestones/M5-mcp-server/phase-03-log-query.md) — `todo`,
+**drafted, awaiting dispatch**. The pull-not-push half of the MCP boundary:
+three tools that let Claude grep / tail / drill into a phase's JSONL session
+log on demand. `executor_log_search` + `executor_log_tail` cap each record;
+`get_turn` is architecture-mandated as the one uncapped escape hatch (single
+turn only). No new deps, no `executor/` edits — wraps records in
+`LogQueryOutput { records: serde_json::Value }` to sidestep `JsonSchema`
+cascading across `SessionEvent` (same trade-off as phase-02's
+`ExecutePhaseOutput`). Mandates handler success-path tests per the phase-02
+calibration carry-forward.
 
 **Last completed:** [M5 / phase-02 — rmcp server scaffold + execute_phase +
 executor_health](milestones/M5-mcp-server/phase-02-rmcp-scaffold.md) —
