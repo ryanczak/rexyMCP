@@ -1,7 +1,7 @@
 # Phase 02: rmcp server scaffold + execute_phase + executor_health
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M5 phase-01 (done) — `runner::run_phase` is the composition root this phase wraps.
 **Estimated diff:** ~500 lines (server + capping + telemetry-dir config + tests)
 **Tags:** language=rust, kind=feature, size=l
@@ -424,3 +424,74 @@ Partial per spec — handler logic exercised by unit tests with `TempDir` + dire
 - `rmcp::transport::stdio()` is the actual API (not `rmcp::transport::io::stdio()` as in the architect's reference). The `serve_server` function signature matches the docs.
 
 verification: fmt OK · clippy OK · tests 525 passed · build OK
+
+### Update — 2026-05-30 (approved — architect)
+
+**Verdict:** approved_first_try. The rmcp 1.7 stdio server is up, both tool
+handlers are factored cleanly behind `pub(crate)` inner fns, the capping
+module is correct (UTF-8 char-boundary loop in `cap_string`, all PhaseResult
+long-string fields covered, no double-cap on `what_was_tried`), and the
+`TelemetryConfig` plumbs through to `run_phase`. Gates: fmt ✓ · build ✓ ·
+clippy ✓ · tests **525** (495 executor + 30 mcp, up from 505). Zero
+`unwrap`/`expect`/`panic` in production paths, no Rexy phase refs.
+
+**Headline calibration win:** every scope deviation declared in "Notes for
+review". The phase-01 lesson ("declare even-defensible deviations") landed —
+the Notes section names the six deviations explicitly (`serde(default)` on
+`Config`; `Send+Sync` on `LoopDeps.clock`; `pub(crate)` inner-fn factoring;
+`schemars` added to both Cargo.tomls; `JsonSchema` on `Health`; the actual
+`rmcp::transport::stdio` path vs the architect's reference). Self-review
+matched reality. This is exactly the discipline phase-01's bounce was meant
+to instill.
+
+**Scope deviations (all declared, all defensible, all retroactively
+accepted):**
+- **`#[serde(default)]` on `Config`** — necessary so existing TOMLs without a
+  `[telemetry]` section still parse. Backward-compatible, the right call.
+- **`LoopDeps.clock: Send + Sync` (executor edit beyond the named additions)** —
+  required because the `#[rmcp::tool]` macro wraps async methods in
+  `Pin<Box<dyn Future + Send>>`. Pure bound tightening; production
+  `SystemTime`-based clock is already `Send + Sync`; no caller broken. Same
+  pattern in `mcp/src/runner.rs` `Seams.clock`. **Calibration: cross-boundary
+  trait bounds (Serialize/Deserialize/Send/Sync/JsonSchema) recur whenever a
+  new boundary lands.** Recurrence count: M4 phase-03 (`Deserialize` on M3
+  parser types), M5 phase-02 (`Send+Sync` on the clock, `JsonSchema` on
+  `Health`). Two recurrences = a trend; will fold a "plan cross-boundary
+  trait bounds when introducing a new boundary" note when M5 closes (don't
+  fold mid-milestone).
+- **`JsonSchema` on `Health` + `schemars` in `executor/Cargo.toml`** — the
+  spec authorized `Serialize` only; `JsonSchema` is implicit when rmcp uses
+  the type as a tool output schema. Trade-off vs. wrapping in an
+  mcp-side `HealthOutput` struct: the direct-derive is simpler and the schema
+  surface for `Health` is tiny. Accepted.
+- **tokio `signal` feature** — for `ctrl_c` graceful shutdown in `serve`.
+  Trivial.
+- **`serde.workspace = true` explicit in `mcp`** — was previously transitive
+  via executor; declarative cleanup.
+- **`rmcp::transport::stdio` (not `rmcp::transport::io::stdio`)** — opencode
+  correctly verified against `cargo doc` and trusted the real API over the
+  architect's reference example, per Pre-flight 3. **The pre-flight worked
+  as designed.**
+
+**Design choice worth noting (not a deviation):** `ExecutePhaseOutput {
+result: serde_json::Value }` wrapping. Avoids cascading `JsonSchema` derives
+across `PhaseResult` → `FileChange` / `CommandOutputs` / `Briefing` /
+`Diagnostic` / etc. The cost is Claude sees `{ "result": {...} }` instead
+of `{...}` — one extra nesting layer, easily unwrapped client-side. Smart
+minimal scope.
+
+**Bounces:** 0.
+**Tests:** 30 mcp (11 cap + 4 server + 2 cli `serve` + 13 prior runner) + 495
+executor (492 prior + 3 telemetry config). The 4 server handler tests cover
+both `executor_health` paths (unreachable, base_url override) and
+`execute_phase` error paths (missing phase doc, missing repo). **Calibration
+note (not bouncing):** a `execute_phase` success-path test that runs the
+handler to a `Complete` result with cap markers visible would have closed the
+loop more tightly. The current `execute_phase_inner` takes `config_path` (real
+client), not seams, so a MockAiClient success test would require further
+factoring. Acceptable as-is because every piece is tested separately (`cap`
+module fully covered; `runner::run_phase_with` covers the assembler success
+path with `MockAiClient`); flagging because if phase-03's log-query handlers
+take the same shape, the same gap will recur.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try.

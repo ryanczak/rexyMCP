@@ -59,7 +59,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | phase-runner wiring (config + phase doc → `execute_phase`) ([phase-01-phase-runner.md](phase-01-phase-runner.md)) | done |
-| 02 | rmcp server scaffold + `execute_phase` + `executor_health` ([phase-02-rmcp-scaffold.md](phase-02-rmcp-scaffold.md)) | review |
+| 02 | rmcp server scaffold + `execute_phase` + `executor_health` ([phase-02-rmcp-scaffold.md](phase-02-rmcp-scaffold.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 
