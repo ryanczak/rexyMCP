@@ -59,14 +59,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | phase-runner wiring (config + phase doc → `execute_phase`) ([phase-01-phase-runner.md](phase-01-phase-runner.md)) | done |
+| 02 | rmcp server scaffold + `execute_phase` + `executor_health` ([phase-02-rmcp-scaffold.md](phase-02-rmcp-scaffold.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **02 — rmcp server scaffold + `execute_phase` + `executor_health`.** Add the
-  `rmcp` dependency, the stdio transport, tool registration, and the two core
-  tools (the `execute_phase` handler calls phase-01's `run_phase`; `executor_health`
-  wraps `health::check`). Raise the per-tool timeout; cap returned output
-  (`MAX_MCP_OUTPUT_TOKENS`). First phase to add a dependency — authorize `rmcp` here.
 - **03 — session-log query tools.** `executor_log_search` / `executor_log_tail` /
   `get_turn` over `read_session_log`, each capping/summarizing its own output
   (`get_turn` is the one place a full single-turn record is allowed through).
