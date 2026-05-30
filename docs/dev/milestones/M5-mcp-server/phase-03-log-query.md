@@ -1,7 +1,7 @@
 # Phase 03: session-log query tools (executor_log_search / executor_log_tail / get_turn)
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M5 phase-02 (done) — extends the same `#[rmcp::tool_router]` on `RexyMcpServer`. M4 phase-03 (the JSONL log + `read_session_log` + `SessionRecord` schema with `Serialize+Deserialize` already in place).
 **Estimated diff:** ~450 lines (log_query module + cap extension + three tool handlers + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -419,3 +419,50 @@ Not applicable — phase ships no runtime-loadable artifact. The handler logic i
 **Notes for review:** No scope deviations. `cap_string` promoted to `pub(crate)` as authorized. Zero `executor/` edits. No new dependencies.
 
 verification: fmt OK · clippy OK · tests 566 passed · build OK
+
+### Update — 2026-05-30 (approved — architect)
+
+**Verdict:** approved_first_try. The cleanest M5 phase to date. Three new
+tools (`executor_log_search` / `executor_log_tail` / `get_turn`) registered
+alongside phase-02's pair; pure-function `log_query` module with the three
+filter dimensions AND-ed and limit clamping; `cap_session_record` extension
+covering the five long-string `SessionEvent` variants; `pub(crate)` inner-fn
+factoring continues the phase-02 pattern. Gates: fmt ✓ · build ✓ · clippy ✓
+· tests **566** (495 executor + 71 mcp, up from 525). Zero `unwrap`/`expect`/
+`panic` in production paths, zero `#[allow]`, zero Rexy phase refs.
+
+**The hard constraints held.** Phase-03's spec mandated: no new deps, no
+`executor/` edits. Both held perfectly — the `LogQueryOutput { records:
+serde_json::Value }` wrapper sidestepped the `JsonSchema` cascade that would
+have forced executor edits, exactly as designed.
+
+**Phase-02's calibration carry-forward landed in practice.** Success-path
+handler tests for all three tools (`executor_log_search_returns_matching_records`,
+`executor_log_tail_returns_last_n_records`, `get_turn_returns_all_events_for_turn`) —
+not just error paths. The soft-note from phase-02's verdict ("a success-path
+test would tighten the loop") hardened into a hard acceptance criterion in
+phase-03's spec, and the executor delivered. The lesson stuck.
+
+**Architecture-mandated invariant tested directly.** The "uncapped escape
+hatch, scoped to a single turn" property of `get_turn` is asserted by
+`get_turn_uncapped_vs_tail_capped` — a fixture record with a 100k-byte
+`Prompt.rendered` passes through `get_turn` intact and through
+`executor_log_tail` capped. Architecture pin verified end-to-end.
+
+**Bounces:** 0.
+**Scope deviations:** 0 (genuinely — `cap_string` → `pub(crate)` was
+pre-authorized in Adaptation 6, so doesn't count). The Notes' "No scope
+deviations" is accurate this time, contrast phase-01.
+**Tests added:** 41 (18 `log_query` + 8 `cap_session_record` truncating +
+3 `cap_session_record` pass-through + 1 short-field-untouched + 13 server
+handlers — counting from the Update Log list).
+
+**Cross-boundary-trait-bounds calibration update (running tally — fold at M5
+close):** M4 phase-03 (`Deserialize` on parser types, retroactive), M5 phase-02
+(`Send+Sync` on `LoopDeps.clock`, `JsonSchema` on `Health`), M5 phase-03
+**sidestepped via `Value` wrapper — same wrapper pattern phase-02 introduced.**
+The pattern matured: when the schema tree is large, wrap; when it's small (one
+type, e.g. `Health`), derive directly. Worth folding both halves of this rule
+when M5 closes.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try.
