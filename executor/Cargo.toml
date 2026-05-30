@@ -24,6 +24,7 @@ tree-sitter-rust.workspace = true
 tree-sitter-python.workspace = true
 similar.workspace = true
 serde_yaml.workspace = true
+schemars = "1"
 
 [dev-dependencies]
 tempfile = "3"

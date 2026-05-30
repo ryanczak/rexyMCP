@@ -1,13 +1,21 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Config {
     pub executor: ExecutorConfig,
     pub commands: CommandConfig,
     pub budget: BudgetConfig,
+    pub telemetry: TelemetryConfig,
+}
+
+/// Cross-project telemetry store. `None` disables telemetry emission.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TelemetryConfig {
+    pub dir: Option<PathBuf>,
 }
 
 /// The local LLM the executor drives.
@@ -215,5 +223,66 @@ escalation_slots = 1
         });
 
         assert_eq!(cfg.executor.model, "model-b");
+    }
+
+    #[test]
+    fn telemetry_default_is_none() {
+        let cfg = Config::default();
+        assert_eq!(cfg.telemetry.dir, None);
+    }
+
+    #[test]
+    fn telemetry_absent_section_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.telemetry.dir, None);
+    }
+
+    #[test]
+    fn telemetry_explicit_dir_is_some() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[telemetry]
+dir = "/var/lib/rexymcp"
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.telemetry.dir, Some(PathBuf::from("/var/lib/rexymcp")));
     }
 }

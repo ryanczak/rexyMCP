@@ -83,7 +83,7 @@ pub struct LoopDeps<'a> {
     /// never generates it.
     pub session_id: &'a str,
     /// Epoch-millis clock for session-log record timestamps.
-    pub clock: &'a dyn Fn() -> u64,
+    pub clock: &'a (dyn Fn() -> u64 + Send + Sync),
     /// Post-edit verifier (injected so tests need not spawn a real compiler).
     pub verifier: &'a dyn FileVerifier,
     /// Final command set (`fmt`/`build`/`lint`/`test`), run on clean completion.

@@ -11,8 +11,11 @@ path = "src/main.rs"
 rexymcp-executor = { path = "../executor", package = "rexymcp-executor" }
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
+schemars = "1"
 
 [dev-dependencies]
 async-trait.workspace = true

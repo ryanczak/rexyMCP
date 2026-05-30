@@ -95,7 +95,7 @@ struct Seams<'a> {
     client: &'a dyn AiClient,
     verifier: &'a dyn FileVerifier,
     runner: &'a dyn CommandRunner,
-    clock: &'a dyn Fn() -> u64,
+    clock: &'a (dyn Fn() -> u64 + Send + Sync),
 }
 
 /// Non-seam inputs for the assembler.

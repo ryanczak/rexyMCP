@@ -3,7 +3,9 @@ use rexymcp_executor::config::Config;
 use rexymcp_executor::health;
 use std::path::PathBuf;
 
+mod cap;
 mod runner;
+mod server;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"), version = env!("CARGO_PKG_VERSION"))]
@@ -41,6 +43,12 @@ enum Commands {
         /// Override the model ID from config
         #[arg(long)]
         model: Option<String>,
+    },
+    /// Run the MCP stdio server
+    Serve {
+        /// Path to the config file
+        #[arg(long)]
+        config: PathBuf,
     },
 }
 
@@ -87,11 +95,9 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let cfg = Config::load_with_env(&config)?;
 
-            // Read STANDARDS.md from the target repo (best-effort)
             let standards_path = repo.join("docs/dev/STANDARDS.md");
             let standards = std::fs::read_to_string(&standards_path).unwrap_or_default();
 
-            // Executor contract is embedded at M6; empty for now.
             let executor_contract = "";
 
             let result = runner::run_phase(
@@ -111,6 +117,19 @@ async fn main() -> anyhow::Result<()> {
                     format!("{{\"error\": \"failed to serialize PhaseResult: {}\"}}", e)
                 })
             );
+            Ok(())
+        }
+        Commands::Serve { config } => {
+            let server = server::RexyMcpServer {
+                config_path: config,
+            };
+            let transport = rmcp::transport::stdio();
+            let _running = rmcp::serve_server(server, transport)
+                .await
+                .map_err(|e| anyhow::anyhow!("MCP server failed: {}", e))?;
+            tokio::signal::ctrl_c()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to wait for signal: {}", e))?;
             Ok(())
         }
     }
@@ -182,6 +201,24 @@ mod tests {
     #[test]
     fn cli_parse_run_phase_missing_required_arg_fails() {
         let result = Cli::try_parse_from(["rexymcp", "run-phase", "--config", "rexymcp.toml"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_serve_with_config() {
+        let cli = Cli::try_parse_from(["rexymcp", "serve", "--config", "rexymcp.toml"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Serve { config }) => {
+                assert_eq!(config, PathBuf::from("rexymcp.toml"));
+            }
+            _ => panic!("expected Serve"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_serve_missing_config_fails() {
+        let result = Cli::try_parse_from(["rexymcp", "serve"]);
         assert!(result.is_err());
     }
 }

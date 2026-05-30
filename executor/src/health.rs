@@ -1,8 +1,11 @@
+use schemars::JsonSchema;
+use serde::Serialize;
+
 use crate::ai::{http, send_with_retry};
 use crate::config::ExecutorConfig;
 use crate::error::{Error, Result};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct Health {
     pub reachable: bool,
     pub base_url: String,

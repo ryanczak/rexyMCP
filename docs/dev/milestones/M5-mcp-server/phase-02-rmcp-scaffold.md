@@ -1,7 +1,7 @@
 # Phase 02: rmcp server scaffold + execute_phase + executor_health
 
 **Milestone:** M5 — MCP server
-**Status:** todo
+**Status:** review
 **Depends on:** M5 phase-01 (done) — `runner::run_phase` is the composition root this phase wraps.
 **Estimated diff:** ~500 lines (server + capping + telemetry-dir config + tests)
 **Tags:** language=rust, kind=feature, size=l
@@ -363,3 +363,64 @@ module.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-30 00:00 (started)
+
+**Executor:** Qwen/Qwen3.6-27B-FP8 / opencode
+
+Standing up the rmcp 1.7 stdio MCP server scaffold, two tool handlers, output capping, and telemetry-dir config field.
+
+### Update — 2026-05-30 00:00 (complete)
+
+**Summary:** Built the rmcp 1.7 stdio MCP server in `mcp/src/server.rs` with two tools (`execute_phase`, `executor_health`) using `#[rmcp::tool_router(server_handler)]`. Output capping module in `mcp/src/cap.rs` truncates long fields to `MAX_FIELD_BYTES = 50_000` on UTF-8 char boundaries. Added `TelemetryConfig { dir: Option<PathBuf> }` to `executor/src/config.rs` with `#[serde(default)]` on `Config` so missing TOML sections deserialize as defaults. Factored handler bodies into `pub(crate)` free functions (`execute_phase_inner`, `executor_health_inner`) so tests can exercise them without the rmcp macro wrapper — the spec authorized this pattern. Derived `Serialize` + `JsonSchema` on `executor::health::Health` (authorized narrow edit). Added `tokio` `signal` feature to `mcp/Cargo.toml` for `ctrl_c` in the `serve` subcommand. Made `LoopDeps.clock` require `Send + Sync` (required for `rmcp::tool` macro's `Send` future requirement).
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.82s
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
+
+cargo test
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured (mcp)
+test result: ok. 495 passed; 0 failed; 2 ignored; 0 measured (executor)
+```
+
+**End-to-end verification:**
+
+Partial per spec — handler logic exercised by unit tests with `TempDir` + direct calls to `execute_phase_inner` / `executor_health_inner`. The rmcp transport (stdio framing, JSON-RPC envelopes, tool advertisement) is not unit-tested; first real wire-level exercise is M6 dogfooding.
+
+**Files changed:**
+- `mcp/Cargo.toml` — added `rmcp = "1.7"` (features: server, macros, transport-io), `schemars = "1"`, `serde`, `tokio` signal feature
+- `mcp/src/server.rs` — new: `RexyMcpServer`, `ExecutePhaseParams`, `ExecutorHealthParams`, `ExecutePhaseOutput`, `execute_phase_inner`, `executor_health_inner`, `#[tool_router]` impl, handler tests
+- `mcp/src/cap.rs` — new: `cap_phase_result`, `cap_string`, `MAX_FIELD_BYTES`, capping tests
+- `mcp/src/main.rs` — added `mod cap`, `mod server`, `Serve` subcommand, CLI tests for `serve`
+- `executor/src/config.rs` — added `TelemetryConfig`, `Config.telemetry` field, `#[serde(default)]` on `Config`, telemetry TOML tests
+- `executor/src/health.rs` — derived `Serialize` + `JsonSchema` on `Health`
+- `executor/src/agent/mod.rs` — made `clock` field `Send + Sync`
+- `executor/Cargo.toml` — added `schemars = "1"` (for `Health::JsonSchema`)
+
+**New tests:**
+- `caps_long_diff`, `caps_long_update_log`, `caps_long_command_output_build`, `caps_all_command_outputs`, `caps_briefing_working_file_content`, `leaves_short_field_untouched`, `leaves_none_command_output_as_none`, `leaves_none_briefing_untouched`, `respects_utf8_char_boundaries`, `truncation_marker_includes_elided_count`, `does_not_double_cap_what_was_tried` (cap.rs)
+- `executor_health_returns_unreachable_for_bad_url`, `executor_health_applies_base_url_override`, `execute_phase_returns_error_for_missing_phase_doc`, `execute_phase_returns_error_for_missing_repo` (server.rs)
+- `cli_parse_serve_with_config`, `cli_parse_serve_missing_config_fails` (main.rs tests)
+- `telemetry_default_is_none`, `telemetry_absent_section_is_none`, `telemetry_explicit_dir_is_some` (config.rs)
+
+**Commits:**
+- (pending — will commit now)
+
+**Notes for review:**
+- `Config` needed `#[serde(default)]` so TOML configs without a `[telemetry]` section still parse (they'd fail with "missing field `telemetry`" otherwise). This is a harmless change — existing configs that do have all sections parse identically.
+- `LoopDeps.clock` had to become `&'a (dyn Fn() -> u64 + Send + Sync)` because the `rmcp::tool` macro wraps async methods in `Pin<Box<dyn Future<...> + Send>>`. The production clock (`SystemTime::now()`) is already `Send + Sync`, so this is a pure bound tightening.
+- Handler bodies are factored into `pub(crate)` free functions (`execute_phase_inner`, `executor_health_inner`) per the spec's authorization: "if the macros make direct calling awkward, factor the bodies into `pub(crate)` free fns and test those."
+- `schemars` added to both `mcp/Cargo.toml` and `executor/Cargo.toml` — the latter is needed because `Health` derives `JsonSchema` (required by rmcp for tool output schema).
+- `rmcp::transport::stdio()` is the actual API (not `rmcp::transport::io::stdio()` as in the architect's reference). The `serve_server` function signature matches the docs.
+
+verification: fmt OK · clippy OK · tests 525 passed · build OK
