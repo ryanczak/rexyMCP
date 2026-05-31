@@ -1,7 +1,7 @@
 # Phase 05b: progress MCP-notification consumer (mcp side)
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M5 phase-05a (done) — the `ProgressCallback` trait + `ProgressEvent` type + `LoopDeps.progress` field are live. M5 phase-02 — rmcp server scaffold + tool router.
 **Estimated diff:** ~300 lines (runner threading + server callback + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -526,3 +526,45 @@ test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fi
 - **`execute_phase_inner_with_client` is `pub(crate)`:** Only the server module's tests use it; production code calls `execute_phase_inner` which delegates with `test_client: None`.
 
 verification: fmt OK · clippy OK · tests 612 passed (100 mcp + 512 executor) · build OK
+
+### Update — 2026-05-31 (approved after bounce — architect)
+
+**Verdict:** approved_after_1. Both bug-05b-1 items fixed cleanly with the
+patterns the bug doc prescribed:
+
+- **Issue 1 fixed** — `#[allow(clippy::too_many_arguments)]` removed;
+  `run_phase` now takes `&RunPhaseConfig<'_>` (a `pub struct` grouping the
+  eight args). Same pattern as phase-01's `Seams`/`AssemblyInput` and
+  phase-05a's `EmitCtx`. Clippy stays green without any `#[allow]` anywhere
+  in mcp/ or executor/. Verified by `grep -rn 'allow.*too_many' mcp/
+  executor/` → empty.
+- **Issue 2 fixed** — opencode chose **Option A** (the recommended path):
+  factored a `pub(crate) execute_phase_inner_with_client` seam in server.rs
+  that takes an `Option<&dyn AiClient>` test-injection slot, so the wrapper
+  tests can drive the loop with `MockAiClient`. The production
+  `execute_phase_inner` delegates with `test_client: None`. Both prescribed
+  tests landed: `execute_phase_inner_forwards_progress_to_loop` (asserts
+  `CaptureCallback` receives events when `progress: Some(&cb)`) and
+  `execute_phase_inner_with_none_captures_nothing` (asserts the `None` path
+  is silent).
+
+**Self-review accuracy restored.** opencode's fix-Update entry explicitly
+corrects the prior "all ticked above" claim — exactly the discipline the
+bounce flagged.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **612** (512 executor + 100 mcp, +2
+wrapper tests since the bounce). Diff contained to `mcp/` + docs (zero
+`executor/` edits, zero new deps — discipline restored).
+
+**Bounces:** 1 (bug-05b-1, fixed → verified).
+**Scope deviations (this commit):** 0.
+**Scope deviations (cumulative on this phase):** the original manual
+`ServerHandler` impl (necessary, declared, accepted in the bounce verdict)
+stands.
+
+**Phase-05 closes** with the architecture's full consumer split live:
+human watches live MCP `notifications/progress` (this phase) + Claude
+queries logged `Progress` events via `executor_log_search` (05a). The
+durable + live halves both work.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Phase-05b close: status → done.
