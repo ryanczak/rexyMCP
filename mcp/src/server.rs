@@ -11,6 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use rexymcp_executor::agent::progress::ProgressCallback;
+use rexymcp_executor::ai::AiClient;
 
 use crate::cap;
 use crate::log_query;
@@ -74,6 +75,16 @@ pub(crate) async fn execute_phase_inner(
     params: &ExecutePhaseParams,
     progress: Option<&dyn ProgressCallback>,
 ) -> Result<ExecutePhaseOutput, String> {
+    execute_phase_inner_with_client(config_path, params, progress, None).await
+}
+
+/// Testable variant that accepts an optional mock client.
+pub(crate) async fn execute_phase_inner_with_client(
+    config_path: &Path,
+    params: &ExecutePhaseParams,
+    progress: Option<&dyn ProgressCallback>,
+    test_client: Option<&dyn AiClient>,
+) -> Result<ExecutePhaseOutput, String> {
     let cfg = rexymcp_executor::config::Config::load_with_env(config_path)
         .map_err(|e| format!("failed to load config: {}", e))?;
 
@@ -87,16 +98,17 @@ pub(crate) async fn execute_phase_inner(
 
     let telemetry_dir = cfg.telemetry.dir.as_deref();
 
-    let result = runner::run_phase(
-        &cfg,
-        &phase_doc_path,
-        &repo_path,
+    let result = runner::run_phase(&runner::RunPhaseConfig {
+        cfg: &cfg,
+        phase_doc_path: &phase_doc_path,
+        repo_path: &repo_path,
         executor_contract,
-        &standards,
-        params.model.as_deref(),
+        standards: &standards,
+        model_override: params.model.as_deref(),
         telemetry_dir,
         progress,
-    )
+        test_client,
+    })
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1032,5 +1044,119 @@ escalation_slots = 1
             let _ = e;
         };
         callback(&event);
+    }
+
+    // --- Wrapper-level integration tests (bug-05b-1, issue 2) ---
+
+    /// Capture callback for server-level tests. Implements `ProgressCallback`
+    /// so it can be threaded through `execute_phase_inner` → `runner::run_phase`
+    /// → `LoopDeps.progress` and inspected after the call.
+    struct CaptureCallback {
+        events: std::sync::Mutex<Vec<rexymcp_executor::agent::progress::ProgressEvent>>,
+    }
+
+    impl CaptureCallback {
+        fn new() -> Self {
+            Self {
+                events: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+        fn events(&self) -> Vec<rexymcp_executor::agent::progress::ProgressEvent> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    impl ProgressCallback for CaptureCallback {
+        fn on_progress(&self, event: &rexymcp_executor::agent::progress::ProgressEvent) {
+            self.events.lock().unwrap().push(event.clone());
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_phase_inner_forwards_progress_to_loop() {
+        use rexymcp_executor::ai::AiEvent;
+        use rexymcp_executor::ai::testing::MockAiClientScript;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_dir = temp_dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let config_path = make_test_config(&temp_dir);
+        let phase_path = make_phase_doc(&temp_dir);
+
+        let path = repo_dir.join("f.txt");
+        std::fs::write(&path, "hello").unwrap();
+        let path_str = path.to_string_lossy().to_string();
+
+        let client = MockAiClientScript::new(vec![
+            vec![AiEvent::ToolCallGeneric {
+                id: "call1".to_string(),
+                name: "read_file".to_string(),
+                args: serde_json::json!({ "path": path_str }),
+                thought_signature: None,
+            }],
+            vec![AiEvent::Token("done".to_string())],
+        ]);
+
+        let params = ExecutePhaseParams {
+            phase_doc_path: phase_path.to_str().unwrap().to_string(),
+            repo_path: repo_dir.to_str().unwrap().to_string(),
+            model: None,
+        };
+
+        let capture = CaptureCallback::new();
+        let result =
+            execute_phase_inner_with_client(&config_path, &params, Some(&capture), Some(&client))
+                .await;
+
+        assert!(
+            result.is_ok(),
+            "execute_phase_inner should succeed: {:?}",
+            result
+        );
+
+        let events = capture.events();
+        let stages: Vec<&str> = events.iter().map(|e| e.stage.as_str()).collect();
+
+        assert!(
+            stages.contains(&"turn_start"),
+            "expected a turn_start event, got: {:?}",
+            stages
+        );
+        assert!(
+            stages.contains(&"tool:read_file"),
+            "expected a tool:read_file event, got: {:?}",
+            stages
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_phase_inner_with_none_captures_nothing() {
+        use rexymcp_executor::ai::AiEvent;
+        use rexymcp_executor::ai::testing::MockAiClientScript;
+
+        let temp_dir = TempDir::new().unwrap();
+        let repo_dir = temp_dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let config_path = make_test_config(&temp_dir);
+        let phase_path = make_phase_doc(&temp_dir);
+
+        let client = MockAiClientScript::new(vec![vec![AiEvent::Token("done".to_string())]]);
+
+        let params = ExecutePhaseParams {
+            phase_doc_path: phase_path.to_str().unwrap().to_string(),
+            repo_path: repo_dir.to_str().unwrap().to_string(),
+            model: None,
+        };
+
+        let result =
+            execute_phase_inner_with_client(&config_path, &params, None, Some(&client)).await;
+
+        assert!(
+            result.is_ok(),
+            "execute_phase_inner should succeed: {:?}",
+            result
+        );
     }
 }

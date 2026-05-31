@@ -1,7 +1,7 @@
 # Bug 1 on phase-05b: hard-rule `#[allow]` + missing wrapper-level handler tests
 
 **Severity:** minor (both items have trivial fixes; no functional defect)
-**Status:** open
+**Status:** fixed
 **Filed:** 2026-05-31
 
 ## What's wrong

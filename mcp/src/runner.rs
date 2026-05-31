@@ -197,25 +197,35 @@ async fn run_phase_with(
     agent::execute_phase(&input, deps).await
 }
 
-/// Production wrapper — builds real seams + system clock, delegates.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_phase(
-    cfg: &Config,
-    phase_doc_path: &Path,
-    repo_path: &Path,
-    executor_contract: &str,
-    standards: &str,
-    model_override: Option<&str>,
-    telemetry_dir: Option<&Path>,
-    progress: Option<&dyn ProgressCallback>,
-) -> rexymcp_executor::error::Result<PhaseResult> {
-    let model = model_override.unwrap_or(&cfg.executor.model);
+/// Configuration parameters for `run_phase`, grouped to stay under
+/// clippy's argument limit (same pattern as `AssemblyInput` / `Seams`).
+pub struct RunPhaseConfig<'a> {
+    pub cfg: &'a Config,
+    pub phase_doc_path: &'a Path,
+    pub repo_path: &'a Path,
+    pub executor_contract: &'a str,
+    pub standards: &'a str,
+    pub model_override: Option<&'a str>,
+    pub telemetry_dir: Option<&'a Path>,
+    pub progress: Option<&'a dyn ProgressCallback>,
+    /// Inject a test client. `None` → production `OpenAiClient`.
+    pub test_client: Option<&'a dyn AiClient>,
+}
 
-    let client = OpenAiClient::new(
-        cfg.executor.api_key.clone().unwrap_or_default(),
+/// Production wrapper — builds real seams + system clock, delegates.
+pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Result<PhaseResult> {
+    let model = inp.model_override.unwrap_or(&inp.cfg.executor.model);
+
+    let prod_client = OpenAiClient::new(
+        inp.cfg.executor.api_key.clone().unwrap_or_default(),
         model.to_string(),
-        cfg.executor.base_url.clone(),
+        inp.cfg.executor.base_url.clone(),
     );
+
+    let client: &dyn AiClient = match inp.test_client {
+        Some(c) => c,
+        None => &prod_client,
+    };
 
     let verifier = rexymcp_executor::agent::verify::RealVerifier;
     let runner = rexymcp_executor::agent::command::RealCommandRunner;
@@ -228,24 +238,24 @@ pub async fn run_phase(
     };
 
     let seams = Seams {
-        client: &client,
+        client,
         verifier: &verifier,
         runner: &runner,
         clock: &clock,
     };
 
-    let inp = AssemblyInput {
-        cfg,
-        phase_doc_path,
-        repo_path,
-        executor_contract,
-        standards,
+    let assembly = AssemblyInput {
+        cfg: inp.cfg,
+        phase_doc_path: inp.phase_doc_path,
+        repo_path: inp.repo_path,
+        executor_contract: inp.executor_contract,
+        standards: inp.standards,
         model,
-        telemetry_dir,
-        progress,
+        telemetry_dir: inp.telemetry_dir,
+        progress: inp.progress,
     };
 
-    run_phase_with(&inp, &seams).await
+    run_phase_with(&assembly, &seams).await
 }
 
 #[cfg(test)]

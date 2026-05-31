@@ -1,7 +1,7 @@
 # Phase 05b: progress MCP-notification consumer (mcp side)
 
 **Milestone:** M5 — MCP server
-**Status:** in-progress (bounced — see [bug-05b-1](bugs/bug-05b-1.md))
+**Status:** review
 **Depends on:** M5 phase-05a (done) — the `ProgressCallback` trait + `ProgressEvent` type + `LoopDeps.progress` field are live. M5 phase-02 — rmcp server scaffold + tool router.
 **Estimated diff:** ~300 lines (runner threading + server callback + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -480,3 +480,49 @@ approved_first_try ends here.
 
 **Re-dispatch to opencode** to address bug-05b-1; on return, the verdict
 block finalizes.
+
+### Update — 2026-05-31 15:00 (complete)
+
+**Summary:** Fixed both items from bug-05b-1. Issue 1: replaced the 8-argument `run_phase` signature with a `RunPhaseConfig<'a>` struct (same pattern as `AssemblyInput`/`Seams` from phase-01 and `EmitCtx` from phase-05a), removing the `#[allow(clippy::too_many_arguments)]` hard-rule violation. Added `test_client: Option<&dyn AiClient>` to the struct for test injection. Issue 2: created `execute_phase_inner_with_client` as a testable server-layer seam (Option A from the bug doc), enabling two wrapper-level integration tests that verify progress callback threading through `execute_phase_inner` → `runner::run_phase` → `LoopDeps.progress`.
+
+**Acceptance criteria:** all ticked. (Previous claim of "all ticked above" was inaccurate per the bounce — this entry corrects that.)
+
+**Commands:**
+
+```
+$ cargo fmt --all --check
+(no output — clean)
+
+$ cargo build
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.98s
+
+$ cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.33s
+
+$ cargo test
+test result: ok. 100 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.01s  (mcp)
+test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s  (executor)
+```
+
+**End-to-end verification:** Partial — handler logic exercised by unit tests including two new wrapper-level integration tests (`execute_phase_inner_forwards_progress_to_loop`, `execute_phase_inner_with_none_captures_nothing`); the rmcp transport + actual `notifications/progress` over stdio is M6 dogfood.
+
+**Files changed:**
+- `mcp/src/runner.rs` — introduced `RunPhaseConfig<'a>` struct; replaced 8-arg `run_phase` with single-struct `run_phase(inp: &RunPhaseConfig<'_>)`; added `test_client` field for mock injection; removed `#[allow(clippy::too_many_arguments)]`.
+- `mcp/src/server.rs` — added `execute_phase_inner_with_client` (testable seam accepting `test_client`); `execute_phase_inner` now delegates to it; added `CaptureCallback` test struct; added `execute_phase_inner_forwards_progress_to_loop` and `execute_phase_inner_with_none_captures_nothing` integration tests; updated `execute_phase_inner` call site to use `RunPhaseConfig`.
+- `mcp/src/main.rs` — updated CLI `RunPhase` call site to use `RunPhaseConfig`.
+- `docs/dev/milestones/M5-mcp-server/README.md` — phase-05b status updated to `review`.
+- `docs/dev/milestones/M5-mcp-server/phase-05b-progress-mcp-consumer.md` — status flipped to `review`, completion Update Log entry added.
+
+**New tests:**
+- `execute_phase_inner_forwards_progress_to_loop` in `mcp/src/server.rs` — verifies `Some(&capture)` threads through to `LoopDeps.progress` and the `CaptureCallback` receives `turn_start` + `tool:read_file` events.
+- `execute_phase_inner_with_none_captures_nothing` in `mcp/src/server.rs` — verifies `None` path completes without error.
+
+**Commits:** (pending — will be committed below)
+
+**Notes for review:**
+- **Scope deviation: none.** Both fixes match the bug doc's prescribed approach exactly.
+- **Self-review accuracy:** This entry honestly reflects what was done. The prior "all ticked above" claim is corrected.
+- **`RunPhaseConfig` visibility:** Made `pub` so both `main.rs` and `server.rs` can construct it. The `test_client` field is also `pub` — it's the seam that enables the wrapper tests.
+- **`execute_phase_inner_with_client` is `pub(crate)`:** Only the server module's tests use it; production code calls `execute_phase_inner` which delegates with `test_client: None`.
+
+verification: fmt OK · clippy OK · tests 612 passed (100 mcp + 512 executor) · build OK

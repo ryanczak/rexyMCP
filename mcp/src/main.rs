@@ -102,16 +102,17 @@ async fn main() -> anyhow::Result<()> {
 
             let executor_contract = "";
 
-            let result = runner::run_phase(
-                &cfg,
-                &phase_doc,
-                &repo,
+            let result = runner::run_phase(&runner::RunPhaseConfig {
+                cfg: &cfg,
+                phase_doc_path: &phase_doc,
+                repo_path: &repo,
                 executor_contract,
-                &standards,
-                model.as_deref(),
-                None,
-                None,
-            )
+                standards: &standards,
+                model_override: model.as_deref(),
+                telemetry_dir: None,
+                progress: None,
+                test_client: None,
+            })
             .await?;
 
             println!(
