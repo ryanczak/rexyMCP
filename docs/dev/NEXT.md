@@ -4,24 +4,25 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M5 is closed** (all seven phases `done`,
-retrospective signed off 2026-05-31, two calibration folds applied to
-WORKFLOW.md). At a **milestone boundary**: the next step is the human
-kicking off **M6 — Plugin + architect/review skills** (Claude Code plugin
-manifest, the `architect` / `review-phase` / `escalate` skills, slash
-commands, embedded `STANDARDS.md` + `WORKFLOW.md` + executor contract,
-project initialization bootstrap, dogfood against a real repo). The
-architect expands M6 into phases on demand; nothing is drafted yet.
+**Active phase:** [M6 / phase-01 — plugin scaffold + `.mcp.json` +
+slash-command stubs](milestones/M6-plugin/phase-01-plugin-scaffold.md) —
+`todo`, **drafted, awaiting dispatch**. Top-level `plugin/` directory,
+`.mcp.json` registering `rexymcp serve --config <path>` with a raised
+per-tool timeout on `execute_phase` (toward the 10-minute ceiling), three
+slash-command stubs (filled in by phase-04/05), and a `plugin/README.md`
+orientation doc. No Rust code changes, no new deps. Pre-flight tells the
+executor to verify Claude Code's actual plugin filesystem layout +
+`.mcp.json` schema against the docs (same trust-docs-over-sketch
+discipline as M5 phase-02 / 05b / 06).
 
 **Last completed:** [M5 / phase-06 — roots
 corroboration](milestones/M5-mcp-server/phase-06-roots-corroboration.md) —
-approved_first_try 2026-05-31 (M5 closer; zero deviations, 17 new tests
-covering all match/mismatch/no-source/URI-parsing/symlink edges; see phase
-doc Review verdict).
+approved_first_try 2026-05-31 (M5 closer; zero deviations).
 
-**Milestone:** [M5 — MCP server](milestones/M5-mcp-server/README.md) —
-**done**. M1–M5 complete; M6 (Plugin + architect/review skills) is next,
-awaiting human kickoff.
+**Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
+— in progress (M1–M5 done). M6 packages rexyMCP as a Claude Code plugin
+(skills + slash commands + embedded templates + bootstrap) and closes with
+an end-to-end dogfood against a real third-party repo.
 
 ---
 
