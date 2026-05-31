@@ -1,7 +1,7 @@
 # Phase 06: roots corroboration (M5 closer)
 
 **Milestone:** M5 — MCP server
-**Status:** todo
+**Status:** review
 **Depends on:** M5 phase-05b (done) — extends the `execute_phase_inner_with_client` seam introduced for testability there. M5 phase-02 — the `RexyMcpServer` + manual `ServerHandler` impl.
 **Estimated diff:** ~300 lines (roots module + server hook + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -441,3 +441,69 @@ and gates are clean.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-31 14:30 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Pre-flight complete. Verified rmcp 1.7 API: `peer.peer_info()` for capability check (`ClientCapabilities.roots`), `peer.list_roots()` returns `ListRootsResult { roots: Vec<Root> }` where `Root { uri: String, name: Option<String> }`. Proceeding with implementation.
+
+### Update — 2026-05-31 14:45 (complete)
+
+**Summary:** Implemented roots corroboration as a pure `mcp/src/roots.rs` module with `Corroboration`/`MatchedSource` enums, `corroborate()` and `format_mismatch_error()` functions. Wired into `server.rs` `call_tool` for `execute_phase` before progress token extraction. Capability check guards the `list_roots()` call. Tool description updated. No `executor/` edits, no new deps, `execute_phase_inner_with_client` left untouched.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(passed, no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.23s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.47s
+
+cargo test 2>&1 | tail -30
+test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (mcp)
+test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out (executor)
+```
+
+**End-to-end verification:**
+Partial — same as phases 02-05. The corroboration logic is fully unit-tested (17 new tests covering all match/mismatch/no-source cases, URI parsing, symlink canonicalization, format string shape). The rmcp peer call + actual `roots/list` over stdio is M6 dogfood territory.
+
+**Files changed:**
+- `mcp/src/roots.rs` — new module: `Corroboration`, `MatchedSource`, `corroborate()`, `format_mismatch_error()`, 17 tests
+- `mcp/src/main.rs` — declared `mod roots;`
+- `mcp/src/server.rs` — corroboration shim in `call_tool` (capability check, `list_roots`, env read, match on `Corroboration`); updated tool description in `list_tools` and `get_tool`
+- `docs/dev/milestones/M5-mcp-server/phase-06-roots-corroboration.md` — status flip + Update Log
+- `docs/dev/milestones/M5-mcp-server/README.md` — phase table status flip
+
+**New tests:**
+- `repo_path_equals_root` in `mcp/src/roots.rs`
+- `repo_path_descendant_of_root` in `mcp/src/roots.rs`
+- `repo_path_equals_project_dir` in `mcp/src/roots.rs`
+- `repo_path_descendant_of_project_dir` in `mcp/src/roots.rs`
+- `root_matches_before_project_dir` in `mcp/src/roots.rs`
+- `first_root_matches_when_multiple` in `mcp/src/roots.rs`
+- `no_sources_returns_no_sources` in `mcp/src/roots.rs`
+- `mismatch_when_sources_exist_but_none_match` in `mcp/src/roots.rs`
+- `file_prefix_stripped` in `mcp/src/roots.rs`
+- `non_file_uri_skipped` in `mcp/src/roots.rs`
+- `url_encoded_does_not_match_unencoded` in `mcp/src/roots.rs`
+- `nonexistent_repo_path_returns_mismatch` in `mcp/src/roots.rs`
+- `uncanonicalizable_root_skipped_others_still_checked` in `mcp/src/roots.rs`
+- `symlinked_repo_path_matches_via_canonicalization` in `mcp/src/roots.rs`
+- `format_mismatch_error_includes_fix_hint` in `mcp/src/roots.rs`
+- `format_mismatch_error_absent_sources` in `mcp/src/roots.rs`
+- `format_mismatch_error_lists_each_root_uri` in `mcp/src/roots.rs`
+
+**Commits:**
+- (pending — will commit after this entry)
+
+**Notes for review:** No scope deviations. Option A (pure module + handler shim) used as recommended. No mock peer available in rmcp 1.7, so handler integration is not separately tested beyond the pure module coverage.
+
+verification: fmt OK · clippy OK · tests 629 passed (117 mcp + 512 executor) · build OK

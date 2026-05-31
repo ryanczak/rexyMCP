@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 mod cap;
 mod log_query;
+mod roots;
 mod runner;
 mod scorecard;
 mod server;

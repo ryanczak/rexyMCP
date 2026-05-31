@@ -15,6 +15,7 @@ use rexymcp_executor::ai::AiClient;
 
 use crate::cap;
 use crate::log_query;
+use crate::roots;
 use crate::runner;
 use crate::scorecard;
 
@@ -389,6 +390,48 @@ impl ServerHandler for RexyMcpServer {
                     )
                 })?;
 
+                let repo_path = PathBuf::from(&params.repo_path);
+
+                let roots_list: Vec<String> = if context
+                    .peer
+                    .peer_info()
+                    .is_some_and(|ci| ci.capabilities.roots.is_some())
+                {
+                    match context.peer.list_roots().await {
+                        Ok(result) => result.roots.into_iter().map(|r| r.uri).collect(),
+                        Err(_) => Vec::new(),
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                let project_dir = std::env::var_os("CLAUDE_PROJECT_DIR")
+                    .map(PathBuf::from)
+                    .filter(|p| !p.as_os_str().is_empty());
+
+                match roots::corroborate(&repo_path, &roots_list, project_dir.as_deref()) {
+                    roots::Corroboration::Matched(_) => {
+                        let _ = ();
+                    }
+                    roots::Corroboration::NoSources => {
+                        eprintln!(
+                            "execute_phase: no roots or CLAUDE_PROJECT_DIR available for \
+                             corroboration of repo_path={}",
+                            repo_path.display()
+                        );
+                    }
+                    roots::Corroboration::Mismatch { .. } => {
+                        return Err(rmcp::ErrorData::invalid_params(
+                            roots::format_mismatch_error(
+                                &repo_path,
+                                &roots_list,
+                                project_dir.as_deref(),
+                            ),
+                            None,
+                        ));
+                    }
+                }
+
                 let progress_callback: Option<Box<dyn ProgressCallback>> = request
                     .meta
                     .as_ref()
@@ -428,7 +471,7 @@ impl ServerHandler for RexyMcpServer {
         let mut tools = Self::tool_router().list_all();
         tools.insert(0, rmcp::model::Tool::new(
             "execute_phase",
-            "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult.",
+            "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
             rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
         ));
         tools.sort_by(|a, b| a.name.cmp(&b.name));
@@ -444,7 +487,7 @@ impl ServerHandler for RexyMcpServer {
         if name == "execute_phase" {
             Some(rmcp::model::Tool::new(
                 "execute_phase",
-                "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult.",
+                "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
                 rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
             ))
         } else {
