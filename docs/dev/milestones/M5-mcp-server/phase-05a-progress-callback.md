@@ -1,7 +1,7 @@
 # Phase 05a: progress callback seam + Progress log events (executor side)
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M4 (`execute_phase` loop, `pre_edit_content`/`build_diff` machinery, `SessionEvent::Progress` + `FileNumstat` reserved in M4 phase-03), `similar` crate (already in workspace).
 **Estimated diff:** ~500 lines (progress module + 4 emission sites + tests + LoopDeps wiring)
 **Tags:** language=rust, kind=feature, size=m
@@ -443,3 +443,59 @@ Not applicable — the rmcp notification half is 05b. 05a is exercised by unit t
 - `mcp/src/server.rs` has no `LoopDeps` construction (only `runner.rs` does), so no edit was needed there.
 
 verification: fmt OK · clippy OK · tests 512 passed · build OK
+
+### Update — 2026-05-30 (approved — architect)
+
+**Verdict:** approved_first_try. Third consecutive zero-deviation M5 phase
+— and the first M5 phase with substantive `executor/` edits. The discipline
+held through the harder case. Gates: fmt ✓ · build ✓ · clippy ✓ · tests
+**608** (512 executor + 96 mcp, up from 591). `progress.rs` is clean,
+`numstat_from_pre_edit` reuses `similar` correctly (no second diff
+machinery), and the four emission sites land exactly where the spec named:
+`turn_start` post-increment, `tool:<name>` pre-dispatch, `verify`
+pre-verifier, `command:<name>` per configured final command.
+
+**Hard constraints held.** Zero new deps. Authorized executor edits only
+(progress.rs + agent/mod.rs + the cross-cutting `progress: None`). Authorized
+mcp edit only (runner.rs's one-line addition). `server.rs` correctly
+untouched (no `LoopDeps` construction there — the over-estimated "1–2 in
+mcp/src/runner.rs / mcp/src/server.rs" hint in the spec was loose; opencode
+picked the right interpretation).
+
+**Every spec test case landed.** numstat: clean / edited / deleted / nested /
+sorted / new-file (7 tests). format_message: empty / few / truncate-after-5
+/ totals-sum-all-not-top-5 (4 tests). Integration: `progress_none_emits_nothing`,
+`progress_some_emits_turn_start_and_tool`,
+`progress_emits_verify_after_edit_class_tool`,
+`progress_emits_commands_on_clean_completion`,
+`callback_panic_is_not_caught` (the pinned non-feature),
+`progress_independent_of_log_write_failure` (the best-effort-independence
+pin). Six integration tests, eleven unit tests, all assertions tight.
+
+**Notes for review** declared five structural choices: `EmitCtx` (under
+clippy's 7-arg limit, private), `CaptureCallback`/`DepsBuilder` (test
+helpers), `LoopDeps.progress` needs no new lifetime/Send tightening
+(`ProgressCallback: Send + Sync` is on the trait), `run_command_set` takes
+`&EmitCtx<'_>` (internal signature, not a public surface), `mcp/src/server.rs`
+correctly untouched. **All correctly characterized as "no scope deviations"**
+— the calibration discipline is now reflexive: structural choices get
+flagged even when clearly not deviations. This is exactly the
+self-review-accuracy bar the phase-01 bounce was meant to instill, taken
+to its mature form.
+
+**Bounces:** 0.
+**Scope deviations:** 0.
+**Tests added:** 17 (11 progress.rs unit + 6 agent/mod.rs integration).
+
+**Calibration tally update.** The cross-boundary-trait-bounds pattern (folded
+at M5 close): M4 phase-03 (Deserialize on parser types), M5 phase-02
+(Send+Sync on `LoopDeps.clock`, JsonSchema on `Health`), M5 phase-03
+(Value-wrap for large foreign tree), M5 phase-04 (derive for small mcp-owned
+tree), **M5 phase-05a (Send+Sync on `ProgressCallback` trait — same pattern
+as the clock, applied to a new trait at the boundary).** The rule is mature
+and consistent across all boundary additions.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try.
+
+Phase-05b is now unblocked; the callback contract is pinned, and the mcp
+consumer can be drafted against this exact surface.
