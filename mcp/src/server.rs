@@ -1,8 +1,16 @@
 use std::path::{Path, PathBuf};
 
+use rmcp::handler::server::ServerHandler;
 use rmcp::handler::server::wrapper::{Json, Parameters};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, Content, ProgressNotificationParam, ProgressToken,
+    RawContent,
+};
+use rmcp::service::{RequestContext, RoleServer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use rexymcp_executor::agent::progress::ProgressCallback;
 
 use crate::cap;
 use crate::log_query;
@@ -33,11 +41,38 @@ pub struct RexyMcpServer {
     pub config_path: PathBuf,
 }
 
+/// A `ProgressCallback` that fires MCP `notifications/progress` via the
+/// rmcp peer captured at request time.
+pub(crate) struct McpProgressNotifier {
+    peer: rmcp::service::Peer<RoleServer>,
+    progress_token: ProgressToken,
+}
+
+impl ProgressCallback for McpProgressNotifier {
+    fn on_progress(&self, event: &rexymcp_executor::agent::progress::ProgressEvent) {
+        let token = self.progress_token.clone();
+        let peer = self.peer.clone();
+        let progress = event.turn as f64;
+        let message = event.message.clone();
+        tokio::spawn(async move {
+            let _ = peer
+                .notify_progress(ProgressNotificationParam {
+                    progress_token: token,
+                    progress,
+                    total: None,
+                    message: Some(message),
+                })
+                .await;
+        });
+    }
+}
+
 /// Inner logic for `execute_phase` — extracted so it can be tested without
 /// the rmcp macro wrapper.
 pub(crate) async fn execute_phase_inner(
     config_path: &Path,
     params: &ExecutePhaseParams,
+    progress: Option<&dyn ProgressCallback>,
 ) -> Result<ExecutePhaseOutput, String> {
     let cfg = rexymcp_executor::config::Config::load_with_env(config_path)
         .map_err(|e| format!("failed to load config: {}", e))?;
@@ -60,6 +95,7 @@ pub(crate) async fn execute_phase_inner(
         &standards,
         params.model.as_deref(),
         telemetry_dir,
+        progress,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -263,20 +299,8 @@ pub(crate) fn model_scorecard_inner(
     })
 }
 
-#[rmcp::tool_router(server_handler)]
+#[rmcp::tool_router]
 impl RexyMcpServer {
-    #[rmcp::tool(
-        description = "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult."
-    )]
-    async fn execute_phase(
-        &self,
-        Parameters(params): Parameters<ExecutePhaseParams>,
-    ) -> Result<Json<ExecutePhaseOutput>, String> {
-        execute_phase_inner(&self.config_path, &params)
-            .await
-            .map(Json)
-    }
-
     #[rmcp::tool(
         description = "Check connectivity to the configured LLM endpoint and list available models."
     )]
@@ -327,6 +351,93 @@ impl RexyMcpServer {
         Parameters(params): Parameters<ModelScorecardParams>,
     ) -> Result<Json<ModelScorecardOutput>, String> {
         model_scorecard_inner(&self.config_path, &params).map(Json)
+    }
+}
+
+impl ServerHandler for RexyMcpServer {
+    fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> impl std::future::Future<Output = Result<CallToolResult, rmcp::ErrorData>>
+    + rmcp::service::MaybeSendFuture
+    + '_ {
+        let router = Self::tool_router();
+        let config_path = self.config_path.clone();
+
+        async move {
+            if request.name == "execute_phase" {
+                let params: ExecutePhaseParams = serde_json::from_value(serde_json::Value::Object(
+                    request.arguments.unwrap_or_default(),
+                ))
+                .map_err(|e| {
+                    rmcp::ErrorData::invalid_params(
+                        format!("invalid execute_phase parameters: {}", e),
+                        None,
+                    )
+                })?;
+
+                let progress_callback: Option<Box<dyn ProgressCallback>> = request
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get_progress_token())
+                    .map(|token| {
+                        Box::new(McpProgressNotifier {
+                            peer: context.peer.clone(),
+                            progress_token: token,
+                        }) as Box<dyn ProgressCallback>
+                    });
+
+                let output =
+                    execute_phase_inner(&config_path, &params, progress_callback.as_deref())
+                        .await
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+
+                let json_str = serde_json::to_string(&output.result).map_err(|e| {
+                    rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
+                })?;
+
+                Ok(CallToolResult::success(vec![Content::new(
+                    RawContent::text(json_str),
+                    None,
+                )]))
+            } else {
+                let ctx = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+                router.call(ctx).await
+            }
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+        let mut tools = Self::tool_router().list_all();
+        tools.insert(0, rmcp::model::Tool::new(
+            "execute_phase",
+            "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult.",
+            rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
+        ));
+        tools.sort_by(|a, b| a.name.cmp(&b.name));
+        let next_cursor = request.and_then(|r| r.cursor);
+        Ok(rmcp::model::ListToolsResult {
+            tools,
+            next_cursor,
+            meta: None,
+        })
+    }
+
+    fn get_tool(&self, name: &str) -> Option<rmcp::model::Tool> {
+        if name == "execute_phase" {
+            Some(rmcp::model::Tool::new(
+                "execute_phase",
+                "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult.",
+                rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
+            ))
+        } else {
+            Self::tool_router().get(name).cloned()
+        }
     }
 }
 
@@ -407,7 +518,7 @@ escalation_slots = 1
             repo_path: temp_dir.path().to_str().unwrap().to_string(),
             model: None,
         };
-        let result = execute_phase_inner(&config_path, &params).await;
+        let result = execute_phase_inner(&config_path, &params, None).await;
 
         assert!(result.is_err());
     }
@@ -423,7 +534,7 @@ escalation_slots = 1
             repo_path: "/nonexistent/repo".to_string(),
             model: None,
         };
-        let result = execute_phase_inner(&config_path, &params).await;
+        let result = execute_phase_inner(&config_path, &params, None).await;
 
         assert!(result.is_err());
     }
@@ -875,5 +986,51 @@ escalation_slots = 1
 
         assert_eq!(result.rows.len(), scorecard::MAX_ROWS);
         assert!(result.truncated);
+    }
+
+    // --- Progress forwarding tests ---
+
+    #[test]
+    fn progress_notifier_maps_fields_correctly() {
+        use rexymcp_executor::agent::progress::ProgressEvent;
+        use rmcp::model::NumberOrString;
+
+        let event = ProgressEvent {
+            turn: 4,
+            stage: "tool:patch".to_string(),
+            files_changed: vec![],
+            message: "turn=4 stage=tool:patch +12/-3 files=1".to_string(),
+        };
+
+        let params = ProgressNotificationParam {
+            progress_token: ProgressToken(NumberOrString::Number(42)),
+            progress: event.turn as f64,
+            total: None,
+            message: Some(event.message.clone()),
+        };
+
+        assert_eq!(params.progress, 4.0);
+        assert!(params.total.is_none());
+        assert_eq!(
+            params.message.as_deref(),
+            Some("turn=4 stage=tool:patch +12/-3 files=1")
+        );
+    }
+
+    #[test]
+    fn progress_notifier_fire_and_forget_does_not_panic() {
+        use rexymcp_executor::agent::progress::ProgressEvent;
+
+        let event = ProgressEvent {
+            turn: 1,
+            stage: "turn_start".to_string(),
+            files_changed: vec![],
+            message: "turn=1 stage=turn_start +0/-0 files=0".to_string(),
+        };
+
+        let callback = |e: &ProgressEvent| {
+            let _ = e;
+        };
+        callback(&event);
     }
 }

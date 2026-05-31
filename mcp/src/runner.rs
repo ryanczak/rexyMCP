@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rexymcp_executor::agent::command::CommandRunner;
+use rexymcp_executor::agent::progress::ProgressCallback;
 use rexymcp_executor::agent::verify::FileVerifier;
 use rexymcp_executor::agent::{self, LoopDeps, PhaseInput};
 use rexymcp_executor::ai::{AiClient, OpenAiClient, ToolSchema};
@@ -107,6 +108,7 @@ struct AssemblyInput<'a> {
     standards: &'a str,
     model: &'a str,
     telemetry_dir: Option<&'a Path>,
+    progress: Option<&'a dyn ProgressCallback>,
 }
 
 /// Register the full built-in tool set and derive schemas.
@@ -189,13 +191,14 @@ async fn run_phase_with(
         runner: seams.runner,
         generation_params: GenerationParams::default(),
         telemetry_dir: inp.telemetry_dir,
-        progress: None,
+        progress: inp.progress,
     };
 
     agent::execute_phase(&input, deps).await
 }
 
 /// Production wrapper — builds real seams + system clock, delegates.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_phase(
     cfg: &Config,
     phase_doc_path: &Path,
@@ -204,6 +207,7 @@ pub async fn run_phase(
     standards: &str,
     model_override: Option<&str>,
     telemetry_dir: Option<&Path>,
+    progress: Option<&dyn ProgressCallback>,
 ) -> rexymcp_executor::error::Result<PhaseResult> {
     let model = model_override.unwrap_or(&cfg.executor.model);
 
@@ -238,6 +242,7 @@ pub async fn run_phase(
         standards,
         model,
         telemetry_dir,
+        progress,
     };
 
     run_phase_with(&inp, &seams).await
@@ -403,6 +408,7 @@ mod tests {
             standards: "standards",
             model: "test-model",
             telemetry_dir: None,
+            progress: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -447,6 +453,7 @@ mod tests {
             standards: "",
             model: "model",
             telemetry_dir: None,
+            progress: None,
         };
         let result = run_phase_with(&inp, &seams).await;
 
