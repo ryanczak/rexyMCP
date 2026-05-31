@@ -60,23 +60,32 @@ bootstrap, no executor edits.** All three of those are later M6 phases.
 ### 1. Top-level `plugin/` directory
 
 Create a new top-level directory `plugin/` (alongside `executor/`, `mcp/`,
-`docs/`). Inside, the **architect's reference sketch** (verify against
-Pre-flight 3 — the real Claude Code convention takes precedence):
+`docs/`). Inside, the **architect's reference sketch updated with Pre-flight
+3 findings** (2026-05-31, opencode):
 
 ```
 plugin/
-├── README.md              # this layout, what's stubbed vs. to-come
-├── .mcp.json              # MCP server registration + per-tool timeout
-├── commands/              # slash-command definitions
-│   ├── architect.md       # stub for /architect (M6 phase-04 fills it)
-│   ├── dispatch.md        # stub for /dispatch (M6 phase-05 fills it)
-│   └── review.md          # stub for /review (M6 phase-05 fills it)
-└── (skills/ + templates/ added in later phases — not this one)
+├── README.md                      # this layout, what's stubbed vs. to-come
+├── .mcp.json                      # MCP server registration (no timeout field — see § 2)
+├── .claude-plugin/
+│   └── plugin.json                # required plugin manifest: { "name": "rexymcp", … }
+├── skills/                        # modern Claude Code layout (verified)
+│   ├── architect/SKILL.md         # stub for the architect skill (phase-04 fills it)
+│   ├── dispatch/SKILL.md          # stub for the dispatch skill (phase-05 fills it)
+│   └── review/SKILL.md            # stub for the review skill (phase-05 fills it)
+└── (templates/ added in phase-02 — not this one)
 ```
 
-If Claude Code's plugin format uses a different convention (e.g. a top-level
-manifest file, a different command file extension, a `.claude/` prefix), use
-that instead and document the chosen layout in `plugin/README.md`.
+**`.claude-plugin/plugin.json` is required** per Claude Code's plugin
+contract (Pre-flight 3 finding). Minimum content: `{ "name": "rexymcp" }`.
+Other fields (version, description, author) optional; add whatever Claude
+Code's schema names as recommended. **Authorized** as part of this phase
+(see Authorizations).
+
+If Claude Code's plugin convention is still evolving and any of these paths
+differ from what opencode finds in the live docs, use the live convention
+and document the chosen layout in `plugin/README.md` (this is exactly the
+trust-docs-over-sketch path Pre-flight 3 authorizes).
 
 ### 2. `.mcp.json` content
 
@@ -120,10 +129,49 @@ server-wide timeout to 10 minutes — `execute_phase` is the longest call; the
 other five (`executor_health`, the three log-query tools, `model_scorecard`,
 roots check) all return quickly and a server-wide cap doesn't hurt them.
 
-### 3. Slash-command stubs
+**Pre-flight 3 finding (2026-05-31, opencode):** Claude Code's `.mcp.json`
+schema documents `command`, `args`, `env`, `cwd`, `transport` — and
+**no timeout field at all** (not per-tool, not per-server). **Resolution:
+omit timeout config from `.mcp.json`** and document the limitation
+prominently in `plugin/README.md`:
 
-Three Markdown files under `plugin/commands/` (or wherever Claude Code expects
-them — verify in pre-flight). Each is a short stub with:
+> Claude Code's `.mcp.json` schema does not currently expose a tool-timeout
+> setting. The architecture's "raise toward 10 minutes" target depends on
+> the client honoring long-running tool calls without enforcing a default
+> interrupt. **Open question for the M6 phase-06 dogfood:** does Claude
+> Code's MCP client interrupt long `execute_phase` calls? If yes, file a
+> follow-up (either upstream to Claude Code or to add a heartbeat-driven
+> keepalive path here). The M5 phase-05b progress notifications are the
+> primary liveness signal the client sees during long calls.
+
+This is exactly the pre-flight-3 win pattern — the architect's sketch named
+a config field that the real schema doesn't have. Document the gap, don't
+invent a field that won't be honored.
+
+### 3. Skill stubs (and slash-command stubs if Claude Code keeps them separate)
+
+**Pre-flight 3 finding (2026-05-31, opencode):** Claude Code's modern plugin
+layout prefers `skills/<name>/SKILL.md` (directories with `SKILL.md` files)
+over the legacy flat `commands/` layout. **Resolution: use `skills/`** —
+phases 04/05 will fill these with real skill bodies anyway, so going
+straight to `skills/` avoids a layout migration mid-milestone.
+
+Three skill directories under `plugin/skills/` (or wherever Claude Code
+expects them):
+
+- `plugin/skills/architect/SKILL.md` (stub)
+- `plugin/skills/dispatch/SKILL.md` (stub)
+- `plugin/skills/review/SKILL.md` (stub)
+
+If Claude Code *also* expects slash-command-trigger files separate from
+skills (i.e. `/architect` is a command-trigger that invokes the `architect`
+skill, and both files exist), create those too — verify the convention. If
+the skill-and-slash-command are unified (one file does both), `skills/`
+alone is enough. **Pin the behavior** (three stubs named `architect` /
+`dispatch` / `review`, each a placeholder for phase-04/05 to fill); let the
+exact file layout follow Claude Code's actual convention.
+
+Each stub is a short Markdown file with:
 
 - A one-line title and description (suitable for a slash-command listing).
 - A "TODO — filled in by M6 phase-04/05" note pointing at the relevant
@@ -135,11 +183,11 @@ them — verify in pre-flight). Each is a short stub with:
     like `phase-01`).
   - `/review <phase>` — args: `<phase>` (same shape as dispatch).
 
-The stub content is intentionally minimal — phase-04 will rewrite
-`architect.md` with the full skill-invocation prompt, phase-05 will rewrite
-`dispatch.md` and `review.md`. Phase-01 just ships the file scaffolding so
-the registration is testable end-to-end (Claude Code can enable the plugin
-and see the commands listed, even if invoking them is a no-op).
+The stub content is intentionally minimal — phase-04 will rewrite the
+`architect` skill with the full bootstrap + pre-injection prompt; phase-05
+will rewrite `dispatch` and `review`. Phase-01 just ships the file
+scaffolding so the plugin registers cleanly (Claude Code can enable it and
+see the three skills listed, even if invoking them is a no-op).
 
 ### 4. `plugin/README.md`
 
@@ -186,20 +234,25 @@ adds **no Rust code**.
 
 ## Acceptance criteria
 
-- [ ] Top-level `plugin/` directory exists with the four named files (or the
-      verified-equivalent Claude Code layout): `README.md`, `.mcp.json`,
-      `commands/architect.md`, `commands/dispatch.md`, `commands/review.md`.
+- [ ] Top-level `plugin/` directory exists with the verified Claude Code
+      layout: `README.md`, `.mcp.json`, `.claude-plugin/plugin.json`, and
+      three skill stubs under `skills/<name>/SKILL.md` for `architect`,
+      `dispatch`, `review`.
+- [ ] `plugin/.claude-plugin/plugin.json` is valid JSON, sets `"name":
+      "rexymcp"`, and includes whatever other fields Claude Code's plugin
+      schema names as required or recommended.
 - [ ] `.mcp.json` is **valid JSON** (`jq . plugin/.mcp.json` is a clean
       acceptance check; or use `python -m json.tool`).
 - [ ] `.mcp.json` registers a server named `rexymcp` whose command launches
       `rexymcp serve --config <path>` (with a sensible default for `<path>`).
-- [ ] `.mcp.json` configures a **raised timeout on `execute_phase`** toward
-      the 10-minute ceiling (the exact field shape per Claude Code's schema —
-      pinned in pre-flight). If only server-wide timeouts are supported,
-      raise server-wide.
-- [ ] Each of the three slash-command stub files exists, contains a clear
-      "filled in by M6 phase-04/05" note pointing at the right phase, and
-      describes the eventual arg shape as a placeholder.
+- [ ] **No timeout field in `.mcp.json`** (Pre-flight 3 finding: Claude
+      Code's schema doesn't expose one). The limitation is documented in
+      `plugin/README.md` with the architecture-target note + the dogfood
+      open question.
+- [ ] Each of the three skill stub files (`skills/architect/SKILL.md`,
+      `skills/dispatch/SKILL.md`, `skills/review/SKILL.md`) exists, contains
+      a clear "filled in by M6 phase-04/05" note pointing at the right
+      phase, and describes the eventual arg shape as a placeholder.
 - [ ] `plugin/README.md` documents the layout, install path, and status
       (what's present in phase-01, what each later phase will add).
 - [ ] **No Rust code changes.** `cargo fmt --check`, `cargo build`,
@@ -244,9 +297,11 @@ behind the stubs). End-to-end exercise lands in phase-06 (dogfood).
 ## Authorizations
 
 - [x] **May create** `plugin/`, `plugin/README.md`, `plugin/.mcp.json`,
-      `plugin/commands/architect.md`, `plugin/commands/dispatch.md`,
-      `plugin/commands/review.md`. Verified-equivalent paths (per pre-flight
-      3) are fine — flag the chosen layout in Notes for review.
+      **`plugin/.claude-plugin/plugin.json`** (required per Claude Code
+      contract — Pre-flight 3 finding), and three skill stubs under
+      `plugin/skills/<name>/SKILL.md` for `architect`, `dispatch`, `review`.
+      Verified-equivalent paths (per Pre-flight 3) are fine — flag the
+      chosen layout in Notes for review.
 - [ ] **No Rust code changes.** No `executor/` or `mcp/` edits.
 - [ ] **No new dependencies.** No `Cargo.toml` edits.
 - [ ] May **NOT** add embedded templates (phase-02), wire the contract
