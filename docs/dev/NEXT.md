@@ -4,17 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M5 phase-05a closed (`done`, approved_first_try on
-2026-05-30; third consecutive zero-deviation phase, *and* the first M5 phase
-with substantive `executor/` edits — discipline held through the harder
-case). The progress-callback seam is live on `LoopDeps`, four emission sites
-fire in the turn cycle, and each emission writes a `SessionEvent::Progress`
-record to the JSONL log. The **durable half** of the architecture's consumer
-split is already working: Claude can query logged progress via
-`executor_log_search { event_type: "progress" }` now. Next step is the
-architect drafting **M5 phase-05b — mcp notification consumer side** (the
-`execute_phase` handler builds a `ProgressCallback` that emits MCP
-`notifications/progress`, plumbed through `runner::run_phase`).
+**Active phase:** [M5 / phase-05b — progress MCP-notification consumer
+(mcp side)](milestones/M5-mcp-server/phase-05b-progress-mcp-consumer.md) —
+`todo`, **drafted, awaiting dispatch**. Threads `Option<&dyn ProgressCallback>`
+through `runner::run_phase`/`run_phase_with` to `LoopDeps.progress`; adds a
+`McpProgressNotifier` that implements `ProgressCallback` by
+`tokio::spawn`-ing an async send to the rmcp peer's
+`notifications/progress`; modifies the `#[rmcp::tool] execute_phase` method
+to extract the progress token from `_meta.progressToken` and build the
+notifier (none = no token, `None` callback). No `executor/` edits — 05a's
+contract is sufficient. No new deps. Pre-flight tells opencode to verify
+rmcp 1.7's exact peer/notify API against `cargo doc` (same discipline as
+phase-02).
 
 **Last completed:** [M5 / phase-05a — progress callback seam + Progress log
 events (executor side)](milestones/M5-mcp-server/phase-05a-progress-callback.md)

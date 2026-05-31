@@ -63,6 +63,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | session-log query tools (`executor_log_search` / `executor_log_tail` / `get_turn`) ([phase-03-log-query.md](phase-03-log-query.md)) | done |
 | 04 | `model_scorecard` (model × tag competency matrix) ([phase-04-model-scorecard.md](phase-04-model-scorecard.md)) | done |
 | 05a | progress callback seam + `Progress` log events (executor side) ([phase-05a-progress-callback.md](phase-05a-progress-callback.md)) | done |
+| 05b | progress MCP-notification consumer (mcp side) ([phase-05b-progress-mcp-consumer.md](phase-05b-progress-mcp-consumer.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -76,11 +77,12 @@ Tentative remaining phases (draft when the prior one lands):
     machinery, `SessionEvent::Progress` log entries at each emission. Pins
     the callback contract that 05b consumes. The only M5 phase that touches
     `executor/` substantively — authorized inline.
-  - **05b** *(drafts when 05a lands)* — **mcp consumer side**: the
-    `execute_phase` handler builds a `ProgressCallback` that emits MCP
-    `notifications/progress`, plumbed through `runner::run_phase`. Real
-    wire-level liveness; the durable half (log events) was already live after
-    05a.
+  - **05b** *(drafted)* — **mcp consumer side**: the `execute_phase` handler
+    extracts the progress token from `_meta.progressToken`, builds a
+    `McpProgressNotifier` (which implements `ProgressCallback`), and threads
+    it through `runner::run_phase` to `LoopDeps`. Fire-and-forget
+    `tokio::spawn` on each emission. No `executor/` edits — the 05a contract
+    is sufficient.
 - **06 — roots corroboration.** Query `roots/list` + read `CLAUDE_PROJECT_DIR` to
   cross-check `execute_phase`'s `repo_path`; flag a mismatch rather than trusting
   it. (Sampling + elicitation are deliberately **not** used — see architecture.)
