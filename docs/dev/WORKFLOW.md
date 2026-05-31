@@ -481,3 +481,55 @@ spec told the loop to `scorer.record(...)`, but nothing read the score until
 phase-08's `tool_success_rate` — a seven-phase stretch of dead, unobservable
 computation that the executor rightly flagged each review. Either pin the consumer
 in the same phase, or defer the write until the phase that consumes it.)
+
+**Wrap-vs-derive at protocol boundaries.** When exposing a type at a protocol
+boundary (MCP tool output, JSONL log line, telemetry record), the boundary trait
+(`JsonSchema`, `Serialize`, …) has to apply to *every* type in the schema tree.
+Two ways to satisfy that:
+
+- **Derive directly** when the schema tree is small and locally-owned. The
+  output type is one struct (or a couple) of primitives the architect controls;
+  adding the derive is a one-line edit, no upstream cascade. *(M5: `Health`
+  was one struct, `ScorecardRow` was one struct — both derived `JsonSchema`
+  directly.)*
+- **Wrap in a single-field `serde_json::Value` carrier** when the schema tree
+  is large or foreign. The wrapper struct (`ExecutePhaseOutput { result:
+  Value }`, `LogQueryOutput { records: Value, truncated: bool }`) derives the
+  boundary trait; the inner `Value` carries the pre-serialized payload, so no
+  derive has to be added to the foreign types. *(M5: phase-02 wrapped
+  `PhaseResult`; phase-03 wrapped `Vec<SessionRecord>` — both have many
+  internal types from another crate.)*
+
+Cost trade-off: wrapping adds one nesting layer in the JSON output (`{
+"result": {...} }` vs `{...}`); deriving forces the boundary trait on every
+type in the tree (and risks cascading derive additions onto settled types in
+other crates, which is exactly the trap M4 phase-03 hit with `Deserialize` on
+the parser types). Choose at draft time per type, not at code time.
+
+### Anticipate cross-boundary trait bounds
+
+When a phase introduces a new protocol or async boundary (MCP tool, async
+runtime, JSONL persistence), **enumerate in the spec the trait bounds the
+boundary will require** — `Serialize`, `Deserialize`, `Send`, `Sync`,
+`JsonSchema`, etc. — and check at draft time whether the types crossing the
+boundary already satisfy them. If they don't, the spec either authorizes the
+narrow upstream edit to add the bound, or pins the wrapper pattern (see
+"Wrap-vs-derive" above) to sidestep it.
+
+The cost of missing this at draft time is repeating one of two failure
+modes: (1) the executor discovers the missing bound mid-phase, files a
+blocker, and waits for architect authorization to edit an upstream crate
+(M4 phase-03: `Deserialize` on the M3 parser types); or (2) the executor
+adds the bound without authorization and the architect catches it at review
+as a scope deviation (M5 phase-02: `Send + Sync` on `LoopDeps.clock`,
+`JsonSchema` on `Health`). Both end in the right place, but both cost a
+round trip.
+
+Recurrences before fold: M4 phase-03 (`Deserialize` on parser types,
+architect-resolved blocker); M5 phase-02 (`Send + Sync` on the clock +
+`JsonSchema` on `Health`, declared deviations); M5 phase-03 (`JsonSchema`
+cascade across SessionEvent — sidestepped via `Value` wrap, planned in
+spec); M5 phase-04 (`JsonSchema` on `ScorecardRow`, planned in spec); M5
+phase-05a (`Send + Sync` on `ProgressCallback`, planned in spec). Five
+occurrences — the rule is well-established now; subsequent phases should
+catch it at draft time, not review time.

@@ -1,7 +1,7 @@
 # Phase 06: roots corroboration (M5 closer)
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** done
 **Depends on:** M5 phase-05b (done) — extends the `execute_phase_inner_with_client` seam introduced for testability there. M5 phase-02 — the `RexyMcpServer` + manual `ServerHandler` impl.
 **Estimated diff:** ~300 lines (roots module + server hook + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -507,3 +507,40 @@ Partial — same as phases 02-05. The corroboration logic is fully unit-tested (
 **Notes for review:** No scope deviations. Option A (pure module + handler shim) used as recommended. No mock peer available in rmcp 1.7, so handler integration is not separately tested beyond the pure module coverage.
 
 verification: fmt OK · clippy OK · tests 629 passed (117 mcp + 512 executor) · build OK
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. Phase-06 lands cleanly as the M5 closer.
+Pure `mcp/src/roots.rs` module with the prescribed `Corroboration` /
+`MatchedSource` enums + `corroborate` + `format_mismatch_error`; corroboration
+shim at the top of `call_tool` for `execute_phase` (before token extraction,
+before any work); capability check guards the `list_roots()` call;
+`execute_phase_inner_with_client` correctly left untouched so phase-05b's
+wrapper-level tests still work without a peer; tool description updated.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **629** (512 executor + 117 mcp, +17 in
+roots). Zero `executor/` edits, zero new deps, zero `unwrap`/`expect`/
+`panic` in production paths, zero `#[allow]`, zero Rexy phase refs.
+
+**All 17 prescribed tests landed**, in the exact shape the spec named —
+positives (equal-to-root, descendant-of-root, equal-to-project-dir,
+descendant-of-project-dir, root-before-project-dir resolution,
+first-root-matches), no-sources, mismatch, URI parsing (file:// stripped,
+non-file:// skipped, URL-encoded non-match pinned per Adaptation 3),
+canonicalization edges (nonexistent repo_path → Mismatch,
+uncanonicalizable-root skipped, symlink resolution), and `format_mismatch_error`
+shape assertions.
+
+**Notes for review** declared no deviations and is *accurate* —
+Option A (pure module + handler shim) used as recommended; no mock peer
+available in rmcp 1.7 so handler integration is not separately tested
+beyond the pure module coverage (this matches the spec's §4 acceptance,
+not a deviation).
+
+**Bounces:** 0.
+**Scope deviations:** 0.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try.
+
+**This is the M5 closer.** See README § "M5 retrospective" for the
+milestone close + calibration folds.
