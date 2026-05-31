@@ -4,16 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-01 closed (`done`, approved_first_try on
-2026-05-31; Pre-flight 3 paid off three times — `.claude-plugin/plugin.json`
-required by Claude Code's contract, `.mcp.json` has no timeout field
-at all, modern layout is `skills/<name>/SKILL.md` not legacy `commands/`).
-Plugin scaffold in `plugin/` is live: `.mcp.json` registers `rexymcp serve
---config ./rexymcp.toml`, `plugin.json` manifest sets `name: "rexymcp"`,
-three skill stubs ready for phase-04/05 to fill. Next step is the
-architect drafting **M6 phase-02 — embedded templates** (the three
-generalized Markdown templates: `STANDARDS.md`, `WORKFLOW.md`, and
-`executor_contract.md`, with `{...}_COMMAND` placeholders).
+**Active phase:** [M6 / phase-02 — embedded templates: `executor_contract` +
+`STANDARDS` + `WORKFLOW`](milestones/M6-plugin/phase-02-embedded-templates.md)
+— `todo`, **drafted, awaiting dispatch**. Three generalized Markdown
+templates derived from this repo's `AGENTS.md` / `STANDARDS.md` /
+`WORKFLOW.md`. `executor_contract.md` lives in `executor/templates/` for
+phase-03's `include_str!`; `STANDARDS.md` + `WORKFLOW.md` live in
+`plugin/templates/` for bootstrap to copy into target repos. All three
+use `{FORMAT_COMMAND}` / `{BUILD_COMMAND}` / `{LINT_COMMAND}` /
+`{TEST_COMMAND}` literal placeholders. Strict grep validation (precise
+patterns this time per phase-01's calibration note — no false positives
+on "RexyMCP" as product name). Sizable content phase (~900 lines) but
+no Rust code changes.
 
 **Last completed:** [M6 / phase-01 — plugin scaffold + `.mcp.json` +
 slash-command stubs](milestones/M6-plugin/phase-01-plugin-scaffold.md) —

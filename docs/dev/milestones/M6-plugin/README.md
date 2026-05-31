@@ -70,19 +70,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
+| 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **02 — embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW`.**
-  Net-new generalized Markdown derived from this repo's `AGENTS.md` /
-  `STANDARDS.md` / `WORKFLOW.md`, with `{FORMAT_COMMAND}` / `{BUILD_COMMAND}` /
-  `{LINT_COMMAND}` / `{TEST_COMMAND}` placeholders. Drops the rexyMCP-internal
-  references (Rexy lift protocol, opencode-specific notes, specific
-  workspace-layout details). The `STANDARDS.md` + `WORKFLOW.md` templates go
-  into the plugin's resources (bootstrap copies + resolves them). The
-  `executor_contract` template goes into **`executor/templates/`** so the
-  executor crate can `include_str!` it for runtime prepending (phase-03 wires
-  it in).
 - **03 — executor wires embedded contract.** Small executor edit: `include_str!`
   the contract template, add a `assemble_executor_contract(cfg: &CommandConfig)
   -> String` helper that substitutes placeholders, modify the loop's turn-cycle
