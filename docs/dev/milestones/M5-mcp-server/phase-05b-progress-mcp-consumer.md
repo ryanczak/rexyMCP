@@ -1,7 +1,7 @@
 # Phase 05b: progress MCP-notification consumer (mcp side)
 
 **Milestone:** M5 — MCP server
-**Status:** review
+**Status:** in-progress (bounced — see [bug-05b-1](bugs/bug-05b-1.md))
 **Depends on:** M5 phase-05a (done) — the `ProgressCallback` trait + `ProgressEvent` type + `LoopDeps.progress` field are live. M5 phase-02 — rmcp server scaffold + tool router.
 **Estimated diff:** ~300 lines (runner threading + server callback + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -412,3 +412,71 @@ test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fi
 **End-to-end verification:** Partial — handler logic exercised by unit tests; the rmcp transport + actual `notifications/progress` over stdio is M6 dogfood. Manual smoke test not performed (requires live MCP client with progress token).
 
 verification: fmt OK · clippy OK · tests 512 passed · build OK
+
+### Update — 2026-05-31 (bounced to in-progress — architect)
+
+**Verdict:** bounced. The functional code is sound — gates clean, tests
+**610** (512 executor + 98 mcp, +2 notifier tests), the manual
+`ServerHandler` impl handling rmcp 1.7's macro limitation is the right
+architectural call (correctly declared and well-executed), the hybrid
+pattern (manual `call_tool` for `execute_phase` + `Self::tool_router()`
+fallback for the four other tools) is clean, and the notifier-level tests
+verify field mapping correctly. But two bounce-class items need fixing
+before approval: see [bug-05b-1](bugs/bug-05b-1.md) for both.
+
+**Bounces:**
+- [bug-05b-1](bugs/bug-05b-1.md) — two items:
+  1. **Hard-rule violation:** `#[allow(clippy::too_many_arguments)]` on
+     `pub run_phase` (runner.rs:201). CLAUDE.md hard rules forbid `#[allow]`
+     to mask diagnostics; the clean fix is the same struct-grouping pattern
+     phase-01 used for `run_phase_with` (`Seams`/`AssemblyInput`) and
+     phase-05a used for `EmitCtx`. Trivial.
+  2. **Missing acceptance criteria:** two wrapper-level integration tests
+     (`execute_phase_inner` with `Some(&capture)` driving the loop, and
+     with `None` capturing nothing) — explicit checkboxes opencode skipped
+     with rationale that didn't hold (the threading-layer regression
+     these tests catch is *different* from 05a's executor-loop tests they
+     supposedly "duplicate").
+
+**Architectural deviation — accepted (not bounced):** Replacing the
+`#[rmcp::tool_router(server_handler)]` macro-derived ServerHandler with a
+manual `impl ServerHandler for RexyMcpServer` is a significant departure
+from phase-02's design, but it's the *right* response to rmcp 1.7's
+`#[rmcp::tool]` macro not accepting a context arg. Pre-flight 3 explicitly
+authorized exactly this kind of API-shape divergence ("trust the docs over
+the sketch") — and opencode followed it correctly, declared it openly, and
+kept the hybrid clean (the four non-`execute_phase` tools still flow
+through `Self::tool_router()` via the manual handler's fallback). The 98
+mcp tests passing confirms the routing works for all tools, not just the
+modified one.
+
+**Notifier test variant choice — accepted:** opencode used Variant B
+(pure helper test) because rmcp 1.7 has no mock peer. Correctly declared
+per the spec's §7 resolution-dependent test plan. Two notifier tests
+(`progress_notifier_maps_fields_correctly`,
+`progress_notifier_fire_and_forget_does_not_panic`) cover field mapping
+and fire-and-forget safety. Solid.
+
+**Self-review accuracy — calibration miss:** the Update Log claimed
+"Acceptance criteria: all ticked above" while opencode openly skipped the
+wrapper-level test criteria in Notes for review. The two statements
+contradict. Phase-01 → phase-04 calibrated *toward* honest self-review;
+phase-05b half-held it (declared the skip) and half-broke it (claimed all
+ticked). When the fix lands, the next Update entry should match
+reality — see bug-05b-1's Notes section.
+
+**Forward-looking note for the architect (my own calibration):** my spec
+asked for the wrapper-level test but didn't pin the *testability mechanism*
+(`execute_phase_inner` takes `config_path`, so it builds a real
+`OpenAiClient` — can't accept `MockAiClient` without further factoring).
+The bug doc proposes either a server-layer seam split (Option A, recommended)
+or a sub-blocker so I can spec a smaller-scope assertion. Either resolution
+is acceptable; the *blocking* problem is the unresolved checkbox + the
+`#[allow]`.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). First M5 bounce since
+phase-01's bug-01-1; the streak of four (02 / 03 / 04 / 05a) holding
+approved_first_try ends here.
+
+**Re-dispatch to opencode** to address bug-05b-1; on return, the verdict
+block finalizes.
