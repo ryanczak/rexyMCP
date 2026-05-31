@@ -1,7 +1,7 @@
 # Phase 01: plugin scaffold + .mcp.json + slash-command stubs
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** M5 (done) — `rexymcp serve --config <path>` is the binary the plugin wraps.
 **Estimated diff:** ~200 lines (mostly JSON + Markdown stubs + a layout README)
 **Tags:** language=markdown, kind=feature, size=s
@@ -329,3 +329,61 @@ behind the stubs). End-to-end exercise lands in phase-06 (dogfood).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-31 15:00 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Pre-flight 3 verified Claude Code plugin layout against docs.anthropic.com. Three findings applied: (1) `.claude-plugin/plugin.json` manifest is required, (2) `skills/<name>/SKILL.md` is the modern layout (not legacy `commands/`), (3) `.mcp.json` has no timeout field — omitted per architect resolution. Creating 6 files across `plugin/`.
+
+### Update — 2026-05-31 15:05 (complete)
+
+**Summary:** Created the Claude Code plugin scaffold under `plugin/` with 6 new files: manifest (`.claude-plugin/plugin.json`), MCP server registration (`.mcp.json`), three skill stubs (`skills/{architect,dispatch,review}/SKILL.md`), and `README.md`. Pre-flight 3 verified the layout against Claude Code docs; all three findings (manifest required, `skills/` over `commands/`, no timeout field) were applied. No Rust code changes, no new dependencies.
+
+**Acceptance criteria:** all ticked.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.47s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+cargo test 2>&1 | tail -30
+test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The plugin has no behavior in phase-01; skill stubs are placeholders. Verification against real Claude Code install is deferred to phase-06 dogfood. File-level verification:
+- `jq . plugin/.mcp.json` — valid JSON, server `rexymcp` with `serve --config ./rexymcp.toml`
+- `jq . plugin/.claude-plugin/plugin.json` — valid JSON, `name: rexymcp`
+- `ls plugin/skills/` — `architect`, `dispatch`, `review`
+- `grep -rn 'filled in by' plugin/skills/` — 3 hits, one per stub
+- `grep -rn 'Rexy\|rexy/src' plugin/` — 1 hit on `displayName: "RexyMCP"` in `plugin.json`, which is the product name, not a Rexy-repo reference
+
+**Files changed:**
+- `plugin/.claude-plugin/plugin.json` — plugin manifest (name: rexymcp)
+- `plugin/.mcp.json` — MCP server registration (no timeout field per pre-flight finding)
+- `plugin/skills/architect/SKILL.md` — stub for architect skill (phase-04)
+- `plugin/skills/dispatch/SKILL.md` — stub for dispatch skill (phase-05)
+- `plugin/skills/review/SKILL.md` — stub for review skill (phase-05)
+- `plugin/README.md` — layout, install, status, timeout limitation note
+
+**New tests:** none (no Rust code).
+
+**Commits:** (pending)
+
+**Notes for review:**
+- Scope deviation: used `skills/<name>/SKILL.md` instead of `commands/<name>.md` per Claude Code's modern convention. This avoids a mid-milestone layout migration when phases 04/05 fill the skills.
+- Scope deviation: added `.claude-plugin/plugin.json` manifest — required by Claude Code's plugin contract, not in the original spec.
+- Omitted timeout field from `.mcp.json` — Claude Code's schema has no timeout field. Documented in README with dogfood open question.
+- `displayName: "RexyMCP"` in `plugin.json` causes a grep hit on the acceptance criterion pattern `Rexy\|rexy/src`. This is the product name, not a Rexy-repo reference.
+
+verification: fmt OK · clippy OK · tests 512 passed · build OK

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rexymcp": {
+      "command": "rexymcp",
+      "args": ["serve", "--config", "./rexymcp.toml"]
+    }
+  }
+}
