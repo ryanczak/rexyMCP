@@ -64,6 +64,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 04 | `model_scorecard` (model × tag competency matrix) ([phase-04-model-scorecard.md](phase-04-model-scorecard.md)) | done |
 | 05a | progress callback seam + `Progress` log events (executor side) ([phase-05a-progress-callback.md](phase-05a-progress-callback.md)) | done |
 | 05b | progress MCP-notification consumer (mcp side) ([phase-05b-progress-mcp-consumer.md](phase-05b-progress-mcp-consumer.md)) | done |
+| 06 | roots corroboration (M5 closer) ([phase-06-roots-corroboration.md](phase-06-roots-corroboration.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -83,9 +84,8 @@ Tentative remaining phases (draft when the prior one lands):
     it through `runner::run_phase` to `LoopDeps`. Fire-and-forget
     `tokio::spawn` on each emission. No `executor/` edits — the 05a contract
     is sufficient.
-- **06 — roots corroboration.** Query `roots/list` + read `CLAUDE_PROJECT_DIR` to
-  cross-check `execute_phase`'s `repo_path`; flag a mismatch rather than trusting
-  it. (Sampling + elicitation are deliberately **not** used — see architecture.)
+_All M5 phases drafted; 06 is the milestone closer (triggers retrospective +
+calibration folds on approval)._
 
 ## Notes
 

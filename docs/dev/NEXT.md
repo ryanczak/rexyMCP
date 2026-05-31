@@ -4,16 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M5 phase-05b closed (`done`, approved_after_1 on
-2026-05-31 after bug-05b-1 fixed). Both items resolved cleanly: `#[allow]`
-gone, replaced with `RunPhaseConfig<'a>` struct (the same pattern phase-01
-used for `Seams`/`AssemblyInput`); the two wrapper-level integration tests
-landed via the Option-A seam refactor (`execute_phase_inner_with_client`).
-**Phase-05 closes** — the full consumer split is live: human watches MCP
-`notifications/progress` (05b), Claude queries logged `Progress` events
-via `executor_log_search` (05a). Next step is the architect drafting **M5
-phase-06 — roots corroboration** (the M5 closer: `roots/list` +
-`CLAUDE_PROJECT_DIR` cross-checked against `execute_phase`'s `repo_path`).
+**Active phase:** [M5 / phase-06 — roots corroboration (M5
+closer)](milestones/M5-mcp-server/phase-06-roots-corroboration.md) — `todo`,
+**drafted, awaiting dispatch**. Before `execute_phase` does any work,
+cross-checks the caller-supplied `repo_path` against (a) the MCP client's
+`roots/list` and (b) `CLAUDE_PROJECT_DIR`. Hard refusal on mismatch;
+permissive when both sources are absent (the M2 `Scope` remains the actual
+security boundary — corroboration is a safety check against
+misconfiguration). New pure `mcp/src/roots.rs` module + a shim in the
+manual `ServerHandler::call_tool` for `execute_phase`. No `executor/`
+edits, no new deps. **On approval, M5 closes** — milestone retrospective
++ the calibration folds queued across phases 02–05b (derive-vs-wrap rule,
+cross-boundary trait bounds).
 
 **Last completed:** [M5 / phase-05b — progress MCP-notification consumer
 (mcp side)](milestones/M5-mcp-server/phase-05b-progress-mcp-consumer.md) —
