@@ -1,7 +1,7 @@
 # Phase 05a: progress callback seam + Progress log events (executor side)
 
 **Milestone:** M5 — MCP server
-**Status:** todo
+**Status:** review
 **Depends on:** M4 (`execute_phase` loop, `pre_edit_content`/`build_diff` machinery, `SessionEvent::Progress` + `FileNumstat` reserved in M4 phase-03), `similar` crate (already in workspace).
 **Estimated diff:** ~500 lines (progress module + 4 emission sites + tests + LoopDeps wiring)
 **Tags:** language=rust, kind=feature, size=m
@@ -373,3 +373,73 @@ In `executor/src/agent/mod.rs` extended test block:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-30 21:00 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Beginning phase-05a: progress callback seam + Progress log events. Will create `executor/src/agent/progress.rs`, wire `LoopDeps.progress`, insert four emission sites in `execute_phase`, and add `progress: None` to all existing constructions.
+
+### Update — 2026-05-30 21:15 (complete)
+
+**Summary:** Created `executor/src/agent/progress.rs` with `ProgressCallback` trait (plus closure blanket impl), `ProgressEvent` struct, `numstat_from_pre_edit` (reusing `similar::TextDiff`), and `format_message` (top-5 truncation, overflow suffix). Added `progress: Option<&'a dyn ProgressCallback>` to `LoopDeps`. Inserted four emission sites in `execute_phase`: `turn_start` (post turn increment), `tool:<name>` (pre-dispatch), `verify` (pre-verifier), and `command:<name>` (pre each configured final command). Each emission invokes the callback then logs `SessionEvent::Progress` (both best-effort, independent). Added `progress: None` to all existing `LoopDeps` constructions (4 in agent tests, 1 in runner.rs). Used `EmitCtx` struct to keep `emit_progress` within clippy's argument limit. No scope deviations.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.81s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.20s
+
+cargo test 2>&1 | tail -30
+test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+Not applicable — the rmcp notification half is 05b. 05a is exercised by unit tests with a `CaptureCallback` struct that implements `ProgressCallback` and collects `ProgressEvent`s for assertion. Real wire-level MCP progress notification flow lands when 05b wires the rmcp peer.
+
+**Grep proof:** `SessionEvent::Progress` found in mod.rs (5 matches: emission + tests) and progress.rs (1 match: re-export). Literal landed correctly.
+
+**Files changed:**
+- `executor/src/agent/progress.rs` — new module: `ProgressCallback` trait, `ProgressEvent`, `numstat_from_pre_edit`, `format_message`, 11 unit tests
+- `executor/src/agent/mod.rs` — `pub mod progress`; `EmitCtx` struct; `emit_progress` helper; `progress` field on `LoopDeps`; 4 emission sites in turn cycle; `run_command_set` emits per-command; `progress: None` on 4 existing test `LoopDeps`; 6 new integration tests
+- `mcp/src/runner.rs` — `progress: None` on `LoopDeps` construction
+- `mcp/src/server.rs` — no changes needed (no `LoopDeps` construction in server.rs)
+
+**New tests:**
+- `numstat_empty_map_returns_empty` in progress.rs
+- `numstat_clean_file_is_skipped` in progress.rs
+- `numstat_edited_file_counts_added_and_removed` in progress.rs
+- `numstat_deleted_file_shows_removed_lines` in progress.rs
+- `numstat_nested_path_is_relative` in progress.rs
+- `numstat_output_sorted_by_path` in progress.rs
+- `numstat_new_file_shows_only_added` in progress.rs
+- `format_message_empty_files` in progress.rs
+- `format_message_few_files` in progress.rs
+- `format_message_truncates_after_five_files` in progress.rs
+- `format_message_totals_sum_all_not_just_top_5` in progress.rs
+- `progress_none_emits_nothing` in agent/mod.rs
+- `progress_some_emits_turn_start_and_tool` in agent/mod.rs
+- `progress_emits_verify_after_edit_class_tool` in agent/mod.rs
+- `progress_emits_commands_on_clean_completion` in agent/mod.rs
+- `callback_panic_is_not_caught` in agent/mod.rs
+- `progress_independent_of_log_write_failure` in agent/mod.rs
+
+**Commits:**
+- (to be created)
+
+**Notes for review:**
+- `EmitCtx` is a private helper struct in `agent/mod.rs` used solely to keep `emit_progress` and `run_command_set` within clippy's 7-argument limit. Not a public surface.
+- `CaptureCallback` and `DepsBuilder` are test-only helpers in the `#[cfg(test)]` module.
+- `LoopDeps.progress` is `Option<&'a dyn ProgressCallback>` — no lifetime tightening needed beyond what already existed for other trait-object fields (`client`, `verifier`, `runner`).
+- `run_command_set` now takes `&EmitCtx<'_>` instead of 3 args; this is the only signature change to an internal function.
+- `mcp/src/server.rs` has no `LoopDeps` construction (only `runner.rs` does), so no edit was needed there.
+
+verification: fmt OK · clippy OK · tests 512 passed · build OK

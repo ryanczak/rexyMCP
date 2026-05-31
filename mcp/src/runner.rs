@@ -189,6 +189,7 @@ async fn run_phase_with(
         runner: seams.runner,
         generation_params: GenerationParams::default(),
         telemetry_dir: inp.telemetry_dir,
+        progress: None,
     };
 
     agent::execute_phase(&input, deps).await

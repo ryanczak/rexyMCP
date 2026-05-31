@@ -7,6 +7,7 @@
 //! `hard_fail` (a hard-fail signal), or `budget_exceeded` (turn/context cap).
 
 pub mod command;
+pub mod progress;
 pub mod prompt;
 pub mod verify;
 
@@ -41,6 +42,7 @@ use crate::store::sessions::jsonl::{SessionLogHandle, open_session_log, session_
 use crate::store::telemetry::{self, Gates, GenerationParams, PhaseRun};
 use crate::tools::ToolRegistry;
 use command::{CommandResult, CommandRunner};
+use progress::{ProgressCallback, ProgressEvent};
 use verify::FileVerifier;
 
 /// Preview cap for a tool result's `output_preview` in the session log — enough
@@ -94,6 +96,11 @@ pub struct LoopDeps<'a> {
     pub generation_params: GenerationParams,
     /// Cross-project telemetry dir for the `PhaseRun` record; `None` disables it.
     pub telemetry_dir: Option<&'a Path>,
+    /// Optional liveness callback. `None` disables progress entirely (no
+    /// callback invocations, no `Progress` log events, no numstat
+    /// computation). Best-effort when `Some`: a callback that panics is
+    /// outside this contract; the loop assumes the callback is safe.
+    pub progress: Option<&'a dyn ProgressCallback>,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -228,6 +235,18 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             }
         }
         turns += 1;
+        {
+            let emit = EmitCtx {
+                progress: deps.progress,
+                log_handle: &log_handle,
+                redactor: &redactor,
+                clock: deps.clock,
+                pre_edit_content: &pre_edit_content,
+                project_root: deps.project_root,
+                turn: turns,
+            };
+            emit_progress(&emit, "turn_start".to_string());
+        }
         log_event(
             &log_handle,
             &redactor,
@@ -248,8 +267,17 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 ParseResult::NoToolCall => {
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     // Step 8 — clean completion runs the final command set.
+                    let emit = EmitCtx {
+                        progress: deps.progress,
+                        log_handle: &log_handle,
+                        redactor: &redactor,
+                        clock: deps.clock,
+                        pre_edit_content: &pre_edit_content,
+                        project_root: deps.project_root,
+                        turn: turns,
+                    };
                     let (command_outputs, gates) =
-                        run_command_set(deps.runner, deps.commands, deps.project_root).await;
+                        run_command_set(deps.runner, deps.commands, deps.project_root, &emit).await;
                     emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
                     let artifacts = build_artifacts(
                         &pre_edit_content,
@@ -353,6 +381,18 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         pre_edit_content.insert(path.clone(), std::fs::read_to_string(path).ok());
                     }
                     // Step 5 — dispatch (native and text share this path).
+                    {
+                        let emit = EmitCtx {
+                            progress: deps.progress,
+                            log_handle: &log_handle,
+                            redactor: &redactor,
+                            clock: deps.clock,
+                            pre_edit_content: &pre_edit_content,
+                            project_root: deps.project_root,
+                            turn: turns,
+                        };
+                        emit_progress(&emit, format!("tool:{}", tool_call.name));
+                    }
                     dispatch(deps.registry, &tool_call).await
                 }
             };
@@ -391,6 +431,18 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // Step 6 — post-edit verify + retry feedback. Only for a successful
         // edit-class call (verifying after a failed edit is noise).
         if succeeded && let Some(path) = &edit_path {
+            {
+                let emit = EmitCtx {
+                    progress: deps.progress,
+                    log_handle: &log_handle,
+                    redactor: &redactor,
+                    clock: deps.clock,
+                    pre_edit_content: &pre_edit_content,
+                    project_root: deps.project_root,
+                    turn: turns,
+                };
+                emit_progress(&emit, "verify".to_string());
+            }
             match deps.verifier.verify(path).await {
                 VerifierResult::Checked { diagnostics } => {
                     let (author, _ambient) = baseline.partition(&diagnostics);
@@ -820,16 +872,69 @@ fn build_diff(
     (diff, files_changed)
 }
 
+/// Shared context for progress emission, avoiding repeated parameter passing.
+struct EmitCtx<'a> {
+    progress: Option<&'a dyn ProgressCallback>,
+    log_handle: &'a Option<SessionLogHandle>,
+    redactor: &'a Redactor,
+    clock: &'a (dyn Fn() -> u64 + Send + Sync),
+    pre_edit_content: &'a HashMap<PathBuf, Option<String>>,
+    project_root: &'a Path,
+    turn: usize,
+}
+
+/// Emit a progress event: invoke the callback (if present) and log a
+/// `SessionEvent::Progress` record. No-op when `progress` is `None`.
+fn emit_progress(ctx: &EmitCtx<'_>, stage: String) {
+    let Some(cb) = ctx.progress else {
+        return;
+    };
+    let numstat = progress::numstat_from_pre_edit(ctx.pre_edit_content, ctx.project_root);
+    let message = progress::format_message(ctx.turn, &stage, &numstat);
+    let event = ProgressEvent {
+        turn: ctx.turn,
+        stage: stage.clone(),
+        files_changed: numstat.clone(),
+        message,
+    };
+    cb.on_progress(&event);
+    log_event(
+        ctx.log_handle,
+        ctx.redactor,
+        ctx.clock,
+        ctx.turn,
+        SessionEvent::Progress {
+            turn: ctx.turn,
+            stage,
+            files_changed: numstat,
+            message: event.message,
+        },
+    );
+}
+
 /// Run the configured final command set in `cwd`, tail-capping each output and
 /// recording pass/fail. A `None`-configured command stays `None` in both outputs.
 async fn run_command_set(
     runner: &dyn CommandRunner,
     commands: &CommandConfig,
     cwd: &Path,
+    ctx: &EmitCtx<'_>,
 ) -> (CommandOutputs, Gates) {
+    if commands.format.is_some() {
+        emit_progress(ctx, "command:fmt".to_string());
+    }
     let (format, fmt_ok) = run_one(runner, commands.format.as_deref(), cwd).await;
+    if commands.build.is_some() {
+        emit_progress(ctx, "command:build".to_string());
+    }
     let (build, build_ok) = run_one(runner, commands.build.as_deref(), cwd).await;
+    if commands.lint.is_some() {
+        emit_progress(ctx, "command:lint".to_string());
+    }
     let (lint, lint_ok) = run_one(runner, commands.lint.as_deref(), cwd).await;
+    if commands.test.is_some() {
+        emit_progress(ctx, "command:test".to_string());
+    }
     let (test, test_ok) = run_one(runner, commands.test.as_deref(), cwd).await;
     (
         CommandOutputs {
@@ -1072,6 +1177,7 @@ mod tests {
                 seed: None,
             },
             telemetry_dir: None,
+            progress: None,
         }
     }
 
@@ -1651,6 +1757,7 @@ mod tests {
             runner: &NoopRunner,
             generation_params: GenerationParams::default(),
             telemetry_dir: None,
+            progress: None,
         };
 
         execute_phase(&input(), d).await.unwrap();
@@ -1763,6 +1870,7 @@ mod tests {
             runner: &NoopRunner,
             generation_params: GenerationParams::default(),
             telemetry_dir: None,
+            progress: None,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -2240,6 +2348,7 @@ mod tests {
             runner,
             generation_params: GenerationParams::default(),
             telemetry_dir,
+            progress: None,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -2796,5 +2905,346 @@ mod tests {
         .await;
 
         assert_eq!(read_runs(&telem)[0].wall_clock_s, 0.0);
+    }
+
+    // ── 05a: progress callback ────────────────────────────────────────────
+
+    use crate::agent::progress::ProgressEvent;
+
+    /// Captures progress events into a `Mutex<Vec<ProgressEvent>>` for test
+    /// inspection. Implements `ProgressCallback` so it can be held by `LoopDeps`
+    /// without a closure lifetime issue.
+    struct CaptureCallback {
+        events: std::sync::Mutex<Vec<ProgressEvent>>,
+    }
+
+    impl CaptureCallback {
+        fn new() -> Self {
+            Self {
+                events: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+        fn events(&self) -> Vec<ProgressEvent> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    impl ProgressCallback for CaptureCallback {
+        fn on_progress(&self, event: &ProgressEvent) {
+            self.events.lock().unwrap().push(event.clone());
+        }
+    }
+
+    /// Helper: build LoopDeps with a progress callback that captures into
+    /// `capture`. Uses NoopVerifier + NoopRunner + empty commands + no telemetry.
+    fn deps_with_progress_simple<'a>(
+        client: &'a dyn AiClient,
+        registry: &'a ToolRegistry,
+        budget: &'a Budget,
+        max_turns: usize,
+        root: &'a Path,
+        capture: &'a CaptureCallback,
+    ) -> LoopDeps<'a> {
+        LoopDeps {
+            client,
+            registry,
+            tools: &[],
+            budget,
+            max_turns,
+            project_root: root,
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_zero,
+            verifier: &NoopVerifier,
+            commands: &EMPTY_COMMANDS,
+            runner: &NoopRunner,
+            generation_params: GenerationParams {
+                temperature: None,
+                seed: None,
+            },
+            telemetry_dir: None,
+            progress: Some(capture),
+        }
+    }
+
+    /// Builder for LoopDeps with a progress callback, allowing per-test overrides.
+    struct DepsBuilder<'a> {
+        client: &'a dyn AiClient,
+        registry: &'a ToolRegistry,
+        budget: &'a Budget,
+        max_turns: usize,
+        root: &'a Path,
+        capture: &'a CaptureCallback,
+        verifier: &'a dyn FileVerifier,
+        commands: &'a CommandConfig,
+        runner: &'a dyn CommandRunner,
+        telemetry_dir: Option<&'a Path>,
+    }
+
+    impl<'a> DepsBuilder<'a> {
+        fn new(
+            client: &'a dyn AiClient,
+            registry: &'a ToolRegistry,
+            budget: &'a Budget,
+            max_turns: usize,
+            root: &'a Path,
+            capture: &'a CaptureCallback,
+        ) -> Self {
+            Self {
+                client,
+                registry,
+                budget,
+                max_turns,
+                root,
+                capture,
+                verifier: &NoopVerifier,
+                commands: &EMPTY_COMMANDS,
+                runner: &NoopRunner,
+                telemetry_dir: None,
+            }
+        }
+        fn verifier(mut self, v: &'a dyn FileVerifier) -> Self {
+            self.verifier = v;
+            self
+        }
+        fn commands(mut self, c: &'a CommandConfig) -> Self {
+            self.commands = c;
+            self
+        }
+        fn runner(mut self, r: &'a dyn CommandRunner) -> Self {
+            self.runner = r;
+            self
+        }
+        fn build(self) -> LoopDeps<'a> {
+            LoopDeps {
+                client: self.client,
+                registry: self.registry,
+                tools: &[],
+                budget: self.budget,
+                max_turns: self.max_turns,
+                project_root: self.root,
+                model: "test-model",
+                session_id: SESSION_ID,
+                clock: &clock_zero,
+                verifier: self.verifier,
+                commands: self.commands,
+                runner: self.runner,
+                generation_params: GenerationParams {
+                    temperature: None,
+                    seed: None,
+                },
+                telemetry_dir: self.telemetry_dir,
+                progress: Some(self.capture),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn progress_none_emits_nothing() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let recs = records(dir.path());
+        assert!(
+            !recs
+                .iter()
+                .any(|r| matches!(r.event, SessionEvent::Progress { .. })),
+            "progress: None must produce zero Progress log entries"
+        );
+    }
+
+    #[tokio::test]
+    async fn progress_some_emits_turn_start_and_tool() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        let capture = CaptureCallback::new();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(
+            &input(),
+            deps_with_progress_simple(&client, &registry, &budget, 8, dir.path(), &capture),
+        )
+        .await
+        .unwrap();
+
+        let events = capture.events();
+        let stages: Vec<&str> = events.iter().map(|e| e.stage.as_str()).collect();
+        assert!(
+            stages.contains(&"turn_start"),
+            "expected a turn_start event, got: {:?}",
+            stages
+        );
+        assert!(
+            stages.contains(&"tool:read_file"),
+            "expected a tool:read_file event, got: {:?}",
+            stages
+        );
+        assert!(
+            stages.contains(&"tool:read_file"),
+            "expected a tool:read_file event, got: {:?}",
+            stages
+        );
+
+        // Also check the session log has matching Progress entries.
+        let recs = records(dir.path());
+        let progress_count = recs
+            .iter()
+            .filter(|r| matches!(r.event, SessionEvent::Progress { .. }))
+            .count();
+        assert!(
+            progress_count >= events.len(),
+            "log should have at least as many Progress entries as callback events"
+        );
+    }
+
+    #[tokio::test]
+    async fn progress_emits_verify_after_edit_class_tool() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let capture = CaptureCallback::new();
+        let client = MockAiClientScript::new(vec![
+            vec![write_call(&dir, "a.rs", "fn a() {}")],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![checked(vec![])]);
+        let budget = Budget::new(1_000_000);
+
+        let d = DepsBuilder::new(&client, &registry, &budget, 8, dir.path(), &capture)
+            .verifier(&verifier)
+            .build();
+        execute_phase(&input(), d).await.unwrap();
+
+        let events = capture.events();
+        let stages: Vec<&str> = events.iter().map(|e| e.stage.as_str()).collect();
+        assert!(
+            stages.contains(&"verify"),
+            "expected a verify event after edit-class tool, got: {:?}",
+            stages
+        );
+    }
+
+    #[tokio::test]
+    async fn progress_emits_commands_on_clean_completion() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let capture = CaptureCallback::new();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            format: None,
+            build: Some("cargo build".to_string()),
+            lint: None,
+            test: Some("cargo test".to_string()),
+        };
+        let budget = Budget::new(1_000_000);
+
+        let d = DepsBuilder::new(&client, &registry, &budget, 8, dir.path(), &capture)
+            .verifier(&verifier)
+            .commands(&commands)
+            .runner(&runner)
+            .build();
+        execute_phase(&input(), d).await.unwrap();
+
+        let events = capture.events();
+        let stages: Vec<&str> = events.iter().map(|e| e.stage.as_str()).collect();
+        assert!(
+            stages.contains(&"command:build"),
+            "expected command:build, got: {:?}",
+            stages
+        );
+        assert!(
+            stages.contains(&"command:test"),
+            "expected command:test, got: {:?}",
+            stages
+        );
+        assert!(
+            !stages.contains(&"command:fmt"),
+            "fmt was not configured, must not emit"
+        );
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "panic in progress callback")]
+    async fn callback_panic_is_not_caught() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        struct PanicCallback;
+        impl ProgressCallback for PanicCallback {
+            fn on_progress(&self, _event: &ProgressEvent) {
+                panic!("panic in progress callback");
+            }
+        }
+
+        let d = LoopDeps {
+            client: &client,
+            registry: &registry,
+            tools: &[],
+            budget: &budget,
+            max_turns: 8,
+            project_root: dir.path(),
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_zero,
+            verifier: &NoopVerifier,
+            commands: &EMPTY_COMMANDS,
+            runner: &NoopRunner,
+            generation_params: GenerationParams {
+                temperature: None,
+                seed: None,
+            },
+            telemetry_dir: None,
+            progress: Some(&PanicCallback),
+        };
+        execute_phase(&input(), d).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn progress_independent_of_log_write_failure() {
+        let dir = TempDir::new().unwrap();
+        // `.rexymcp` as a file → sessions dir can't be created → log doesn't open.
+        std::fs::write(dir.path().join(".rexymcp"), "x").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let capture = CaptureCallback::new();
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(
+            &input(),
+            deps_with_progress_simple(&client, &registry, &budget, 8, dir.path(), &capture),
+        )
+        .await
+        .unwrap();
+
+        let events = capture.events();
+        assert!(
+            !events.is_empty(),
+            "callback should still receive events even when log dir is unwritable"
+        );
+        assert!(
+            events.iter().any(|e| e.stage == "turn_start"),
+            "expected turn_start event despite log failure"
+        );
     }
 }
