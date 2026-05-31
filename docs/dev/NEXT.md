@@ -4,25 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-01 — plugin scaffold + `.mcp.json` +
-slash-command stubs](milestones/M6-plugin/phase-01-plugin-scaffold.md) —
-`todo`, **drafted, awaiting dispatch**. Top-level `plugin/` directory,
-`.mcp.json` registering `rexymcp serve --config <path>` with a raised
-per-tool timeout on `execute_phase` (toward the 10-minute ceiling), three
-slash-command stubs (filled in by phase-04/05), and a `plugin/README.md`
-orientation doc. No Rust code changes, no new deps. Pre-flight tells the
-executor to verify Claude Code's actual plugin filesystem layout +
-`.mcp.json` schema against the docs (same trust-docs-over-sketch
-discipline as M5 phase-02 / 05b / 06).
+**Active phase:** none — M6 phase-01 closed (`done`, approved_first_try on
+2026-05-31; Pre-flight 3 paid off three times — `.claude-plugin/plugin.json`
+required by Claude Code's contract, `.mcp.json` has no timeout field
+at all, modern layout is `skills/<name>/SKILL.md` not legacy `commands/`).
+Plugin scaffold in `plugin/` is live: `.mcp.json` registers `rexymcp serve
+--config ./rexymcp.toml`, `plugin.json` manifest sets `name: "rexymcp"`,
+three skill stubs ready for phase-04/05 to fill. Next step is the
+architect drafting **M6 phase-02 — embedded templates** (the three
+generalized Markdown templates: `STANDARDS.md`, `WORKFLOW.md`, and
+`executor_contract.md`, with `{...}_COMMAND` placeholders).
 
-**Last completed:** [M5 / phase-06 — roots
-corroboration](milestones/M5-mcp-server/phase-06-roots-corroboration.md) —
-approved_first_try 2026-05-31 (M5 closer; zero deviations).
+**Last completed:** [M6 / phase-01 — plugin scaffold + `.mcp.json` +
+slash-command stubs](milestones/M6-plugin/phase-01-plugin-scaffold.md) —
+approved_first_try 2026-05-31 (three pre-flight 3 wins all declared
+upfront; one architect-side spec-calibration note about over-broad grep
+patterns; see phase doc Review verdict).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
-— in progress (M1–M5 done). M6 packages rexyMCP as a Claude Code plugin
-(skills + slash commands + embedded templates + bootstrap) and closes with
-an end-to-end dogfood against a real third-party repo.
+— in progress (M1–M5 done; M6 phase-01 done). M6 packages rexyMCP as a
+Claude Code plugin; scaffold live, embedded templates + skills + bootstrap
++ dogfood remain.
 
 ---
 

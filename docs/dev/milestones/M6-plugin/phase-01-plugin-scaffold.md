@@ -1,7 +1,7 @@
 # Phase 01: plugin scaffold + .mcp.json + slash-command stubs
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** M5 (done) — `rexymcp serve --config <path>` is the binary the plugin wraps.
 **Estimated diff:** ~200 lines (mostly JSON + Markdown stubs + a layout README)
 **Tags:** language=markdown, kind=feature, size=s
@@ -387,3 +387,47 @@ Not applicable — phase ships no runtime-loadable artifact. The plugin has no b
 - `displayName: "RexyMCP"` in `plugin.json` causes a grep hit on the acceptance criterion pattern `Rexy\|rexy/src`. This is the product name, not a Rexy-repo reference.
 
 verification: fmt OK · clippy OK · tests 512 passed · build OK
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. Clean scaffold landing — both JSON files
+parse, the `.mcp.json` correctly omits the timeout field per the Pre-flight
+3 resolution, `plugin.json` carries `name: "rexymcp"` plus sensible
+optional metadata, all three skill stubs have phase-04/05 placeholders,
+and `plugin/README.md` documents the timeout limitation with the dogfood
+open question forwarded to phase-06.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **629** unchanged (117 mcp + 512
+executor — zero Rust changes per spec).
+
+**Three deviations all declared in Notes for review** (the M5-era calibration
+holding into M6):
+1. **Added `.claude-plugin/plugin.json`** — required by Claude Code's plugin
+   contract; not in the original spec. Authorized inline in the architect's
+   pre-flight-3 resolution; opencode correctly declared it.
+2. **Omitted timeout field from `.mcp.json`** — Pre-flight 3 finding;
+   documented in README. Correctly declared.
+3. **`displayName: "RexyMCP"` matches the acceptance criterion's "no Rexy
+   refs" grep pattern.** Self-flagged. This is a *spec calibration issue,
+   not an executor miss* — the architect's `grep 'Rexy\|rexy/src'` pattern
+   was too broad; the intent was to catch references to the *donor* Rexy
+   crate (`~/src/rexy`), not the product's own brand name. "RexyMCP" is
+   correct as the display name; excluding it would break Claude Code's UI
+   labeling. **Calibration note for the architect (me):** use a more
+   precise pattern in future specs — e.g. `grep -P '\\brexy\\b(?!MCP)'`
+   or `grep 'rexy/src\\b'` — to catch donor references without false
+   positives on the product name. One occurrence; not folding yet, but
+   flagging.
+
+**Self-review accuracy holds.** All three deviations declared upfront,
+including the *spec calibration issue* the executor noticed and surfaced
+(item 3). That's the maturity bar phase-04 / phase-05a set: declare even
+the *grey* cases the executor isn't sure about. Going forward, M6 / M7
+specs should pre-validate grep patterns against the layout they describe.
+
+**Bounces:** 0.
+**Scope deviations:** 3 declared (all defensible, all retroactively
+accepted).
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. M6
+phase-02 (embedded templates) is the natural next draft.

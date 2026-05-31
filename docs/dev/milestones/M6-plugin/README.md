@@ -69,7 +69,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
-| 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | review |
+| 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 
