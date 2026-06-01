@@ -4,24 +4,22 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-02 — embedded
-templates](milestones/M6-plugin/phase-02-embedded-templates.md) —
-**in-progress** (re-opened 2026-05-31 on deeper architect review; see
-[bug-02-1](milestones/M6-plugin/bugs/bug-02-1.md)). The first-pass
-approval stands on lexical/structural work; a follow-up read-through
-caught four conceptual genericization gaps no grep could catch — three
-rexyMCP-specific concepts (tools / agent-loop / parser-stage) in
-STANDARDS §3.1, a donor-project mention in §2.6, a Rust-specific
-cache-race warning in §4, and a missing `NEXT.md` in WORKFLOW's
-Directory Layout (the executor contract reads it first but the workflow
-doesn't say it exists). All four are content-only fixes (~30 lines).
-**Re-dispatch to opencode** to address bug-02-1.
+**Active phase:** none — M6 phase-02 closed (`done`, approved_after_1 on
+2026-05-31 after bug-02-1 fixed). All four content fixes applied (§3.1
+universal-phrasing replacements, §2.6 donor cut, §4 cargo cache-race cut,
+WORKFLOW Directory Layout `NEXT.md` added with explanation). Templates
+are now genuinely portable. Next step is the architect drafting **M6
+phase-03 — executor wires embedded contract** (small Rust edit:
+`include_str!` the contract template, add
+`assemble_executor_contract(cfg)` helper, modify the loop's turn-cycle
+step 1 to use it).
 
 **Last completed:** [M6 / phase-02 — embedded
 templates](milestones/M6-plugin/phase-02-embedded-templates.md) —
-approved_first_try 2026-05-31 (928 lines; zero deviations; second
-M6-phase grep-precision call-out from opencode — flagging not folding
-yet).
+approved_after_1 2026-05-31 (one bounce:
+[bug-02-1](milestones/M6-plugin/bugs/bug-02-1.md), verified — four
+conceptual genericization gaps the grep validations couldn't catch;
+fixes applied cleanly).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
 — in progress (M1–M5 done; M6 phases 01–02 done). M6 packages rexyMCP

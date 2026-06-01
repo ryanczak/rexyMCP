@@ -1,7 +1,7 @@
 # Phase 02: embedded templates — executor_contract + STANDARDS + WORKFLOW
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review (bug-02-1 fixes applied; awaiting architect re-review)
+**Status:** done
 **Depends on:** M6 phase-01 (done) — `plugin/` scaffold exists; this phase adds `plugin/templates/`. M5 (done) — `cfg.commands: CommandConfig` is the placeholder source.
 **Estimated diff:** ~900 lines (three Markdown templates derived from this repo's source docs)
 **Tags:** language=markdown, kind=feature, size=l
@@ -571,3 +571,46 @@ test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 **Notes for review:** Zero scope deviations. All four fixes are content-only, matching the bug doc's suggested replacements exactly.
 
 verification: fmt OK · clippy OK · tests 512 passed · build OK
+
+### Update — 2026-05-31 (approved after bounce — architect)
+
+**Verdict:** approved_after_1. All four bug-02-1 fixes applied exactly as
+the bug doc prescribed:
+
+- **§3.1:** the three rexyMCP-specific bullets (tool / agent-loop / parser
+  stage) replaced with universal phrasing (public functions / external-
+  system integrations / parsing+data-transform). Pre-existing "every new
+  pure function" bullet retained alongside — fine; the four together cover
+  the test-coverage decision tree.
+- **§2.6:** donor-project bullet removed.
+- **§4:** Rust/cargo cache-race warning removed.
+- **WORKFLOW Directory Layout:** `NEXT.md` added at the top of the layout
+  diagram with a one-paragraph explanation below.
+
+Gates: fmt ✓ · clippy ✓ · tests **629** unchanged. **Re-validation greps**
+(using the corrected `[Rr]exy[Mm][Cc][Pp]` pattern from my own phase-02
+calibration note — the lesson sticks):
+- Only the four authorized `{...}_COMMAND` placeholders survive.
+- Exactly one product-name hit: the authorized preamble exception in
+  `executor_contract.md` line 3 ("This contract is embedded by the rexyMCP
+  MCP server"). No other refs anywhere.
+- Zero `opencode|cargo |Cargo.toml` hits.
+
+**Git history note (architect miss, not opencode's):** the actual template
+edits live in commit `8cd0f60` ("docs: pin compaction-monitoring concern
+into M6 phase-06 description") because when I ran `git add -A` for that
+unrelated commit, I swept up the template-fix files opencode had left
+staged in the working tree. Opencode's `272aa89` ("fix: resolve bug-02-1
+…") therefore contains only the phase-doc + README status flips, not the
+content fixes the message describes. The *work* is all present and
+correct — the commit boundaries just don't match the logical changes.
+**Calibration note for the architect (me):** always `git status` before
+committing in a working tree where the executor has just left changes
+staged. Two miss-flavor commits in M6 (this + 8cd0f60); minor process
+hygiene, not folding.
+
+**Bounces:** 1 (bug-02-1, fixed → verified).
+**Scope deviations:** 0.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Phase-02 close: status →
+done. M6 phase-03 (executor wires the embedded contract) is unblocked.
