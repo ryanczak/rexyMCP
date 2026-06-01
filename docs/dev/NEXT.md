@@ -4,29 +4,28 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-02 — embedded templates: `executor_contract` +
-`STANDARDS` + `WORKFLOW`](milestones/M6-plugin/phase-02-embedded-templates.md)
-— `todo`, **drafted, awaiting dispatch**. Three generalized Markdown
-templates derived from this repo's `AGENTS.md` / `STANDARDS.md` /
-`WORKFLOW.md`. `executor_contract.md` lives in `executor/templates/` for
-phase-03's `include_str!`; `STANDARDS.md` + `WORKFLOW.md` live in
-`plugin/templates/` for bootstrap to copy into target repos. All three
-use `{FORMAT_COMMAND}` / `{BUILD_COMMAND}` / `{LINT_COMMAND}` /
-`{TEST_COMMAND}` literal placeholders. Strict grep validation (precise
-patterns this time per phase-01's calibration note — no false positives
-on "RexyMCP" as product name). Sizable content phase (~900 lines) but
-no Rust code changes.
+**Active phase:** none — M6 phase-02 closed (`done`, approved_first_try on
+2026-05-31). Three templates landed cleanly (928 lines: 207 contract +
+240 STANDARDS + 481 WORKFLOW). All validation greps pass, all 11 spec'd
+contract sections present, zero forbidden refs, zero Rust crate names.
+Self-review accuracy notably high — opencode flagged a subtle gap in the
+architect's grep pattern (didn't match the actual `rexyMCP` mixed-case
+spelling), manually verified the constraint, and surfaced it. Next step
+is the architect drafting **M6 phase-03 — executor wires embedded
+contract** (small Rust edit: `include_str!` the contract, add
+`assemble_executor_contract(cfg)` helper, modify the loop's turn-cycle
+step 1 to use it).
 
-**Last completed:** [M6 / phase-01 — plugin scaffold + `.mcp.json` +
-slash-command stubs](milestones/M6-plugin/phase-01-plugin-scaffold.md) —
-approved_first_try 2026-05-31 (three pre-flight 3 wins all declared
-upfront; one architect-side spec-calibration note about over-broad grep
-patterns; see phase doc Review verdict).
+**Last completed:** [M6 / phase-02 — embedded
+templates](milestones/M6-plugin/phase-02-embedded-templates.md) —
+approved_first_try 2026-05-31 (928 lines; zero deviations; second
+M6-phase grep-precision call-out from opencode — flagging not folding
+yet).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
-— in progress (M1–M5 done; M6 phase-01 done). M6 packages rexyMCP as a
-Claude Code plugin; scaffold live, embedded templates + skills + bootstrap
-+ dogfood remain.
+— in progress (M1–M5 done; M6 phases 01–02 done). M6 packages rexyMCP
+as a Claude Code plugin; scaffold + templates live, executor wiring +
+skills + bootstrap + dogfood remain.
 
 ---
 

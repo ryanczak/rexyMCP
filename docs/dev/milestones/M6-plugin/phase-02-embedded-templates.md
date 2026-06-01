@@ -1,7 +1,7 @@
 # Phase 02: embedded templates — executor_contract + STANDARDS + WORKFLOW
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** M6 phase-01 (done) — `plugin/` scaffold exists; this phase adds `plugin/templates/`. M5 (done) — `cfg.commands: CommandConfig` is the placeholder source.
 **Estimated diff:** ~900 lines (three Markdown templates derived from this repo's source docs)
 **Tags:** language=markdown, kind=feature, size=l
@@ -437,3 +437,45 @@ test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 **Notes for review:** No scope deviations. The preamble exception for "rexyMCP" in executor_contract.md is the single allowed reference. The grep pattern `rexymcp|RexyMCP` does not catch the mixed-case "rexyMCP" in the preamble — this is a minor gap in the validation grep but the spec explicitly allows the one preamble mention, which was confirmed by manual reading.
 
 verification: fmt OK · clippy OK · tests 512 passed · build OK
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. The three templates land cleanly — 928
+lines total (207 contract + 240 STANDARDS + 481 WORKFLOW), matching the
+~900 estimate. Gates: fmt ✓ · clippy ✓ · tests **629** unchanged (zero
+Rust changes).
+
+**All four validation greps from spec § 5 pass:** the only `{...}_COMMAND`
+placeholders are the four authorized ones, zero forbidden refs across all
+three templates, zero Rust crate names. All 11 spec'd contract sections
+present in the named order; STANDARDS preserves the §1–§5 structure
+(including the M4 §3.3 inject-IO-behind-seam fold); WORKFLOW preserves
+every section the spec named with the calibration anecdotes correctly
+genericized.
+
+**Self-review accuracy is the headline.** opencode's Notes explicitly
+flagged that the architect's grep pattern `rexymcp|RexyMCP` doesn't
+match the *actual* product spelling `rexyMCP` (mixed case), so the
+"zero hits" result is technically a pattern false-negative rather than a
+content guarantee — and then opencode **manually verified** the constraint
+(one preamble mention, no other refs) and surfaced the gap to the
+architect. That's exactly the kind of grey-case declaration the phase-04 /
+05a / 06 / M6 phase-01 verdicts established as the M-class bar.
+
+**Bounces:** 0.
+**Scope deviations:** 0 (the preamble exception was pre-authorized).
+
+**Architect calibration (mine, third consecutive M6 grep-precision miss
+— flagging not folding):**
+- M6 phase-01: pattern *too broad* (caught "RexyMCP" as product name).
+- M6 phase-02: pattern *too exclusive* (missed the actual `rexyMCP`
+  spelling — only worked because opencode read it manually).
+The pattern: I keep eyeballing grep patterns without testing them against
+representative content. Pre-validating grep patterns against the actual
+text the spec describes is now firmly on my watch list. If this recurs
+in M6 phase-03+, fold a "validate grep patterns before pinning them"
+note into WORKFLOW.md. Two occurrences is calibration data; three would
+be a fold trigger.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. M6
+phase-03 (executor wires the embedded contract) is the natural next draft.
