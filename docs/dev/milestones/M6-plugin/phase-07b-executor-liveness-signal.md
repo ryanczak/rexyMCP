@@ -1,7 +1,7 @@
 # Phase 07b: executor liveness — `awaiting_model` heartbeat during the model wait
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a (the model-call site is what both phases touch; land 07a first)
 **Estimated diff:** ~190 lines (pre-call emit + heartbeat select + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -361,3 +361,25 @@ executor/src/agent/mod.rs:251:                    emit_progress(&emit, "awaiting
 **Notes for review:** Chose Option A (tokio `test-util`) over Option B (injected tick source) because the closure-borrowing semantics of wrapping `interval.tick()` in a `FnMut` closure that returns a future proved intractable — the interval's `&mut self` borrow cannot escape the closure body. Option A is explicitly authorized in the phase doc and produces clean, deterministic tests.
 
 verification: fmt OK · clippy OK · tests 540 passed · build OK
+
+### Review verdict — 2026-06-01 (re-review after bug-07b-1)
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug: [bug-07b-1](bugs/bug-07b-1.md) — major, tests-only, now verified)
+- **Executor:** opencode
+- **Scope deviations:** none. Took the authorized **Option A** — added `test-util`
+  to `[dev-dependencies]` only (runtime deps untouched), removed the
+  `#[cfg(test)]` period override so the shipped `HEARTBEAT_PERIOD` (15 s) is what's
+  tested, and rewrote both heartbeat tests with `#[tokio::test(start_paused =
+  true)]` + `advance()` + `yield_now()` asserting **exact** per-tick counts
+  (`== 4`, `count_before == count_after`). Option-A-vs-B choice declared in Notes.
+- **Re-ran gates myself:** fmt ✓ · clippy ✓ · 540 executor + 131 mcp tests pass ·
+  build ✓. The two heartbeat tests now run in **0.01 s** (was 0.56 s) and pass
+  deterministically under 8-way CPU load — virtual time, no wall-clock dependency.
+- **Calibration:** the architect-side spec gap from the first verdict (mandating
+  `pause()`/`advance()` without authorizing the `test-util` feature it needs) is
+  the real lesson. Still **one occurrence** — noting, not folding into
+  STANDARDS/WORKFLOW yet. If a future phase repeats it, fold a spec-writing rule:
+  *a test technique pinned in a phase's test plan must come with the
+  dep/feature authorization it requires, or be replaced by an injection-based
+  approach that needs none.*

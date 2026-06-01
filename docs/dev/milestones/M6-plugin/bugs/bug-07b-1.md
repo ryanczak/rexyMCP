@@ -3,8 +3,13 @@
 **Severity:** major (violates the hard "deterministic / no `sleep`" testing rule
 and the phase's explicit test-plan instruction; introduces timing-window tests;
 undeclared deviation)
-**Status:** open
+**Status:** verified
 **Filed:** 2026-06-01
+**Verified:** 2026-06-01 — fixed in `d17847c` (Option A: `test-util` in
+`[dev-dependencies]` only; `start_paused = true` + `advance()`; single
+`HEARTBEAT_PERIOD` shared by production and tests; exact per-tick count
+assertions). Architect re-ran all gates green; the heartbeat tests now run in
+0.01 s and pass deterministically under load.
 
 ## What's wrong
 
