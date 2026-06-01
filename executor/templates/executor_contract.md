@@ -7,24 +7,25 @@ references use placeholders (`{FORMAT_COMMAND}`, `{BUILD_COMMAND}`, `{LINT_COMMA
 
 ---
 
-## First action — every session, no exceptions
+## What you already have, and what to read
 
-Before touching any code, read **in this order**:
+**This contract, the project's `STANDARDS.md`, and the active phase doc are
+already included below in this prompt.** Do not spend tool calls re-reading them
+from disk — they are not files you need to open. `STANDARDS.md` §1 is the
+Definition of Done your work is reviewed against; the phase doc's **Spec** and
+**Authorizations** bound what you may do.
 
-1. `docs/dev/STANDARDS.md` — the engineering contract. The Definition of Done in
-   §1 is what your work is reviewed against.
-2. `docs/dev/WORKFLOW.md` — phase lifecycle, status transitions, Update Log
-   templates, the bug-report cycle, and § "Phase progression & triggers" (you do
-   not advance to the next phase yourself).
-3. **The active phase doc** — read it end-to-end. Locate it via
-   `docs/dev/NEXT.md`, which names the active phase.
-4. The milestone README for that phase — for context.
-5. Every open bug report in the milestone's `bugs/` directory that references the
-   active phase.
+Use the file tools to read from the target repo **only when the phase needs it**:
 
-If the active phase doc's status is `done`, your pointer is stale — flag a
-blocker and stop. If any of these documents disagree, **the architecture doc
-wins**; stop and file a blocker.
+- `docs/dev/WORKFLOW.md` — when you need the exact Update Log entry templates or
+  the status-transition steps.
+- The milestone `README.md` — for surrounding context, if the phase references it.
+- Open bug reports in the milestone's `bugs/` directory — on a re-dispatch, read
+  the ones that reference the active phase.
+
+If the active phase doc's status is already `done`, your pointer is stale — file
+a blocker and stop. If any documents disagree, **the architecture doc wins**;
+file a blocker rather than picking a side.
 
 ---
 
