@@ -1,7 +1,7 @@
 # Phase 07a: SSE prefill-stall — first-token vs. inter-token timeout + retry
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (done) — surfaced by the dogfood smoketest it prepared
 **Estimated diff:** ~220 lines (timeout split + config + bounded retry + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -366,3 +366,24 @@ Not applicable — phase ships no new runtime-loadable artifact. Internal timeou
 **Notes for review:** None.
 
 **verification:** fmt OK · clippy OK · tests 537 passed · build OK
+
+### Review verdict — 2026-06-01 (re-review after bug-07a-1)
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug: [bug-07a-1](bugs/bug-07a-1.md) — major, now verified)
+- **Executor:** opencode
+- **Scope deviations:** none. Took the bug's explicitly-allowed Option B —
+  extracted `select_timeout` / `should_retry_stall` / `delta_carries_token` as
+  **production** functions (no `#[cfg(test)]`) that `chat()` calls at
+  `openai.rs:191/:221/:310`; the formerly-divergent token-detection semantics is
+  now one shared, directly-tested function. The keep-alive negative
+  (criterion 3) is covered by `delta_carries_token_false_on_empty_content` /
+  `_empty_delta` / `_empty_tool_calls_array`. `drain_stream_with_retry` stays a
+  `#[cfg(test)]` harness but now drives the shared decision fns (honest doc
+  comment), so it is no longer a divergent copy.
+- **Re-ran gates myself:** fmt ✓ · clippy ✓ · 537 executor + 130 mcp tests pass
+  (+12 new) · build ✓.
+- **Calibration:** the one-occurrence note from the first verdict
+  (behavioral logic gated `#[cfg(test)]` instead of extracted) was resolved
+  cleanly within the phase; still one occurrence, not folding into
+  STANDARDS/WORKFLOW.

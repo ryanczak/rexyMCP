@@ -2,8 +2,12 @@
 
 **Severity:** major (correctness-critical behavior in the shipped path has zero
 test coverage; the tests validate a divergent copy with different semantics)
-**Status:** open
+**Status:** verified
 **Filed:** 2026-06-01
+**Verified:** 2026-06-01 — fixed in `33d2497` (Option B: shared production
+decision fns `select_timeout` / `should_retry_stall` / `delta_carries_token`
+called by `chat()`; keep-alive negatives tested directly). Architect re-ran all
+gates green (537 executor + 130 mcp tests, +12 new).
 
 ## What's wrong
 

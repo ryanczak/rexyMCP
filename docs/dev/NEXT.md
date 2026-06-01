@@ -4,19 +4,25 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-07a — SSE prefill-stall: first-token vs.
-inter-token timeout + retry](milestones/M6-plugin/phase-07a-sse-prefill-stall.md)
-(`todo`). Executor: **opencode**. Root-cause fix for the dogfood smoketest
-(session `6a1dd72e`) that aborted at turn 17 with a bare "SSE stream
-stalled" error: the uniform 90 s `STREAM_CHUNK_TIMEOUT` judges first-token
-prefill latency by the same budget as inter-token gaps, so a slow local-model
-prefill on a grown context is misread as a dropped connection. Split into
-configurable first-token (600 s) and idle (90 s) budgets with a bounded
-pre-token retry. **[phase-07b — executor liveness `awaiting_model`
-heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md)**
-(`todo`) follows 07a (depends on it): emit an `awaiting_model` heartbeat
-before and during the model wait so the pull-based `rexymcp status`
-distinguishes a busy prefill from a hang.
+**Active phase:** [M6 / phase-07b — executor liveness `awaiting_model`
+heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md) (`todo`,
+ready to dispatch). Executor: **opencode**. Its dependency, **07a**, is now
+`done` (approved_after_1; see below), so 07b is unblocked: emit an
+`awaiting_model` progress event before and during the model wait so the
+pull-based `rexymcp status` distinguishes a busy prefill from a hang. Gated by
+default — dispatch when ready (`/rexymcp:dispatch 07b`).
+
+**Just completed — [M6 / phase-07a — SSE prefill-stall: first-token vs.
+inter-token timeout + retry](milestones/M6-plugin/phase-07a-sse-prefill-stall.md)**
+(`done`, approved_after_1, 2026-06-01). Root-cause fix for the dogfood smoketest
+(session `6a1dd72e`) that aborted at turn 17 with a bare "SSE stream stalled"
+error: the uniform 90 s `STREAM_CHUNK_TIMEOUT` judged first-token prefill latency
+by the same budget as inter-token gaps. Split into configurable first-token
+(600 s) and idle (90 s) budgets with a bounded pre-token retry. Bounced once on
+[bug-07a-1](milestones/M6-plugin/bugs/bug-07a-1.md) (major — retry/timeout logic
+was tested via a `#[cfg(test)]` duplicate, not the shipping path); fixed by
+extracting the decision fns into production and testing them directly, incl. the
+keep-alive negative.
 
 **Two contract/error-model questions 07a/07b deliberately do NOT decide
 (deferred to 06b retrospective):** (1) whether a terminal backend `Err`
