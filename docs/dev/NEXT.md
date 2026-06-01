@@ -6,14 +6,9 @@ engineer (architect) maintains this file. The executor reads it first
 
 **Active phase:** [M6 / phase-07b — executor liveness `awaiting_model`
 heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md)
-(`in-progress` — bounced once on
-[bug-07b-1](milestones/M6-plugin/bugs/bug-07b-1.md)). Executor: **opencode**.
-The production heartbeat code is approved; the bounce is **tests-only** — the
-heartbeat tests use real wall-clock `sleep` instead of deterministic time
-(violates CLAUDE.md's no-`sleep` rule). Fix per bug-07b-1 (prefer Option B:
-inject the tick source, no Cargo.toml edit; or Option A: the now-authorized
-dev-only `tokio` `test-util` + `pause()`/`advance()`). Re-dispatch to opencode
-against the bug.
+(`review` — bounced once on
+[bug-07b-1](milestones/M6-plugin/bugs/bug-07b-1.md), fixed with Option A:
+tokio `test-util` + `pause()`/`advance()`). Executor: **opencode**.
 
 **Just completed — [M6 / phase-07a — SSE prefill-stall: first-token vs.
 inter-token timeout + retry](milestones/M6-plugin/phase-07a-sse-prefill-stall.md)**
