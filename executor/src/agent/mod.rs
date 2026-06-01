@@ -879,21 +879,25 @@ struct EmitCtx<'a> {
     turn: usize,
 }
 
-/// Emit a progress event: invoke the callback (if present) and log a
-/// `SessionEvent::Progress` record. No-op when `progress` is `None`.
+/// Emit a progress event. The two consumers are independent: the
+/// `SessionEvent::Progress` record is always logged (so `rexymcp status` and
+/// Claude's post-return log queries can see liveness even when no live watcher
+/// is attached), while the live callback fires only when one is present. The
+/// log write self-gates on the session-log handle, so this is a no-op only
+/// when there is neither a handle nor a callback.
 fn emit_progress(ctx: &EmitCtx<'_>, stage: String) {
-    let Some(cb) = ctx.progress else {
-        return;
-    };
     let numstat = progress::numstat_from_pre_edit(ctx.pre_edit_content, ctx.project_root);
     let message = progress::format_message(ctx.turn, &stage, &numstat);
-    let event = ProgressEvent {
-        turn: ctx.turn,
-        stage: stage.clone(),
-        files_changed: numstat.clone(),
-        message,
-    };
-    cb.on_progress(&event);
+
+    if let Some(cb) = ctx.progress {
+        cb.on_progress(&ProgressEvent {
+            turn: ctx.turn,
+            stage: stage.clone(),
+            files_changed: numstat.clone(),
+            message: message.clone(),
+        });
+    }
+
     log_event(
         ctx.log_handle,
         ctx.redactor,
@@ -903,7 +907,7 @@ fn emit_progress(ctx: &EmitCtx<'_>, stage: String) {
             turn: ctx.turn,
             stage,
             files_changed: numstat,
-            message: event.message,
+            message,
         },
     );
 }
@@ -1580,9 +1584,12 @@ mod tests {
             .await
             .unwrap();
 
+        // Progress records are logged unconditionally and interleave with the
+        // turn events; filter them out to assert the turn-event sequence.
         let kinds: Vec<&str> = records(dir.path())
             .iter()
             .map(|r| event_kind(&r.event))
+            .filter(|k| *k != "progress")
             .collect();
         // SessionStart, Prompt, then turn 1: Completion, Parsed, ToolResult, then
         // turn 2 Completion, then SessionEnd.
@@ -3035,7 +3042,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn progress_none_emits_nothing() {
+    async fn progress_none_still_logs_progress_records() {
         let dir = TempDir::new().unwrap();
         let scope = Scope::new(dir.path()).unwrap();
         let registry = registry_over(scope);
@@ -3046,12 +3053,14 @@ mod tests {
             .await
             .unwrap();
 
+        // The session-log Progress records are independent of the live
+        // callback: `rexymcp status` and Claude's post-return log queries must
+        // see liveness even when no live watcher (progress token) is attached.
         let recs = records(dir.path());
         assert!(
-            !recs
-                .iter()
+            recs.iter()
                 .any(|r| matches!(r.event, SessionEvent::Progress { .. })),
-            "progress: None must produce zero Progress log entries"
+            "progress: None must still produce Progress log entries"
         );
     }
 
