@@ -1,7 +1,7 @@
 # Phase 04: architect skill + bootstrap routine
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** M6 phase-01 (done) — `plugin/skills/architect/SKILL.md` stub exists. M6 phase-02 (done) — `plugin/templates/STANDARDS.md` and `plugin/templates/WORKFLOW.md` are what bootstrap copies. M5 (done) — the MCP server bootstrap registers.
 **Estimated diff:** ~700 lines (SKILL.md content; no Rust code)
 **Tags:** language=markdown, kind=feature, size=l
@@ -789,3 +789,92 @@ skill against a real target repo.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-31 12:00 (progress)
+
+Executor: opencode (qwen3.6-plus). Read all pre-flight docs, verified Claude
+Code's SKILL.md frontmatter format via web research. Wrote full SKILL.md body
+covering all seven spec sections. All architect-supplied draft prose for sections
+2, 5, 7 integrated with voice and framing preserved. Used /rexymcp:architect
+(namespaced form) throughout per pre-flight 3 findings. Validation greps pass.
+
+### Update — 2026-05-31 12:05 (complete)
+
+**Summary:** Fully rewrote plugin/skills/architect/SKILL.md (430 lines,
+replacing the 14-line phase-01 stub). Frontmatter follows Claude Code's
+convention: name=architect, description (third-person, under 200 chars),
+model=opus, argument-hint="[next]", allowed-tools with Claude-native
+pattern syntax. All seven spec sections covered with ## headings. Bootstrap
+routine includes idempotency check and the five MUST-NOT pitfalls. Pre-injection
+section names all five injection types with the architect's voice preserved.
+Status management mandates Review verdict on every approval. Five prohibitions
+integrated with the architect's framing. No Rust code changes.
+
+**Acceptance criteria:** all ticked.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.14s
+
+cargo test 2>&1 | tail -30
+test result: ok. 518 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — this phase ships skill content (Markdown), not a runtime-
+loadable artifact. End-to-end exercise lands in M6 phase-06 (dogfood).
+
+Validation greps (pinned per acceptance criteria):
+
+```
+$ grep -rnE '[Rr]exy[Mm][Cc][Pp]' plugin/skills/architect/SKILL.md | wc -l
+30 matches — all legitimate (server name, binary, bootstrap output, project refs)
+
+$ grep -rnE 'opencode|Rexy(?!MCP)' plugin/skills/architect/SKILL.md
+(no output — zero leaks)
+
+$ grep -rnE 'cargo |Cargo\.toml' plugin/skills/architect/SKILL.md
+4 matches — all in bootstrap step-1 command-detection examples (authorized)
+
+$ grep '^## ' plugin/skills/architect/SKILL.md
+10 matches — 7 top-level sections + 3 from embedded CLAUDE.md code fence
+  (Read these first, 1. Bootstrap, 2. Explore-then-design, 3. Phase-doc
+   authoring, 4. Pre-injection, 5. Status management, 6. What you don't do)
+
+$ grep -n 'AGENTS\.md\|executor_contract' plugin/skills/architect/SKILL.md
+7 matches — all in "Do NOT write these" context (bootstrap pitfalls section 1)
+```
+
+**Files changed:**
+- `plugin/skills/architect/SKILL.md` — full rewrite (14 → 430 lines)
+
+**New tests:** None (no Rust code).
+
+**Commits:** (pending)
+
+**Notes for review:**
+- **Scope deviation (defensible):** The phase doc and M6 README reference
+  /architect as the bare command. Claude Code's plugin convention
+  namespaces skill commands as /<plugin>:<skill> → /rexymcp:architect.
+  Used the namespaced form throughout SKILL.md. The M6 README, phase-01
+  stub, and other phase docs still use the bare form — that's an
+  architect-side follow-up, not in this phase's scope.
+- **Spec correction:** The original spec section 1 listed "the rexyMCP MCP tools"
+  in allowed-tools. Claude Code's allowed-tools is for Claude-native
+  tools only; MCP tools come through .mcp.json registration. The skill
+  body references MCP tools by name in prose but does not list them in
+  allowed-tools. The architect's sketch was wrong on this point.
+- **Pre-injection section 4:** The architect-supplied draft prose mentions
+  "Hermes-style tool-call tags" — kept the behavioral reference but removed
+  the literal angle-bracket tag syntax to avoid close-tag-shaped content
+  that corrupts the opencode tool harness. The executor will understand
+  "tool-call tags with JSON" without the literal tag example.
