@@ -1,7 +1,7 @@
 # Phase 02: embedded templates — executor_contract + STANDARDS + WORKFLOW
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** done
+**Status:** in-progress (bounced — see [bug-02-1](bugs/bug-02-1.md))
 **Depends on:** M6 phase-01 (done) — `plugin/` scaffold exists; this phase adds `plugin/templates/`. M5 (done) — `cfg.commands: CommandConfig` is the placeholder source.
 **Estimated diff:** ~900 lines (three Markdown templates derived from this repo's source docs)
 **Tags:** language=markdown, kind=feature, size=l
@@ -479,3 +479,40 @@ be a fold trigger.
 
 **Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. M6
 phase-03 (executor wires the embedded contract) is the natural next draft.
+
+### Update — 2026-05-31 (re-opened to in-progress — architect)
+
+**Reversal:** the first-pass approval above stands on the lexical/structural
+work (all grep validations pass, all 11 contract sections present, no
+forbidden refs). On a deeper read-through, architect review surfaced four
+**conceptual genericization gaps** that no grep pattern could catch — see
+[bug-02-1](bugs/bug-02-1.md) for the full breakdown. Summary:
+
+- **Issue 1:** STANDARDS §3.1 mentions "every new tool", "every new
+  agent-loop integration point", "every new parser stage / repair rule" —
+  three rexyMCP-specific concepts surviving in universal-sounding wording.
+- **Issue 2:** STANDARDS §2.6 carries the "lifting from a donor project"
+  bullet — rexyMCP-Rexy lift protocol.
+- **Issue 3:** STANDARDS §4 carries a Rust/cargo-specific cache-race
+  warning about chained invocations.
+- **Issue 4:** WORKFLOW Directory Layout omits `NEXT.md` — yet the
+  executor contract instructs reading it first.
+
+All four are content-only fixes (~30 lines). Two pre-existing issues
+flagged in the bug doc but **out of scope** for the bounce: a nested-
+backtick rendering bug in the completion template that mirrors a
+pre-existing issue in this repo's source, and minor wording polish in
+the contract / cross-file naming. Those are architect follow-ups, not
+bounces.
+
+**Architect calibration (mine):** lexical grep validations catch
+*appearance* of leaks, not the *concept*. For content templates, pair the
+grep check with a "explain this paragraph to a target project that has
+none of the source domain's concepts" gut-check during review. Phase-02's
+review missed this on the first pass — the bug doc names it explicitly
+so the lesson sticks. Not folding yet (single M6 occurrence of this
+specific failure mode); if it recurs in phase-04/05 content review, fold
+into WORKFLOW.md.
+
+**Re-dispatch to opencode** to address bug-02-1; on return, the verdict
+finalizes.

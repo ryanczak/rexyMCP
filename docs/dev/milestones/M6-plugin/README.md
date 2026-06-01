@@ -70,7 +70,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | #  | Phase                                                              | Status |
 |----|-------------------------------------------------------------------|--------|
 | 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
-| 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | done |
+| 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | in-progress ([bug-02-1](bugs/bug-02-1.md)) |
 
 Tentative remaining phases (draft when the prior one lands):
 

@@ -4,17 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-02 closed (`done`, approved_first_try on
-2026-05-31). Three templates landed cleanly (928 lines: 207 contract +
-240 STANDARDS + 481 WORKFLOW). All validation greps pass, all 11 spec'd
-contract sections present, zero forbidden refs, zero Rust crate names.
-Self-review accuracy notably high — opencode flagged a subtle gap in the
-architect's grep pattern (didn't match the actual `rexyMCP` mixed-case
-spelling), manually verified the constraint, and surfaced it. Next step
-is the architect drafting **M6 phase-03 — executor wires embedded
-contract** (small Rust edit: `include_str!` the contract, add
-`assemble_executor_contract(cfg)` helper, modify the loop's turn-cycle
-step 1 to use it).
+**Active phase:** [M6 / phase-02 — embedded
+templates](milestones/M6-plugin/phase-02-embedded-templates.md) —
+**in-progress** (re-opened 2026-05-31 on deeper architect review; see
+[bug-02-1](milestones/M6-plugin/bugs/bug-02-1.md)). The first-pass
+approval stands on lexical/structural work; a follow-up read-through
+caught four conceptual genericization gaps no grep could catch — three
+rexyMCP-specific concepts (tools / agent-loop / parser-stage) in
+STANDARDS §3.1, a donor-project mention in §2.6, a Rust-specific
+cache-race warning in §4, and a missing `NEXT.md` in WORKFLOW's
+Directory Layout (the executor contract reads it first but the workflow
+doesn't say it exists). All four are content-only fixes (~30 lines).
+**Re-dispatch to opencode** to address bug-02-1.
 
 **Last completed:** [M6 / phase-02 — embedded
 templates](milestones/M6-plugin/phase-02-embedded-templates.md) —
