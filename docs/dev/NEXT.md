@@ -4,25 +4,23 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-03 — executor wires the embedded
-contract](milestones/M6-plugin/phase-03-executor-wires-contract.md) —
-`todo`, **drafted, awaiting dispatch**. The only Rust edit in M6. New
-`executor/src/agent/contract.rs` with `include_str!` of phase-02's
-template + `assemble_executor_contract(commands)` substitutor; signature
-change to `assemble_system_prompt(commands, standards, phase_doc)` (drops
-the `executor_contract` parameter); cross-cutting drop of the
-`executor_contract` field/plumbing from `PhaseInput`, `RunPhaseConfig`,
-`execute_phase_inner`, the CLI handler, and all 13 current refs. After
-this, the contract is *truly* embedded-only — the MCP server no longer
-passes an empty-string placeholder. No new deps; pure stdlib
-(`include_str!` + `str::replace`).
+**Active phase:** none — M6 phase-03 closed (`done`, approved_first_try
+on 2026-05-31; textbook clean execution, all 6 prescribed tests in the
+exact shape spec'd, cross-cutting `executor_contract` drop surgical).
+The contract is now truly embedded-only: the executor crate
+`include_str!`s phase-02's template, substitutes the four `{...}_COMMAND`
+placeholders at every turn-cycle step 1, and the MCP server no longer
+passes an empty-string placeholder. Next step is the architect drafting
+**M6 phase-04 — `architect` skill + bootstrap routine** (the heaviest
+content phase: full skill prompt covering explore-then-design, design-doc
+/ milestone-README / phase-doc authoring, pre-injection, plus the
+four-step bootstrap routine).
 
-**Last completed:** [M6 / phase-02 — embedded
-templates](milestones/M6-plugin/phase-02-embedded-templates.md) —
-approved_after_1 2026-05-31 (one bounce:
-[bug-02-1](milestones/M6-plugin/bugs/bug-02-1.md), verified — four
-conceptual genericization gaps the grep validations couldn't catch;
-fixes applied cleanly).
+**Last completed:** [M6 / phase-03 — executor wires the embedded
+contract](milestones/M6-plugin/phase-03-executor-wires-contract.md) —
+approved_first_try 2026-05-31 (zero deviations; 6 new tests including
+the future-proofing `placeholder_set_is_exactly_the_four_authorized`
+that scans the embedded template for unauthorized `{...}` substrings).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
 — in progress (M1–M5 done; M6 phases 01–02 done). M6 packages rexyMCP

@@ -1,7 +1,7 @@
 # Phase 03: executor wires the embedded contract
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** M6 phase-02 (done) — `executor/templates/executor_contract.md` exists with the four `{...}_COMMAND` placeholders. M4 phase-07a — `agent::prompt::assemble_system_prompt` is the prompt-assembly seam.
 **Estimated diff:** ~300 lines (new contract module + signature change + cross-cutting drop of `executor_contract` plumbing + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -387,3 +387,44 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (mc
 **Notes for review:** None. Implementation matches spec exactly.
 
 verification: fmt OK · clippy OK · tests 635 passed (518 executor + 117 mcp) · build OK
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. Textbook clean execution — every spec'd
+test landed in the exact shape the spec named, every API surface matches,
+cross-cutting drop is surgical. The contract is now truly embedded-only.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **635** (518 executor + 117 mcp; +6
+new). **Zero `executor_contract` symbols** survive in production code
+outside the new `contract.rs` (verified by `grep -rn '\bexecutor_contract\b'
+executor/src/ mcp/src/`; the two surviving hits are the comment + the
+`include_str!` file path `executor_contract.md`, not the symbol).
+
+**All 6 prescribed tests landed** in the exact names the spec named —
+4 in `contract.rs` (including the future-proofing
+`placeholder_set_is_exactly_the_four_authorized` that scans the
+`TEMPLATE` const for any unexpected `{…}` substring; this fires before
+a future template edit ships an unsubstituted placeholder), 2 in
+`prompt.rs` (substitution + ordering).
+
+**Cross-cutting drop shape is consistent:** `main.rs` -3 / `runner.rs`
+-6 / `server.rs` -3 — one field-or-param dropped from each, propagating
+through the four phase-05b `RunPhaseConfig` field + `run_phase` +
+`execute_phase_inner` + CLI handler sites without collateral churn.
+
+**Notes for review:** *"None. Implementation matches spec exactly."* And
+verified — this time the self-review accuracy holds without any
+grey-case caveats. The M-class discipline is reflexive now.
+
+**Bounces:** 0.
+**Scope deviations:** 0.
+
+**Architect calibration update:** the grep-precision lesson from M6
+phase-01/02 didn't apply here (no content-template grep involved). The
+*declare-deviations* discipline did, and was easily satisfied because
+nothing deviated. Two consecutive M6 phases (02 fix + 03) with the
+discipline holding cleanly — good signal.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. M6
+phase-04 (architect skill + bootstrap routine — the heaviest skill
+phase) is the natural next draft.
