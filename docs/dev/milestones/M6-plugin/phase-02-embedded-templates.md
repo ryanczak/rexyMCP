@@ -1,7 +1,7 @@
 # Phase 02: embedded templates — executor_contract + STANDARDS + WORKFLOW
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** in-progress (bounced — see [bug-02-1](bugs/bug-02-1.md))
+**Status:** review (bug-02-1 fixes applied; awaiting architect re-review)
 **Depends on:** M6 phase-01 (done) — `plugin/` scaffold exists; this phase adds `plugin/templates/`. M5 (done) — `cfg.commands: CommandConfig` is the placeholder source.
 **Estimated diff:** ~900 lines (three Markdown templates derived from this repo's source docs)
 **Tags:** language=markdown, kind=feature, size=l
@@ -479,6 +479,16 @@ be a fold trigger.
 
 **Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. M6
 phase-03 (executor wires the embedded contract) is the natural next draft.
+
+### Update — 2026-05-31 17:30 (progress — bug-02-1 fixes applied)
+
+Applied four fixes from bug-02-1:
+1. STANDARDS §3.1: replaced three rexyMCP-specific bullets (tools, agent-loop, parser stages) with universal phrasing.
+2. STANDARDS §2.6: removed the "donor project" bullet.
+3. STANDARDS §4: removed the Rust-specific cache-race warning.
+4. WORKFLOW Directory Layout: added `NEXT.md` to the layout diagram with explanatory paragraph.
+
+All four cargo gates pass. All three validation greps clean (only 4 authorized placeholders, zero forbidden refs, zero Rust crate names).
 
 ### Update — 2026-05-31 (re-opened to in-progress — architect)
 

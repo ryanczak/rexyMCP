@@ -34,21 +34,26 @@ session, it's two phases — re-split it.
 
 ## Directory Layout
 
-```
-docs/dev/
-├── STANDARDS.md                       engineering contract; read every phase
-├── WORKFLOW.md                        this file
-└── milestones/
-    └── M<n>-<slug>/
-        ├── README.md                  milestone overview
-        ├── phase-01-<slug>.md         a phase doc
-        ├── phase-02-<slug>.md
-        └── bugs/
-            └── bug-<phase>-<n>.md      review-finding bug reports
-```
+ ```
+ docs/dev/
+ ├── NEXT.md                           pointer to the active phase; executor reads first
+ ├── STANDARDS.md                       engineering contract; read every phase
+ ├── WORKFLOW.md                        this file
+ └── milestones/
+     └── M<n>-<slug>/
+         ├── README.md                  milestone overview
+         ├── phase-01-<slug>.md         a phase doc
+         ├── phase-02-<slug>.md
+         └── bugs/
+             └── bug-<phase>-<n>.md      review-finding bug reports
+ ```
 
-Phases are numbered in execution order. Phases that can run in parallel share a
-parent number with letter suffix (`phase-03a-x.md`, `phase-03b-y.md`).
+ `NEXT.md` is maintained by the architect and tells the executor which phase to
+ work on next. At a milestone boundary it says "none", signaling the human gate.
+ The executor reads it before every session to locate the active phase doc.
+
+ Phases are numbered in execution order. Phases that can run in parallel share a
+ parent number with letter suffix (`phase-03a-x.md`, `phase-03b-y.md`).
 
 ---
 

@@ -103,6 +103,39 @@ Tentative remaining phases (draft when the prior one lands):
   point). The retrospective documents what broke and what worked — first
   real-world calibration data for M7.
 
+  **Compaction-monitoring concern (must surface in phase-06's spec).** M4
+  shipped *heuristic* compaction (`executor::context::compactor` — signaturize
+  old tool-result bodies, then evict oldest non-system messages until under
+  75 % of the budget ceiling). What opencode and Claude Code use instead is
+  **LLM-based summarization** — a second model call digests early turns into
+  a summary that replaces them, preserving semantic content. The user has
+  observed that opencode on Qwen-3.6-27B at 262k context still hits
+  compaction repeatedly; rexyMCP's deployment target is *smaller* local
+  models with *smaller* context windows (32k–128k typical), where heuristic
+  eviction will bite harder.
+
+  Phase-06's dogfood is the right place to gather data, not the right place
+  to fix it. Capture, per phase run:
+  - `CompactionReport { messages_signaturized, messages_evicted,
+    tokens_before, tokens_after }` totals — already populated by the loop,
+    just needs to surface (probably aggregate into a per-`PhaseRun` field,
+    or query out of the session log).
+  - Whether the phase still completed cleanly after compaction fired vs
+    whether the model "forgot" something evicted (visible as the model
+    re-asking for context it already had, repeating tool calls, or
+    hard-failing on losing-track-of-state).
+  - How early in a phase compaction fires for our target local-model
+    context sizes.
+
+  If the data shows heuristic eviction is materially hurting completion
+  quality, that justifies a follow-up milestone (likely between M6 and M7):
+  **summarization-based compaction**, which needs a summarizer prompt, an
+  injection-point in the message list, "what's safe to summarize" rules
+  (system prompt: no; tool calls: maybe — they're already
+  signaturized once), and telemetry on summary quality. If the data shows
+  heuristic eviction is fine for our workload, we save the model-call cost.
+  **Do not build summarization speculatively** — wait for the dogfood data.
+
 ## Notes
 
 **M6 is largely content, not Rust code.** Phases 01, 02, 04, 05 are

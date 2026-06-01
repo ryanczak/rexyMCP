@@ -115,8 +115,6 @@ comments above every function. Doc comments on public APIs are fine.
 - **Do not add new dependencies** unless the phase doc authorizes it. Adding a
   dependency is a design decision, not an implementation choice. If you need one,
   **stop, report a blocker**, and wait for principal-engineer authorization.
-- When lifting code from a donor project, lift the code — do **not** add the
-  donor as a dependency.
 
 ---
 
@@ -125,12 +123,15 @@ comments above every function. Doc comments on public APIs are fine.
 ### 3.1 What requires a test
 
 - **Every new pure function** (no side effects, no async): unit test.
-- **Every new tool**: happy-path test + at least one failure-mode test.
-  Hermetic via the language's temp-directory abstraction if it touches the filesystem.
-- **Every new agent-loop integration point**: a mocked AI client integration test
-  asserting both *what the loop did* and *what it asked the model*.
-- **Every parser stage / repair rule**: a unit test with a real example of the
-  malformed input it fixes, plus an example it correctly leaves alone.
+- **Every new public function with non-trivial behavior**: at least one
+  unit test covering the happy path, plus tests for the boundary cases the
+  function's contract names.
+- **Every new integration with an external system** (process, network, file
+  system, database): a hermetic test using a mock or fake. Real-system
+  exercise is the end-to-end concern (§3.4), not the unit-test concern.
+- **Every new parsing / data-transformation step**: a positive example of
+  the input it handles, plus at least one edge case (malformed input,
+  boundary value, the case the spec explicitly pins as `must-NOT-match`).
 
 ### 3.2 What does not require a test
 
@@ -173,9 +174,6 @@ goes into the phase's Update Log.
 {LINT_COMMAND} 2>&1 | tail -20
 {TEST_COMMAND} 2>&1 | tail -30
 ```
-
-Run `{LINT_COMMAND}` and `{TEST_COMMAND}` as **separate** invocations, not
-chained — chaining them against the same target directory can race the build cache and produce spurious failures.
 
 If any command fails, the phase is **not** done. Fix the issue or file a blocker;
 do not paper over.
