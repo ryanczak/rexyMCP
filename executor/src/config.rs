@@ -69,7 +69,7 @@ impl Default for BudgetConfig {
         Self {
             context_length: 32768,
             max_context_pct: 70,
-            max_turns: 40,
+            max_turns: 200,
             escalation_slots: 1,
         }
     }

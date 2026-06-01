@@ -17,6 +17,16 @@ the log; 06b's job is the architect-synthesized M6 retrospective +
 the compaction-monitoring decision + any calibration folds the
 dogfood surfaces.
 
+**Calibration fold already landed (for 06b to record):** the first
+dogfood run hit `budget_exceeded` at turn 40 mid-verification (a
+scaffold phase — the last turn ran `prettier --check` green, then the
+turn cap tripped). Default `max_turns` raised 40 → 200 in
+`executor/src/config.rs` and the architect bootstrap template
+(`plugin/skills/architect/SKILL.md`), since the executor runs against
+a local LLM with no token cost. The cap was already per-project
+configurable via `[budget] max_turns`; only the defaults moved. 06b
+should fold this into the retrospective rather than re-derive it.
+
 **Last completed:** [M6 / phase-06a — dogfood
 preparation](milestones/M6-plugin/phase-06a-dogfood-prep.md) —
 approved_first_try 2026-05-31 (zero deviations; thorough pre-flight

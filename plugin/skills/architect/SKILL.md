@@ -94,7 +94,7 @@ test = "<resolved>"
 [budget]
 context_length = <integer per model>
 max_context_pct = 70
-max_turns = 40
+max_turns = 200
 escalation_slots = 1
 
 [telemetry]
