@@ -4,15 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-02 closed (`done`, approved_after_1 on
-2026-05-31 after bug-02-1 fixed). All four content fixes applied (§3.1
-universal-phrasing replacements, §2.6 donor cut, §4 cargo cache-race cut,
-WORKFLOW Directory Layout `NEXT.md` added with explanation). Templates
-are now genuinely portable. Next step is the architect drafting **M6
-phase-03 — executor wires embedded contract** (small Rust edit:
-`include_str!` the contract template, add
-`assemble_executor_contract(cfg)` helper, modify the loop's turn-cycle
-step 1 to use it).
+**Active phase:** [M6 / phase-03 — executor wires the embedded
+contract](milestones/M6-plugin/phase-03-executor-wires-contract.md) —
+`todo`, **drafted, awaiting dispatch**. The only Rust edit in M6. New
+`executor/src/agent/contract.rs` with `include_str!` of phase-02's
+template + `assemble_executor_contract(commands)` substitutor; signature
+change to `assemble_system_prompt(commands, standards, phase_doc)` (drops
+the `executor_contract` parameter); cross-cutting drop of the
+`executor_contract` field/plumbing from `PhaseInput`, `RunPhaseConfig`,
+`execute_phase_inner`, the CLI handler, and all 13 current refs. After
+this, the contract is *truly* embedded-only — the MCP server no longer
+passes an empty-string placeholder. No new deps; pure stdlib
+(`include_str!` + `str::replace`).
 
 **Last completed:** [M6 / phase-02 — embedded
 templates](milestones/M6-plugin/phase-02-embedded-templates.md) —

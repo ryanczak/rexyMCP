@@ -71,15 +71,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 |----|-------------------------------------------------------------------|--------|
 | 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
 | 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | done |
+| 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **03 — executor wires embedded contract.** Small executor edit: `include_str!`
-  the contract template, add a `assemble_executor_contract(cfg: &CommandConfig)
-  -> String` helper that substitutes placeholders, modify the loop's turn-cycle
-  step 1 (prompt assembly) to use it. The `executor_contract` input on
-  `execute_phase_inner` (currently passed by `mcp/src/server.rs` as `""`)
-  becomes either a no-op or removed; callers no longer pass it.
 - **04 — `architect` skill (with bootstrap routine).** The heaviest skill. The
   skill prompt covers: explore-then-design, design-doc / milestone-README /
   phase-doc authoring against the embedded `WORKFLOW.md` templates,
