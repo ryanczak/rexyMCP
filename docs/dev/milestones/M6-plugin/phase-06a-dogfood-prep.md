@@ -1,7 +1,7 @@
 # Phase 06a: dogfood preparation
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** M6 phases 01–05 (all done) — the plugin scaffold, templates, executor wiring, and three skills are all in place. M5 (done) — the `rexymcp serve` binary is what the plugin launches.
 **Estimated diff:** ~700 lines (procedure doc + log template + phase doc spec + pre-flight verification output; no Rust code)
 **Tags:** language=markdown, kind=feature, size=l
@@ -470,3 +470,56 @@ Not applicable — 06a ships preparation artifacts for the dogfood, not a runtim
 - Pre-flight 3 (Claude Code plugin-install convention verification): the live docs confirm the plugin layout rexyMCP already has is correct — `.claude-plugin/plugin.json` at manifest, `skills/<name>/SKILL.md` for skills, `.mcp.json` at plugin root, `~/.claude/plugins/<name>/` for persistent install, `claude --plugin-dir` for test mode. No divergence from the architect's sketch.
 - The procedure references the verified install convention by name (test mode vs persistent install) rather than hardcoding a path, per Adaptation 6.
 - verification: fmt OK · clippy OK · tests 518 passed · build OK
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. Two well-shaped artifacts + thorough
+pre-flight verification.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **635** unchanged (zero Rust
+changes per spec).
+
+**dogfood-procedure.md (287L)** has the prescribed shape: 7 procedure
+phases with **Do / Observe / Record / Stop-and-tell** per step, target-
+repo selection criteria documented as criteria (not a specific repo),
+architecture-critical stop conditions explicit at each step + summarized
+at the bottom ("When to stop" section). The procedure correctly assumes
+rexyMCP-internal knowledge (the dogfooder is the project owner who
+knows what "Confirmation gate violation" means — appropriate scope).
+
+**dogfood-log.md (117L)** has named sections matching every Record
+prompt. **The dedicated `## Compaction observations` section is the
+standout** — five concrete questions targeting exactly the data the M6
+retrospective will need to make the heuristic-vs-summarization decision:
+how often, how early, did it bite, would summarization help, context-
+window vs phase-size. When 06b synthesizes the log, the compaction
+data will be in the exact shape the decision needs.
+
+**Pre-flight verification thorough:** `cargo install --path mcp --debug`
+succeeds, binary works (`--version` + `serve --help`), both JSON files
+jq-parse cleanly, all 7 content artifacts non-empty (1937 total lines
+across 4 SKILL.md + executor_contract + 2 plugin templates), zero leaks
+in plugin/templates/.
+
+**Pre-flight 3 finding declared:** Claude Code's plugin-install
+convention verified (matches architect's sketch — `.claude-plugin/
+plugin.json`, `skills/<name>/SKILL.md`, `~/.claude/plugins/<name>/`
+for persistent + `--plugin-dir` for test mode). No divergence; clean
+declaration in Notes for review.
+
+**Read-pass gut-check passes:** as a user opening the procedure, I know
+what to install in order, what `/rexymcp:architect` will do at each
+step, what to record in each log section, and when to stop and escalate.
+The architecture-critical stop conditions (no AGENTS.md write, no silent
+improvisation, no contract drift, plugin must load, MCP server must
+connect) are properly load-bearing — they catch the discipline
+violations the dogfood is *also* testing for.
+
+**Bounces:** 0.
+**Scope deviations:** 0.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. The
+ball is now in **the user's court** — phase-06a's deliverables are
+ready; the dogfood RUN happens whenever the user has the time + a local
+LLM endpoint to run against. Phase-06b drafts after the user has
+captured observations.

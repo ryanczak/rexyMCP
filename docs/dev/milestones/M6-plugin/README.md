@@ -76,7 +76,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | done |
 | 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | done |
 | 05 | `dispatch` + `review` + `escalate` skills ([phase-05-dispatch-review-escalate.md](phase-05-dispatch-review-escalate.md)) | done |
-| 06a | dogfood preparation (procedure + log template + pre-flight verification) ([phase-06a-dogfood-prep.md](phase-06a-dogfood-prep.md)) | review |
+| 06a | dogfood preparation (procedure + log template + pre-flight verification) ([phase-06a-dogfood-prep.md](phase-06a-dogfood-prep.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 
