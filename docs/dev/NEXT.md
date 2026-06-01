@@ -4,26 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-04 — `architect` skill + bootstrap
-routine](milestones/M6-plugin/phase-04-architect-skill.md) — `todo`,
-**drafted, awaiting dispatch**. The heaviest content phase in M6: fully
-fills the phase-01 stub at `plugin/skills/architect/SKILL.md` with the
-complete architect prompt covering seven responsibilities — frontmatter
-+ bootstrap routine (idempotent, four architecture-mandated steps),
-explore-then-design, phase-doc authoring against the embedded WORKFLOW
-templates, **pre-injection** (the load-bearing concept with five named
-injection types), status management (NEXT.md / phase doc / milestone
-README in sync + Review verdict on every approval), and the explicit
-list of things the architect doesn't do. No Rust code changes; no new
-deps. Pre-flight 3 verifies Claude Code's skill frontmatter format +
-plugin install dir path + arg-passing convention (same trust-docs-over-
-sketch discipline as M5 / M6 phase-01).
+**Active phase:** none — M6 phase-04 closed (`done`, approved_first_try
+on 2026-05-31). The 430-line architect SKILL.md is live: bootstrap
+routine + explore-then-design + phase-doc authoring + pre-injection
+guidance + status management + prohibitions. **The pre-injection
+experiment worked** — three architect-pre-injected sections (pitfalls,
+pre-injection, prohibitions) landed in the architect's voice with
+specific examples preserved; opencode wrote the surrounding structure
+cleanly. Meta-consistency: pre-injection used to write the prompt that
+teaches pre-injection. Next step is the architect drafting **M6
+phase-05 — `dispatch` + `review` + `escalate` skills** (smaller
+content phase building on phase-04's pattern; the `/rexymcp:dispatch`
+skill invokes `execute_phase`, `/rexymcp:review` reads `PhaseResult`
+and approves/files-bug, `/rexymcp:escalate` handles the hard-fail
+briefing levers).
 
-**Last completed:** [M6 / phase-03 — executor wires the embedded
-contract](milestones/M6-plugin/phase-03-executor-wires-contract.md) —
-approved_first_try 2026-05-31 (zero deviations; 6 new tests including
-the future-proofing `placeholder_set_is_exactly_the_four_authorized`
-that scans the embedded template for unauthorized `{...}` substrings).
+**Last completed:** [M6 / phase-04 — architect skill + bootstrap
+routine](milestones/M6-plugin/phase-04-architect-skill.md) —
+approved_first_try 2026-05-31 (three declared deviations all
+defensible: `/rexymcp:` namespacing, Claude-native allowed-tools
+syntax with MCP tools via .mcp.json, opencode-harness-safe substitution
+of literal tag syntax in pre-injection §4 example).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
 — in progress (M1–M5 done; M6 phases 01–02 done). M6 packages rexyMCP

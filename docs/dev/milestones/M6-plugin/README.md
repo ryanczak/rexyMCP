@@ -3,7 +3,7 @@
 **Goal:** Package rexyMCP as a **Claude Code plugin** so a real architect/executor
 session lands. The plugin bundles the M5 MCP server (`rexymcp serve`) with the
 workflow that drives it — three skills (`architect`, `review-phase`, `escalate`),
-three slash commands (`/architect`, `/dispatch`, `/review`), embedded templates
+three slash commands (`/rexymcp:architect`, `/rexymcp:dispatch`, `/rexymcp:review`), embedded templates
 for `STANDARDS.md` / `WORKFLOW.md` / the executor contract (with `{…_COMMAND}`
 placeholders that resolve per target project), and a bootstrap routine that
 initializes an uninitialized target repo. Closes with an **end-to-end dogfood**
@@ -44,7 +44,7 @@ M6's `.mcp.json` work). M4 (done) — `execute_phase_inner` accepts the
   `rexymcp.toml`; lay down resolved process docs; write `CLAUDE.md`; register
   the MCP server in target repo's `.mcp.json`. **Does not** write `AGENTS.md`
   or an executor-contract file. Idempotent.
-- **End-to-end dogfood:** at least one real architect → `/dispatch` → `execute_phase`
+- **End-to-end dogfood:** at least one real architect → `/rexymcp:dispatch` → `execute_phase`
   → `review-phase` → approval cycle against a non-rexyMCP repo, with the
   whole stack live (Claude Code architect, rmcp stdio server, local LLM
   executor through an OpenAI-compatible endpoint). Surfaces the first
@@ -72,7 +72,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
 | 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | done |
 | 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | done |
-| 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | review |
+| 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | done |
 
 Tentative remaining phases (draft when the prior one lands):
 
@@ -143,7 +143,7 @@ the per-target-project command set at runtime. This is the **load-bearing
 design choice** that makes rexyMCP language-agnostic without per-project
 contract maintenance.
 
-**Bootstrap is idempotent.** Re-running `/architect` against a repo that
+**Bootstrap is idempotent.** Re-running `/rexymcp:architect` against a repo that
 already has the scaffold should *not* clobber existing docs. The architect
 skill detects the present state (config exists? STANDARDS.md exists?
 CLAUDE.md exists? `.mcp.json` registers rexyMCP?) and only writes the

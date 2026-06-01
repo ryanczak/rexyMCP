@@ -54,7 +54,7 @@ local planner, the cloud-escalation transport) are deliberately left behind.
 ┌─────────────────────────────────────────────────────────────┐
 │ Claude Code (harness)                                         │
 │   architect skill · review-phase skill · escalate skill       │
-│   /architect · /dispatch · /review commands                   │
+│   /rexymcp:architect · /rexymcp:dispatch · /rexymcp:review commands                   │
 └───────────────┬───────────────────────────────────────────────┘
                 │ MCP (stdio): execute_phase, executor_health
 ┌───────────────▼───────────────────────────────────────────────┐
@@ -359,7 +359,7 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
   - `escalate` — given a returned briefing, pick a lever: re-dispatch with a
     refined spec (default for weak models — see "Escalation"), session takeover,
     or resume (candidate, if `continue_phase` is built).
-- **Commands:** `/architect`, `/dispatch <phase>`, `/review <phase>`.
+- **Commands:** `/rexymcp:architect`, `/rexymcp:dispatch <phase>`, `/rexymcp:review <phase>`.
 - **Embedded templates:** generalized copies of `STANDARDS.md` / `WORKFLOW.md`
   **and the executor contract** (`executor_contract.md` — the portable subset of
   this repo's `AGENTS.md`: hard rules, phase lifecycle, blocker/completion
@@ -375,7 +375,7 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
 
 ### Project initialization (bootstrap)
 
-The `architect` skill owns getting a new target repo ready. On `/architect`
+The `architect` skill owns getting a new target repo ready. On `/rexymcp:architect`
 against a repo with no `docs/dev/` scaffold, it bootstraps **before** designing,
 then proceeds to explore and write the design:
 
@@ -407,7 +407,7 @@ missing pieces repaired).
    `AGENTS.md`, no executor-contract file; see "Project initialization"), then
    explores the target repo and writes the design doc + M1 README + phase docs
    into `docs/dev/`.
-3. `/dispatch phase-01` → Claude calls the `execute_phase` MCP tool.
+3. `/rexymcp:dispatch phase-01` → Claude calls the `execute_phase` MCP tool.
 4. The MCP server runs the `executor` loop: local model drives the phase spec,
    verifier checks edits, the project's commands run at the end.
 5. `execute_phase` returns `PhaseResult`; the engine appends the Update-Log
@@ -476,7 +476,7 @@ The project plan. Each entry becomes a milestone with its own
    `PhaseRun` telemetry into the model × tag competency matrix. Queries
    `roots/list` / `CLAUDE_PROJECT_DIR` to corroborate the target-repo root
    against `execute_phase`'s `repo_path`.
-6. **M6 — Plugin + architect/review skills.** The Claude Code plugin manifest,
+6. **M6 — Plugin + architect/rexymcp:review skills.** The Claude Code plugin manifest,
    the `architect` / `review-phase` / `escalate` skills, the slash commands, the
    embedded generalized `STANDARDS.md` / `WORKFLOW.md` **and executor contract**
    (the portable subset of `AGENTS.md`; opencode-specific notes dropped), and an
@@ -491,7 +491,7 @@ The project plan. Each entry becomes a milestone with its own
    **gated by default** (see
    `docs/dev/WORKFLOW.md` § "Phase progression & triggers"): after a review
    passes the architect marks the phase done and stops; the user advances with
-   `/architect next` (draft the next phase) or `/dispatch <phase>` (run an
+   `/rexymcp:architect next` (draft the next phase) or `/rexymcp:dispatch <phase>` (run an
    existing one). Milestone boundaries always stop for human sign-off. An opt-in
    autonomous loop (off by default) can chain draft → dispatch → review until a
    blocker or milestone boundary.

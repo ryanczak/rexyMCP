@@ -1,7 +1,7 @@
 # Phase 04: architect skill + bootstrap routine
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** M6 phase-01 (done) — `plugin/skills/architect/SKILL.md` stub exists. M6 phase-02 (done) — `plugin/templates/STANDARDS.md` and `plugin/templates/WORKFLOW.md` are what bootstrap copies. M5 (done) — the MCP server bootstrap registers.
 **Estimated diff:** ~700 lines (SKILL.md content; no Rust code)
 **Tags:** language=markdown, kind=feature, size=l
@@ -878,3 +878,73 @@ $ grep -n 'AGENTS\.md\|executor_contract' plugin/skills/architect/SKILL.md
   the literal angle-bracket tag syntax to avoid close-tag-shaped content
   that corrupts the opencode tool harness. The executor will understand
   "tool-call tags with JSON" without the literal tag example.
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. The skill is genuinely usable —
+read-pass gut-check passes cleanly.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **635** unchanged (zero Rust
+changes per spec). All validation greps clean: 30 rexyMCP-name hits all
+legitimate (skill name, server reference, MUST-NOT context); zero
+opencode/Rexy leaks; cargo refs only in bootstrap step-1
+command-detection examples; AGENTS.md/executor_contract refs only in
+MUST-NOT pitfalls.
+
+**Architect-supplied draft prose for §§ 1 (pitfalls), 4 (pre-injection),
+6 (prohibitions) integrated with voice + specific examples + framing
+preserved** — the load-bearing intuition landed nearly verbatim with
+opencode adding clean connective tissue. The five-pitfalls "silent
+action where the user should be the decision-maker" closer, the
+"if you wish the executor could ask, pre-inject the answer" test, the
+bug-05-1 / `crate::error::Error::Internal` specific examples in §4, the
+"if a phase looks too important to dispatch, invest in the spec" meta-
+callback in §6 #1 — all there. The Hermes-tag literal substitution
+opencode made to avoid the opencode-harness close-tag corruption was a
+correct opencode-specific accommodation; flagged in Notes for review;
+no semantic loss.
+
+**Read-pass gut-check** (the M6 phase-02 / bug-02-1 calibration applied
+here): pretended to be a fresh Claude invoked `/rexymcp:architect`
+against an uninitialized Python repo. At every decision point the
+prompt steered correctly — bootstrap routes through all four steps,
+the Python `pyproject.toml` mapping is named in step 1, the pitfalls
+reinforce don't-overwrite + don't-silent-default, `/rexymcp:architect
+next` drafts + stops, milestone boundary triggers retrospective +
+human gate. The pre-injection guidance is dense enough that a future
+Claude could go pre-inject a phase doc right now using it.
+
+**The pre-injection experiment worked.** First test of "architect
+pre-injects load-bearing prose into the spec, executor wraps structure
+around it." The three pre-injected sections landed in the architect's
+voice; opencode wrote the surrounding structure (frontmatter, sections
+2/3/5, CLAUDE.md template inside a fenced block, `{CLAUDE_PLUGIN_DIR}`
+resolution mechanics, bootstrap toml fixture). Both halves came out
+stronger than either alone would have. **Meta-consistency: pre-injection
+used to write the prompt that teaches pre-injection.**
+
+**Self-review accuracy is high** — Notes for review correctly flagged
+(a) the namespaced `/rexymcp:architect` form throughout, with bare
+`/architect` in M6 README + phase-01 stub flagged as architect-side
+follow-up; (b) `allowed-tools` corrected to Claude-native syntax with
+MCP tools coming via `.mcp.json`; (c) the Hermes-tag literal removal.
+Three substantive deviations, all declared with reasons. The
+declare-deviations muscle is reflexive.
+
+**Two new path-shaped placeholders** (`{CLAUDE_PLUGIN_DIR}`,
+`{CLAUDE_SKILL_DIR}`) — different category from `{...}_COMMAND`,
+reasonable use for resolving plugin install location at runtime. Not a
+deviation.
+
+**Bounces:** 0.
+**Scope deviations:** 3 declared (namespacing, allowed-tools, Hermes-
+tag substitution), all defensible and retroactively accepted.
+
+**Architect-side follow-up (mine, separate small commit):** update the
+bare `/architect` / `/dispatch` / `/review` references in M6 README +
+`plugin/skills/{dispatch,review}/SKILL.md` stubs to the namespaced
+form. Trivial, not blocking phase-04 close.
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try. M6
+phase-05 (review-phase + escalate skills + slash commands) is the
+natural next draft.
