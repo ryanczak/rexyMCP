@@ -365,6 +365,18 @@ impl RexyMcpServer {
 }
 
 impl ServerHandler for RexyMcpServer {
+    fn get_info(&self) -> rmcp::model::ServerInfo {
+        // Declare the `tools` capability in the initialize handshake. Without
+        // this, the default ServerInfo advertises no capabilities and a
+        // spec-compliant client (Claude Code) never calls tools/list, so the
+        // tools appear missing even though list_tools/call_tool are wired up.
+        let mut info = rmcp::model::ServerInfo::default();
+        info.capabilities = rmcp::model::ServerCapabilities::builder()
+            .enable_tools()
+            .build();
+        info
+    }
+
     fn call_tool(
         &self,
         request: CallToolRequestParams,

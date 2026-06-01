@@ -122,6 +122,16 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Commands::Serve { config } => {
+            let cwd = std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "<unknown>".to_string());
+            eprintln!(
+                "rexymcp serve: starting MCP stdio server (version {}, cwd={}, config={}, config_exists={})",
+                env!("CARGO_PKG_VERSION"),
+                cwd,
+                config.display(),
+                config.exists()
+            );
             let server = server::RexyMcpServer {
                 config_path: config,
             };
