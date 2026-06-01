@@ -4,20 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-04 closed (`done`, approved_first_try
-on 2026-05-31). The 430-line architect SKILL.md is live: bootstrap
-routine + explore-then-design + phase-doc authoring + pre-injection
-guidance + status management + prohibitions. **The pre-injection
-experiment worked** — three architect-pre-injected sections (pitfalls,
-pre-injection, prohibitions) landed in the architect's voice with
-specific examples preserved; opencode wrote the surrounding structure
-cleanly. Meta-consistency: pre-injection used to write the prompt that
-teaches pre-injection. Next step is the architect drafting **M6
-phase-05 — `dispatch` + `review` + `escalate` skills** (smaller
-content phase building on phase-04's pattern; the `/rexymcp:dispatch`
-skill invokes `execute_phase`, `/rexymcp:review` reads `PhaseResult`
-and approves/files-bug, `/rexymcp:escalate` handles the hard-fail
-briefing levers).
+**Active phase:** [M6 / phase-05 — `dispatch` + `review` + `escalate`
+skills](milestones/M6-plugin/phase-05-dispatch-review-escalate.md) —
+`todo`, **drafted, awaiting dispatch**. Three skill bodies: dispatch
+(thin glue around `execute_phase`), review (substantive: re-run command
+set + walk DoD + write verdict / file bug + flip status), escalate
+(net-new directory; decision tree among refined-re-dispatch / session-
+takeover / resume). The escalation decision tree carries pre-injected
+draft prose per the phase-04 pattern — load-bearing for the system's
+resilience model. No Rust code; no new deps. Pre-flight 3 verifies
+Claude Code's skill-to-skill delegation convention + MCP tool-result
+plumbing.
 
 **Last completed:** [M6 / phase-04 — architect skill + bootstrap
 routine](milestones/M6-plugin/phase-04-architect-skill.md) —

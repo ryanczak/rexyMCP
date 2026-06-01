@@ -32,8 +32,10 @@ M6's `.mcp.json` work). M4 (done) — `execute_phase_inner` accepts the
     `STANDARDS.md`, rerun the project's commands, approve or file a bug.
   - **`escalate`** — given a `hard_fail` briefing, pick a lever: re-dispatch
     with refined spec (default for weak models), session takeover, or resume.
-- **Three slash commands:** `/architect [next|next-phase]`, `/dispatch
-  <phase>`, `/review <phase>`.
+- **Three slash commands:** `/rexymcp:architect [next|next-phase]`,
+  `/rexymcp:dispatch <phase>`, `/rexymcp:review <phase>` (plus
+  `/rexymcp:escalate <phase>` auto-derived from the escalate skill —
+  see phase-05).
 - **Embedded templates:** generalized `STANDARDS.md` + `WORKFLOW.md` (in the
   plugin's resources, copied into target repo by bootstrap with placeholders
   resolved) and `executor_contract.md` (**embedded in the executor crate
@@ -73,16 +75,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | done |
 | 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | done |
 | 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | done |
+| 05 | `dispatch` + `review` + `escalate` skills ([phase-05-dispatch-review-escalate.md](phase-05-dispatch-review-escalate.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **05 — `review-phase` + `escalate` skills + slash commands.** Smaller content
-  phase. `review-phase` reads the returned `PhaseResult` (or the briefing on
-  hard-fail) against the resolved `STANDARDS.md` DoD, reruns the project's
-  command set, approves (status flip + Update Log) or files a bug. `escalate`
-  takes a briefing, picks a lever (refined re-dispatch is the weak-model
-  default; session takeover or resume are alternatives). `/review <phase>` and
-  `/dispatch <phase>` map to these.
 - **06 — end-to-end dogfood (M6 closer).** Pick a real third-party repo (small,
   open-source, language ≠ Rust to exercise the placeholder substitution);
   bootstrap it; have Claude design a single small phase; dispatch through the
