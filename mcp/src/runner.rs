@@ -104,7 +104,6 @@ struct AssemblyInput<'a> {
     cfg: &'a Config,
     phase_doc_path: &'a Path,
     repo_path: &'a Path,
-    executor_contract: &'a str,
     standards: &'a str,
     model: &'a str,
     telemetry_dir: Option<&'a Path>,
@@ -165,7 +164,6 @@ async fn run_phase_with(
     );
 
     let input = PhaseInput {
-        executor_contract: inp.executor_contract.to_string(),
         standards: inp.standards.to_string(),
         phase_doc,
         goal: fields.goal,
@@ -203,7 +201,6 @@ pub struct RunPhaseConfig<'a> {
     pub cfg: &'a Config,
     pub phase_doc_path: &'a Path,
     pub repo_path: &'a Path,
-    pub executor_contract: &'a str,
     pub standards: &'a str,
     pub model_override: Option<&'a str>,
     pub telemetry_dir: Option<&'a Path>,
@@ -248,7 +245,6 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         cfg: inp.cfg,
         phase_doc_path: inp.phase_doc_path,
         repo_path: inp.repo_path,
-        executor_contract: inp.executor_contract,
         standards: inp.standards,
         model,
         telemetry_dir: inp.telemetry_dir,
@@ -414,7 +410,6 @@ mod tests {
             cfg: &cfg,
             phase_doc_path: &phase_doc_path,
             repo_path: &repo_dir,
-            executor_contract: "contract",
             standards: "standards",
             model: "test-model",
             telemetry_dir: None,
@@ -459,7 +454,6 @@ mod tests {
             cfg: &cfg,
             phase_doc_path: &phase_doc_path,
             repo_path: &nonexistent,
-            executor_contract: "",
             standards: "",
             model: "model",
             telemetry_dir: None,

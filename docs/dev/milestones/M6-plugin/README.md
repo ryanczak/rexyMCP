@@ -71,7 +71,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 |----|-------------------------------------------------------------------|--------|
 | 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
 | 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | done |
-| 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | todo |
+| 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | review |
 
 Tentative remaining phases (draft when the prior one lands):
 

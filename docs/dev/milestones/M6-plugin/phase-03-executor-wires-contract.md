@@ -1,7 +1,7 @@
 # Phase 03: executor wires the embedded contract
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** M6 phase-02 (done) — `executor/templates/executor_contract.md` exists with the four `{...}_COMMAND` placeholders. M4 phase-07a — `agent::prompt::assemble_system_prompt` is the prompt-assembly seam.
 **Estimated diff:** ~300 lines (new contract module + signature change + cross-cutting drop of `executor_contract` plumbing + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -329,3 +329,61 @@ exercise the path end-to-end. Confirm they pass post-change.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-31 15:00 (started)
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8)
+
+Implementing spec tasks 1-5: new `contract.rs` module with `include_str!` + `str::replace` substitution; signature change on `assemble_system_prompt`; cross-cutting removal of `executor_contract` from `PhaseInput`, `RunPhaseConfig`, `AssemblyInput`, `execute_phase_inner`/`_with_client`, and the CLI handler.
+
+### Update — 2026-05-31 15:15 (complete)
+
+**Summary:** Created `executor/src/agent/contract.rs` with `include_str!` of the template and `assemble_executor_contract(commands)` substituting the four `{...}_COMMAND` placeholders via `str::replace`. Changed `assemble_system_prompt` to take `&CommandConfig` instead of `executor_contract: &str`, computing the contract internally. Removed `executor_contract` from `PhaseInput`, `RunPhaseConfig`, `AssemblyInput`, `execute_phase_inner`, `execute_phase_inner_with_client`, and the CLI `RunPhase` handler. All test fixtures updated. No scope deviations.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized+debuginfo] target(s) in 1.43s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized+debuginfo] target(s) in 1.14s
+
+cargo test 2>&1 | tail -30
+test result: ok. 518 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out (executor)
+test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (mcp)
+```
+
+**End-to-end verification:** Not applicable — this is internal prompt-assembly wiring. The contract reaching a live local LLM is exercised end-to-end at M6 phase-06 (dogfood).
+
+**Files changed:**
+- `executor/src/agent/contract.rs` — new module: `include_str!` template + `assemble_executor_contract` + `UNCONFIGURED` const + 4 tests
+- `executor/src/agent/mod.rs` — declared `pub mod contract`; dropped `PhaseInput.executor_contract`; updated `execute_phase` call site and test fixture
+- `executor/src/agent/prompt.rs` — signature change to `(commands: &CommandConfig, standards: &str, phase_doc: &str)`; computes contract internally; updated existing test + 2 new tests
+- `mcp/src/runner.rs` — dropped `executor_contract` from `RunPhaseConfig`, `AssemblyInput`, and `run_phase_with`; updated 2 test fixtures
+- `mcp/src/server.rs` — dropped `executor_contract` from `execute_phase_inner`/`_with_client`
+- `mcp/src/main.rs` — dropped `executor_contract` from the `RunPhase` handler's `RunPhaseConfig` construction
+
+**New tests:**
+- `substitutes_all_four_commands_when_set` in `executor/src/agent/contract.rs`
+- `unset_command_renders_as_unconfigured_sentinel` in `executor/src/agent/contract.rs`
+- `output_starts_with_contract_preamble` in `executor/src/agent/contract.rs`
+- `placeholder_set_is_exactly_the_four_authorized` in `executor/src/agent/contract.rs`
+- `system_prompt_includes_substituted_contract` in `executor/src/agent/prompt.rs`
+- `system_prompt_order_is_contract_then_standards_then_phase_doc` in `executor/src/agent/prompt.rs`
+
+**Commits:**
+- Pending — will commit after status flip.
+
+**Notes for review:** None. Implementation matches spec exactly.
+
+verification: fmt OK · clippy OK · tests 635 passed (518 executor + 117 mcp) · build OK

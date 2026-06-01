@@ -101,13 +101,10 @@ async fn main() -> anyhow::Result<()> {
             let standards_path = repo.join("docs/dev/STANDARDS.md");
             let standards = std::fs::read_to_string(&standards_path).unwrap_or_default();
 
-            let executor_contract = "";
-
             let result = runner::run_phase(&runner::RunPhaseConfig {
                 cfg: &cfg,
                 phase_doc_path: &phase_doc,
                 repo_path: &repo,
-                executor_contract,
                 standards: &standards,
                 model_override: model.as_deref(),
                 telemetry_dir: None,

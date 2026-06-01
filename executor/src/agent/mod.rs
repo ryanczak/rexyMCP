@@ -7,6 +7,7 @@
 //! `hard_fail` (a hard-fail signal), or `budget_exceeded` (turn/context cap).
 
 pub mod command;
+pub mod contract;
 pub mod progress;
 pub mod prompt;
 pub mod verify;
@@ -58,7 +59,6 @@ const MAX_COMMAND_TAIL_CHARS: usize = 4_000;
 /// The prompt inputs and verbatim phase metadata the loop assembles into the
 /// system prompt and the escalation briefing.
 pub struct PhaseInput {
-    pub executor_contract: String,
     pub standards: String,
     pub phase_doc: String,
     pub goal: String,
@@ -108,11 +108,7 @@ pub struct LoopDeps<'a> {
 /// surface as `Err`; model-visible outcomes (parse failures, unknown/failed
 /// tools) are fed back into the conversation and never error.
 pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<PhaseResult> {
-    let system = prompt::assemble_system_prompt(
-        &input.executor_contract,
-        &input.standards,
-        &input.phase_doc,
-    );
+    let system = prompt::assemble_system_prompt(deps.commands, &input.standards, &input.phase_doc);
     let tools_opt = if deps.tools.is_empty() {
         None
     } else {
@@ -1106,7 +1102,6 @@ mod tests {
 
     fn input() -> PhaseInput {
         PhaseInput {
-            executor_contract: "CONTRACT".to_string(),
             standards: "STANDARDS".to_string(),
             phase_doc: "PHASE".to_string(),
             goal: "make it compile".to_string(),
