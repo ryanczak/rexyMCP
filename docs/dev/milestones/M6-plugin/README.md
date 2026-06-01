@@ -77,6 +77,19 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | done |
 | 05 | `dispatch` + `review` + `escalate` skills ([phase-05-dispatch-review-escalate.md](phase-05-dispatch-review-escalate.md)) | done |
 | 06a | dogfood preparation (procedure + log template + pre-flight verification) ([phase-06a-dogfood-prep.md](phase-06a-dogfood-prep.md)) | done |
+| 07a | SSE prefill-stall: first-token vs. inter-token timeout + retry ([phase-07a-sse-prefill-stall.md](phase-07a-sse-prefill-stall.md)) | todo |
+| 07b | executor liveness: `awaiting_model` heartbeat during the model wait ([phase-07b-executor-liveness-signal.md](phase-07b-executor-liveness-signal.md)) | todo |
+
+Phases 07a / 07b are **dogfood-surfaced executor-resilience fixes** (smoketest
+session `6a1dd72e`), not plugin work — placed here because the M6 dogfood is
+what surfaced them. 07a is the root cause (a 90 s first-token timeout misfiring
+on slow prefill); 07b closes the idle-vs-dead signal gap on the pull-based
+`rexymcp status` path. Two deferred-to-06b design questions they deliberately do
+**not** decide: (1) whether a terminal backend `Err` should degrade to a
+structured `hard_fail` `PhaseResult` (preserving partial work) rather than abort
+`execute_phase`; (2) whether a cross-dispatch resume / "continue if phase status
+≠ done" mechanism is warranted. Both touch the contract / error model and are
+architect calls for the retrospective.
 
 Tentative remaining phases (draft when the prior one lands):
 
