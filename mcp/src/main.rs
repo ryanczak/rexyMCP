@@ -9,6 +9,7 @@ mod roots;
 mod runner;
 mod scorecard;
 mod server;
+mod status;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"), version = env!("CARGO_PKG_VERSION"))]
@@ -52,6 +53,21 @@ enum Commands {
         /// Path to the config file
         #[arg(long)]
         config: PathBuf,
+    },
+    /// Report the latest progress of a phase from its session log
+    Status {
+        /// Path to the target repository root
+        #[arg(long)]
+        repo: PathBuf,
+
+        /// Select a specific session by a substring of its log filename
+        /// (default: the most recently modified log)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Emit the status as JSON instead of a human summary
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -144,6 +160,35 @@ async fn main() -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("failed to wait for signal: {}", e))?;
             Ok(())
         }
+        Commands::Status {
+            repo,
+            session,
+            json,
+        } => {
+            let summary = match status::load_status(&repo, session.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            };
+
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&summary).unwrap_or_else(|e| {
+                        format!("{{\"error\": \"failed to serialize status: {}\"}}", e)
+                    })
+                );
+            } else {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                println!("{}", status::format_status(&summary, now_ms));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -231,6 +276,50 @@ mod tests {
     #[test]
     fn cli_parse_serve_missing_config_fails() {
         let result = Cli::try_parse_from(["rexymcp", "serve"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_status_with_repo_only() {
+        let cli = Cli::try_parse_from(["rexymcp", "status", "--repo", "/tmp/repo"]).unwrap();
+        match cli.command {
+            Some(Commands::Status {
+                repo,
+                session,
+                json,
+            }) => {
+                assert_eq!(repo, PathBuf::from("/tmp/repo"));
+                assert_eq!(session, None);
+                assert!(!json);
+            }
+            _ => panic!("expected Status"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_status_with_session_and_json() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "status",
+            "--repo",
+            "/tmp/repo",
+            "--session",
+            "abc123",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Status { session, json, .. }) => {
+                assert_eq!(session.as_deref(), Some("abc123"));
+                assert!(json);
+            }
+            _ => panic!("expected Status"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_status_missing_repo_fails() {
+        let result = Cli::try_parse_from(["rexymcp", "status"]);
         assert!(result.is_err());
     }
 }

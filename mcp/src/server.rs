@@ -441,11 +441,22 @@ impl ServerHandler for RexyMcpServer {
                     }
                 }
 
-                let progress_callback: Option<Box<dyn ProgressCallback>> = request
-                    .meta
-                    .as_ref()
-                    .and_then(|m| m.get_progress_token())
-                    .map(|token| {
+                let progress_token = request.meta.as_ref().and_then(|m| m.get_progress_token());
+                // Diagnostic: whether the client opted into live progress. The
+                // MCP spec only permits notifications/progress for a request
+                // that carried a progressToken, so a "no token" line here
+                // explains absent live status (the logged Progress records and
+                // `rexymcp status` are unaffected — they don't need the token).
+                eprintln!(
+                    "execute_phase: client progress_token {}",
+                    if progress_token.is_some() {
+                        "present (live notifications enabled)"
+                    } else {
+                        "absent (no live notifications; use `rexymcp status`)"
+                    }
+                );
+                let progress_callback: Option<Box<dyn ProgressCallback>> =
+                    progress_token.map(|token| {
                         Box::new(McpProgressNotifier {
                             peer: context.peer.clone(),
                             progress_token: token,
