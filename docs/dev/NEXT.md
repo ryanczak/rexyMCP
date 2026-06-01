@@ -27,6 +27,23 @@ a local LLM with no token cost. The cap was already per-project
 configurable via `[budget] max_turns`; only the defaults moved. 06b
 should fold this into the retrospective rather than re-derive it.
 
+**Dogfood finding for 06b (live progress is a push that can't fire):**
+the first run surfaced **zero** live MCP `notifications/progress` —
+confirmed empirically that Claude Code's MCP client sends no
+`progressToken`, and the spec only permits progress for a token-carrying
+request. So the architecture's Layer 2 § "Liveness" assumption (live
+notifications give the human motion) does not hold against the real
+client. Two fixes already landed on master: the logged
+`SessionEvent::Progress` records were wrongly gated on the live callback
+(a no-token run logged no progress at all) — now decoupled so progress is
+always logged (commit c4567fb); and a new `rexymcp status --repo <path>`
+CLI reads the session JSONL for out-of-band, pull-based live status
+(commit 3374336). 06b should fold this into the retrospective and decide
+whether `docs/architecture.md` Layer 2 should be amended to describe
+`rexymcp status` (pull) as the human-liveness path rather than MCP
+progress (push). See `milestones/M6-plugin/dogfood-log.md` § "Surprises
+and breakages."
+
 **Last completed:** [M6 / phase-06a — dogfood
 preparation](milestones/M6-plugin/phase-06a-dogfood-prep.md) —
 approved_first_try 2026-05-31 (zero deviations; thorough pre-flight
