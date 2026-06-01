@@ -72,17 +72,10 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 01 | plugin scaffold + `.mcp.json` + slash-command stubs ([phase-01-plugin-scaffold.md](phase-01-plugin-scaffold.md)) | done |
 | 02 | embedded templates: `executor_contract` + `STANDARDS` + `WORKFLOW` ([phase-02-embedded-templates.md](phase-02-embedded-templates.md)) | done |
 | 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | done |
+| 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **04 — `architect` skill (with bootstrap routine).** The heaviest skill. The
-  skill prompt covers: explore-then-design, design-doc / milestone-README /
-  phase-doc authoring against the embedded `WORKFLOW.md` templates,
-  **pre-injection** (worked examples + idioms + few-shot exemplars + fetched
-  reference docs baked into each phase doc), and the **bootstrap routine** (four
-  steps from architecture: detect command set → write `rexymcp.toml` → lay down
-  resolved process docs → write `CLAUDE.md` → register `.mcp.json`).
-  Idempotent. The slash command `/architect` invokes the skill.
 - **05 — `review-phase` + `escalate` skills + slash commands.** Smaller content
   phase. `review-phase` reads the returned `PhaseResult` (or the briefing on
   hard-fail) against the resolved `STANDARDS.md` DoD, reruns the project's

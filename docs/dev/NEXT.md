@@ -4,17 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-03 closed (`done`, approved_first_try
-on 2026-05-31; textbook clean execution, all 6 prescribed tests in the
-exact shape spec'd, cross-cutting `executor_contract` drop surgical).
-The contract is now truly embedded-only: the executor crate
-`include_str!`s phase-02's template, substitutes the four `{...}_COMMAND`
-placeholders at every turn-cycle step 1, and the MCP server no longer
-passes an empty-string placeholder. Next step is the architect drafting
-**M6 phase-04 — `architect` skill + bootstrap routine** (the heaviest
-content phase: full skill prompt covering explore-then-design, design-doc
-/ milestone-README / phase-doc authoring, pre-injection, plus the
-four-step bootstrap routine).
+**Active phase:** [M6 / phase-04 — `architect` skill + bootstrap
+routine](milestones/M6-plugin/phase-04-architect-skill.md) — `todo`,
+**drafted, awaiting dispatch**. The heaviest content phase in M6: fully
+fills the phase-01 stub at `plugin/skills/architect/SKILL.md` with the
+complete architect prompt covering seven responsibilities — frontmatter
++ bootstrap routine (idempotent, four architecture-mandated steps),
+explore-then-design, phase-doc authoring against the embedded WORKFLOW
+templates, **pre-injection** (the load-bearing concept with five named
+injection types), status management (NEXT.md / phase doc / milestone
+README in sync + Review verdict on every approval), and the explicit
+list of things the architect doesn't do. No Rust code changes; no new
+deps. Pre-flight 3 verifies Claude Code's skill frontmatter format +
+plugin install dir path + arg-passing convention (same trust-docs-over-
+sketch discipline as M5 / M6 phase-01).
 
 **Last completed:** [M6 / phase-03 — executor wires the embedded
 contract](milestones/M6-plugin/phase-03-executor-wires-contract.md) —
