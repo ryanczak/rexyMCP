@@ -4,9 +4,9 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M6 is closed (2026-06-01) and the project is at the
-M6→M7 milestone boundary, a human gate.** Do not pick up work. M7 (model
-scorecard & routing) begins only on the user's explicit sign-off.
+**Active phase:** [M7 / phase-01 — terminal backend `Err` → `hard_fail`
+degradation](milestones/M7-scorecard/phase-01-backend-error-degradation.md)
+(`todo` — ready to dispatch).
 
 **M6 closed** via [phase-06b — dogfood execution + retrospective +
 close](milestones/M6-plugin/phase-06b-dogfood-close.md). The ms_pacman dogfood
@@ -46,9 +46,8 @@ configurable; only the defaults moved.
 **Last completed:** [M6 / phase-06b](milestones/M6-plugin/phase-06b-dogfood-close.md)
 — approved_first_try 2026-06-01 (architect-authored retrospective; M6 closed).
 
-**Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
-— **done** (M1–M6 complete). Next: **M7 — Model scorecard & routing**, pending
-human sign-off.
+**Milestone:** [M7 — Model scorecard & routing](milestones/M7-scorecard/README.md)
+— in progress (M1–M6 done; M7 phase-01 in `todo`).
 
 ---
 
