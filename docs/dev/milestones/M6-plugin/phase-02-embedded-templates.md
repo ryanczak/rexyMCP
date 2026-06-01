@@ -1,7 +1,7 @@
 # Phase 02: embedded templates — executor_contract + STANDARDS + WORKFLOW
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** M6 phase-01 (done) — `plugin/` scaffold exists; this phase adds `plugin/templates/`. M5 (done) — `cfg.commands: CommandConfig` is the placeholder source.
 **Estimated diff:** ~900 lines (three Markdown templates derived from this repo's source docs)
 **Tags:** language=markdown, kind=feature, size=l
@@ -385,3 +385,55 @@ ships content for those phases to lean on.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-31 17:12 (started)
+
+**Executor:** Qwen/Qwen3.6-27B-FP8 via opencode
+
+Creating three embedded templates from this repo's `AGENTS.md`, `docs/dev/STANDARDS.md`, and `docs/dev/WORKFLOW.md`. Generalizing all rexyMCP-specific, Rust-specific, and opencode-specific content. All three templates use `{FORMAT_COMMAND}` / `{BUILD_COMMAND}` / `{LINT_COMMAND}` / `{TEST_COMMAND}` placeholders. No Rust code changes.
+
+### Update — 2026-05-31 17:15 (complete)
+
+**Summary:** Created three generalized Markdown templates derived from this repo's source docs. All rexyMCP-specific, Rust-specific, and opencode-specific content removed or generalized. The five dropped AGENTS.md sections (Rexy lift, dev commands, opencode tool harness, auto-fix, calibration folds, architecture quick-notes) are absent from executor_contract.md. WORKFLOW.md's opencode-specific "rexyMCP is not opencode" subsection replaced with "The executor is a local LLM, not a coding agent." M2/M4/M5 calibration anecdotes genericized. Zero scope deviations.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — PASS)
+
+cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+cargo test 2>&1 | tail -30
+test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Validation greps:**
+- `grep -En '\{[A-Z_]+_COMMAND\}' ...` — only `{FORMAT_COMMAND}`, `{BUILD_COMMAND}`, `{LINT_COMMAND}`, `{TEST_COMMAND}` found across all three templates.
+- `grep -rn 'rexymcp|RexyMCP|Rexy|opencode|cargo |Cargo\.toml' ...` — ZERO HITS (no preamble exception needed; executor_contract.md preamble mentions "rexyMCP" but the grep pattern `rexymcp` is case-insensitive lowercase; the actual text uses "rexyMCP" with capital M and C — however the grep pattern includes `RexyMCP` which matches. The heredoc wrote "rexyMCP" — let me verify: the preamble says "embedded by the rexyMCP MCP server" — the grep pattern `RexyMCP` is case-sensitive and would NOT match lowercase `rexyMCP`. The pattern `rexymcp` would match. The grep returned ZERO HITS, meaning the preamble text must not contain a case-sensitive match. Review: the preamble uses "rexyMCP" — the grep pattern `rexymcp|RexyMCP` uses alternation; `rexymcp` is all-lowercase, `RexyMCP` is mixed-case. Neither matches "rexyMCP" exactly. This is a false-negative in the grep, but the spec allows one preamble mention. Verified manually: preamble contains exactly one "rexyMCP" reference.)
+- `grep -rn 'thiserror|anyhow|tokio|serde' ...` — ZERO HITS — PASS.
+- `grep -En '\{[^}]+\}' ... | grep -v authorized` — NO STRAY PLACEHOLDERS — PASS.
+
+**End-to-end verification:** N/A — phase ships content artifacts only. Phase-03 wires executor_contract.md; phase-04 uses plugin/ templates.
+
+**Files changed:**
+- `executor/templates/executor_contract.md` — new; portable subset of AGENTS.md (11 sections, 5 dropped)
+- `plugin/templates/STANDARDS.md` — new; generalized STANDARDS.md
+- `plugin/templates/WORKFLOW.md` — new; generalized WORKFLOW.md with genericized calibration anecdotes
+- `docs/dev/milestones/M6-plugin/phase-02-embedded-templates.md` — status flip + Update Log
+- `docs/dev/milestones/M6-plugin/README.md` — phase table status flip
+
+**New tests:** none (no Rust code changes).
+
+**Commits:**
+- (pending — will commit now)
+
+**Notes for review:** No scope deviations. The preamble exception for "rexyMCP" in executor_contract.md is the single allowed reference. The grep pattern `rexymcp|RexyMCP` does not catch the mixed-case "rexyMCP" in the preamble — this is a minor gap in the validation grep but the spec explicitly allows the one preamble mention, which was confirmed by manual reading.
+
+verification: fmt OK · clippy OK · tests 512 passed · build OK
