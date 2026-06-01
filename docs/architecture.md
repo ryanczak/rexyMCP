@@ -324,9 +324,18 @@ Practical concerns this layer owns:
 
 - **Long runs.** A phase can take minutes; the MCP per-tool `timeout` is set well
   above the 10-second default (toward the 10-minute ceiling).
-- **Liveness.** The server emits **MCP progress notifications** as the executor
-  advances (turn count, current tool, verifier pass/fail) so Claude and the user
-  see motion.
+- **Liveness (pull, not push).** The human-liveness path is **`rexymcp status
+  --repo <path>`**, an out-of-band CLI that reads the per-record-flushed session
+  JSONL and reports the latest stage (turn count, current tool, verifier
+  pass/fail, `awaiting_model` heartbeat). The server *also* emits **MCP progress
+  notifications** as the executor advances, but these are **spec-correct and
+  unreachable with Claude Code's current client**: a server may only emit
+  `notifications/progress` for a request that supplied a `progressToken`, and
+  Claude Code's MCP client sends none (confirmed empirically in the M6 dogfood —
+  the `execute_phase: client progress_token absent` diagnostic). So the logged
+  `SessionEvent::Progress` records are written unconditionally (independent of any
+  live watcher), and `rexymcp status` is what surfaces motion to the human; MCP
+  progress fires only if a future client opts in with a token.
 - **Context hygiene.** Returned output is capped (`MAX_MCP_OUTPUT_TOKENS`) so a
   phase's inner transcript can never flood Claude's context. Claude gets the
   `PhaseResult` summary + diff + (on failure) briefing — nothing more.

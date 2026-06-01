@@ -4,78 +4,51 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — both dogfood-surfaced resilience fixes are now `done`:
-[07a — SSE prefill-stall](milestones/M6-plugin/phase-07a-sse-prefill-stall.md)
-(approved_after_1; [bug-07a-1](milestones/M6-plugin/bugs/bug-07a-1.md) verified)
-and [07b — executor liveness `awaiting_model`
-heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md)
-(approved_after_1; [bug-07b-1](milestones/M6-plugin/bugs/bug-07b-1.md) verified).
-**The ball is back in the user's court for the M6 dogfood RUN** — there is no
-executable phase for opencode to pick up. 06b drafts after the dogfood log is
-captured.
+**Active phase:** none — **M6 is closed (2026-06-01) and the project is at the
+M6→M7 milestone boundary, a human gate.** Do not pick up work. M7 (model
+scorecard & routing) begins only on the user's explicit sign-off.
 
-- **07a** (SSE prefill-stall): the uniform 90 s `STREAM_CHUNK_TIMEOUT` judged
-  first-token prefill latency by the same budget as inter-token gaps. Split into
-  configurable first-token (600 s) and idle (90 s) budgets with a bounded
-  pre-token retry. Bounced once (retry/timeout logic tested via a `#[cfg(test)]`
-  duplicate, not the shipping path); fixed by extracting the decision fns into
-  production and testing them directly incl. the keep-alive negative.
-- **07b** (liveness heartbeat): emit `awaiting_model` before and every 15 s
-  during the model wait so `rexymcp status` distinguishes a busy prefill from a
-  hang. Bounced once (heartbeat tests used real `sleep` — architect spec gap:
-  mandated `pause()`/`advance()` without authorizing tokio `test-util`); fixed
-  with a dev-only `test-util` + virtual-time tests.
+**M6 closed** via [phase-06b — dogfood execution + retrospective +
+close](milestones/M6-plugin/phase-06b-dogfood-close.md). The ms_pacman dogfood
+(bootstrap + design, 5/5, no dispatch) was user-confirmed sufficient; the two
+breakages it surfaced (tools-not-advertised `b78a081`; live-progress-can't-fire
+`c4567fb`+`3374336`) are fixed. Full retrospective in the
+[M6 README Notes](milestones/M6-plugin/README.md#notes).
 
-**Two contract/error-model questions 07a/07b deliberately do NOT decide
-(deferred to 06b retrospective):** (1) whether a terminal backend `Err`
-should degrade to a structured `hard_fail` `PhaseResult` (preserving partial
-work) rather than abort `execute_phase`; (2) whether a cross-dispatch resume /
-"continue if phase status ≠ done" mechanism is warranted.
+**Decisions carried into M7** (the 07a/07b deferrals + compaction, decided in
+06b):
 
-**Still pending the user (separate from 07a/07b):** the M6 dogfood RUN —
-phase-06a's prep is complete (dogfood-procedure.md, dogfood-log.md, clean
-pre-flight). **M6 phase-06b** drafts after the user has captured observations
-in the log; 06b's job is the architect-synthesized M6 retrospective + the
-compaction-monitoring decision + any calibration folds the dogfood surfaces
-(including the 07a/07b deferrals above).
+1. **Terminal backend `Err` → `hard_fail` (yes, conditional).** A mid-phase
+   terminal model error (after ≥1 turn of progress) should degrade to a
+   `hard_fail` `PhaseResult` with briefing + partial work, instead of aborting
+   `execute_phase` as it does today (`executor/src/agent/mod.rs:238` and
+   `:271-273`, with the `:1545` test pinning the current abort). Pre-work
+   connection errors stay `Err`. **This is the one decision with a code
+   follow-up — an M7-adjacent implementation phase, not yet drafted.**
+2. **Resume / `continue_phase` (no).** Stays an uncommitted architecture
+   candidate; re-dispatch-with-refined-spec remains the default. Revisit only if
+   `PhaseRun` telemetry shows a recurring high-progress / single-blocker pattern.
+3. **Compaction monitoring (insufficient data).** No dispatch → no
+   `CompactionReport`; keep the heuristic compactor; gather data on the first
+   small-context (32k–128k) dispatch. No summarization milestone justified.
 
-**Calibration fold already landed (for 06b to record):** the first
-dogfood run hit `budget_exceeded` at turn 40 mid-verification (a
-scaffold phase — the last turn ran `prettier --check` green, then the
-turn cap tripped). Default `max_turns` raised 40 → 200 in
-`executor/src/config.rs` and the architect bootstrap template
-(`plugin/skills/architect/SKILL.md`), since the executor runs against
-a local LLM with no token cost. The cap was already per-project
-configurable via `[budget] max_turns`; only the defaults moved. 06b
-should fold this into the retrospective rather than re-derive it.
+**Architecture amended in 06b:** Layer 2 § Liveness reworded push→pull —
+`rexymcp status` is the human-liveness path; MCP progress is spec-correct but
+unreachable with Claude Code's current client.
 
-**Dogfood finding for 06b (live progress is a push that can't fire):**
-the first run surfaced **zero** live MCP `notifications/progress` —
-confirmed empirically that Claude Code's MCP client sends no
-`progressToken`, and the spec only permits progress for a token-carrying
-request. So the architecture's Layer 2 § "Liveness" assumption (live
-notifications give the human motion) does not hold against the real
-client. Two fixes already landed on master: the logged
-`SessionEvent::Progress` records were wrongly gated on the live callback
-(a no-token run logged no progress at all) — now decoupled so progress is
-always logged (commit c4567fb); and a new `rexymcp status --repo <path>`
-CLI reads the session JSONL for out-of-band, pull-based live status
-(commit 3374336). 06b should fold this into the retrospective and decide
-whether `docs/architecture.md` Layer 2 should be amended to describe
-`rexymcp status` (pull) as the human-liveness path rather than MCP
-progress (push). See `milestones/M6-plugin/dogfood-log.md` § "Surprises
-and breakages."
+**Already-landed calibration fold (recorded in 06b):** an earlier run hit
+`budget_exceeded` at the turn cap mid-verification; default `max_turns` raised
+40 → 200 in `executor/src/config.rs` and the architect bootstrap template
+(`plugin/skills/architect/SKILL.md`), since the executor runs against a local
+LLM with no token cost. Per-project `[budget] max_turns` was already
+configurable; only the defaults moved.
 
-**Last completed:** [M6 / phase-06a — dogfood
-preparation](milestones/M6-plugin/phase-06a-dogfood-prep.md) —
-approved_first_try 2026-05-31 (zero deviations; thorough pre-flight
-verification; Pre-flight 3 finding clean — no divergence from
-architect's sketch of Claude Code plugin layout).
+**Last completed:** [M6 / phase-06b](milestones/M6-plugin/phase-06b-dogfood-close.md)
+— approved_first_try 2026-06-01 (architect-authored retrospective; M6 closed).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
-— in progress (M1–M5 done; M6 phases 01–02 done). M6 packages rexyMCP
-as a Claude Code plugin; scaffold + templates live, executor wiring +
-skills + bootstrap + dogfood remain.
+— **done** (M1–M6 complete). Next: **M7 — Model scorecard & routing**, pending
+human sign-off.
 
 ---
 

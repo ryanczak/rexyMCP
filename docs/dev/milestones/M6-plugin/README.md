@@ -10,7 +10,9 @@ initializes an uninitialized target repo. Closes with an **end-to-end dogfood**
 against a real third-party repo — first real architect→MCP→executor→review loop
 without opencode in the picture.
 
-**Status:** in progress — phase-01 drafted (`todo`); later phases drafted on demand.
+**Status:** done — closed 2026-06-01 (retrospective in Notes). All phases `done`;
+the ms_pacman dogfood (bootstrap + design) validated the stack and the two
+breakages it surfaced are fixed.
 
 **Depends on:** M5 (done) — `rexymcp serve` is the binary the plugin wraps;
 six tools live; per-tool timeout is *client-side* (M5 phase-02 noted this is
@@ -79,6 +81,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 06a | dogfood preparation (procedure + log template + pre-flight verification) ([phase-06a-dogfood-prep.md](phase-06a-dogfood-prep.md)) | done |
 | 07a | SSE prefill-stall: first-token vs. inter-token timeout + retry ([phase-07a-sse-prefill-stall.md](phase-07a-sse-prefill-stall.md)) | done (approved_after_1: [bug-07a-1](bugs/bug-07a-1.md)) |
 | 07b | executor liveness: `awaiting_model` heartbeat during the model wait ([phase-07b-executor-liveness-signal.md](phase-07b-executor-liveness-signal.md)) | done (approved_after_1: [bug-07b-1](bugs/bug-07b-1.md)) |
+| 06b | dogfood execution + M6 retrospective + close ([phase-06b-dogfood-close.md](phase-06b-dogfood-close.md)) | done (approved_first_try; architect-authored) |
 
 Phases 07a / 07b are **dogfood-surfaced executor-resilience fixes** (smoketest
 session `6a1dd72e`), not plugin work — placed here because the M6 dogfood is
@@ -153,6 +156,42 @@ Tentative remaining phases (draft when the prior one lands):
   **Do not build summarization speculatively** — wait for the dogfood data.
 
 ## Notes
+
+### M6 retrospective (closed 2026-06-01)
+
+Full synthesis in [phase-06b](phase-06b-dogfood-close.md). At a glance:
+
+- **Phases:** 01 / 02 / 03 / 04 / 05 / 06a / 07a / 07b / 06b. Most
+  approved_first_try; 07a and 07b each bounced once (verified). 06a opencode-
+  executable, 06b architect-authored.
+- **Dogfood:** ms_pacman (bare Node → Vite/Vitest/ESLint/Prettier) against
+  Qwen/Qwen3.6-27B-FP8 @ 262k. Covered **bootstrap + design** (5/5 quality, zero
+  overrides, no `AGENTS.md`, gate held); did **not** dispatch. User-confirmed
+  sufficient to close.
+- **Two breakages, both fixed:** (1) tools not advertised in the MCP `initialize`
+  handshake — `tools` capability missing from `get_info` (commit `b78a081`); the
+  highest-severity finding, uncatchable by unit tests. (2) live MCP progress
+  never fires — Claude Code sends no `progressToken`; worked around with
+  unconditional `Progress` logging (`c4567fb`) + `rexymcp status` pull path
+  (`3374336`).
+- **Decisions carried forward** (07a/07b deferrals + compaction):
+  1. **Terminal backend `Err` → `hard_fail` (yes, conditional).** Mid-phase
+     terminal errors (after ≥1 turn of progress) should degrade to a `hard_fail`
+     `PhaseResult` with briefing + partial work instead of aborting
+     `execute_phase` (current behavior: `agent/mod.rs:238`/`:271-273` abort).
+     Pre-work connection errors stay `Err`. **M7-adjacent implementation phase.**
+  2. **Resume / `continue_phase` (no).** Stays an uncommitted architecture
+     candidate — no dogfood evidence of the "almost there, one wall" pattern it
+     targets; re-dispatch-with-refined-spec remains the default.
+  3. **Compaction monitoring (insufficient data).** No dispatch → no
+     `CompactionReport`; the 262k run is the regime least likely to bite anyway.
+     Keep the heuristic compactor; gather data on the first small-context (32k–
+     128k) dispatch. **No summarization milestone justified.**
+- **Architecture fold:** Layer 2 § Liveness amended push→pull (`rexymcp status`
+  is the human-liveness path; MCP progress is spec-correct but unreachable with
+  Claude Code's current client). One empirically-decisive fold; no
+  STANDARDS/WORKFLOW folds (the two breakages were product/client facts, not
+  recurring discipline patterns).
 
 **M6 is largely content, not Rust code.** Phases 01, 02, 04, 05 are
 Markdown / JSON / plugin-manifest authoring; only phase-03 is a small Rust
