@@ -49,7 +49,17 @@ After reading and before touching files, reply to the user with:
 3. **Authorizations:** what the phase explicitly permits from STANDARDS.md §5
    (or "none").
 4. **Unclear points:** anything ambiguous. If anything is unclear, **stop and
-   ask** — do not start.
+   ask** — do not start. **Includes external-API divergences.** When the
+   spec describes specific external API surfaces (SDK macro names,
+   config-file field names, plugin manifest shapes, slash-command
+   namespacing, CLI flag forms, third-party library signatures), verify
+   them against the live documentation *before* confirming. Divergences
+   from the architect's sketch are Unclear points to surface here, **not
+   silent improvisations** during execution. The architect cannot always
+   live-verify external APIs and may have sketched something stale or
+   wrong; finding and reporting the right shape is part of your job. The
+   architect responds with a brief authorization or amendment; you
+   proceed. This back-and-forth is cheap; a wrong silent fix is expensive.
 
 The gate exists so the user can catch a misread before it becomes a diff to
 revert. Skipping it is a process failure.

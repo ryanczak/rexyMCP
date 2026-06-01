@@ -533,3 +533,53 @@ spec); M5 phase-04 (`JsonSchema` on `ScorecardRow`, planned in spec); M5
 phase-05a (`Send + Sync` on `ProgressCallback`, planned in spec). Five
 occurrences — the rule is well-established now; subsequent phases should
 catch it at draft time, not review time.
+
+### Verify external APIs against live docs
+
+When a phase references an external API the architect cannot live-verify
+(an SDK's macro names, a protocol's wire format, a CLI's config schema, a
+plugin manifest shape, a third-party crate's surface), the spec MUST
+include a **Pre-flight step** instructing the executor to verify the
+specifics against the live documentation and **trust the docs over the
+architect's sketch**.
+
+The architect's reference sketch in such specs is the *intent* and
+*behavior* the phase pins; the *exact* field names, macro forms, file
+paths, and frontmatter shapes are the executor's to discover and adapt.
+Any divergence between sketch and live docs is an **Unclear point** the
+executor surfaces (in the Confirmation gate, or — for in-flight
+discoveries — inline as a pre-execution clarification request), not a
+silent fix during execution. The architect responds with a brief
+authorization or amendment; the executor proceeds. **This back-and-forth
+is cheap; a wrong silent fix is expensive.**
+
+Pair this with the **declare-deviations** discipline: even when the
+executor adapts cleanly to the live docs (the right call), the
+adaptation is named in "Notes for review" so the architect can update
+their mental model of the API for future specs.
+
+Recurrences before fold: M5 phase-02 (rmcp 1.7 macro names + transport
+path divergence from sketch); M5 phase-05b (`#[rmcp::tool]` macro cannot
+receive a context arg — forced a manual `ServerHandler` impl); M5
+phase-06 (rmcp 1.7 `list_roots` API verification); M6 phase-01 (three
+findings: Claude Code's `.mcp.json` has no timeout field at all; modern
+plugins use `skills/<name>/SKILL.md` not legacy `commands/`;
+`.claude-plugin/plugin.json` manifest is required); M6 phase-04 (three
+findings: slash commands are namespaced `/<plugin>:<skill>`; the `model`
+field accepts a fixed enum; `allowed-tools` is Claude-native pattern
+syntax, not MCP tool names). Eleven findings across six phases — the
+pattern repeats across every external-API integration. Folding the
+discipline so it does not depend on individual executor judgment or
+individual architect spec-writing memory.
+
+The **Pre-flight step's shape**:
+
+> N. **Verify the current `<external API>` <thing>** before coding. The
+>    architect cannot reliably enumerate the exact `<field/macro/path/
+>    shape>` and the sketch in § X below may be wrong. Sources to consult,
+>    in priority order: the official docs site; the upstream source / tool
+>    introspection (`cargo doc`, `--help`, etc.); working examples from
+>    other consumers. **Trust the docs over the sketch.** Pin the
+>    *behavior* this phase requires; let the executor adapt the
+>    *structure* to the real convention. Flag any divergence in "Notes
+>    for review".
