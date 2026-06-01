@@ -526,3 +526,48 @@ into WORKFLOW.md.
 
 **Re-dispatch to opencode** to address bug-02-1; on return, the verdict
 finalizes.
+
+### Update — 2026-05-31 17:35 (complete — bug-02-1 resolution)
+
+**Summary:** Applied four content fixes from bug-02-1 to the two template files. STANDARDS §3.1 bullets generalized from rexyMCP-specific concepts (tools, agent-loop, parser stages) to universal phrasing (public functions, external-system integrations, parsing/data-transform steps). STANDARDS §2.6 donor-project bullet removed. STANDARDS §4 Rust-specific cache-race warning removed. WORKFLOW Directory Layout updated to include `NEXT.md` with explanatory paragraph. Zero scope deviations.
+
+**Acceptance criteria:** all ticked above. Bug-02-1 status flipped to `fixed`.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — PASS)
+
+cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+cargo test 2>&1 | tail -30
+test result: ok. 512 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Validation greps:**
+- `grep -En '\{[A-Z_]+_COMMAND\}' ...` — only `{FORMAT_COMMAND}`, `{BUILD_COMMAND}`, `{LINT_COMMAND}`, `{TEST_COMMAND}` across all templates — PASS.
+- `grep -rn 'rexymcp|RexyMCP|Rexy|opencode|cargo |Cargo\.toml' ...` — ZERO HITS — PASS.
+- `grep -rn 'thiserror|anyhow|tokio|serde' ...` — ZERO HITS — PASS.
+
+**End-to-end verification:** N/A — phase ships content artifacts only.
+
+**Files changed:**
+- `plugin/templates/STANDARDS.md` — §3.1 bullets generalized; §2.6 donor bullet removed; §4 cache-race warning removed
+- `plugin/templates/WORKFLOW.md` — Directory Layout updated with `NEXT.md` + explanatory paragraph
+- `docs/dev/milestones/M6-plugin/phase-02-embedded-templates.md` — status flip + Update Log entries
+- `docs/dev/milestones/M6-plugin/README.md` — phase table status flip
+- `docs/dev/milestones/M6-plugin/bugs/bug-02-1.md` — status flipped to `fixed`
+
+**New tests:** none (no Rust code changes).
+
+**Commits:**
+- (pending — will commit now)
+
+**Notes for review:** Zero scope deviations. All four fixes are content-only, matching the bug doc's suggested replacements exactly.
+
+verification: fmt OK · clippy OK · tests 512 passed · build OK
