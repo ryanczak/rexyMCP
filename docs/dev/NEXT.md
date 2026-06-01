@@ -5,12 +5,15 @@ engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
 **Active phase:** [M6 / phase-07b — executor liveness `awaiting_model`
-heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md) (`todo`,
-ready to dispatch). Executor: **opencode**. Its dependency, **07a**, is now
-`done` (approved_after_1; see below), so 07b is unblocked: emit an
-`awaiting_model` progress event before and during the model wait so the
-pull-based `rexymcp status` distinguishes a busy prefill from a hang. Gated by
-default — dispatch when ready (`/rexymcp:dispatch 07b`).
+heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md)
+(`in-progress` — bounced once on
+[bug-07b-1](milestones/M6-plugin/bugs/bug-07b-1.md)). Executor: **opencode**.
+The production heartbeat code is approved; the bounce is **tests-only** — the
+heartbeat tests use real wall-clock `sleep` instead of deterministic time
+(violates CLAUDE.md's no-`sleep` rule). Fix per bug-07b-1 (prefer Option B:
+inject the tick source, no Cargo.toml edit; or Option A: the now-authorized
+dev-only `tokio` `test-util` + `pause()`/`advance()`). Re-dispatch to opencode
+against the bug.
 
 **Just completed — [M6 / phase-07a — SSE prefill-stall: first-token vs.
 inter-token timeout + retry](milestones/M6-plugin/phase-07a-sse-prefill-stall.md)**

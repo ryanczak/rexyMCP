@@ -1,7 +1,7 @@
 # Phase 07b: executor liveness — `awaiting_model` heartbeat during the model wait
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** in-progress
 **Depends on:** phase-07a (the model-call site is what both phases touch; land 07a first)
 **Estimated diff:** ~190 lines (pre-call emit + heartbeat select + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -161,9 +161,18 @@ real dogfood run.)
       `mcp/src/status.rs`.
 - [ ] **No new dependencies.** `tokio` (with `time`) is already present; the
       `MockAiClient` lives in `executor/src/ai/testing.rs`.
+- [x] **(Added on re-dispatch for [bug-07b-1](bugs/bug-07b-1.md), Option A only)**
+      May add tokio's **`test-util`** feature to a **`[dev-dependencies]`** tokio
+      entry in the `executor` crate's `Cargo.toml`, solely to enable
+      `tokio::time::pause()`/`advance()` for deterministic heartbeat tests. This
+      is the *only* permitted `Cargo.toml` edit, and *only* under
+      `[dev-dependencies]` — **not** the runtime `[dependencies]`/workspace
+      tokio features. If you take **Option B** (inject the tick source), make
+      **no** `Cargo.toml` edit at all.
 - [ ] May **NOT** edit `docs/architecture.md` (the § "Liveness" amendment is a
-      06b decision), `STANDARDS.md`, `WORKFLOW.md`, `AGENTS.md`, `Cargo.toml`, or
-      any phase doc other than this one.
+      06b decision), `STANDARDS.md`, `WORKFLOW.md`, `AGENTS.md`, the runtime
+      `[dependencies]`/workspace sections of any `Cargo.toml`, or any phase doc
+      other than this one.
 
 ## Out of scope
 
@@ -250,3 +259,40 @@ executor/src/agent/mod.rs:258:                    emit_progress(&emit, "awaiting
 **Notes for review:** The heartbeat tests required `tokio::spawn` to run `execute_phase` in a separate task — on a single-threaded runtime, awaiting the future directly means the test's `sleep` runs *before* the future is polled, releasing the Notify gate before `chat` even starts waiting. Using `spawn` ensures proper concurrency. The test heartbeat period is 100 ms (via `#[cfg(test)]` const) to avoid needing `tokio::time::test-util`.
 
 verification: fmt OK · clippy OK · tests 540 passed · build OK
+
+### Review verdict — 2026-06-01
+
+- **Verdict:** rejected (bounced to in-progress)
+- **Bounces:** 1 (bug: [bug-07b-1](bugs/bug-07b-1.md) — major)
+- **Executor:** opencode
+- **Scope deviations:** the heartbeat tests use real wall-clock `sleep` + a
+  `#[cfg(test)]`-shrunk 100 ms period instead of the spec-mandated
+  `tokio::time::pause()`/`advance()` — violating CLAUDE.md's "deterministic / no
+  `sleep`" hard rule. **Production code is correct and approved on inspection**
+  (pre-call emit, `select!` heartbeat with `MissedTickBehavior::Skip`, clean
+  `Err` propagation, untouched drain/turn-counter); the bounce is **tests-only**.
+- **Re-ran gates myself:** fmt ✓ · clippy ✓ · 540 executor + 131 mcp tests pass ·
+  build ✓ (they pass today, but the real-sleep timing windows are latently flaky
+  on contended CI).
+- **Calibration (architect-side fault — worth flagging):** the 07b spec mandated
+  `pause()`/`advance()` but the phase authorized **no Cargo.toml edits**, and
+  those APIs require tokio's `test-util` feature — so the spec demanded a
+  technique its own authorizations forbade. The executor should have **filed a
+  blocker** rather than silently substituting real sleeps; but the architect
+  created the trap by pinning a test technique without authorizing the feature it
+  needs. *Lesson:* when a phase's test plan pins `tokio::time::pause()`/`advance()`
+  (or any capability behind a non-default feature/dep), the same phase must
+  authorize the dev-dependency/feature, or pin an injection-based approach that
+  needs none. First occurrence — noting, not folding into STANDARDS/WORKFLOW yet.
+  The re-dispatch fixes the spec gap (Authorizations now grant a dev-only
+  `test-util`, and bug-07b-1 offers a no-Cargo-edit Option B).
+
+### Update — 2026-06-01 (re-dispatch)
+
+Bounced on [bug-07b-1](bugs/bug-07b-1.md) (major, tests-only): heartbeat tests
+use real `sleep` instead of deterministic time. Fix per the bug's "How to fix" —
+**prefer Option B** (inject the tick source; no Cargo.toml change), or Option A
+(now-authorized dev-only `tokio` `test-util` + `pause()`/`advance()`). Drop the
+`#[cfg(test)]` period override so the shipped `HEARTBEAT_PERIOD` is what's tested,
+and assert a deterministic per-tick count. Do **not** touch the (approved)
+production heartbeat code.
