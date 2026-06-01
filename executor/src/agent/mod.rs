@@ -18,6 +18,7 @@ use std::time::SystemTime;
 
 use similar::{ChangeTag, TextDiff};
 use tokio::sync::mpsc;
+use tokio::time::interval;
 
 use crate::ai::AiClient;
 use crate::ai::next_tool_id;
@@ -55,6 +56,14 @@ const MAX_DIFF_CHARS: usize = 50_000;
 
 /// Tail cap on each captured final-command-set output.
 const MAX_COMMAND_TAIL_CHARS: usize = 4_000;
+
+/// Heartbeat period (seconds) for re-emitting `awaiting_model` while the model
+/// call is in flight. Keeps `rexymcp status`'s `last_ts` fresh during prefill.
+#[cfg(not(test))]
+const HEARTBEAT_PERIOD_SECS: u64 = 15;
+/// Millisecond variant for tests — 100 ms so heartbeat ticks fire quickly.
+#[cfg(test)]
+const HEARTBEAT_PERIOD_MS: u64 = 100;
 
 /// The prompt inputs and verbatim phase metadata the loop assembles into the
 /// system prompt and the escalation briefing.
@@ -203,11 +212,53 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         }
 
         // Step 3 — call the model and drain its event stream for this turn.
+        let upcoming_turn = turns + 1;
         let (tx, mut rx) = mpsc::unbounded_channel::<AiEvent>();
-        deps.client
-            .chat(&system, messages.clone(), tx, tools_opt)
-            .await
-            .map_err(|e| Error::Backend(e.to_string()))?;
+
+        // Emit awaiting_model before the call so rexymcp status flips off the
+        // previous turn's stage immediately.
+        {
+            let emit = EmitCtx {
+                progress: deps.progress,
+                log_handle: &log_handle,
+                redactor: &redactor,
+                clock: deps.clock,
+                pre_edit_content: &pre_edit_content,
+                project_root: deps.project_root,
+                turn: upcoming_turn,
+            };
+            emit_progress(&emit, "awaiting_model".to_string());
+        }
+
+        // Drive the chat future concurrently with a heartbeat interval. Each tick
+        // re-emits awaiting_model so last_ts stays fresh during a slow prefill.
+        let chat_fut = deps.client.chat(&system, messages.clone(), tx, tools_opt);
+        tokio::pin!(chat_fut);
+        #[cfg(not(test))]
+        let mut heartbeat = interval(std::time::Duration::from_secs(HEARTBEAT_PERIOD_SECS));
+        #[cfg(test)]
+        let mut heartbeat = interval(std::time::Duration::from_millis(HEARTBEAT_PERIOD_MS));
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                result = &mut chat_fut => {
+                    result.map_err(|e| Error::Backend(e.to_string()))?;
+                    break;
+                }
+                _ = heartbeat.tick() => {
+                    let emit = EmitCtx {
+                        progress: deps.progress,
+                        log_handle: &log_handle,
+                        redactor: &redactor,
+                        clock: deps.clock,
+                        pre_edit_content: &pre_edit_content,
+                        project_root: deps.project_root,
+                        turn: upcoming_turn,
+                    };
+                    emit_progress(&emit, "awaiting_model".to_string());
+                }
+            }
+        }
 
         let mut completion = String::new();
         let mut native_call: Option<ToolCall> = None;
@@ -1081,6 +1132,7 @@ fn emit_phase_run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::testing::MockAiClientPending;
     use crate::ai::testing::MockAiClientScript;
     use crate::ai::types::TokenBreakdown;
     use crate::phase::PhaseStatus;
@@ -3249,6 +3301,159 @@ mod tests {
         assert!(
             events.iter().any(|e| e.stage == "turn_start"),
             "expected turn_start event despite log failure"
+        );
+    }
+
+    // ── 07b: awaiting_model heartbeat ─────────────────────────────────────
+
+    use std::sync::Arc;
+    use tokio::sync::Notify;
+    use tokio::time::{Duration, sleep};
+
+    #[tokio::test]
+    async fn awaiting_model_emitted_before_model_call() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let budget = Budget::new(1_000_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let recs = records(dir.path());
+        let awaiting: Vec<_> = recs
+            .iter()
+            .filter(|r| {
+                matches!(
+                    &r.event,
+                    SessionEvent::Progress { stage, .. } if stage == "awaiting_model"
+                )
+            })
+            .collect();
+
+        assert!(
+            !awaiting.is_empty(),
+            "expected at least one awaiting_model Progress record"
+        );
+        let first_awaiting_idx = recs
+            .iter()
+            .position(|r| {
+                matches!(
+                    &r.event,
+                    SessionEvent::Progress { stage, .. } if stage == "awaiting_model"
+                )
+            })
+            .unwrap();
+        let completion_idx = recs
+            .iter()
+            .position(|r| matches!(&r.event, SessionEvent::Completion { .. }))
+            .unwrap();
+        assert!(
+            first_awaiting_idx < completion_idx,
+            "awaiting_model must be logged before Completion"
+        );
+        if let SessionEvent::Progress { turn, .. } = &awaiting[0].event {
+            assert_eq!(*turn, 1, "awaiting_model should be for turn 1 (upcoming)");
+        }
+    }
+
+    #[tokio::test]
+    async fn heartbeat_reemits_awaiting_model_while_in_flight() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+
+        let gate = Arc::new(Notify::new());
+        let client = MockAiClientPending::new(vec![token("done")], gate.clone());
+        let budget = Budget::new(1_000_000);
+
+        let inp = input();
+        let dir_path = dir.path().to_path_buf();
+        let dir_path2 = dir_path.clone();
+        let handle = tokio::spawn(async move {
+            execute_phase(&inp, deps(&client, &registry, &budget, 8, &dir_path)).await
+        });
+
+        // With the 100 ms test heartbeat period, wait long enough for ≥ 2 ticks.
+        sleep(Duration::from_millis(350)).await;
+
+        // While chat is still in flight, the session log should already have
+        // multiple awaiting_model records (pre-call + heartbeat re-emits).
+        let recs_mid = records(&dir_path2);
+        let awaiting_mid = recs_mid
+            .iter()
+            .filter(|r| {
+                matches!(
+                    &r.event,
+                    SessionEvent::Progress { stage, .. } if stage == "awaiting_model"
+                )
+            })
+            .count();
+
+        gate.notify_one();
+        handle.await.unwrap().unwrap();
+
+        assert!(
+            awaiting_mid >= 3,
+            "expected >= 3 awaiting_model records while chat is in flight, got {awaiting_mid}"
+        );
+    }
+
+    #[tokio::test]
+    async fn heartbeat_stops_when_model_responds() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+
+        let gate = Arc::new(Notify::new());
+        let client = MockAiClientPending::new(vec![token("done")], gate.clone());
+        let budget = Budget::new(1_000_000);
+
+        let inp = input();
+        let dir_path = dir.path().to_path_buf();
+        let dir_path2 = dir_path.clone();
+        let handle = tokio::spawn(async move {
+            execute_phase(&inp, deps(&client, &registry, &budget, 8, &dir_path)).await
+        });
+
+        // Let a couple heartbeat ticks fire, then release.
+        sleep(Duration::from_millis(250)).await;
+
+        let recs_before = records(&dir_path2);
+        let count_before = recs_before
+            .iter()
+            .filter(|r| {
+                matches!(
+                    &r.event,
+                    SessionEvent::Progress { stage, .. } if stage == "awaiting_model"
+                )
+            })
+            .count();
+
+        gate.notify_one();
+        let result = handle.await.unwrap().unwrap();
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+
+        // Wait more time and verify no new awaiting_model records appear.
+        sleep(Duration::from_millis(300)).await;
+
+        let recs_after = records(&dir_path2);
+        let count_after = recs_after
+            .iter()
+            .filter(|r| {
+                matches!(
+                    &r.event,
+                    SessionEvent::Progress { stage, .. } if stage == "awaiting_model"
+                )
+            })
+            .count();
+
+        assert_eq!(
+            count_before, count_after,
+            "no new awaiting_model records should appear after chat resolves"
         );
     }
 }

@@ -24,8 +24,8 @@ impl<F: Fn(&ProgressEvent) + Send + Sync> ProgressCallback for F {
 #[derive(Debug, Clone)]
 pub struct ProgressEvent {
     pub turn: usize,
-    /// Short stage tag: `"turn_start"`, `"tool:<name>"`, `"verify"`,
-    /// `"command:<name>"`. See § 3 for the canonical set.
+    /// Short stage tag: `"turn_start"`, `"awaiting_model"`, `"tool:<name>"`,
+    /// `"verify"`, `"command:<name>"`. See § 3 for the canonical set.
     pub stage: String,
     /// Per-file +/- counts from `pre_edit_content` vs. on-disk content.
     pub files_changed: Vec<FileNumstat>,

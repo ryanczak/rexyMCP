@@ -3,6 +3,7 @@ use crate::ai::types::{AiEvent, Message, ToolSchema};
 use async_trait::async_trait;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone)]
@@ -135,6 +136,57 @@ impl AiClient for MockAiClientScript {
             for event in events {
                 let _ = tx.send(event);
             }
+        }
+        Ok(())
+    }
+}
+
+/// Mock that records the call then **waits on a `Notify` gate** before sending
+/// events and returning. Lets a test hold `chat` in-flight across heartbeat
+/// ticks (`tokio::time::pause()` + `advance()`).
+pub struct MockAiClientPending {
+    calls: Arc<Mutex<Vec<MockCall>>>,
+    events: Arc<Mutex<VecDeque<AiEvent>>>,
+    gate: Arc<Notify>,
+}
+
+impl MockAiClientPending {
+    pub fn new(events: Vec<AiEvent>, gate: Arc<Notify>) -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(events.into_iter().collect())),
+            gate,
+        }
+    }
+
+    pub fn calls(&self) -> Vec<MockCall> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    /// Release the gate so `chat` returns.
+    pub fn release(&self) {
+        self.gate.notify_one();
+    }
+}
+
+#[async_trait]
+impl AiClient for MockAiClientPending {
+    async fn chat(
+        &self,
+        system_prompt: &str,
+        messages: Vec<Message>,
+        tx: UnboundedSender<AiEvent>,
+        tools: Option<&[ToolSchema]>,
+    ) -> anyhow::Result<()> {
+        self.calls.lock().unwrap().push(MockCall {
+            system_prompt: system_prompt.to_string(),
+            messages,
+            tool_count: tools.map(|t| t.len()).unwrap_or(0),
+        });
+        self.gate.notified().await;
+        let events: Vec<AiEvent> = self.events.lock().unwrap().drain(..).collect();
+        for event in events {
+            let _ = tx.send(event);
         }
         Ok(())
     }

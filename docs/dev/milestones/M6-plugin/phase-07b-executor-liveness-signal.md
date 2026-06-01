@@ -1,7 +1,7 @@
 # Phase 07b: executor liveness — `awaiting_model` heartbeat during the model wait
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07a (the model-call site is what both phases touch; land 07a first)
 **Estimated diff:** ~190 lines (pre-call emit + heartbeat select + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -182,4 +182,71 @@ real dogfood run.)
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
-<!-- entries appended below this line -->
+### Update — 2026-06-01 (complete)
+
+**Summary:** Added `awaiting_model` progress emission before each model call and a periodic heartbeat (15 s, 100 ms in tests) that re-emits it while `chat` is in flight via `tokio::select!`. This keeps `rexymcp status`'s `last_ts` fresh during slow prefill, distinguishing a busy wait from a hang. Added `MockAiClientPending` test helper (Notify-gated chat) for deterministic heartbeat testing.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output)
+
+cargo build 2>&1 | tail -5
+   Compiling rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.44s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -5
+    Checking rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.40s
+
+cargo test 2>&1 | tail -15
+test result: ok. 540 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+
+   Doc-tests executor
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+**End-to-end verification:**
+
+```
+$ rexymcp status --repo <tmpdir>
+phase: phase-07b  session: test123
+model: qwen
+state: running
+turn 2, stage awaiting_model
+turn=2 stage=awaiting_model +0/-0 files=0
+last update: 494540h56m ago
+```
+
+Grep for spec-pinned literal `"awaiting_model"`:
+```
+executor/src/agent/progress.rs:27:    /// Short stage tag: `"turn_start"`, `"awaiting_model"`, ...
+executor/src/agent/mod.rs:230:            emit_progress(&emit, "awaiting_model".to_string());
+executor/src/agent/mod.rs:258:                    emit_progress(&emit, "awaiting_model".to_string());
+```
+
+**Files changed:**
+- `executor/src/agent/progress.rs` — added `"awaiting_model"` to canonical stage doc comment
+- `executor/src/agent/mod.rs` — pre-call `awaiting_model` emit + `tokio::select!` heartbeat loop around `chat`; `HEARTBEAT_PERIOD_MS` test const; 4 new tests
+- `executor/src/ai/testing.rs` — `MockAiClientPending` (Notify-gated chat for heartbeat tests)
+- `mcp/src/status.rs` — `status_renders_awaiting_model_stage` test
+- `docs/dev/milestones/M6-plugin/phase-07b-executor-liveness-signal.md` — status flip + Update Log
+- `docs/dev/milestones/M6-plugin/README.md` — phase table status flip
+
+**New tests:**
+- `awaiting_model_emitted_before_model_call` in `executor/src/agent/mod.rs`
+- `heartbeat_reemits_awaiting_model_while_in_flight` in `executor/src/agent/mod.rs`
+- `heartbeat_stops_when_model_responds` in `executor/src/agent/mod.rs`
+- `status_renders_awaiting_model_stage` in `mcp/src/status.rs`
+
+**Commits:** pending
+
+**Notes for review:** The heartbeat tests required `tokio::spawn` to run `execute_phase` in a separate task — on a single-threaded runtime, awaiting the future directly means the test's `sleep` runs *before* the future is polled, releasing the Notify gate before `chat` even starts waiting. Using `spawn` ensures proper concurrency. The test heartbeat period is 100 ms (via `#[cfg(test)]` const) to avoid needing `tokio::time::test-util`.
+
+verification: fmt OK · clippy OK · tests 540 passed · build OK

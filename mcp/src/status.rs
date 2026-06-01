@@ -337,4 +337,20 @@ mod tests {
         let err = load_status(dir.path(), None).unwrap_err();
         assert!(err.contains("no session logs found"));
     }
+
+    #[test]
+    fn status_renders_awaiting_model_stage() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, progress(1, "verify")),
+            rec(300, 2, progress(2, "awaiting_model")),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.latest_stage.as_deref(), Some("awaiting_model"));
+        let out = format_status(&s, 500);
+        assert!(
+            out.contains("stage awaiting_model"),
+            "status output should show awaiting_model stage: {out}"
+        );
+    }
 }
