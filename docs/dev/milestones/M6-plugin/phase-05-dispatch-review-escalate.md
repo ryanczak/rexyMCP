@@ -1,7 +1,7 @@
 # Phase 05: dispatch + review + escalate skills
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** done
 **Depends on:** M6 phase-01 (done) — `plugin/skills/{dispatch,review}/SKILL.md` stubs exist; the architect skill scaffold pattern is established. M6 phase-04 (done) — sets the SKILL.md frontmatter conventions, `/rexymcp:` namespacing, `allowed-tools` pattern syntax, and the load-bearing-prose-pre-injection technique.
 **Estimated diff:** ~600 lines (three SKILL.md files; no Rust code)
 **Tags:** language=markdown, kind=feature, size=l
@@ -634,3 +634,54 @@ test result: ok. 518 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 **Notes for review:** One scope deviation: review skill's command-set examples originally used `cargo` literals (caught by forbidden grep); replaced with generic `<command from rexymcp.toml>` placeholders to satisfy the zero-hits acceptance criterion. This is defensible — the review skill runs whatever commands are in rexymcp.toml, not cargo-specific ones. Pre-flight 3 finding: Claude Code's skill-to-skill delegation is via user-suggested slash commands (no structured handoff); the review skill's "delegate to /rexymcp:escalate" means suggesting the user run that command, consistent with phase-04's no-auto-advance prohibition.
 
 verification: fmt OK · clippy OK · tests 518 passed · build OK
+
+### Update — 2026-05-31 (approved — architect)
+
+**Verdict:** approved_first_try. All three skills land cleanly with
+voice + framing + load-bearing examples preserved across the
+pre-injected escalate decision tree.
+
+**Gates:** fmt ✓ · clippy ✓ · tests **635** unchanged (zero Rust
+changes). **Validation greps clean:** 27 rexyMCP hits all legitimate;
+zero opencode/non-MCP-Rexy/cargo/Cargo.toml leaks across the three
+skills. Section counts match spec (dispatch 7, review 11, escalate 6).
+
+**Pre-injected escalate decision tree integrated near-verbatim** —
+the three lever sections preserved (Refined re-dispatch's five common
+refinements + telemetry-positive framing; Session takeover's "telemetry
+gap" cost + the anti-pattern callout "anything that feels special → slow
+down → try the refinement once"; Resume's deferred note); the decision-
+summary table preserves all six rows including the "feeling-special is
+not a lever" closer. Third successful test of the architect-pre-inject
+pattern (after phase-04 §§ 2, 5, 7).
+
+**Scope deviation declared:** review skill's command-set examples
+originally used `cargo` literals; replaced with `<command from
+rexymcp.toml>` placeholders to satisfy the zero-hits forbidden-pattern
+acceptance criterion. Correct interpretation of the spec — the review
+skill is language-agnostic.
+
+**Architect-side issue caught on read** (not bouncing — spec gap, not
+executor miss): the three skills had inconsistent **status-acceptance
+at re-dispatch**. Dispatch refused anything that wasn't `todo`; escalate
+left bounce-time status as `in-progress`; review's on-fail flipped to
+`in-progress` + told the user to re-run dispatch. Real workflow defect
+at the bug-fix-and-re-run path. Fixed in this commit: dispatch now
+accepts `todo` OR `in-progress` (latter = re-dispatch after bounce/
+escalation refinement); escalate's "leave as `in-progress`" guidance is
+unified.
+
+**Calibration note (mine):** when drafting interacting skills, pin the
+status-transition convention explicitly in the spec — each skill's
+expected entry/exit states. This was a spec miss; phase-05's three
+skills had each their own internal status logic without a shared
+convention. One occurrence; flagging not folding. If it recurs in
+future multi-skill specs (M7 etc.), fold.
+
+**Bounces:** 0.
+**Scope deviations:** 1 declared (cargo-literal → placeholder
+substitution in review).
+
+**Executor:** opencode (Qwen/Qwen3.6-27B-FP8). Approved first try.
+**M6 is now 5/6 done — only phase-06 (end-to-end dogfood, M6 closer)
+remains.**

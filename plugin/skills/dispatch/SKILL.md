@@ -23,8 +23,11 @@ Before any action:
    says "none," there is no active phase — tell the user and stop.
 2. Read the phase doc itself (resolve `<phase>` from the argument — it may be
    a short id like `phase-01` or a full path). Confirm its `Status:` line is
-   `todo`. If it is `in-progress`, `review`, or `done`, tell the user the
-   phase is not dispatchable in its current state and stop.
+   `todo` or `in-progress`. **`todo` = fresh first dispatch; `in-progress` =
+   re-dispatch after a bounce or escalation refinement (the executor reads
+   the phase doc + any bug docs + the Update Log's Notes-for-executor block
+   and continues).** If it is `review` or `done`, tell the user the phase is
+   not dispatchable in its current state and stop.
 3. Read `<repo>/rexymcp.toml` to confirm bootstrap is complete (the
    `[executor]` and `[commands]` sections are present). If missing, point the
    user at `/rexymcp:architect` to bootstrap first.

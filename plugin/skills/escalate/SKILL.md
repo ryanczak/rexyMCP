@@ -158,8 +158,8 @@ hardens.
 
 3. Tell the user: "Refinement applied. Re-dispatch via `/rexymcp:dispatch
    <phase>`."
-4. Flip the phase's `Status:` back to `todo` (or leave it `in-progress` if
-   the executor was mid-phase — the dispatch skill will check).
+4. Leave the phase's `Status:` as `in-progress` (the executor was mid-phase
+   and is now refining; dispatch accepts both `todo` and `in-progress`).
 
 ### Session takeover
 

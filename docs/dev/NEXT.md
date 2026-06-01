@@ -4,24 +4,22 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M6 / phase-05 — `dispatch` + `review` + `escalate`
-skills](milestones/M6-plugin/phase-05-dispatch-review-escalate.md) —
-`todo`, **drafted, awaiting dispatch**. Three skill bodies: dispatch
-(thin glue around `execute_phase`), review (substantive: re-run command
-set + walk DoD + write verdict / file bug + flip status), escalate
-(net-new directory; decision tree among refined-re-dispatch / session-
-takeover / resume). The escalation decision tree carries pre-injected
-draft prose per the phase-04 pattern — load-bearing for the system's
-resilience model. No Rust code; no new deps. Pre-flight 3 verifies
-Claude Code's skill-to-skill delegation convention + MCP tool-result
-plumbing.
+**Active phase:** none — M6 phase-05 closed (`done`,
+approved_first_try on 2026-05-31). The three skills (dispatch, review,
+escalate) are live; the escalation decision tree's pre-injected prose
+preserved with voice + framing intact. Architect-side fix included to
+align status-acceptance across dispatch/review/escalate at the
+re-dispatch path. **M6 is now 5/6 done — only phase-06 (end-to-end
+dogfood, M6 closer) remains.** The dogfood will produce the first real
+`PhaseRun` telemetry and surface the compaction-monitoring data the M6
+README phase-06 description pinned.
 
-**Last completed:** [M6 / phase-04 — architect skill + bootstrap
-routine](milestones/M6-plugin/phase-04-architect-skill.md) —
-approved_first_try 2026-05-31 (three declared deviations all
-defensible: `/rexymcp:` namespacing, Claude-native allowed-tools
-syntax with MCP tools via .mcp.json, opencode-harness-safe substitution
-of literal tag syntax in pre-injection §4 example).
+**Last completed:** [M6 / phase-05 — dispatch + review + escalate
+skills](milestones/M6-plugin/phase-05-dispatch-review-escalate.md) —
+approved_first_try 2026-05-31 (one declared deviation: review skill's
+cargo-literal examples genericized to `<command from rexymcp.toml>`
+placeholders; architect-side status-acceptance alignment fix
+co-committed).
 
 **Milestone:** [M6 — Plugin + architect/review skills](milestones/M6-plugin/README.md)
 — in progress (M1–M5 done; M6 phases 01–02 done). M6 packages rexyMCP
