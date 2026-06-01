@@ -1,7 +1,7 @@
 # Phase 07a: SSE prefill-stall — first-token vs. inter-token timeout + retry
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** review
+**Status:** in-progress
 **Depends on:** phase-06a (done) — surfaced by the dogfood smoketest it prepared
 **Estimated diff:** ~220 lines (timeout split + config + bounded retry + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -263,3 +263,28 @@ Not applicable — phase ships no new runtime-loadable artifact (a CLI flag, a c
 **Notes for review:** None.
 
 **verification:** fmt OK · clippy OK · tests 525 passed · build OK
+
+### Review verdict — 2026-06-01
+
+- **Verdict:** rejected (bounced to in-progress)
+- **Bounces:** 1 (bug: [bug-07a-1](bugs/bug-07a-1.md) — major)
+- **Executor:** opencode
+- **Scope deviations:** none — authorizations, no-new-deps, and the
+  `Err`→`PhaseResult` deferral all respected. Production `chat()` logic is
+  correct on inspection and all four gates re-ran green (525 passed).
+- **Calibration:** first occurrence of *behavioral logic implemented as a
+  `#[cfg(test)]` duplicate instead of an extracted helper production calls* — so
+  the tests validate a divergent copy, not the shipping path, and a spec-required
+  negative case (keep-alive must not flip `first_token_seen`) goes untested.
+  Noting (one occurrence; not folding into STANDARDS/WORKFLOW yet). If it recurs,
+  fold a DoD line: "logic a test asserts must be reachable from production — no
+  behavioral function gated `#[cfg(test)]`."
+
+### Update — 2026-06-01 (re-dispatch)
+
+Bounced on [bug-07a-1](bugs/bug-07a-1.md) (major): the retry/timeout decision is
+duplicated in a `#[cfg(test)]`-only `drain_stream_with_retry` that production
+never calls, so the shipping `chat()` path is untested and the helper's
+`first_token_seen` semantics differ from production's. Fix per the bug's "How to
+fix": share one implementation between `chat()` and the tests, and add the
+keep-alive negative test. Everything else in 07a is approved — do not widen.
