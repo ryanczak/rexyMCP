@@ -118,6 +118,8 @@ mod tests {
             model: "test".into(),
             base_url: "http://127.0.0.1:1".into(),
             api_key: None,
+            first_token_timeout_secs: 600,
+            stream_idle_timeout_secs: 90,
         };
         let health = check(&cfg).await;
         assert!(!health.reachable);

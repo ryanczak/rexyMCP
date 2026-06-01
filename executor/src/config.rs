@@ -29,6 +29,20 @@ pub struct ExecutorConfig {
     pub base_url: String,
     /// Optional API key; local endpoints usually ignore it.
     pub api_key: Option<String>,
+    /// Budget (seconds) for the wait before the first token of a completion (prefill).
+    #[serde(default = "default_first_token_timeout_secs")]
+    pub first_token_timeout_secs: u64,
+    /// Budget (seconds) for the gap between tokens once streaming has begun.
+    #[serde(default = "default_stream_idle_timeout_secs")]
+    pub stream_idle_timeout_secs: u64,
+}
+
+fn default_first_token_timeout_secs() -> u64 {
+    600
+}
+
+fn default_stream_idle_timeout_secs() -> u64 {
+    90
 }
 
 impl Default for ExecutorConfig {
@@ -38,6 +52,8 @@ impl Default for ExecutorConfig {
             model: String::new(),
             base_url: "http://localhost:1234/v1".into(),
             api_key: None,
+            first_token_timeout_secs: default_first_token_timeout_secs(),
+            stream_idle_timeout_secs: default_stream_idle_timeout_secs(),
         }
     }
 }
@@ -284,5 +300,68 @@ dir = "/var/lib/rexymcp"
 
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.telemetry.dir, Some(PathBuf::from("/var/lib/rexymcp")));
+    }
+
+    #[test]
+    fn config_defaults_first_token_and_idle_timeouts() {
+        let cfg = ExecutorConfig::default();
+        assert_eq!(cfg.first_token_timeout_secs, 600);
+        assert_eq!(cfg.stream_idle_timeout_secs, 90);
+    }
+
+    #[test]
+    fn config_loads_overridden_timeouts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+first_token_timeout_secs = 300
+stream_idle_timeout_secs = 45
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.first_token_timeout_secs, 300);
+        assert_eq!(cfg.executor.stream_idle_timeout_secs, 45);
+    }
+
+    #[test]
+    fn config_omits_timeouts_keeps_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.first_token_timeout_secs, 600);
+        assert_eq!(cfg.executor.stream_idle_timeout_secs, 90);
     }
 }

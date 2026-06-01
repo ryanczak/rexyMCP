@@ -168,19 +168,18 @@ pub async fn send_with_retry(
     }
 }
 
-pub const STREAM_CHUNK_TIMEOUT: Duration = Duration::from_secs(90);
-
 pub async fn stream_next_with_timeout<B>(
     stream: &mut (impl futures_util::Stream<Item = Result<B, reqwest::Error>> + Unpin),
+    timeout: Duration,
 ) -> Option<Result<B, anyhow::Error>> {
     use futures_util::StreamExt;
-    match tokio::time::timeout(STREAM_CHUNK_TIMEOUT, stream.next()).await {
+    match tokio::time::timeout(timeout, stream.next()).await {
         Ok(Some(Ok(bytes))) => Some(Ok(bytes)),
         Ok(Some(Err(e))) => Some(Err(e.into())),
         Ok(None) => None,
         Err(_elapsed) => Some(Err(anyhow::anyhow!(
             "SSE stream stalled — no data received for {}s (server may have dropped the connection)",
-            STREAM_CHUNK_TIMEOUT.as_secs()
+            timeout.as_secs()
         ))),
     }
 }
@@ -190,12 +189,15 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
         cfg.api_key.clone().unwrap_or_default(),
         cfg.model.clone(),
         cfg.base_url.clone(),
+        Duration::from_secs(cfg.first_token_timeout_secs),
+        Duration::from_secs(cfg.stream_idle_timeout_secs),
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::stream;
 
     #[test]
     fn circuit_breaker_closed_initially() {
@@ -240,6 +242,8 @@ mod tests {
             model: "gpt-4o".into(),
             base_url: String::new(),
             api_key: Some("key".into()),
+            first_token_timeout_secs: 600,
+            stream_idle_timeout_secs: 90,
         };
         let _c = make_client(&cfg);
     }
@@ -251,6 +255,8 @@ mod tests {
             model: "llama3.2".into(),
             base_url: "http://localhost:11434/v1".into(),
             api_key: Some("local".into()),
+            first_token_timeout_secs: 600,
+            stream_idle_timeout_secs: 90,
         };
         let _c = make_client(&cfg);
     }
@@ -262,7 +268,24 @@ mod tests {
             model: "some-model".into(),
             base_url: "http://localhost:1234/v1".into(),
             api_key: Some("local".into()),
+            first_token_timeout_secs: 600,
+            stream_idle_timeout_secs: 90,
         };
         let _c = make_client(&cfg);
+    }
+
+    #[tokio::test]
+    async fn stream_next_uses_supplied_timeout() {
+        let timeout = Duration::from_secs(1);
+        let mut pending: futures_util::stream::Pending<Result<Vec<u8>, reqwest::Error>> =
+            stream::pending();
+
+        let result = stream_next_with_timeout(&mut pending, timeout).await;
+        assert!(result.is_some(), "should return Some on timeout");
+        let err_msg = result.unwrap().unwrap_err().to_string();
+        assert!(
+            err_msg.contains("1s"),
+            "error should report the actual budget: {err_msg}"
+        );
     }
 }

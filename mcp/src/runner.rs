@@ -217,6 +217,8 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         inp.cfg.executor.api_key.clone().unwrap_or_default(),
         model.to_string(),
         inp.cfg.executor.base_url.clone(),
+        std::time::Duration::from_secs(inp.cfg.executor.first_token_timeout_secs),
+        std::time::Duration::from_secs(inp.cfg.executor.stream_idle_timeout_secs),
     );
 
     let client: &dyn AiClient = match inp.test_client {

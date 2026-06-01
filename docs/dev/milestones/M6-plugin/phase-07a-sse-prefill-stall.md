@@ -1,7 +1,7 @@
 # Phase 07a: SSE prefill-stall — first-token vs. inter-token timeout + retry
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a (done) — surfaced by the dogfood smoketest it prepared
 **Estimated diff:** ~220 lines (timeout split + config + bounded retry + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -210,3 +210,56 @@ a real endpoint may be added as an `#[ignore]`-gated test, per STANDARDS.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-01 (progress)
+
+Added `first_token_timeout_secs` (default 600) and `stream_idle_timeout_secs` (default 90) to `ExecutorConfig` with serde defaults. Changed `stream_next_with_timeout` to take a `Duration` parameter and removed the `STREAM_CHUNK_TIMEOUT` const. Added timeout fields to `OpenAiClient`, threaded through `make_client` and `mcp/src/runner.rs`. Implemented first-token vs inter-token selection in `chat()` with `first_token_seen` tracking on non-empty content/reasoning/tool_calls deltas. Implemented bounded retry (≤2) on first-token stalls via a `drain_stream_with_retry` helper generic over stream type. Added tests for config defaults, TOML load/omit, stream timeout behavior, first-token stall retry, retry exhaustion, and mid-stream no-retry.
+
+### Update — 2026-06-01 (complete)
+
+**Summary:** Split the uniform 90s SSE stream timeout into two configurable timeouts (first-token: 600s, inter-token: 90s) with bounded retry on first-token stalls. The `chat()` loop tracks `first_token_seen` on the first non-empty delta and selects the appropriate timeout. First-token stalls retry up to 2 times; mid-stream stalls error immediately. Stall error messages report the actual budget that elapsed.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.80s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.15s
+
+cargo test 2>&1 | tail -10
+test result: ok. 525 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+Not applicable — phase ships no new runtime-loadable artifact (a CLI flag, a checked-in file, a config the binary surfaces to the user). It changes the internal streaming timeout/retry behavior of `OpenAiClient`, exercised by the hermetic tests.
+
+**Files changed:**
+- `executor/src/config.rs` — added `first_token_timeout_secs` (default 600) and `stream_idle_timeout_secs` (default 90) to `ExecutorConfig` + `Default` impl + 3 tests
+- `executor/src/ai/mod.rs` — `stream_next_with_timeout` takes `Duration` param; removed `STREAM_CHUNK_TIMEOUT` const; updated `make_client`; added 1 test
+- `executor/src/ai/backends/openai.rs` — added timeout fields to `OpenAiClient`; implemented first-token vs inter-token selection + bounded retry in `chat()`; added `drain_stream_with_retry` helper + 3 tests
+- `mcp/src/runner.rs` — updated `OpenAiClient::new` call with timeout args
+- `executor/src/health.rs` — added timeout fields to test `ExecutorConfig`
+
+**New tests:**
+- `config_defaults_first_token_and_idle_timeouts` in `executor/src/config.rs`
+- `config_loads_overridden_timeouts` in `executor/src/config.rs`
+- `config_omits_timeouts_keeps_defaults` in `executor/src/config.rs`
+- `stream_next_uses_supplied_timeout` in `executor/src/ai/mod.rs`
+- `first_token_stall_retries_then_succeeds` in `executor/src/ai/backends/openai.rs`
+- `first_token_stall_exhausts_retries_then_errors` in `executor/src/ai/backends/openai.rs`
+- `midstream_stall_is_not_retried` in `executor/src/ai/backends/openai.rs`
+
+**Notes for review:** None.
+
+**verification:** fmt OK · clippy OK · tests 525 passed · build OK

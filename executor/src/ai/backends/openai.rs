@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{Value, json};
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::types::{AiEvent, Message, TokenBreakdown, ToolSchema};
@@ -124,10 +125,18 @@ pub struct OpenAiClient {
     api_key: String,
     model: String,
     base_url: String,
+    first_token_timeout: Duration,
+    stream_idle_timeout: Duration,
 }
 
 impl OpenAiClient {
-    pub fn new(api_key: String, model: String, base_url: String) -> Self {
+    pub fn new(
+        api_key: String,
+        model: String,
+        base_url: String,
+        first_token_timeout: Duration,
+        stream_idle_timeout: Duration,
+    ) -> Self {
         let resolved_url = if base_url.is_empty() {
             "https://api.openai.com/v1".to_string()
         } else {
@@ -137,6 +146,8 @@ impl OpenAiClient {
             api_key,
             model,
             base_url: resolved_url,
+            first_token_timeout,
+            stream_idle_timeout,
         }
     }
 }
@@ -153,116 +164,173 @@ impl AiClient for OpenAiClient {
         let converted = convert_messages(messages);
         let body = build_chat_body(&self.model, system, converted, tools);
 
-        let response = send_with_retry(|| {
-            http()
-                .post(format!("{}/chat/completions", self.base_url))
-                .bearer_auth(&self.api_key)
-                .json(&body)
-        })
-        .await?;
+        let mut first_token_seen = false;
+        let mut retries = 0;
+        const MAX_FIRST_TOKEN_RETRIES: u32 = 2;
 
-        let mut stream = response.bytes_stream();
-        let mut tool_id = String::new();
-        let mut tool_name = String::new();
-        let mut tool_args = String::new();
-        let mut leftover = String::new();
-        let mut usage = TokenBreakdown::default();
-        let mut in_reasoning = false;
+        loop {
+            let response = send_with_retry(|| {
+                http()
+                    .post(format!("{}/chat/completions", self.base_url))
+                    .bearer_auth(&self.api_key)
+                    .json(&body)
+            })
+            .await?;
 
-        const MAX_LEFTOVER_BYTES: usize = 1 << 20;
+            let mut stream = response.bytes_stream();
+            let mut tool_id = String::new();
+            let mut tool_name = String::new();
+            let mut tool_args = String::new();
+            let mut leftover = String::new();
+            let mut usage = TokenBreakdown::default();
+            let mut in_reasoning = false;
 
-        'outer: while let Some(result) = stream_next_with_timeout(&mut stream).await {
-            let bytes = result?;
-            leftover.push_str(&String::from_utf8_lossy(&bytes));
-            if leftover.len() > MAX_LEFTOVER_BYTES {
-                return Err(anyhow::anyhow!(
-                    "SSE stream leftover buffer exceeded {} bytes without a newline; \
-                     aborting to prevent memory exhaustion",
-                    MAX_LEFTOVER_BYTES
-                ));
-            }
+            const MAX_LEFTOVER_BYTES: usize = 1 << 20;
 
-            while let Some(pos) = leftover.find('\n') {
-                let line = leftover[..pos].trim().to_string();
-                leftover = leftover[pos + 1..].to_string();
+            let stall_result = loop {
+                let timeout = if first_token_seen {
+                    self.stream_idle_timeout
+                } else {
+                    self.first_token_timeout
+                };
+                match stream_next_with_timeout(&mut stream, timeout).await {
+                    Some(Ok(bytes)) => {
+                        leftover.push_str(&String::from_utf8_lossy(&bytes));
+                        if leftover.len() > MAX_LEFTOVER_BYTES {
+                            break Err(anyhow::anyhow!(
+                                "SSE stream leftover buffer exceeded {} bytes without a newline; \
+                                 aborting to prevent memory exhaustion",
+                                MAX_LEFTOVER_BYTES
+                            ));
+                        }
 
-                if let Some(data) = line.strip_prefix("data: ") {
-                    if data == "[DONE]" {
-                        break 'outer;
-                    }
-                    if let Ok(v) = serde_json::from_str::<Value>(data) {
-                        if let Some(delta) =
-                            v["choices"].get(0).and_then(|c| c["delta"].as_object())
-                        {
-                            let reasoning_chunk = delta
-                                .get("reasoning")
-                                .or_else(|| delta.get("reasoning_content"))
-                                .and_then(|r| r.as_str())
-                                .filter(|r| !r.is_empty());
-                            if let Some(chunk) = reasoning_chunk {
-                                if !in_reasoning {
-                                    let _ = tx.send(AiEvent::Token("</think>".to_string()));
-                                    in_reasoning = true;
+                        let mut done = false;
+                        while let Some(pos) = leftover.find('\n') {
+                            let line = leftover[..pos].trim().to_string();
+                            leftover = leftover[pos + 1..].to_string();
+
+                            if let Some(data) = line.strip_prefix("data: ") {
+                                if data == "[DONE]" {
+                                    done = true;
+                                    break;
                                 }
-                                let _ = tx.send(AiEvent::Token(chunk.to_string()));
-                            }
-                            if let Some(content) = delta.get("content").and_then(|c| c.as_str())
-                                && !content.is_empty()
-                            {
-                                if in_reasoning {
-                                    let _ = tx.send(AiEvent::Token("</think>\n".to_string()));
-                                    in_reasoning = false;
-                                }
-                                let _ = tx.send(AiEvent::Token(content.to_string()));
-                            }
-                            if let Some(tool_calls) =
-                                delta.get("tool_calls").and_then(|t| t.as_array())
-                                && let Some(tc) = tool_calls.first()
-                            {
-                                if in_reasoning {
-                                    let _ = tx.send(AiEvent::Token("</think>\n".to_string()));
-                                    in_reasoning = false;
-                                }
-                                if let Some(id) = tc.get("id").and_then(|i| i.as_str()) {
-                                    if !tool_id.is_empty() && tool_id != id {
-                                        emit_tool_call_generic(
-                                            &tx, &tool_id, &tool_name, &tool_args,
-                                        );
-                                    }
-                                    tool_id = id.to_string();
-                                    tool_args.clear();
-                                }
-                                if let Some(f) = tc.get("function") {
-                                    if let Some(n) = f.get("name").and_then(|n| n.as_str())
-                                        && !n.is_empty()
+                                if let Ok(v) = serde_json::from_str::<Value>(data) {
+                                    if let Some(delta) =
+                                        v["choices"].get(0).and_then(|c| c["delta"].as_object())
                                     {
-                                        tool_name = n.to_string();
+                                        let has_content = delta
+                                            .get("content")
+                                            .and_then(|c| c.as_str())
+                                            .is_some_and(|c| !c.is_empty());
+                                        let has_reasoning = delta
+                                            .get("reasoning")
+                                            .or_else(|| delta.get("reasoning_content"))
+                                            .and_then(|r| r.as_str())
+                                            .is_some_and(|r| !r.is_empty());
+                                        let has_tool_calls = delta
+                                            .get("tool_calls")
+                                            .and_then(|t| t.as_array())
+                                            .is_some_and(|t| !t.is_empty());
+
+                                        if !first_token_seen
+                                            && (has_content || has_reasoning || has_tool_calls)
+                                        {
+                                            first_token_seen = true;
+                                        }
+
+                                        let reasoning_chunk = delta
+                                            .get("reasoning")
+                                            .or_else(|| delta.get("reasoning_content"))
+                                            .and_then(|r| r.as_str())
+                                            .filter(|r| !r.is_empty());
+                                        if let Some(chunk) = reasoning_chunk {
+                                            if !in_reasoning {
+                                                let _ =
+                                                    tx.send(AiEvent::Token("</think>".to_string()));
+                                                in_reasoning = true;
+                                            }
+                                            let _ = tx.send(AiEvent::Token(chunk.to_string()));
+                                        }
+                                        if let Some(content) =
+                                            delta.get("content").and_then(|c| c.as_str())
+                                            && !content.is_empty()
+                                        {
+                                            if in_reasoning {
+                                                let _ = tx
+                                                    .send(AiEvent::Token("</think>\n".to_string()));
+                                                in_reasoning = false;
+                                            }
+                                            let _ = tx.send(AiEvent::Token(content.to_string()));
+                                        }
+                                        if let Some(tool_calls) =
+                                            delta.get("tool_calls").and_then(|t| t.as_array())
+                                            && let Some(tc) = tool_calls.first()
+                                        {
+                                            if in_reasoning {
+                                                let _ = tx
+                                                    .send(AiEvent::Token("</think>\n".to_string()));
+                                                in_reasoning = false;
+                                            }
+                                            if let Some(id) = tc.get("id").and_then(|i| i.as_str())
+                                            {
+                                                if !tool_id.is_empty() && tool_id != id {
+                                                    emit_tool_call_generic(
+                                                        &tx, &tool_id, &tool_name, &tool_args,
+                                                    );
+                                                }
+                                                tool_id = id.to_string();
+                                                tool_args.clear();
+                                            }
+                                            if let Some(f) = tc.get("function") {
+                                                if let Some(n) =
+                                                    f.get("name").and_then(|n| n.as_str())
+                                                    && !n.is_empty()
+                                                {
+                                                    tool_name = n.to_string();
+                                                }
+                                                if let Some(args) =
+                                                    f.get("arguments").and_then(|a| a.as_str())
+                                                {
+                                                    tool_args.push_str(args);
+                                                }
+                                            }
+                                        }
                                     }
-                                    if let Some(args) = f.get("arguments").and_then(|a| a.as_str())
-                                    {
-                                        tool_args.push_str(args);
+                                    if let Some(u) = v.get("usage").and_then(|u| u.as_object()) {
+                                        usage = parse_openai_usage(u);
                                     }
                                 }
                             }
                         }
-                        if let Some(u) = v.get("usage").and_then(|u| u.as_object()) {
-                            usage = parse_openai_usage(u);
+                        if done {
+                            break Ok(());
                         }
                     }
+                    Some(Err(e)) => break Err(e),
+                    None => break Ok(()),
+                }
+            };
+
+            match stall_result {
+                Ok(()) => {
+                    if in_reasoning {
+                        let _ = tx.send(AiEvent::Token("</think>\n".to_string()));
+                    }
+                    if !tool_id.is_empty() {
+                        emit_tool_call_generic(&tx, &tool_id, &tool_name, &tool_args);
+                    }
+                    let _ = tx.send(AiEvent::Done(usage));
+                    return Ok(());
+                }
+                Err(e) => {
+                    if !first_token_seen && retries < MAX_FIRST_TOKEN_RETRIES {
+                        retries += 1;
+                        continue;
+                    }
+                    return Err(e);
                 }
             }
         }
-
-        if in_reasoning {
-            let _ = tx.send(AiEvent::Token("</think>\n".to_string()));
-        }
-
-        if !tool_id.is_empty() {
-            emit_tool_call_generic(&tx, &tool_id, &tool_name, &tool_args);
-        }
-
-        let _ = tx.send(AiEvent::Done(usage));
-        Ok(())
     }
 }
 
@@ -279,14 +347,80 @@ fn emit_tool_call_generic(tx: &UnboundedSender<AiEvent>, id: &str, name: &str, a
     });
 }
 
+/// Drains a stream with per-item timeout selection and bounded retry on
+/// first-token stalls. Generic over item/error so it can be unit-tested
+/// without reqwest specifics.
+///
+/// `next_item` produces the next stream item. Returns `Ok` when the stream
+/// ends naturally (`None`), or `Err` on a stall / transport error.
+///
+/// On a stall *before* any token has been seen, retries up to
+/// `max_first_token_retries` times by calling `retry_fn` (which should
+/// re-issue the request and return a fresh stream via `next_item`). After
+/// the cap is exhausted, or if the stall happens after a token was emitted,
+/// the error is returned immediately.
+#[cfg(test)]
+pub(crate) async fn drain_stream_with_retry<S, T, E, F, R>(
+    mut next_item: F,
+    mut retry_fn: R,
+    first_token_timeout: Duration,
+    stream_idle_timeout: Duration,
+    max_first_token_retries: u32,
+) -> Result<(), E>
+where
+    S: futures_util::Stream<Item = std::result::Result<T, E>> + Unpin,
+    F: FnMut() -> S,
+    R: FnMut() -> S,
+    E: From<anyhow::Error>,
+{
+    use futures_util::StreamExt;
+
+    let mut first_token_seen = false;
+    let mut retries = 0u32;
+    let mut stream = next_item();
+
+    loop {
+        let timeout = if first_token_seen {
+            stream_idle_timeout
+        } else {
+            first_token_timeout
+        };
+
+        match tokio::time::timeout(timeout, stream.next()).await {
+            Ok(Some(Ok(_item))) => {
+                if !first_token_seen {
+                    first_token_seen = true;
+                }
+            }
+            Ok(Some(Err(e))) => return Err(e),
+            Ok(None) => return Ok(()),
+            Err(_elapsed) => {
+                if !first_token_seen && retries < max_first_token_retries {
+                    retries += 1;
+                    stream = retry_fn();
+                    continue;
+                }
+                return Err(anyhow::anyhow!(
+                    "SSE stream stalled — no data received for {}s (server may have dropped the connection)",
+                    timeout.as_secs()
+                ).into());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::super::types::{AiEvent, Message, ToolCall, ToolResult, ToolSchema};
     use super::{
-        build_chat_body, convert_messages, emit_tool_call_generic, parse_openai_usage,
-        render_openai_tools,
+        build_chat_body, convert_messages, drain_stream_with_retry, emit_tool_call_generic,
+        parse_openai_usage, render_openai_tools,
     };
+    use futures_util::{StreamExt, stream};
     use serde_json::{Value, json};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
     use tokio::sync::mpsc;
 
     #[test]
@@ -476,5 +610,90 @@ mod tests {
         assert_eq!(tcs.len(), 1);
         assert_eq!(tcs[0]["id"], "tc_2");
         assert_eq!(tcs[0]["function"]["name"], "bash");
+    }
+
+    #[tokio::test]
+    async fn first_token_stall_retries_then_succeeds() {
+        let call_count = Arc::new(AtomicU32::new(0));
+        let call_count_clone = call_count.clone();
+
+        let result = drain_stream_with_retry(
+            move || {
+                let c = call_count_clone.clone();
+                c.fetch_add(1, Ordering::SeqCst);
+                if c.load(Ordering::SeqCst) <= 1 {
+                    stream::pending::<Result<String, anyhow::Error>>().boxed()
+                } else {
+                    stream::iter(vec![Ok("token".to_string())]).boxed()
+                }
+            },
+            move || {
+                let c = call_count.clone();
+                c.fetch_add(1, Ordering::SeqCst);
+                stream::iter(vec![Ok("token".to_string())]).boxed()
+            },
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            2,
+        )
+        .await;
+
+        assert!(result.is_ok(), "should succeed after retry: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn first_token_stall_exhausts_retries_then_errors() {
+        let result = drain_stream_with_retry(
+            || stream::pending::<Result<String, anyhow::Error>>().boxed(),
+            || stream::pending::<Result<String, anyhow::Error>>().boxed(),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            2,
+        )
+        .await;
+
+        assert!(result.is_err(), "should error after exhausting retries");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("1s"),
+            "error should report the first-token budget: {err_msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn midstream_stall_is_not_retried() {
+        let request_count = Arc::new(AtomicU32::new(0));
+        let stall_after_first = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stall_flag = stall_after_first.clone();
+        let request_count_check = request_count.clone();
+
+        let result = drain_stream_with_retry(
+            move || {
+                let c = request_count.clone();
+                let s = stall_flag.clone();
+                c.fetch_add(1, Ordering::SeqCst);
+                let first_call = c.load(Ordering::SeqCst) == 1;
+                if first_call {
+                    stream::iter(vec![Ok("first_token".to_string())])
+                        .chain(stream::pending())
+                        .boxed()
+                } else {
+                    s.store(true, Ordering::SeqCst);
+                    stream::pending::<Result<String, anyhow::Error>>().boxed()
+                }
+            },
+            move || stream::pending::<Result<String, anyhow::Error>>().boxed(),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            2,
+        )
+        .await;
+
+        assert!(result.is_err(), "should error on mid-stream stall");
+        assert_eq!(
+            request_count_check.load(Ordering::SeqCst),
+            1,
+            "should not have retried after first token was seen"
+        );
     }
 }
