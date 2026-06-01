@@ -1,7 +1,7 @@
 # Phase 05: dispatch + review + escalate skills
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** M6 phase-01 (done) — `plugin/skills/{dispatch,review}/SKILL.md` stubs exist; the architect skill scaffold pattern is established. M6 phase-04 (done) — sets the SKILL.md frontmatter conventions, `/rexymcp:` namespacing, `allowed-tools` pattern syntax, and the load-bearing-prose-pre-injection technique.
 **Estimated diff:** ~600 lines (three SKILL.md files; no Rust code)
 **Tags:** language=markdown, kind=feature, size=l
@@ -582,3 +582,55 @@ No `#[cfg(test)]` blocks (no Rust). End-to-end exercise is phase-06
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-05-31 (progress)
+
+Status flipped to in-progress. Reading pre-flight items: verified Claude Code's skill-to-skill delegation is via user-suggested slash commands (no structured handoff), confirmed MCP tool results surface through the tool-call mechanism in context. Confirmed existing stubs at dispatch/ and review/, confirmed escalate/ does not exist. Starting with dispatch SKILL.md.
+
+### Update — 2026-05-31 (complete)
+
+**Summary:** Replaced the phase-01 stubs for dispatch and review SKILL.md files and created the net-new escalate SKILL.md. Dispatch (7 sections) is thin glue: read NEXT.md + phase doc + rexymcp.toml, check executor_health, invoke execute_phase, surface complete/hard_fail/budget_exceeded results with suggested next-step slash commands. Review (10 sections) is the substantive gate: refuse non-review-status and hard_fail results, re-run the command set, walk the DoD checklist, spot-check tests, walk acceptance criteria, write verdict + flip status on pass, file bug + flip back on fail, handle milestone close. Escalate (5 sections + pre-injected decision tree) carries the load-bearing prose: refined re-dispatch as default, session takeover as last resort with telemetry-cost framing, resume deferred. All three use `/rexymcp:` namespacing throughout. One declared deviation: the review skill's command-set examples originally used `cargo` literals, which the forbidden grep caught; replaced with generic `<command from rexymcp.toml>` placeholders.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.87s
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+cargo test
+test result: ok. 518 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+- Not applicable — phase ships skill content (Markdown only). End-to-end exercise lands in M6 phase-06 (dogfood).
+- Validation greps:
+  - `grep -rnE '[Rr]exy[Mm][Cc][Pp]' plugin/skills/{dispatch,review,escalate}/SKILL.md` — 22 hits, all legitimate refs (rexymcp.toml, /rexymcp: slash commands, rexymcp serve).
+  - `grep -rnE 'opencode|Rexy(?!MCP)|cargo |Cargo\.toml' plugin/skills/{dispatch,review,escalate}/SKILL.md` — zero hits.
+  - `grep '^## ' plugin/skills/{dispatch,review,escalate}/SKILL.md` — dispatch: 7 sections (Read these first, 1-5, 6); review: 10 sections (Read these first, 1-10); escalate: 5 sections (Read these first, 1-5) + pre-injected decision tree integrated under §2.
+- Read-pass gut-check:
+  - `/rexymcp:dispatch phase-01` against a todo phase with reachable endpoint → reads NEXT.md, confirms todo, checks rexymcp.toml, runs executor_health, invokes execute_phase, on complete suggests /rexymcp:review, on hard_fail/budget_exceeded suggests /rexymcp:escalate. Correct.
+  - `/rexymcp:review phase-01` against a review-status phase with complete result → refuses non-review/hard_fail, runs commands from rexymcp.toml, walks DoD, spot-checks tests, walks acceptance criteria, on pass writes verdict + flips to done + commits, on fail writes bug + flips to in-progress + commits. Correct.
+  - `/rexymcp:escalate phase-01` against a hard_fail result → refuses complete results, reads briefing + phase doc + STANDARDS.md, walks decision tree (refined re-dispatch default → session takeover last resort → resume deferred), executes chosen lever, writes escalation outcome. Anti-pattern warning against skipping refined re-dispatch preserved. Correct.
+
+**Files changed:**
+- `plugin/skills/dispatch/SKILL.md` — replaced phase-01 stub with full 7-section dispatch skill.
+- `plugin/skills/review/SKILL.md` — replaced phase-01 stub with full 10-section review skill.
+- `plugin/skills/escalate/SKILL.md` — net-new file, 5 sections + pre-injected decision tree.
+
+**New tests:** None — no Rust code changes.
+
+**Commits:** (pending)
+
+**Notes for review:** One scope deviation: review skill's command-set examples originally used `cargo` literals (caught by forbidden grep); replaced with generic `<command from rexymcp.toml>` placeholders to satisfy the zero-hits acceptance criterion. This is defensible — the review skill runs whatever commands are in rexymcp.toml, not cargo-specific ones. Pre-flight 3 finding: Claude Code's skill-to-skill delegation is via user-suggested slash commands (no structured handoff); the review skill's "delegate to /rexymcp:escalate" means suggesting the user run that command, consistent with phase-04's no-auto-advance prohibition.
+
+verification: fmt OK · clippy OK · tests 518 passed · build OK
