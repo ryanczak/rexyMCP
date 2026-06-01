@@ -11,26 +11,106 @@ endpoint) is the herd that does the legwork. Claude decomposes your idea into
 spec'd phases, hands each one to the local model, and reviews what comes back —
 while rexyMCP keeps the local model on task, in bounds, and honest.
 
+## Workflow
+
 ```
-   you ──▶ Claude (architect) ──▶ MCP ──▶ local LLM (executor) ──▶ your repo
-                  ▲                                  │
-                  └────────── review / escalate ─────┘
+  you
+   │
+   ▼
+/rexymcp:architect          ← Claude explores your repo and writes the design
+   │
+   ├─ bootstrap (first run) ─→ rexymcp.toml · STANDARDS.md · WORKFLOW.md
+   │                            CLAUDE.md · .mcp.json
+   │
+   ├─ writes docs/architecture.md
+   ├─ writes docs/dev/milestones/M1-<slug>/README.md
+   └─ writes docs/dev/NEXT.md  ──────────────────────────────────────────┐
+                                                                          │
+         ┌────────────────────────────────────────────────────────────────┘
+         ▼
+/rexymcp:architect next     ← Claude drafts the next phase doc
+   │
+   └─ writes docs/dev/milestones/M<n>-<slug>/phase-<m>-<slug>.md
+                                                                          │
+         ┌────────────────────────────────────────────────────────────────┘
+         ▼
+/rexymcp:dispatch <phase>   ← Claude calls execute_phase over MCP
+   │                            (local LLM does the work)
+   │
+   ├─ [complete]  ──────────────────────────────────────────────────────┐
+   │                                                                     │
+   └─ [hard_fail / budget_exceeded]                                     │
+        │                                                               │
+        ▼                                                               │
+   /rexymcp:escalate <phase>                                            │
+        │                                                               │
+        ├─ refine spec → re-dispatch ─────────────────────────────────▶┤
+        └─ session takeover (Claude finishes it) ────────────────────▶┤
+                                                                        │
+         ┌──────────────────────────────────────────────────────────────┘
+         ▼
+/rexymcp:review <phase>     ← Claude reruns commands + checks the DoD
+   │
+   ├─ approved  → NEXT.md updated; repeat from "architect next"
+   └─ bounced   → bug filed; executor re-dispatched with the fix spec
 ```
 
-## Why this exists
+**Live progress during a run:**
 
-Claude Code's native subagents run **Claude models only** — there's no field for
-a custom endpoint, and the provider overrides retarget the *entire* harness, not
-one delegate. The single supported way to make Claude hand work to a
-non-Anthropic model is an **MCP server**: Claude calls a tool, and whatever
-happens inside that tool is opaque to it. rexyMCP puts a complete agentic loop
-*inside* that tool.
+```bash
+rexymcp status --repo /path/to/your/repo   # pull-based; works while execute_phase is running
+```
 
-The payoff: the local model's thousands of tokens of trial-and-error, tool
-calls, and parser repairs never touch Claude's context. Claude sees one clean
-structured result — and, when the executor gets stuck, a tight briefing it can
-act on. Cheap, private, high-volume implementation work runs locally; Claude's
-judgment is spent only where it counts.
+## Project docs — what each file is for
+
+When rexyMCP bootstraps a target project it writes four files into `docs/dev/`
+that the architect and executor use every session. Understanding them is the key
+to using the workflow correctly.
+
+| File | Who reads it | What it contains |
+|------|-------------|-----------------|
+| `docs/architecture.md` | Architect (Claude), you | The design: layers, data flows, non-goals, milestone roadmap. The single source of truth when architecture questions come up. The architect writes it; nothing else touches it without explicit authorization. |
+| `docs/dev/STANDARDS.md` | Executor (local LLM), reviewer | The Definition of Done. The executor reads this at the start of every phase; the reviewer checks against it at the end. Contains the build/lint/test command set, hard rules (no `unwrap`, no `panic!`, no unauthorized dependencies), and the error model. |
+| `docs/dev/WORKFLOW.md` | Architect, executor | The process rules: the phase lifecycle (todo → in-progress → review → done), the phase-doc template, the Update Log format, the bug-report template, the calibration-fold discipline. The workflow is embedded in the plugin and deployed to every target project. |
+| `docs/dev/NEXT.md` | Executor (reads first, every session) | A single pointer to the active phase doc. The executor opens this before anything else to know what it's working on. At a milestone boundary it says "none" — the human gate before the next milestone starts. |
+
+`docs/architecture.md` is the source-of-truth precedence winner: if it conflicts
+with a phase doc or a process doc, the architecture wins. Spot a conflict → file
+a blocker, don't pick a side.
+
+## Milestone layout
+
+Each milestone lives in its own directory. Phases are numbered in dispatch order;
+bugs filed against a phase live in a `bugs/` subdirectory.
+
+```
+docs/
+└── dev/
+    ├── NEXT.md                           ← active phase pointer (read first)
+    ├── STANDARDS.md                      ← engineering Definition of Done
+    ├── WORKFLOW.md                       ← phase lifecycle + templates
+    └── milestones/
+        └── M<n>-<slug>/
+            ├── README.md                 ← milestone goal, exit criteria, phase table, retrospective
+            ├── phase-01-<slug>.md        ← phase spec (pre-flight, goal, spec, tests, DoD, update log)
+            ├── phase-02-<slug>.md
+            ├── phase-02a-<slug>.md       ← parallel phases share a parent number + letter suffix
+            ├── phase-02b-<slug>.md
+            └── bugs/
+                └── bug-<phase>-<n>.md    ← review-finding bug reports (severity, fix, verification)
+```
+
+A **phase doc** contains everything the executor needs and nothing else: goal,
+architecture references, a step-by-step spec (exact files + changes), acceptance
+criteria, a test plan, end-to-end verification, explicit authorizations (what the
+executor may touch), explicit out-of-scope (what it must not touch), and an Update
+Log the executor fills in as it works. The architect pre-injects worked examples,
+codebase idioms, and fetched reference docs into each phase doc because the local
+executor has no web access and cannot ask clarifying questions mid-run.
+
+A **milestone README** tracks the phase table (phase number, slug, link, status),
+the exit criteria for the milestone, and a retrospective written by the architect
+at milestone close.
 
 ## Features
 
@@ -65,8 +145,8 @@ judgment is spent only where it counts.
 - **Redacted JSONL session log** — every turn (prompts, parsed tool calls, tool
   results, progress, verifier runs) is written to disk with secrets redacted, so
   a lean result never means lost detail.
-- **Cross-project telemetry** — each run can emit a `PhaseRun` record for the
-  model scorecard.
+- **Cross-project telemetry** — each run emits a `PhaseRun` record for the model
+  scorecard.
 
 **The MCP server (`rexymcp serve`)**
 
@@ -80,9 +160,6 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
 | `executor_log_tail` | Return the last N records of a session log (capped per field). |
 | `get_turn` | Return all records for a single turn, uncapped — the raw-detail escape hatch. |
 | `model_scorecard` | Aggregate cross-project telemetry into a model × tag competency matrix. |
-
-The server corroborates the target-repo root from the MCP client's roots (or
-`CLAUDE_PROJECT_DIR`) and emits live `notifications/progress` during long runs.
 
 **The CLI (`rexymcp`)**
 
@@ -105,32 +182,6 @@ workflow as skills and slash commands:
   either approve it or file a bug.
 - `/rexymcp:escalate` — decide what to do with a `hard_fail` briefing
   (refined re-dispatch, session takeover, or resume).
-
-## How it works
-
-A single `execute_phase` call runs a headless agent loop against a phase spec and
-a target repo:
-
-1. Load the engineering standards + the phase doc; build the executor prompt
-   (with the embedded executor contract).
-2. Drive the local model through a tool-using loop — every file and shell
-   operation **scoped to the target-repo root**.
-3. Run model output through the **forgiving parser** that repairs malformed tool
-   calls instead of just failing.
-4. After edits, run the project's verifier (typecheck/build) and feed
-   diagnostics back for a retry.
-5. The **governor** watches for repetition loops, repeated verifier failures, and
-   budget overflow — if the model is stuck, it assembles a **briefing** and hands
-   control back to Claude.
-6. On clean completion, run the project's full `format` / `build` / `lint` /
-   `test` command set and return a structured `PhaseResult`.
-
-Escalation isn't a cloud call — it's **Claude itself**. A stuck executor returns
-its briefing up through MCP, and Claude (already the architect) picks a lever:
-re-dispatch with a sharper spec, take the session over, or resume. Every turn is
-also written to a redacted **JSONL session log** Claude can query on demand (via
-`executor_log_search` / `executor_log_tail` / `get_turn`), so a lean result never
-means lost detail. rexyMCP never links a cloud LLM provider.
 
 ## Installation
 
@@ -172,25 +223,61 @@ escalation_slots = 1      # briefings returned to the architect per phase
 ```
 
 All values have defaults; a missing config falls back to a local LM Studio
-endpoint. Config values can be overridden by environment variables.
+endpoint.
 
 **3. Confirm rexyMCP can reach the model:**
 
 ```bash
 rexymcp health --config rexymcp.toml
-rexymcp health --base-url http://localhost:11434/v1   # ad-hoc override
 ```
 
-**4. Install the Claude Code plugin** so Claude can drive the executor:
+**4. Install the Claude Code plugin**
+
+**Option A — test mode** (no permanent install; good for trying it out):
 
 ```bash
 claude --plugin-dir ./plugin
 ```
 
-The skills then appear as `/rexymcp:architect`, `/rexymcp:dispatch`,
-`/rexymcp:review`, and `/rexymcp:escalate`, and the six MCP tools become
-available to Claude. (The plugin's `.mcp.json` launches `rexymcp serve` with
-`./rexymcp.toml`, so the binary must be on `$PATH`.)
+**Option B — persistent install** from the local checkout:
+
+```bash
+claude plugin install ./plugin
+```
+
+**Option C — install from GitHub** using `marketplace.json`:
+
+The plugin ships a `.claude-plugin/marketplace.json` that lets Claude Code
+discover and install it directly from the repository URL:
+
+```bash
+claude plugin install github:<owner>/rexyMCP
+```
+
+The `marketplace.json` at `plugin/.claude-plugin/marketplace.json` describes the
+plugin name, version, author, category, and keywords. If you are hosting a fork
+or a private mirror, point at your own URL:
+
+```bash
+claude plugin install git+https://your-host/rexyMCP.git
+```
+
+After any install method, the skills appear as `/rexymcp:architect`,
+`/rexymcp:dispatch`, `/rexymcp:review`, and `/rexymcp:escalate`, and the six MCP
+tools become available to Claude. The plugin's `.mcp.json` launches
+`rexymcp serve --config ./rexymcp.toml`, so the binary must be on `$PATH`.
+
+**5. Bootstrap your target project**
+
+Open a Claude Code session in your target repo (not the rexyMCP repo) and run:
+
+```
+/rexymcp:architect
+```
+
+The skill detects the project's build/test commands, writes the config files,
+and walks you through the first design session. Everything is idempotent — safe
+to re-run if a file is missing.
 
 **Run a phase from the CLI** (no MCP client needed):
 
@@ -206,9 +293,21 @@ rexymcp status --repo /path/to/target/repo    # live progress mid-run
 
 ```
 executor/   library — the headless single-phase agent loop
-mcp/         binary  — the `rexymcp` CLI and rmcp stdio MCP server
-plugin/      Claude Code plugin package — skills, slash commands, templates
-docs/        architecture + the architect/executor dev process
+mcp/        binary  — the `rexymcp` CLI and rmcp stdio MCP server
+plugin/     Claude Code plugin package — skills, slash commands, templates
+  ├── .claude-plugin/
+  │     ├── plugin.json           plugin manifest (name, version, description)
+  │     └── marketplace.json      marketplace metadata (install via GitHub URL)
+  ├── .mcp.json                   MCP server registration (auto-connects on enable)
+  ├── skills/
+  │     ├── architect/SKILL.md    /rexymcp:architect skill instructions
+  │     ├── dispatch/SKILL.md     /rexymcp:dispatch skill instructions
+  │     ├── review/SKILL.md       /rexymcp:review skill instructions
+  │     └── escalate/SKILL.md     /rexymcp:escalate skill instructions
+  └── templates/
+        ├── STANDARDS.md          generalized DoD template (placeholders resolved per project)
+        └── WORKFLOW.md           generalized workflow template
+docs/       architecture + the architect/executor dev process for rexyMCP itself
 ```
 
 ## Development
