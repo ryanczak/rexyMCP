@@ -1,7 +1,7 @@
 # Phase 07a: SSE prefill-stall — first-token vs. inter-token timeout + retry
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-06a (done) — surfaced by the dogfood smoketest it prepared
 **Estimated diff:** ~220 lines (timeout split + config + bounded retry + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -288,3 +288,81 @@ never calls, so the shipping `chat()` path is untested and the helper's
 `first_token_seen` semantics differ from production's. Fix per the bug's "How to
 fix": share one implementation between `chat()` and the tests, and add the
 keep-alive negative test. Everything else in 07a is approved — do not widen.
+
+### Update — 2026-06-01 (progress — bug fix)
+
+Extracted three pure decision functions into production code: `select_timeout`,
+`should_retry_stall`, `delta_carries_token`. `chat()` now calls all three
+(lines 191, 221, 310). `drain_stream_with_retry` remains `#[cfg(test)]` as a
+test harness that exercises the same decision functions — it is no longer a
+divergent copy. Added 12 unit tests for the decision functions covering: timeout
+selection before/after token seen, retry cap behavior, and the keep-alive
+negative case (empty content/reasoning/tool_calls deltas do not flip
+`first_token_seen`).
+
+### Update — 2026-06-01 (complete)
+
+**Summary:** Fixed bug-07a-1 by extracting the timeout-selection, retry-decision,
+and token-detection logic into three pure production functions that both `chat()`
+and the tests share. `drain_stream_with_retry` is now a thin test harness that
+calls the same decision functions — no divergent copy. Added 12 tests covering
+the decision functions including the keep-alive negative case (empty deltas don't
+flip `first_token_seen`).
+
+**Acceptance criteria:** all ticked above. Bug-07a-1 verification:
+- `grep -n "cfg(test)" executor/src/ai/backends/openai.rs` shows `#[cfg(test)]`
+  only on `drain_stream_with_retry` (test harness) and `mod tests` — no
+  behavioral function is test-gated.
+- Decision functions (`select_timeout`, `should_retry_stall`, `delta_carries_token`)
+  are production code called by `chat()` at lines 191, 221, 310.
+- Tests assert empty/keep-alive lines don't flip `first_token_seen`:
+  `delta_carries_token_false_on_empty_content`, `delta_carries_token_false_on_empty_delta`,
+  `delta_carries_token_false_on_empty_tool_calls_array`.
+- `first_token_stall_retries_then_succeeds`, `first_token_stall_exhausts_retries_then_errors`,
+  `midstream_stall_is_not_retried` still pass against the shared implementation.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.53s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.25s
+
+cargo test 2>&1 | tail -30
+test result: ok. 537 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.03s
+```
+
+**End-to-end verification:**
+Not applicable — phase ships no new runtime-loadable artifact. Internal timeout/retry behavior exercised by hermetic tests.
+
+**Files changed:**
+- `executor/src/ai/backends/openai.rs` — extracted `select_timeout`, `should_retry_stall`, `delta_carries_token` as production functions; `chat()` calls all three; `drain_stream_with_retry` kept as test harness using same decision functions; added 12 unit tests for decision functions + keep-alive negative cases
+
+**New tests:**
+- `select_timeout_returns_first_token_budget_before_token_seen` in `executor/src/ai/backends/openai.rs`
+- `select_timeout_returns_idle_budget_after_token_seen` in `executor/src/ai/backends/openai.rs`
+- `should_retry_stall_returns_true_before_token_seen_under_cap` in `executor/src/ai/backends/openai.rs`
+- `should_retry_stall_returns_false_at_cap` in `executor/src/ai/backends/openai.rs`
+- `should_retry_stall_returns_false_after_token_seen` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_with_non_empty_content` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_with_non_empty_reasoning` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_with_non_empty_reasoning_content` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_with_non_empty_tool_calls` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_false_on_empty_content` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_false_on_empty_delta` in `executor/src/ai/backends/openai.rs`
+- `delta_carries_token_false_on_empty_tool_calls_array` in `executor/src/ai/backends/openai.rs`
+
+**Commits:** pending
+
+**Notes for review:** None.
+
+**verification:** fmt OK · clippy OK · tests 537 passed · build OK

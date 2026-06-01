@@ -188,11 +188,11 @@ impl AiClient for OpenAiClient {
             const MAX_LEFTOVER_BYTES: usize = 1 << 20;
 
             let stall_result = loop {
-                let timeout = if first_token_seen {
-                    self.stream_idle_timeout
-                } else {
-                    self.first_token_timeout
-                };
+                let timeout = select_timeout(
+                    first_token_seen,
+                    self.first_token_timeout,
+                    self.stream_idle_timeout,
+                );
                 match stream_next_with_timeout(&mut stream, timeout).await {
                     Some(Ok(bytes)) => {
                         leftover.push_str(&String::from_utf8_lossy(&bytes));
@@ -218,23 +218,7 @@ impl AiClient for OpenAiClient {
                                     if let Some(delta) =
                                         v["choices"].get(0).and_then(|c| c["delta"].as_object())
                                     {
-                                        let has_content = delta
-                                            .get("content")
-                                            .and_then(|c| c.as_str())
-                                            .is_some_and(|c| !c.is_empty());
-                                        let has_reasoning = delta
-                                            .get("reasoning")
-                                            .or_else(|| delta.get("reasoning_content"))
-                                            .and_then(|r| r.as_str())
-                                            .is_some_and(|r| !r.is_empty());
-                                        let has_tool_calls = delta
-                                            .get("tool_calls")
-                                            .and_then(|t| t.as_array())
-                                            .is_some_and(|t| !t.is_empty());
-
-                                        if !first_token_seen
-                                            && (has_content || has_reasoning || has_tool_calls)
-                                        {
+                                        if !first_token_seen && delta_carries_token(delta) {
                                             first_token_seen = true;
                                         }
 
@@ -323,7 +307,7 @@ impl AiClient for OpenAiClient {
                     return Ok(());
                 }
                 Err(e) => {
-                    if !first_token_seen && retries < MAX_FIRST_TOKEN_RETRIES {
+                    if should_retry_stall(first_token_seen, retries, MAX_FIRST_TOKEN_RETRIES) {
                         retries += 1;
                         continue;
                     }
@@ -347,9 +331,50 @@ fn emit_tool_call_generic(tx: &UnboundedSender<AiEvent>, id: &str, name: &str, a
     });
 }
 
+/// Select which timeout to use based on whether a token has been seen.
+fn select_timeout(
+    first_token_seen: bool,
+    first_token_timeout: Duration,
+    stream_idle_timeout: Duration,
+) -> Duration {
+    if first_token_seen {
+        stream_idle_timeout
+    } else {
+        first_token_timeout
+    }
+}
+
+/// Whether a first-token stall should be retried.
+fn should_retry_stall(first_token_seen: bool, retries: u32, max_retries: u32) -> bool {
+    !first_token_seen && retries < max_retries
+}
+
+/// Whether a delta carries a real token (non-empty content, reasoning, or tool calls).
+fn delta_carries_token(delta: &serde_json::Map<String, Value>) -> bool {
+    let has_content = delta
+        .get("content")
+        .and_then(|c| c.as_str())
+        .is_some_and(|c| !c.is_empty());
+    let has_reasoning = delta
+        .get("reasoning")
+        .or_else(|| delta.get("reasoning_content"))
+        .and_then(|r| r.as_str())
+        .is_some_and(|r| !r.is_empty());
+    let has_tool_calls = delta
+        .get("tool_calls")
+        .and_then(|t| t.as_array())
+        .is_some_and(|t| !t.is_empty());
+    has_content || has_reasoning || has_tool_calls
+}
+
 /// Drains a stream with per-item timeout selection and bounded retry on
 /// first-token stalls. Generic over item/error so it can be unit-tested
 /// without reqwest specifics.
+///
+/// This is a test harness that exercises the same decision functions
+/// (`select_timeout`, `should_retry_stall`) that production `chat()` uses.
+/// The production loop lives in `OpenAiClient::chat`; this helper exists
+/// so the retry/timeout logic can be tested without reqwest specifics.
 ///
 /// `next_item` produces the next stream item. Returns `Ok` when the stream
 /// ends naturally (`None`), or `Err` on a stall / transport error.
@@ -380,11 +405,7 @@ where
     let mut stream = next_item();
 
     loop {
-        let timeout = if first_token_seen {
-            stream_idle_timeout
-        } else {
-            first_token_timeout
-        };
+        let timeout = select_timeout(first_token_seen, first_token_timeout, stream_idle_timeout);
 
         match tokio::time::timeout(timeout, stream.next()).await {
             Ok(Some(Ok(_item))) => {
@@ -395,7 +416,7 @@ where
             Ok(Some(Err(e))) => return Err(e),
             Ok(None) => return Ok(()),
             Err(_elapsed) => {
-                if !first_token_seen && retries < max_first_token_retries {
+                if should_retry_stall(first_token_seen, retries, max_first_token_retries) {
                     retries += 1;
                     stream = retry_fn();
                     continue;
@@ -413,8 +434,9 @@ where
 mod tests {
     use super::super::super::types::{AiEvent, Message, ToolCall, ToolResult, ToolSchema};
     use super::{
-        build_chat_body, convert_messages, drain_stream_with_retry, emit_tool_call_generic,
-        parse_openai_usage, render_openai_tools,
+        build_chat_body, convert_messages, delta_carries_token, drain_stream_with_retry,
+        emit_tool_call_generic, parse_openai_usage, render_openai_tools, select_timeout,
+        should_retry_stall,
     };
     use futures_util::{StreamExt, stream};
     use serde_json::{Value, json};
@@ -610,6 +632,87 @@ mod tests {
         assert_eq!(tcs.len(), 1);
         assert_eq!(tcs[0]["id"], "tc_2");
         assert_eq!(tcs[0]["function"]["name"], "bash");
+    }
+
+    #[test]
+    fn select_timeout_returns_first_token_budget_before_token_seen() {
+        let first = Duration::from_secs(600);
+        let idle = Duration::from_secs(90);
+        assert_eq!(select_timeout(false, first, idle), first);
+    }
+
+    #[test]
+    fn select_timeout_returns_idle_budget_after_token_seen() {
+        let first = Duration::from_secs(600);
+        let idle = Duration::from_secs(90);
+        assert_eq!(select_timeout(true, first, idle), idle);
+    }
+
+    #[test]
+    fn should_retry_stall_returns_true_before_token_seen_under_cap() {
+        assert!(should_retry_stall(false, 0, 2));
+        assert!(should_retry_stall(false, 1, 2));
+    }
+
+    #[test]
+    fn should_retry_stall_returns_false_at_cap() {
+        assert!(!should_retry_stall(false, 2, 2));
+    }
+
+    #[test]
+    fn should_retry_stall_returns_false_after_token_seen() {
+        assert!(!should_retry_stall(true, 0, 2));
+    }
+
+    #[test]
+    fn delta_carries_token_with_non_empty_content() {
+        let delta = json!({ "content": "hello" }).as_object().cloned().unwrap();
+        assert!(delta_carries_token(&delta));
+    }
+
+    #[test]
+    fn delta_carries_token_with_non_empty_reasoning() {
+        let delta = json!({ "reasoning": "let me think" })
+            .as_object()
+            .cloned()
+            .unwrap();
+        assert!(delta_carries_token(&delta));
+    }
+
+    #[test]
+    fn delta_carries_token_with_non_empty_reasoning_content() {
+        let delta = json!({ "reasoning_content": "thinking..." })
+            .as_object()
+            .cloned()
+            .unwrap();
+        assert!(delta_carries_token(&delta));
+    }
+
+    #[test]
+    fn delta_carries_token_with_non_empty_tool_calls() {
+        let delta = json!({ "tool_calls": [{ "id": "tc_1", "function": { "name": "foo", "arguments": "{}" } }] })
+            .as_object()
+            .cloned()
+            .unwrap();
+        assert!(delta_carries_token(&delta));
+    }
+
+    #[test]
+    fn delta_carries_token_false_on_empty_content() {
+        let delta = json!({ "content": "" }).as_object().cloned().unwrap();
+        assert!(!delta_carries_token(&delta));
+    }
+
+    #[test]
+    fn delta_carries_token_false_on_empty_delta() {
+        let delta = json!({}).as_object().cloned().unwrap();
+        assert!(!delta_carries_token(&delta));
+    }
+
+    #[test]
+    fn delta_carries_token_false_on_empty_tool_calls_array() {
+        let delta = json!({ "tool_calls": [] }).as_object().cloned().unwrap();
+        assert!(!delta_carries_token(&delta));
     }
 
     #[tokio::test]
