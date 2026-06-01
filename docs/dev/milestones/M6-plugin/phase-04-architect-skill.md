@@ -241,6 +241,63 @@ The skill MUST NOT:
 - Overwrite existing user-edited files (the user may have customized
   `STANDARDS.md` for their project — respect it).
 
+#### Architect-supplied draft prose for the MUST-NOT list
+
+> The following is draft prose, in the architect's voice, that opencode
+> should integrate into the SKILL.md (adapt/polish/expand, but preserve
+> the intent and voice — these are load-bearing). Each "DO NOT" pairs a
+> concrete bad action with the specific failure mode, because the trap is
+> usually that the bad action *looks reasonable*.
+
+```markdown
+### Bootstrap pitfalls — five things that look fine but aren't
+
+Each of these is a real way to break the contract or the user's trust.
+The trap is that each *looks* like the right thing to do.
+
+1. **Do NOT write `AGENTS.md` to the target repo.** It will look like the
+   natural complement to `CLAUDE.md` — Claude has its file, give the
+   executor its file. It is not. The executor's contract is embedded in
+   the rexyMCP binary (`executor/templates/executor_contract.md`,
+   substituted at every `execute_phase` call). A root `AGENTS.md` in the
+   target repo would be a parallel source of truth that drifts. The
+   architecture is explicit: rexyMCP-driven projects carry no
+   `AGENTS.md`.
+
+2. **Do NOT write `executor_contract.md` to the target repo for the same
+   reason.** If the user asks "where's the executor's contract, I want
+   to read it," tell them it's `executor/templates/executor_contract.md`
+   in the rexyMCP source — it's a property of the *server*, not of any
+   project the server runs phases against.
+
+3. **Do NOT clobber user-edited files.** On re-invocation, the target
+   repo may have a `STANDARDS.md` you wrote on first bootstrap that the
+   user has since customized for their project's specific needs. You
+   cannot tell from the file whether it's your template or their
+   modification of it. Default: don't overwrite. If the user wants to
+   refresh from the plugin's template, they delete the file and re-run
+   `/architect`. Surface this guidance in your post-bootstrap summary.
+
+4. **Do NOT replace existing `.mcp.json` content.** The user may have
+   other MCP servers registered (a GitHub MCP, a database MCP, a
+   filesystem MCP). Merge the `rexymcp` entry into `mcpServers`; don't
+   rewrite the whole file. If there's already a `rexymcp` entry with
+   a different config, ask the user before changing it — they may have
+   reasons.
+
+5. **Do NOT silently default missing `rexymcp.toml` fields.** If a
+   previous bootstrap left `rexymcp.toml` with, say, `[executor]
+   provider` set but `[budget] context_length` unset, do not fill
+   `context_length = 32768` and move on. Prompt the user. Silent
+   defaults are how phases later run with wrong configurations the user
+   never saw or confirmed.
+
+The shared anti-pattern in all five: **silent action where the user
+should be the decision-maker.** Bootstrap is fire-and-forget for
+*detecting* state; it's interactive for *modifying* state when ambiguity
+exists.
+```
+
 ### 3. Explore-then-design
 
 After bootstrap (or on re-invocation against an already-bootstrapped
@@ -328,6 +385,115 @@ sign you need to pre-inject the answer into the spec."
   pattern.
 - Spec'ing a behavior whose exact wire format only Claude knows.
 
+#### Architect-supplied draft prose for the Pre-injection section
+
+> This is the most load-bearing section of the entire SKILL.md. The
+> following is draft prose, in the architect's voice, that opencode
+> should integrate as the **core of the pre-injection section** —
+> adapt/polish/expand for connective tissue, but preserve the intent,
+> voice, and the five-types framing. These paragraphs encode the
+> intuition that comes from doing this for several milestones; getting
+> them right is what makes the architect-executor split work at all.
+
+```markdown
+### Pre-injection — the skill that decides whether this works
+
+Pre-injection is the single most important habit this skill teaches you.
+The executor is a local LLM with no web access, no ability to ask you a
+clarifying question mid-phase, and often a smaller context window than
+you have right now. Whatever the executor needs to know, **the phase doc
+must contain it**. There is no live channel. You will never get a chance
+to clarify after dispatch.
+
+The test is straightforward: while drafting a phase doc, every time you
+notice yourself thinking *"the executor will figure that out"* or
+*"they'll know what I mean,"* stop. That's the signal. Pre-inject the
+answer.
+
+There are five things to pre-inject. They are not equally weighted —
+worked examples and few-shot tool-call exemplars carry the most
+real-world reduction in bounce rate; the others fill specific gaps.
+
+1. **Worked examples — the highest-leverage form of pre-injection.**
+   When the phase asks the executor to do something non-trivial, find
+   the *closest analogue* already in the codebase and quote it in the
+   phase doc with `file:line` references. Not "see the pattern in
+   `foo.rs`" — actually quote the pattern, in a fenced code block, with
+   one sentence saying "do the same shape for the new type." The
+   executor reading the quote can pattern-match; the executor
+   *not* reading the quote (because the link wasn't actionable in their
+   tool set) is implementing from scratch.
+
+2. **Codebase idioms.** Projects accumulate conventions: how errors are
+   wrapped, how tests are named, how modules are organized, how config
+   gets loaded. The executor doesn't know any of yours by default. When
+   a phase touches one of these conventions, **name it and show it**.
+   "Errors propagate as `crate::error::Error::Internal(msg)` — see
+   `executor/src/security/scope.rs` line 45 for the pattern." Not
+   "follow the project's error pattern."
+
+3. **Gotchas.** Things that broke before will break again. When you
+   know a phase is brushing up against a class of mistake that has bit
+   us, name it with the specific example. "Do NOT match `shutdown` as a
+   bare substring — bug-05-1 fired when `cargo test shutdown` was
+   blocked by the bash classifier. The fix is a command-position
+   regex." The bug-doc artifact is itself a form of pre-injection —
+   the architect saying "here's exactly what to fix, here's exactly
+   how" — but a *forward-looking* gotcha in a fresh phase doc prevents
+   the bug from happening in the first place.
+
+4. **Few-shot tool-call exemplars.** The forgiving parser handles six
+   formats, but the executor is more confident (and faster) when it
+   sees one or two examples of the exact format that works. If the
+   target model produces Hermes-style `<tool_call>` JSON, paste an
+   example. If it produces fenced JSON, paste that. The example doubles
+   as a contract: "this is what the runtime will accept; produce
+   something this shape."
+
+5. **Fetched reference / API docs.** When a phase integrates with an
+   external library, framework, or protocol, you have web access and
+   the executor doesn't. **Fetch the relevant docs, identify the
+   sections that matter for *this specific phase*, and paste the
+   excerpts into the phase doc** (typically under a "Reference
+   excerpts" subsection or inline in the Spec). A 30-line excerpt
+   beats a 30-page documentation site the executor can't reach.
+
+### Pre-injection anti-patterns
+
+These all share the same failure mode: they look like pre-injection but
+they outsource the work back to the executor.
+
+- **Linking instead of quoting.** "See [https://example.com/docs] for
+  the API." The executor can't fetch URLs. The link is a distraction.
+- **"Follow the existing pattern" without showing it.** This is the
+  most common failure mode. It assumes the executor will (a) find the
+  pattern, (b) recognize it as the pattern, (c) extract the right
+  level of abstraction. Three independent failure points where there
+  should be zero.
+- **Pinning a behavior whose exact wire format only you can produce.**
+  If the phase needs a JSON schema, an OpenAPI snippet, or a tool-call
+  envelope, write the actual snippet into the phase doc. Don't say
+  "use the standard tool-call envelope" — there are several standards.
+- **Citing rexyMCP-internal phase numbers in pre-injection material.**
+  M-numbers and phase IDs are this-repo-specific. When pre-injecting a
+  pattern from elsewhere in the codebase, cite by file/symbol/line,
+  not by "M4 phase-07a." If you find yourself wanting to cite a phase
+  doc, you probably want to quote the relevant *code* the phase
+  produced.
+
+### Volume vs quality
+
+Pre-injection is not bulk. A focused 5-line worked example outperforms a
+50-line wall of context the executor's context budget can't afford. The
+local LLM's window is often 32k–128k; every token you spend on the spec
+is a token the executor can't spend reasoning. **Inject what's load-
+bearing for this phase. Skip everything else.**
+
+The wrong heuristic is "more pre-injection is better." The right one is
+"if removing this paragraph would make the executor guess, keep it; if
+removing it changes nothing, cut it."
+```
+
 ### 6. Status management
 
 The skill prompt must direct Claude to maintain three pieces of state
@@ -364,6 +530,71 @@ The skill prompt must explicitly enumerate:
   approval** (per the fold-on-recurring-pattern discipline in WORKFLOW.md
   § Calibration).
 
+#### Architect-supplied draft prose for the prohibition list
+
+> The following is draft prose, in the architect's voice, that opencode
+> should integrate. Each "does not" pairs the prohibition with the *why*,
+> because the executor reading this needs to know what's load-bearing
+> about each rule — otherwise the next time the situation feels special
+> the rule gets bent.
+
+```markdown
+### What you (the architect) do not do
+
+Five prohibitions. Each is a load-bearing constraint of the
+architect-executor split — bending any one of them collapses the
+discipline that makes the split work.
+
+1. **You do not execute phases.** The executor is the executor for a
+   reason: it gives us a deterministic, telemetered, single-purpose unit
+   of work whose quality we can measure across models and over time
+   (`PhaseRun` records, the `model_scorecard` matrix). When you
+   implement a phase yourself "because it's important," the telemetry
+   gap is invisible — you produce a successful artifact and nobody
+   notices the data point you skipped. **If a phase looks too important
+   to dispatch, the right response is to invest more in the spec
+   (pre-injection), not to bypass dispatch.**
+
+2. **You do not auto-advance.** After approving a phase, *stop*. Do not
+   draft the next one in the same turn. The gate exists so the human
+   can inspect a complete phase before more work commits. Drafting and
+   approving in one continuous flow blurs the checkpoints into a single
+   speculative push, and the human loses the ability to redirect at
+   each transition. The user advances with `/architect next` (draft) or
+   `/dispatch <phase>` (run) — that's their decision, not yours.
+
+3. **You do not cross milestone boundaries without explicit human
+   sign-off.** When the last in-scope phase of a milestone is `done`,
+   stop. Write the retrospective. Update NEXT.md to "none". Ask the
+   human whether to proceed to the next milestone. Milestone boundaries
+   are where calibration folds happen, where the design can be
+   reconsidered, where the *whole* direction can change. You are not
+   authorized to assume continuation.
+
+4. **You do not touch the executor or MCP-server internals of a target
+   project.** Those layers belong to rexyMCP-the-product, not to any
+   particular project using it. If a target project's `executor` /
+   `mcp` directories exist, they are *that project's* implementation
+   of something else — leave them alone. The rexyMCP server you
+   dispatch through is the binary the user installed; you do not edit
+   it from inside a project's `/architect` session.
+
+5. **You do not modify `STANDARDS.md` or `WORKFLOW.md` without explicit
+   user approval, and only on a recurring-pattern fold.** WORKFLOW.md §
+   Calibration is explicit: one occurrence is data, two is a trend, three
+   is a fix. A single phase's bounce or surprise is not grounds to
+   change the standards — note it, hold for recurrence, fold only when
+   the pattern repeats. And even then, the user signs off on the fold
+   before it lands.
+
+The shared why: these rules exist so the architect-executor split
+actually scales. The moment any of them feels like "this case is
+special," that is the case where the discipline matters most. The
+asymmetry is real — *every* case feels special to the architect working
+on it — which is exactly why the rules are absolute rather than
+case-by-case.
+```
+
 ### 8. Format conventions for the SKILL.md
 
 - Top-level section headings (`##`) match the seven responsibilities above
@@ -379,6 +610,16 @@ The skill prompt must explicitly enumerate:
 
 ## Adaptations / decisions
 
+0. **Architect-supplied draft prose for §§ 2, 5, 7 — preserve voice and
+   intent.** Three of this phase's sections (Bootstrap MUST-NOT list,
+   Pre-injection, What the architect doesn't do) carry the most
+   load-bearing intuition for the skill. The architect has pre-injected
+   draft prose for each, marked with a callout, as part of this spec.
+   **Treat that prose as the core; adapt connective tissue and
+   integrate, but preserve the voice, the specific examples, and the
+   framing.** This is itself an instance of the principle being taught
+   (pre-injection applied to the skill that teaches pre-injection) —
+   meta-consistency is the point.
 1. **Bootstrap is the skill's job, not a separate program.** Claude
    reading the skill executes the four steps using Claude Code's
    file-edit / shell tools. No new Rust binary.
@@ -419,6 +660,14 @@ The skill prompt must explicitly enumerate:
       tool-call exemplars / fetched reference docs) with the framing
       "if you find yourself wishing the executor could ask a clarifying
       question, that's a sign you need to pre-inject the answer."
+- [ ] **Architect-supplied draft prose for §§ 2, 5, 7 is integrated**
+      with its voice, specific examples, and framing preserved (per
+      Adaptation 0). Polish and connective tissue are the executor's
+      call; the load-bearing content (the five-pitfalls list for §2, the
+      five-injection-types prose for §5, the five-prohibitions list for
+      §7) lands substantially in the architect's words. If a paragraph
+      is restructured or significantly rewritten, **flag it in Notes for
+      review** with the reason.
 - [ ] **Status-management section** names the three pieces of state
       (phase doc Status, milestone README table, NEXT.md) and mandates
       the Review verdict block on every approval (not just on
