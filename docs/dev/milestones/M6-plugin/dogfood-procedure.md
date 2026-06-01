@@ -58,7 +58,16 @@ get archived, acquire new policies. Criteria are stable; recommendations rot.
      `~/.claude/plugins/rexymcp/` so it's available in every session.
 4. Configure your local LLM endpoint — note the base URL, model name, and
    context window size. The executor skill will use this when dispatching.
-5. Clone the target repo to a fresh directory (not inside the rexyMCP repo).
+5. **Set up the target project.** Two flavors:
+   - **0→1 build (recommended first run):** create an empty target directory
+     outside the rexyMCP repo, `cd` in, `git init`, and drop in a minimal
+     language manifest so the bootstrap detection happy-path runs. For a
+     Python project: a `pyproject.toml` with `[project]` (name, version,
+     `requires-python`) + `[build-system]` (`hatchling`). For Rust:
+     `cargo init`. For Node: `npm init -y`. The bootstrap routine then
+     detects the manifest and prompts you for the command set.
+   - **Existing repo:** clone the target repo to a fresh directory (not
+     inside the rexyMCP repo). Bootstrap runs in the existing layout.
 
 **Observe:**
 - Does `rexymcp serve --help` print cleanly?
