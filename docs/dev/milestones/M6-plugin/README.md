@@ -76,16 +76,35 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 03 | executor wires the embedded contract ([phase-03-executor-wires-contract.md](phase-03-executor-wires-contract.md)) | done |
 | 04 | `architect` skill + bootstrap routine ([phase-04-architect-skill.md](phase-04-architect-skill.md)) | done |
 | 05 | `dispatch` + `review` + `escalate` skills ([phase-05-dispatch-review-escalate.md](phase-05-dispatch-review-escalate.md)) | done |
+| 06a | dogfood preparation (procedure + log template + pre-flight verification) ([phase-06a-dogfood-prep.md](phase-06a-dogfood-prep.md)) | todo |
 
 Tentative remaining phases (draft when the prior one lands):
 
-- **06 — end-to-end dogfood (M6 closer).** Pick a real third-party repo (small,
-  open-source, language ≠ Rust to exercise the placeholder substitution);
-  bootstrap it; have Claude design a single small phase; dispatch through the
-  live MCP server to a local model; review; iterate if bounced. **Captures the
-  first real `PhaseRun` telemetry** (the M5 store finally has a non-self data
-  point). The retrospective documents what broke and what worked — first
-  real-world calibration data for M7.
+- **06 — end-to-end dogfood (M6 closer), split into 06a + 06b** because
+  06a's prep is opencode-executable but the actual run requires the user
+  driving Claude Code + the rexyMCP plugin + a local LLM endpoint against
+  a real third-party repo (which opencode in dev mode cannot do). Same
+  splitting wisdom as M4 phase-07a–e and M5 phase-05a/b.
+  - **06a** *(drafted)* — **dogfood preparation**: a step-by-step
+    `dogfood-procedure.md` the user follows, a `dogfood-log.md` template
+    they fill in, target-repo selection criteria, and pre-flight
+    verification that the binary builds + installs + runs (`--help`) +
+    the plugin JSON files parse + the validation greps from phases
+    02 / 04 / 05 still pass.
+  - **06b** *(drafts after 06a lands)* — **dogfood execution + M6
+    close**: the user runs through the procedure on their schedule and
+    fills in the log; the architect (me) then synthesizes the log into
+    the M6 retrospective, decides the compaction-monitoring question
+    (heuristic eviction vs justifying a summarization-based-compaction
+    follow-up milestone), and folds any patterns the dogfood surfaced.
+
+  Pick a real third-party repo (small, open-source, language ≠ Rust to
+  exercise the placeholder substitution); bootstrap it; have Claude
+  design a single small phase; dispatch through the live MCP server to a
+  local model; review; iterate if bounced. **Captures the first real
+  `PhaseRun` telemetry** (the M5 store finally has a non-self data
+  point). The retrospective documents what broke and what worked —
+  first real-world calibration data for M7.
 
   **Compaction-monitoring concern (must surface in phase-06's spec).** M4
   shipped *heuristic* compaction (`executor::context::compactor` — signaturize

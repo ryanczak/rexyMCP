@@ -4,15 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-05 closed (`done`,
-approved_first_try on 2026-05-31). The three skills (dispatch, review,
-escalate) are live; the escalation decision tree's pre-injected prose
-preserved with voice + framing intact. Architect-side fix included to
-align status-acceptance across dispatch/review/escalate at the
-re-dispatch path. **M6 is now 5/6 done — only phase-06 (end-to-end
-dogfood, M6 closer) remains.** The dogfood will produce the first real
-`PhaseRun` telemetry and surface the compaction-monitoring data the M6
-README phase-06 description pinned.
+**Active phase:** [M6 / phase-06a — dogfood
+preparation](milestones/M6-plugin/phase-06a-dogfood-prep.md) — `todo`,
+**drafted, awaiting dispatch**. Opencode-executable prep for the M6
+closer: write a step-by-step `dogfood-procedure.md` for the user to
+follow + a `dogfood-log.md` template + run pre-flight verification
+that the binary builds/installs/runs (`--help`) + the plugin JSON
+files parse + the phases 02/04/05 validation greps still pass. No
+Rust code; no new deps. Splits M6 phase-06 along the same boundary
+M4-07 and M5-05 used: 06a is opencode prep, 06b is user-driven
+dogfood run + architect-synthesized retrospective + compaction-
+monitoring decision.
 
 **Last completed:** [M6 / phase-05 — dispatch + review + escalate
 skills](milestones/M6-plugin/phase-05-dispatch-review-escalate.md) —
