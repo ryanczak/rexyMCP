@@ -4,18 +4,32 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M6 phase-06a closed (`done`, approved_first_try
-on 2026-05-31). The dogfood-procedure.md (287L, 7 phases with
-Do/Observe/Record/Stop-and-tell) and dogfood-log.md (117L with
-dedicated Compaction observations section) are ready; pre-flight
-verification clean (binary installs + runs, JSON files parse, 1937L
-of content artifacts, zero leaks). **The ball is now in the user's
-court** — phase-06a's prep is complete; the dogfood RUN happens
-whenever the user has the time + a local LLM endpoint to point at.
-**M6 phase-06b** drafts after the user has captured observations in
-the log; 06b's job is the architect-synthesized M6 retrospective +
-the compaction-monitoring decision + any calibration folds the
-dogfood surfaces.
+**Active phase:** [M6 / phase-07a — SSE prefill-stall: first-token vs.
+inter-token timeout + retry](milestones/M6-plugin/phase-07a-sse-prefill-stall.md)
+(`todo`). Executor: **opencode**. Root-cause fix for the dogfood smoketest
+(session `6a1dd72e`) that aborted at turn 17 with a bare "SSE stream
+stalled" error: the uniform 90 s `STREAM_CHUNK_TIMEOUT` judges first-token
+prefill latency by the same budget as inter-token gaps, so a slow local-model
+prefill on a grown context is misread as a dropped connection. Split into
+configurable first-token (600 s) and idle (90 s) budgets with a bounded
+pre-token retry. **[phase-07b — executor liveness `awaiting_model`
+heartbeat](milestones/M6-plugin/phase-07b-executor-liveness-signal.md)**
+(`todo`) follows 07a (depends on it): emit an `awaiting_model` heartbeat
+before and during the model wait so the pull-based `rexymcp status`
+distinguishes a busy prefill from a hang.
+
+**Two contract/error-model questions 07a/07b deliberately do NOT decide
+(deferred to 06b retrospective):** (1) whether a terminal backend `Err`
+should degrade to a structured `hard_fail` `PhaseResult` (preserving partial
+work) rather than abort `execute_phase`; (2) whether a cross-dispatch resume /
+"continue if phase status ≠ done" mechanism is warranted.
+
+**Still pending the user (separate from 07a/07b):** the M6 dogfood RUN —
+phase-06a's prep is complete (dogfood-procedure.md, dogfood-log.md, clean
+pre-flight). **M6 phase-06b** drafts after the user has captured observations
+in the log; 06b's job is the architect-synthesized M6 retrospective + the
+compaction-monitoring decision + any calibration folds the dogfood surfaces
+(including the 07a/07b deferrals above).
 
 **Calibration fold already landed (for 06b to record):** the first
 dogfood run hit `budget_exceeded` at turn 40 mid-verification (a
