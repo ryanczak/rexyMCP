@@ -1,7 +1,7 @@
 # Phase 06a: dogfood preparation
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** todo
+**Status:** review
 **Depends on:** M6 phases 01–05 (all done) — the plugin scaffold, templates, executor wiring, and three skills are all in place. M5 (done) — the `rexymcp serve` binary is what the plugin launches.
 **Estimated diff:** ~700 lines (procedure doc + log template + phase doc spec + pre-flight verification output; no Rust code)
 **Tags:** language=markdown, kind=feature, size=l
@@ -394,4 +394,79 @@ in 06b.
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
-<!-- entries appended below this line -->
+### Update — 2026-05-31 (complete)
+
+**Summary:** Created `dogfood-procedure.md` (7-step procedure with Do/Observe/Record per step, target-repo selection criteria, architecture-critical stop conditions) and `dogfood-log.md` (template with named sections matching the procedure's Record prompts, including dedicated Compaction observations section). Ran all pre-flight verification checks — all passed. No Rust code changes, no new dependencies.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+cargo test 2>&1 | tail -30
+test result: ok. 518 passed; 0 failed; 2 ignored; 0 measured out; finished in 6.05s
+```
+
+**Pre-flight verification output:**
+
+```
+cargo install --path mcp --debug
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.32s
+  Installing /home/matt/.cargo/bin/rexymcp
+   Installed package `rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)` (executable `rexymcp`)
+
+rexymcp --version
+rexymcp 0.1.0
+
+rexymcp serve --help
+Run the MCP stdio server
+Usage: rexymcp serve --config <CONFIG>
+Options: --config <CONFIG>  Path to the config file  -h, --help  Print help
+
+jq . plugin/.mcp.json
+{ "mcpServers": { "rexymcp": { "command": "rexymcp", "args": ["serve", "--config", "./rexymcp.toml"] } } }
+
+jq . plugin/.claude-plugin/plugin.json
+{ "name": "rexymcp", "displayName": "RexyMCP", "version": "0.1.0", "description": "..." }
+
+wc -l plugin/skills/*/SKILL.md executor/templates/executor_contract.md plugin/templates/STANDARDS.md plugin/templates/WORKFLOW.md
+  430 plugin/skills/architect/SKILL.md
+  110 plugin/skills/dispatch/SKILL.md
+  192 plugin/skills/escalate/SKILL.md
+  224 plugin/skills/review/SKILL.md
+  217 executor/templates/executor_contract.md
+  238 plugin/templates/STANDARDS.md
+  526 plugin/templates/WORKFLOW.md
+  1937 total
+
+Validation greps (phases 02/04/05 — no regressions):
+  Authorized placeholders in templates: 17 (expected — appear in table + commands section)
+  rexyMCP/RexyMCP/opencode/cargo leaks in templates: 0
+  Legitimate rexyMCP refs in skills: 63 (expected — skills reference the product)
+  cargo leaks in plugin/templates/: 0
+```
+
+**End-to-end verification:**
+Not applicable — 06a ships preparation artifacts for the dogfood, not a runtime-loadable artifact. The pre-flight verification commands exercised the live `rexymcp` binary against `--help` and confirmed the plugin JSON files parse. The full end-to-end dogfood run lands in 06b.
+
+**Files changed:**
+- `docs/dev/milestones/M6-plugin/phase-06a-dogfood-prep.md` — status flip to `in-progress` → `review`, Update Log entries
+- `docs/dev/milestones/M6-plugin/README.md` — phase table row updated to `in-progress` → `review`
+- `docs/dev/milestones/M6-plugin/dogfood-procedure.md` — new file (7-step procedure)
+- `docs/dev/milestones/M6-plugin/dogfood-log.md` — new file (log template)
+
+**New tests:** None — no Rust code.
+
+**Notes for review:**
+- Pre-flight 3 (Claude Code plugin-install convention verification): the live docs confirm the plugin layout rexyMCP already has is correct — `.claude-plugin/plugin.json` at manifest, `skills/<name>/SKILL.md` for skills, `.mcp.json` at plugin root, `~/.claude/plugins/<name>/` for persistent install, `claude --plugin-dir` for test mode. No divergence from the architect's sketch.
+- The procedure references the verified install convention by name (test mode vs persistent install) rather than hardcoding a path, per Adaptation 6.
+- verification: fmt OK · clippy OK · tests 518 passed · build OK
