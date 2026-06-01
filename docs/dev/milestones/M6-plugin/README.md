@@ -78,7 +78,7 @@ Expanded on demand (WORKFLOW.md § Milestones), not all at once.
 | 05 | `dispatch` + `review` + `escalate` skills ([phase-05-dispatch-review-escalate.md](phase-05-dispatch-review-escalate.md)) | done |
 | 06a | dogfood preparation (procedure + log template + pre-flight verification) ([phase-06a-dogfood-prep.md](phase-06a-dogfood-prep.md)) | done |
 | 07a | SSE prefill-stall: first-token vs. inter-token timeout + retry ([phase-07a-sse-prefill-stall.md](phase-07a-sse-prefill-stall.md)) | done (approved_after_1: [bug-07a-1](bugs/bug-07a-1.md)) |
-| 07b | executor liveness: `awaiting_model` heartbeat during the model wait ([phase-07b-executor-liveness-signal.md](phase-07b-executor-liveness-signal.md)) | in-progress (bounced: [bug-07b-1](bugs/bug-07b-1.md)) |
+| 07b | executor liveness: `awaiting_model` heartbeat during the model wait ([phase-07b-executor-liveness-signal.md](phase-07b-executor-liveness-signal.md)) | review (bounced: [bug-07b-1](bugs/bug-07b-1.md)) |
 
 Phases 07a / 07b are **dogfood-surfaced executor-resilience fixes** (smoketest
 session `6a1dd72e`), not plugin work — placed here because the M6 dogfood is

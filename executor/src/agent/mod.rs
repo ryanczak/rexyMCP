@@ -59,11 +59,7 @@ const MAX_COMMAND_TAIL_CHARS: usize = 4_000;
 
 /// Heartbeat period (seconds) for re-emitting `awaiting_model` while the model
 /// call is in flight. Keeps `rexymcp status`'s `last_ts` fresh during prefill.
-#[cfg(not(test))]
-const HEARTBEAT_PERIOD_SECS: u64 = 15;
-/// Millisecond variant for tests — 100 ms so heartbeat ticks fire quickly.
-#[cfg(test)]
-const HEARTBEAT_PERIOD_MS: u64 = 100;
+const HEARTBEAT_PERIOD: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// The prompt inputs and verbatim phase metadata the loop assembles into the
 /// system prompt and the escalation briefing.
@@ -234,10 +230,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // re-emits awaiting_model so last_ts stays fresh during a slow prefill.
         let chat_fut = deps.client.chat(&system, messages.clone(), tx, tools_opt);
         tokio::pin!(chat_fut);
-        #[cfg(not(test))]
-        let mut heartbeat = interval(std::time::Duration::from_secs(HEARTBEAT_PERIOD_SECS));
-        #[cfg(test)]
-        let mut heartbeat = interval(std::time::Duration::from_millis(HEARTBEAT_PERIOD_MS));
+        let mut heartbeat = interval(HEARTBEAT_PERIOD);
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
@@ -1132,7 +1125,6 @@ fn emit_phase_run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::testing::MockAiClientPending;
     use crate::ai::testing::MockAiClientScript;
     use crate::ai::types::TokenBreakdown;
     use crate::phase::PhaseStatus;
@@ -3306,9 +3298,10 @@ mod tests {
 
     // ── 07b: awaiting_model heartbeat ─────────────────────────────────────
 
+    use crate::ai::testing::MockAiClientPending;
+
     use std::sync::Arc;
     use tokio::sync::Notify;
-    use tokio::time::{Duration, sleep};
 
     #[tokio::test]
     async fn awaiting_model_emitted_before_model_call() {
@@ -3359,7 +3352,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn heartbeat_reemits_awaiting_model_while_in_flight() {
         let dir = TempDir::new().unwrap();
         let scope = Scope::new(dir.path()).unwrap();
@@ -3372,15 +3365,20 @@ mod tests {
         let inp = input();
         let dir_path = dir.path().to_path_buf();
         let dir_path2 = dir_path.clone();
+
         let handle = tokio::spawn(async move {
             execute_phase(&inp, deps(&client, &registry, &budget, 8, &dir_path)).await
         });
 
-        // With the 100 ms test heartbeat period, wait long enough for ≥ 2 ticks.
-        sleep(Duration::from_millis(350)).await;
+        // Advance time by 3 heartbeat periods, yielding between each so the
+        // loop processes the tick and writes its record.
+        for _ in 0..3 {
+            tokio::time::advance(HEARTBEAT_PERIOD).await;
+            tokio::task::yield_now().await;
+        }
 
-        // While chat is still in flight, the session log should already have
-        // multiple awaiting_model records (pre-call + heartbeat re-emits).
+        // While chat is still in flight, the session log should have
+        // 1 pre-call + 3 heartbeat = 4 awaiting_model records.
         let recs_mid = records(&dir_path2);
         let awaiting_mid = recs_mid
             .iter()
@@ -3395,13 +3393,13 @@ mod tests {
         gate.notify_one();
         handle.await.unwrap().unwrap();
 
-        assert!(
-            awaiting_mid >= 3,
-            "expected >= 3 awaiting_model records while chat is in flight, got {awaiting_mid}"
+        assert_eq!(
+            awaiting_mid, 4,
+            "expected exactly 4 awaiting_model records (1 pre-call + 3 ticks), got {awaiting_mid}"
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn heartbeat_stops_when_model_responds() {
         let dir = TempDir::new().unwrap();
         let scope = Scope::new(dir.path()).unwrap();
@@ -3414,12 +3412,16 @@ mod tests {
         let inp = input();
         let dir_path = dir.path().to_path_buf();
         let dir_path2 = dir_path.clone();
+
         let handle = tokio::spawn(async move {
             execute_phase(&inp, deps(&client, &registry, &budget, 8, &dir_path)).await
         });
 
-        // Let a couple heartbeat ticks fire, then release.
-        sleep(Duration::from_millis(250)).await;
+        // Advance 2 heartbeat periods, yielding between each.
+        for _ in 0..2 {
+            tokio::time::advance(HEARTBEAT_PERIOD).await;
+            tokio::task::yield_now().await;
+        }
 
         let recs_before = records(&dir_path2);
         let count_before = recs_before
@@ -3432,13 +3434,17 @@ mod tests {
             })
             .count();
 
+        // Release the gate so chat resolves.
         gate.notify_one();
         let result = handle.await.unwrap().unwrap();
 
         assert_eq!(result.status, PhaseStatus::Complete);
 
-        // Wait more time and verify no new awaiting_model records appear.
-        sleep(Duration::from_millis(300)).await;
+        // Advance more time — no new awaiting_model records should appear.
+        for _ in 0..3 {
+            tokio::time::advance(HEARTBEAT_PERIOD).await;
+            tokio::task::yield_now().await;
+        }
 
         let recs_after = records(&dir_path2);
         let count_after = recs_after

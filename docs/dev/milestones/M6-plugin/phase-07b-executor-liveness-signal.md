@@ -1,7 +1,7 @@
 # Phase 07b: executor liveness — `awaiting_model` heartbeat during the model wait
 
 **Milestone:** M6 — Plugin + architect/review skills
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-07a (the model-call site is what both phases touch; land 07a first)
 **Estimated diff:** ~190 lines (pre-call emit + heartbeat select + tests)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -296,3 +296,68 @@ use real `sleep` instead of deterministic time. Fix per the bug's "How to fix" �
 `#[cfg(test)]` period override so the shipped `HEARTBEAT_PERIOD` is what's tested,
 and assert a deterministic per-tick count. Do **not** touch the (approved)
 production heartbeat code.
+
+### Update — 2026-06-01 (complete)
+
+**Summary:** Fixed the heartbeat tests to be deterministic. Removed the `#[cfg(test)]` period override (single `HEARTBEAT_PERIOD` const now used by both production and tests). Rewrote the two heartbeat tests using `#[tokio::test(start_paused = true)]` + `tokio::time::advance(HEARTBEAT_PERIOD)` + `yield_now()` between advances, asserting exact per-tick counts (not `>=` thresholds over wall-clock windows). Added `test-util` feature to `[dev-dependencies]` tokio entry (Option A from bug-07b-1). Production code unchanged from the approved prior implementation.
+
+**Acceptance criteria:** all ticked above.
+
+**Bug-07b-1 verification:**
+- No `tokio::time::sleep` (or other real-clock wait) remains in the `agent::tests` module.
+- No `#[cfg(test)]` heartbeat-period override remains; production and tests share one `HEARTBEAT_PERIOD`.
+- The rewritten heartbeat tests assert a **deterministic** record count (exactly N per N ticks).
+- `test-util` is under `[dev-dependencies]` only, not the runtime tokio features.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output)
+
+cargo build 2>&1 | tail -5
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -5
+    Checking rexymcp-executor v0.1.1 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.11s
+
+cargo test 2>&1 | tail -15
+test result: ok. 540 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+
+   Doc-tests executor
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+**End-to-end verification:**
+
+```
+$ rexymcp status --repo <tmpdir>
+phase: phase-07b  session: test123
+model: qwen
+state: ended (complete)
+turn 1, stage awaiting_model
+turn=1 stage=awaiting_model +0/-0 files=0
+last update: 8781h22m ago
+```
+
+Grep for spec-pinned literal `"awaiting_model"`:
+```
+executor/src/agent/progress.rs:27:    /// Short stage tag: `"turn_start"`, `"awaiting_model"`, ...
+executor/src/agent/mod.rs:226:            emit_progress(&emit, "awaiting_model".to_string());
+executor/src/agent/mod.rs:251:                    emit_progress(&emit, "awaiting_model".to_string());
+```
+
+**Files changed:**
+- `executor/Cargo.toml` — added `test-util` feature to `[dev-dependencies]` tokio entry
+- `executor/src/agent/mod.rs` — removed `#[cfg(test)]` HEARTBEAT_PERIOD_MS override; rewrote 2 heartbeat tests with `start_paused = true` + `advance()`; removed unused `MockAiClientPending` import from prior tests
+
+**New tests:** (none — rewrote existing tests to be deterministic)
+
+**Commits:** pending
+
+**Notes for review:** Chose Option A (tokio `test-util`) over Option B (injected tick source) because the closure-borrowing semantics of wrapping `interval.tick()` in a `FnMut` closure that returns a future proved intractable — the interval's `&mut self` borrow cannot escape the closure body. Option A is explicitly authorized in the phase doc and produces clean, deterministic tests.
+
+verification: fmt OK · clippy OK · tests 540 passed · build OK
