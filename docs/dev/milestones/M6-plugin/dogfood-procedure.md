@@ -149,19 +149,26 @@ decomposition, quality of the phase-01 draft (especially pre-injection).
 2. Watch the session output.
 
 **Observe:**
-- Does `executor_health` confirm the local LLM is reachable?
+- Does `executor_health` confirm the local LLM is reachable? 
+yes. 
 - Does `execute_phase` invoke? What does the confirmation prompt look like?
+
 - Do MCP progress notifications appear during execution? How often?
+I did not see any progress notifications in Claude until it exited because it ran out of turns (40 turns is the max)
 - What's the executor's behavior — does it follow the phase spec? Does it hit
   the Confirmation gate before coding?
 - How many turns does the executor run?
+40. the executor session ended when it hit the turn budget. given that this is a local LLM the turn budget needs to be much higher
 - How long does it take wall-clock?
+start: 1780324957811 end: 1780325626618
 - **Compaction data:** how many compaction events fired? (Check the returned
   `PhaseResult` for `CompactionReport` totals, or run
   `executor_log_search { event_type: "compaction" }` if the loop logs them.)
   How early in the phase did they fire?
+i did not notice any compaction events
 - Did the executor visibly lose track of state? (Re-asking for context it
   already had, repeating tool calls, editing the wrong file.)
+not that I could tell. 
 
 **Record:** In `dogfood-log.md` § Dispatch — health-check result; progress
 notification frequency; turn count; wall-clock time; compaction event count and
