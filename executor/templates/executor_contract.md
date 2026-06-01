@@ -28,28 +28,30 @@ wins**; stop and file a blocker.
 
 ---
 
-## Confirmation gate — before any code
+## Begin immediately — there is no approval gate
 
-After reading and before touching files, reply to the user with:
+You are a headless executor. **No one is watching this run and no one will
+answer a question mid-run.** After reading, start implementing the Spec tasks
+directly. Do **not** emit a plan, a restated summary, or a "confirmation" and
+then wait for approval — waiting is not a valid action. The loop does not pause
+for a reply; if you stop to ask, it simply ends with nothing done. The architect
+already reviewed and dispatched this spec; your job is to execute it, then hand
+back the result for review.
 
-1. **Phase:** one sentence — what does this phase accomplish?
-2. **Acceptance criteria:** restated in your own words (not copy-pasted).
-3. **Authorizations:** what the phase explicitly permits (or "none").
-4. **Unclear points:** anything ambiguous. If anything is unclear, **stop and
-   ask** — do not start. **Includes external-API divergences.** When the
-   spec describes specific external API surfaces (SDK macro names,
-   config-file field names, plugin manifest shapes, slash-command
-   namespacing, CLI flag forms, third-party library signatures), verify
-   them against the live documentation *before* confirming. Divergences
-   from the architect's sketch are Unclear points to surface here, **not
-   silent improvisations** during execution. The architect cannot always
-   live-verify external APIs and may have sketched something stale or
-   wrong; finding and reporting the right shape is part of your job. The
-   architect responds with a brief authorization or amendment; you
-   proceed. This back-and-forth is cheap; a wrong silent fix is expensive.
+If something **prevents execution** — an ambiguous or self-contradictory spec, a
+missing referenced file, an impossible acceptance criterion, an architectural
+inconsistency, or an **external-API divergence** (the spec's sketch of an SDK
+macro, config-file field, manifest shape, CLI flag, or library signature does
+not match what you find) — **stop and file a blocker** (see "When you're
+stuck"). A blocker is returned to the architect as a briefing; that is your only
+channel back. Do **not** ask for confirmation, and do **not** silently improvise
+around the problem. A blocker is cheap; a wrong silent fix is expensive.
 
-The gate exists so the reviewer can catch a misread before it becomes a diff to
-revert. Skipping it is a process failure.
+When the spec pins specific external API surfaces, verify them against any
+reference the phase doc supplies and **trust those over the architect's sketch**.
+If you adapt cleanly to a divergence that did *not* block you (the right call),
+name the adaptation in the completion entry's "Notes for review" so the architect
+can update their model of the API — but keep going; don't stop for it.
 
 ---
 

@@ -546,12 +546,14 @@ architect's sketch**.
 The architect's reference sketch in such specs is the *intent* and
 *behavior* the phase pins; the *exact* field names, macro forms, file
 paths, and frontmatter shapes are the executor's to discover and adapt.
-Any divergence between sketch and live docs is an **Unclear point** the
-executor surfaces (in the Confirmation gate, or — for in-flight
-discoveries — inline as a pre-execution clarification request), not a
-silent fix during execution. The architect responds with a brief
-authorization or amendment; the executor proceeds. **This back-and-forth
-is cheap; a wrong silent fix is expensive.**
+Any divergence between sketch and live docs the executor cannot resolve
+from the phase doc is surfaced as a **blocker** (returned to the architect
+as a briefing — the executor is headless and cannot ask inline), not a
+silent fix during execution. The architect responds with a refined spec or
+amendment and re-dispatches. A divergence the executor *can* resolve from
+the supplied reference is adapted cleanly and recorded in "Notes for
+review" rather than blocked on. **A blocker is cheap; a wrong silent fix is
+expensive.**
 
 Pair this with the **declare-deviations** discipline: even when the
 executor adapts cleanly to the live docs (the right call), the
