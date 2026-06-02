@@ -56,34 +56,37 @@ into phase docs):
 | 03a | thread `bench_suite` through the loop + stamp a single benchmarked run ([phase-03a-bench-suite-threading.md](phase-03a-bench-suite-threading.md)) | rolled-back (benchmarking deprecated) |
 | 03b | `rexymcp bench` multi-model sweep + one minimal fixture ([phase-03b-bench-sweep.md](phase-03b-bench-sweep.md)) | rolled-back (never landed) |
 | 04 | `rexymcp runs` — per-run statistics CLI view ([phase-04-runs-cli.md](phase-04-runs-cli.md)) | done (approved_first_try) |
+| 05a | settings plumbing — temperature/seed configurable, sent, recorded ([phase-05a-settings-plumbing.md](phase-05a-settings-plumbing.md)) | todo |
 
 **The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
-into three phases:
+into three phases. Phase 05 was split into **05a (settings)** and **05b
+(provenance)** at draft time — settings are the high-value, self-contained half and
+fit one executor session; endpoint-reported provenance (response parsing + new
+`PhaseRun` fields + the health path) is its own session:
 
 - **04 — `rexymcp runs` (this).** A read-only CLI view that lists individual
   `PhaseRun` records (model, settings, gates, reliability/efficiency, verdict),
   filterable by model/tag, newest-first. The most direct "see detailed statistics
   for each run." Works on existing data.
-- **05 — settings plumbing + run provenance.** Two related emit-site captures
-  that make a run's "how" real in `PhaseRun`:
-  - *Settings:* make sampling settings (temperature/seed/…) configurable, sent to
-    the model, and recorded with real values. Today `generation_params` is always
-    default `None` — this makes the "which settings" axis real. **This is the
-    high-value half** — settings are what *we* choose and vary, so they're the
-    lever behind "which settings work best."
-  - *Endpoint-reported provenance* (currently parsed then discarded — see the AI
-    client at `executor/src/ai/backends/openai.rs` and `executor/src/health.rs`):
-    the **served model id** from the chat response `model` field (more accurate
-    than the requested id; catches aliasing/fallback), the **`finish_reason`**
-    (especially the fraction of completions ending in `length` — a truncation /
-    reliability signal alongside `parse_failure_rate`), and the model's **context
-    window** (`max_model_len` from `/v1/models`, captured via the health/models
-    path). **Explicitly out of scope: quantization / parameter count / weights
-    revision** — the OpenAI-compatible API does not expose these portably (only
-    the model-id string does, by naming convention), and provider-native probes
-    (Ollama `/api/show`, etc.) would break the "any OpenAI endpoint" promise.
+- **05a — settings plumbing.** Make sampling settings (`temperature`/`seed`)
+  configurable in `[executor]`, sent to the model on every chat request, and
+  recorded with real values in `generation_params`. Today `generation_params` is
+  always default `None` — this makes the "which settings" axis real. **This is the
+  high-value, self-contained half** — settings are what *we* choose and vary, so
+  they're the lever behind "which settings work best." Drafted 2026-06-02.
+- **05b — endpoint-reported run provenance** (currently parsed then discarded — see
+  the AI client at `executor/src/ai/backends/openai.rs` and `executor/src/health.rs`):
+  the **served model id** from the chat response `model` field (more accurate
+  than the requested id; catches aliasing/fallback), the **`finish_reason`**
+  (especially the fraction of completions ending in `length` — a truncation /
+  reliability signal alongside `parse_failure_rate`), and the model's **context
+  window** (`max_model_len` from `/v1/models`, captured via the health/models
+  path). **Explicitly out of scope: quantization / parameter count / weights
+  revision** — the OpenAI-compatible API does not expose these portably (only
+  the model-id string does, by naming convention), and provider-native probes
+  (Ollama `/api/show`, etc.) would break the "any OpenAI endpoint" promise.
 - **06 — settings slice on the scorecard.** Aggregate/compare `model × settings`
-  (and the new provenance/reliability signals), depends on 05's real data.
+  (and the new provenance/reliability signals), depends on 05a/05b's real data.
 
 ## Notes
 
