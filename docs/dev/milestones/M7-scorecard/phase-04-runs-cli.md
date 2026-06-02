@@ -384,13 +384,13 @@ This ships a **real CLI surface**, so verify against the built binary:
 
 <!-- entries appended below this line -->
 
-### Update — 2025-07-13 (started)
+### Update — 2026-06-02 (started)
 
 **Executor:** rexyMCP executor (headless)
 
 Implementing phase-04: new `mcp/src/runs.rs` module with `RunsFilter`, `select`, `format_runs`, `load_runs`; new `runs` CLI subcommand in `mcp/src/main.rs`.
 
-### Update — 2025-07-13 (complete)
+### Update — 2026-06-02 (complete)
 
 **Executor:** rexyMCP executor (headless)
 
