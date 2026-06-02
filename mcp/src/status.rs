@@ -13,7 +13,7 @@ use rexymcp_executor::store::sessions::jsonl::read_session_log;
 use serde::Serialize;
 
 /// Distilled view of a session log, derived from its records.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct StatusSummary {
     pub session_id: Option<String>,
     pub phase: Option<String>,

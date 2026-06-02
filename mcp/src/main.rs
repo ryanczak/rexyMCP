@@ -4,6 +4,7 @@ use rexymcp_executor::health;
 use std::path::PathBuf;
 
 mod cap;
+mod dashboard;
 mod log_query;
 mod roots;
 mod runner;
@@ -122,6 +123,16 @@ enum Commands {
         /// Emit JSON instead of a human table
         #[arg(long)]
         json: bool,
+    },
+    /// Live dashboard — tails the active session log and refreshes continuously
+    Dashboard {
+        /// Target repo root (where `.rexymcp/sessions/` lives)
+        #[arg(long)]
+        repo: PathBuf,
+
+        /// Session id to watch; omit to auto-select the most-recently-modified log
+        #[arg(long)]
+        session: Option<String>,
     },
 }
 
@@ -317,6 +328,13 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("{}", scorecard_cli::format_settings_scorecard(&rows));
             }
+            Ok(())
+        }
+        Commands::Dashboard { repo, session } => {
+            dashboard::run_dashboard(&repo, session.as_deref()).unwrap_or_else(|e| {
+                eprintln!("dashboard error: {e}");
+                std::process::exit(1);
+            });
             Ok(())
         }
     }
@@ -524,6 +542,35 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("expected Scorecard"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_dashboard_collects_args() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "dashboard",
+            "--repo",
+            "/some/path",
+            "--session",
+            "sess-123",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Dashboard { repo, session }) => {
+                assert_eq!(repo, PathBuf::from("/some/path"));
+                assert_eq!(session.as_deref(), Some("sess-123"));
+            }
+            _ => panic!("expected Dashboard"),
+        }
+
+        let cli2 = Cli::try_parse_from(["rexymcp", "dashboard", "--repo", "/p"]).unwrap();
+        match cli2.command {
+            Some(Commands::Dashboard { session, .. }) => {
+                assert_eq!(session, None);
+            }
+            _ => panic!("expected Dashboard"),
         }
     }
 }

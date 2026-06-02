@@ -1,7 +1,7 @@
 # Phase 01: `rexymcp dashboard` scaffold — event loop + single summary pane
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** M7 (done) — specifically `mcp/src/status.rs` (`load_status`,
 `summarize`, `find_latest_session_log`, `sessions_dir`), whose data pipeline this
 phase wraps in a live TUI.
@@ -302,3 +302,40 @@ Ships a real CLI surface. Verify against the built binary and quote in the Updat
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-15 (started)
+
+**Executor:** rexyMCP executor
+
+**Plan:** Implement phase 01 — `rexymcp dashboard` scaffold. Tasks: (1) Add `ratatui = "0.30"` and `crossterm = "0.28"` to `mcp/Cargo.toml`. (2) Create `mcp/src/dashboard.rs` with `DashboardData`, `load_data`, `render_summary`, and `run_dashboard`. (3) Add `Commands::Dashboard` variant and handler in `main.rs`. (4) Write unit tests for data layer and CLI parsing.
+
+### Update — 2025-07-15 (complete)
+
+**Executor:** rexyMCP executor
+
+**Verification commands (all passed):**
+- `cargo fmt --all --check` — clean
+- `cargo build` — zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 557 passed, 0 failed, 2 ignored (workspace); 158 passed in `rexymcp` package (4 new dashboard tests)
+- `cargo run -p rexymcp -- dashboard --help` — lists `--repo` and `--session`
+- `cargo run -p rexymcp -- status --repo <tmpdir>` — still works, produces same summary data
+
+**Verification summary:** fmt clean, build zero warnings, clippy clean, all tests green, CLI surface verified end-to-end.
+
+**Files changed:**
+- `mcp/Cargo.toml` — added `ratatui = "0.30"` and `crossterm = "0.28"`
+- `mcp/src/dashboard.rs` — new module: `DashboardData`, `load_data`, `render_summary`, `format_summary_lines`, `run_dashboard`, `run_loop`, plus 3 unit tests
+- `mcp/src/main.rs` — added `mod dashboard`, `Commands::Dashboard` variant + handler, `cli_parse_dashboard_collects_args` test
+- `mcp/src/status.rs` — added `#[derive(Default)]` to `StatusSummary`
+- `docs/dev/milestones/M8-dashboard/phase-01-dashboard-scaffold.md` — status → review, update log entries
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row → review
+
+**Commit:** `feat: add rexymcp dashboard scaffold with live TUI event loop`
+
+**Notes for review:**
+- **ratatui 0.30 API divergence:** The spec sketch used `ratatui::DefaultTerminal` which is correct for 0.30 (it's a type alias for `Terminal<CrosstermBackend<Stdout>>`). The initial code used `CrosstermTerminal` which does not exist in 0.30 — fixed to `DefaultTerminal`.
+- **`FileNumstat` field name:** The spec used `deleted` but the actual struct field is `removed` — fixed.
+- **Clippy `collapsible_if`:** The nested `if let` + `if key.kind` pattern from the spec needed to be collapsed into a single `if poll() && let key = read() && key.kind == Press` chain to satisfy `-D clippy::collapsible_if`.
+- **`StatusSummary::default()`** was needed for the error path in `load_data`; added `Default` derive per authorization.
+- **`crossterm` version:** Spec requested `0.28` but `ratatui 0.30` pulls in `crossterm 0.29` as a dependency. The explicit `crossterm = "0.28"` in `Cargo.toml` resolved to `0.29` via ratatui's dependency resolution — this is fine since both are used through compatible APIs.

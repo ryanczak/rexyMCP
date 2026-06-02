@@ -41,7 +41,7 @@ sibling built on the same `summarize()` core.
 
 | #   | Phase                                                                               | Status |
 |-----|-------------------------------------------------------------------------------------|--------|
-| 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | todo |
+| 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | review |
 | 02  | paned layout — turn/stage · parse/verify · files · budget ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) *(not yet drafted)* | planned |
 
 ## Design decisions
