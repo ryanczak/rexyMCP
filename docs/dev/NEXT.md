@@ -4,37 +4,42 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M7 / phase-05a — settings plumbing: temperature/seed
-configurable, sent, recorded](milestones/M7-scorecard/phase-05a-settings-plumbing.md)
+**Active phase:** [M7 / phase-05b — chat-stream provenance: served model id +
+`finish_reason`](milestones/M7-scorecard/phase-05b-stream-provenance.md)
 (`todo` — ready to dispatch).
 
-**phase-05a in one line:** make sampling settings (`temperature`/`seed`)
-**configurable** in `[executor]`, **sent** on every chat request (key omitted when
-unset — never `null`/hardcoded), and **recorded** with real values in
-`PhaseRun.generation_params`. Today `generation_params` is hard-wired to default
-`None` at the emit site (`mcp/src/runner.rs:190`) and the request body never sends
-the knobs. The high-value, self-contained half of the original phase-05.
+**phase-05b in one line:** capture two values the chat response already sends but
+the client discards — the **served model id** (response `model` field) and
+**`finish_reason`** (recording the fraction of completions that ended in `length`,
+a truncation/reliability signal). Both ride a new `AiEvent::Done` struct variant →
+aggregated in `RunMetrics` → recorded as `PhaseRun.served_model` /
+`length_finish_rate` (`#[serde(default)]` so old records still parse) → shown in
+`rexymcp runs`. **Known risk:** the `AiEvent::Done` variant change has 7 call sites
++ ~5 `PhaseRun` literals; Task 6 enumerates them all (the 05a cascade lesson applied
+proactively).
 
-**phase-04 done** (approved_first_try 2026-06-02): `rexymcp runs` CLI lists
-individual `PhaseRun` records, filterable by `--model`/`--tag`, newest-first, human
-table + `--json`. It already *displays* `generation_params` (as `default` today);
-05a makes those values real.
+**phase-05a done** (approved_after_2 2026-06-02): sampling settings real. The journey
+(1 hard_fail on the caller cascade + 1 review bounce on bookkeeping) is the reason
+05b pre-injects the full `AiEvent::Done` cascade up front. **Calibration to watch:**
+this executor skipped its end-of-phase commit + completion-log once; a recurrence on
+05b would warrant a contract fold (user sign-off).
 
-**Phase-05 split (2026-06-02, at draft time):** the original combined "settings +
-provenance" phase-05 was too large for one executor session, so it's split into
-**05a (settings — this)** and **05b (endpoint-reported provenance: served model id,
-`finish_reason`/truncation rate, context window via `/v1/models`)**. 06 (the
-`model × settings` scorecard slice) depends on both.
+**Phase-05 split history (2026-06-02):** the original combined phase-05 was split at
+draft time into **05a (settings — done)**; then 05b was itself split into **05b
+(chat-stream provenance: served model + `finish_reason` — this)** and **05c (context
+window via `/v1/models`)**, because the chat-stream values share the `AiEvent::Done`
+plumbing while `max_model_len` comes from a separate source. 06 (the `model ×
+settings` / provenance scorecard slice) depends on 05a/05b/05c.
 
 **Per-run statistics plan (designed 2026-06-02 with the user):** 04 = the
 read-only `rexymcp runs` view (done). 05a = settings plumbing — make
 `generation_params` real (configurable, sent, recorded; default `None` today).
-05b = run provenance — capture endpoint-reported provenance the AI client
-currently parses then discards: served model id (chat response `model`),
-`finish_reason` (esp. `length`-truncation rate), and context window
-(`max_model_len` from `/v1/models`). Quantization/params are **out** (not portably
-exposed by the OpenAI API). 06 = a `model × settings` (and provenance) slice on the
-scorecard (depends on 05a/05b). Surface decision: CLI (matches "users see detailed statistics" +
+05b = chat-stream provenance — served model id (chat response `model`) +
+`finish_reason` (esp. `length`-truncation rate), both via a new `AiEvent::Done`
+field. 05c = context window (`max_model_len` from `/v1/models`), a separate source.
+Quantization/params are **out** (not portably exposed by the OpenAI API). 06 = a
+`model × settings` (and provenance) slice on the
+scorecard (depends on 05a/05b/05c). Surface decision: CLI (matches "users see detailed statistics" +
 the existing `rexymcp status` pattern); an MCP `list_runs` tool can come later.
 
 **Direction change (2026-06-02).** The benchmark-suite approach is dropped. The
