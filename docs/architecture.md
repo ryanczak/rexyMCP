@@ -1,10 +1,10 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M6 are implemented (`executor/` + `mcp/`);
-> M7 is in progress. This document is the source of truth for the *intended*
-> design; the code under `executor/` and `mcp/` is the source of truth for what
-> actually runs. Milestones are listed in the **Status** section at the bottom —
-> that list is the project plan.
+> **Status:** Living design doc. M1–M7 are implemented (`executor/` + `mcp/`);
+> M8 (live session dashboard) is queued. This document is the source of truth for
+> the *intended* design; the code under `executor/` and `mcp/` is the source of
+> truth for what actually runs. Milestones are listed in the **Status** section at
+> the bottom — that list is the project plan.
 
 ## What rexyMCP is
 
@@ -242,7 +242,8 @@ per-repo:
 
 ```
 PhaseRun {
-  model, generation_params,             // who + how (temperature, seed)
+  model,                                // requested model id
+  generation_params: { temperature, seed }, // sampling settings (None = endpoint default)
   phase_id, tags,                       // language, kind (feature|refactor|bugfix|test), size bucket
   status, escalated,                    // complete|hard_fail|budget_exceeded; did it hand off to Claude?
   // quality
@@ -252,8 +253,12 @@ PhaseRun {
   // reliability (the small-model differentiator)
   parse_failure_rate, repairs_per_call, // from the forgiving parser
   verifier_retries, tool_success_rate,  // from the governor
+  length_finish_rate,                   // fraction of completions that hit max_tokens (truncation signal)
   // efficiency
   turns, wall_clock_s, tokens,          // TokenBreakdown (in/out/cached)
+  // endpoint-reported provenance (best-effort; None when the server omits them)
+  served_model,                         // model id from the chat response — more accurate than requested
+  context_window,                       // max_model_len from /v1/models; distinct from budget.context_length
   // supervision label (filled at review)
   architect_verdict,                    // approved_first_try | approved_after_N | rejected | escalated
 }
@@ -341,10 +346,21 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
   the JSONL session log (see "Session log & troubleshooting tools"). Each caps
   its own output so a debugging query can't re-flood Claude's context.
 - **`model_scorecard`** — args: optional `tags` / `model` / `min_runs` filters.
-  Aggregates the `PhaseRun` telemetry into the `model × tag` (and `model ×
-  settings`) competency matrix with per-cell sample sizes (see "Model
-  effectiveness metrics & the scorecard"). Lets the user see which model +
-  settings to dispatch a phase with.
+  Aggregates the `PhaseRun` telemetry into the `model × tag` competency matrix
+  with per-cell sample sizes. Lets the architect see which model + settings to
+  dispatch a phase with. (MCP tool — Claude-facing.)
+
+The `mcp` binary also exposes out-of-band **CLI commands** for human-facing use:
+
+- **`rexymcp runs`** — lists individual `PhaseRun` records with their per-run
+  statistics (model, settings, gates, reliability/efficiency, verdict), filterable
+  by `--model`/`--tag`, newest-first. Human table + `--json`. The direct "see what
+  this specific run did" view.
+- **`rexymcp scorecard`** — aggregates runs into a **`model × settings`**
+  competency matrix (same means as `model_scorecard` plus `length_finish_rate`),
+  answering "which settings work best for this model?" Human table + `--json`.
+- **`rexymcp status`** — one-shot liveness report for the most-recently-active
+  session; see "Liveness" below.
 
 Practical concerns this layer owns:
 
@@ -538,17 +554,30 @@ The project plan. Each entry becomes a milestone with its own
    existing one). Milestone boundaries always stop for human sign-off. An opt-in
    autonomous loop (off by default) can chain draft → dispatch → review until a
    blocker or milestone boundary.
-7. **M7 — Per-run statistics & model scorecard.** Consume the `PhaseRun`
-   telemetry accumulated from M4 onward to give the user detailed per-run
-   statistics and a `model_scorecard` aggregation, so they can decide **which
-   local model to use and which settings work best for it**. Surfaces the
-   `model × tag` and `model × settings` slices with per-run drill-down, and the
-   per-cell sample sizes that keep high-variance small-model data honest. (An
-   earlier benchmark-suite + automated-routing plan was dropped 2026-06-02 — the
-   scorecard tracks regular production runs, not a separate controlled-benchmark
-   apparatus, and informs a human decision rather than auto-routing. See the M7
-   README direction-change note.) Depends on having data, so it lands after the
-   loop (M4) and server (M5) have been producing records.
+7. **M7 — Per-run statistics & model scorecard** *(done, 2026-06-02)*. Consume
+   the `PhaseRun` telemetry accumulated from M4 onward to give the user detailed
+   per-run statistics and a settings scorecard, so they can decide **which local
+   model to use and which settings work best for it**. Ships:
+   - `rexymcp runs` — per-run CLI view (model, settings, gates, reliability /
+     efficiency, provenance, verdict), filterable and newest-first.
+   - `PhaseRun` settings plumbing — `temperature`/`seed` configurable, sent on
+     every request, and recorded with real values so the settings axis carries
+     signal.
+   - `PhaseRun` chat-stream provenance — served model id and
+     `length_finish_rate` (fraction of completions truncated at `max_tokens`),
+     captured additively via a new `AiEvent::Completion` event.
+   - `PhaseRun` context window — `max_model_len` from `/v1/models`, best-effort,
+     so a user can see whether their budget matches the model's actual capacity.
+   - `rexymcp scorecard` — `model × settings` competency matrix CLI, same
+     quality/reliability/efficiency/supervision means as the `model_scorecard`
+     MCP tool plus `length_finish_rate`, answering "which settings perform best
+     for this model?"
+   All data is passive production telemetry — a byproduct of normal use, not a
+   separate benchmark apparatus. The scorecard informs a **human decision**; there
+   is no automated model-routing. Per-cell sample sizes are always shown, because
+   individual phases are not controlled experiments and small models are
+   high-variance. Depends on having data, so it lands after the loop (M4) and
+   server (M5) have been producing records.
 8. **M8 — Live session dashboard.** **Why it matters (usability):** an
    `execute_phase` call is opaque *and* blocking — Claude Code's MCP interface
    surfaces nothing about what the executor is doing inside the call, and it
