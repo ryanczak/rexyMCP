@@ -64,12 +64,26 @@ into three phases:
   `PhaseRun` records (model, settings, gates, reliability/efficiency, verdict),
   filterable by model/tag, newest-first. The most direct "see detailed statistics
   for each run." Works on existing data.
-- **05 — settings plumbing.** Make sampling settings (temperature/seed/…)
-  configurable, sent to the model, and recorded with real values in `PhaseRun`.
-  Today `generation_params` is always default `None` — this makes the "which
-  settings" axis real.
+- **05 — settings plumbing + run provenance.** Two related emit-site captures
+  that make a run's "how" real in `PhaseRun`:
+  - *Settings:* make sampling settings (temperature/seed/…) configurable, sent to
+    the model, and recorded with real values. Today `generation_params` is always
+    default `None` — this makes the "which settings" axis real. **This is the
+    high-value half** — settings are what *we* choose and vary, so they're the
+    lever behind "which settings work best."
+  - *Endpoint-reported provenance* (currently parsed then discarded — see the AI
+    client at `executor/src/ai/backends/openai.rs` and `executor/src/health.rs`):
+    the **served model id** from the chat response `model` field (more accurate
+    than the requested id; catches aliasing/fallback), the **`finish_reason`**
+    (especially the fraction of completions ending in `length` — a truncation /
+    reliability signal alongside `parse_failure_rate`), and the model's **context
+    window** (`max_model_len` from `/v1/models`, captured via the health/models
+    path). **Explicitly out of scope: quantization / parameter count / weights
+    revision** — the OpenAI-compatible API does not expose these portably (only
+    the model-id string does, by naming convention), and provider-native probes
+    (Ollama `/api/show`, etc.) would break the "any OpenAI endpoint" promise.
 - **06 — settings slice on the scorecard.** Aggregate/compare `model × settings`
-  (depends on 05's real data).
+  (and the new provenance/reliability signals), depends on 05's real data.
 
 ## Notes
 

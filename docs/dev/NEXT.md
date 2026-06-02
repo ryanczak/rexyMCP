@@ -14,11 +14,15 @@ over the existing telemetry store; mirrors the `status` module + `model_scorecar
 path-resolution patterns. The first slice of the redirected M7.
 
 **Per-run statistics plan (designed 2026-06-02 with the user):** 04 = the
-read-only `rexymcp runs` view (this). 05 = settings plumbing (make
-`generation_params` real — configurable, sent to the model, recorded; it is
-default `None` today). 06 = a `model × settings` slice on the scorecard (depends
-on 05). Surface decision: CLI (matches "users see detailed statistics" + the
-existing `rexymcp status` pattern); an MCP `list_runs` tool can come later.
+read-only `rexymcp runs` view (this). 05 = settings plumbing **+ run provenance**
+— make `generation_params` real (configurable, sent, recorded; default `None`
+today), **and** capture endpoint-reported provenance the AI client currently
+parses then discards: served model id (chat response `model`), `finish_reason`
+(esp. `length`-truncation rate), and context window (`max_model_len` from
+`/v1/models`). Quantization/params are **out** (not portably exposed by the
+OpenAI API). 06 = a `model × settings` (and provenance) slice on the scorecard
+(depends on 05). Surface decision: CLI (matches "users see detailed statistics" +
+the existing `rexymcp status` pattern); an MCP `list_runs` tool can come later.
 
 **Direction change (2026-06-02).** The benchmark-suite approach is dropped. The
 scorecard concept is **kept**, but it will track **regular rexyMCP runs**, not

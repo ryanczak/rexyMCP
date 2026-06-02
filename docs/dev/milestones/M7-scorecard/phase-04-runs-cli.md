@@ -359,11 +359,14 @@ This ships a **real CLI surface**, so verify against the built binary:
 
 ## Out of scope
 
-- **Settings plumbing** — making sampling settings (temperature/seed/…)
-  configurable, sent to the model, and recorded with real values. Today
-  `generation_params` is always default `None`; making it real is **phase-05**.
-  This phase only *displays* whatever is in the record (hence the `default`
-  rendering).
+- **Settings plumbing + run provenance** — making sampling settings
+  (temperature/seed/…) configurable, sent to the model, and recorded with real
+  values, **and** capturing endpoint-reported provenance the AI client currently
+  discards (served model id from the chat-response `model` field, `finish_reason`,
+  context window). Today `generation_params` is always default `None`; making all
+  of that real is **phase-05**. This phase only *displays* whatever is in the
+  record (hence the `default` rendering) — do **not** touch `executor/` or the AI
+  client.
 - **A settings slice on the scorecard** (`model × settings` aggregation) —
   **phase-06**, and it depends on phase-05's real data.
 - **An MCP tool** for per-run listing — the chosen surface is CLI-only. A
