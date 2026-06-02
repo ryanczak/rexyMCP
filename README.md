@@ -44,8 +44,8 @@ rexyMCP keeps the local model on task, in-bounds, and honest using objective dat
         ▼                                                               │
    /rexymcp:escalate <phase>                                            │
         │                                                               │
-        ├─ refine spec → re-dispatch ──────────────────────────────────▶┤
-        └─ session takeover (Claude finishes it) ──────────────────────▶┤
+        ├─ refine spec → re-dispatch ─────────────────────────────────▶┤
+        └─ session takeover (Claude finishes it) ─────────────────────▶┤
                                                                         │
          ┌──────────────────────────────────────────────────────────────┘
          ▼
