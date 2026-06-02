@@ -59,7 +59,7 @@ into phase docs):
 | 05a | settings plumbing — temperature/seed configurable, sent, recorded ([phase-05a-settings-plumbing.md](phase-05a-settings-plumbing.md)) | done (approved_after_2) |
 | 05b | chat-stream provenance — served model id + `finish_reason`/length-truncation rate ([phase-05b-stream-provenance.md](phase-05b-stream-provenance.md)) | done (approved_after_1) |
 | 05c | context window — `max_model_len` from `/v1/models` ([phase-05c-context-window.md](phase-05c-context-window.md)) | done (approved_first_try) |
-| 06 | `model × settings` scorecard slice — `rexymcp scorecard` CLI ([phase-06-settings-scorecard.md](phase-06-settings-scorecard.md)) | todo |
+| 06 | `model × settings` scorecard slice — `rexymcp scorecard` CLI ([phase-06-settings-scorecard.md](phase-06-settings-scorecard.md)) | review |
 
 **The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
 into three phases. Phase 05 was split into **05a (settings)** and **05b

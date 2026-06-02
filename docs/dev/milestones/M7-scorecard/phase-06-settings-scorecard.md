@@ -1,7 +1,7 @@
 # Phase 06: `model × settings` scorecard slice — `rexymcp scorecard` CLI
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-05a/05b/05c (done — `generation_params` and the provenance/
 reliability signals are now real in `PhaseRun`) and phase-04 (done — the `runs.rs`
 CLI module is the structural template to mirror).
@@ -321,3 +321,44 @@ Log:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-02 15:10 (started)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Implementing `rexymcp scorecard` CLI — new `SettingsScorecardRow`, `aggregate_by_settings`, `scorecard_cli` module, `Scorecard` subcommand, and tests.
+
+### Update — 2026-06-02 15:15 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** All tasks implemented. Added `SettingsScorecardRow` + `aggregate_by_settings` to `mcp/src/scorecard.rs`, new `mcp/src/scorecard_cli.rs` module, `Scorecard` subcommand in `mcp/src/main.rs`, and full test suite.
+
+**Files changed:**
+- `mcp/src/scorecard.rs` — added `SettingsScorecardRow`, `settings_label()`, `SettingsAccumulator`, `aggregate_by_settings()`, and 5 unit tests
+- `mcp/src/scorecard_cli.rs` (new) — `load_settings_scorecard()`, `format_settings_scorecard()`, and 4 unit tests
+- `mcp/src/main.rs` — added `mod scorecard_cli`, `Commands::Scorecard` variant, handler, and CLI parse test
+- `docs/dev/milestones/M7-scorecard/phase-06-settings-scorecard.md` — status → review + update log
+- `docs/dev/milestones/M7-scorecard/README.md` — phase table row → review
+
+**Verification commands:**
+```
+cargo fmt --all --check → clean
+cargo build → zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test → 557 passed, 0 failed, 2 ignored
+```
+
+**End-to-end verification:**
+1. `cargo run -p rexymcp -- scorecard --help` lists `--model`, `--tag`, `--min-runs`, `--telemetry-path`, `--json` ✓
+2. Human table output from 3-line JSONL (2 runs `temp=0.2,seed=42`, 1 `default`):
+```
+MODEL  SETTINGS          N  GATES  PARSE_FAIL  LENGTH_FIN  AFT_RATE  TURNS_MEAN
+qwen    default          1   1.00       0.00          —         —       5.00
+qwen    temp=0.2,seed=42  2   1.00       0.08       0.30         —       7.00
+```
+Two settings buckets with correct `n_runs` and means ✓
+
+**Notes for review:**
+- The existing `ScorecardRow` struct definition was accidentally truncated during a prior write (the `#[derive(...)]` and `pub struct ScorecardRow {` lines were missing, leaving bare field declarations). Fixed by restoring the struct header. This was a pre-existing corruption, not introduced by this phase.
+- `aggregate_by_settings` uses a private `SettingsAccumulator` rather than extending the shared `Accumulator`, keeping the existing model×tag path untouched.

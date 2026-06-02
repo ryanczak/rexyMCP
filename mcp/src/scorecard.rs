@@ -5,6 +5,169 @@ use serde::Serialize;
 
 use rexymcp_executor::store::telemetry::{Gates, PhaseRun};
 
+/// One row of the model × settings matrix.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SettingsScorecardRow {
+    pub model: String,
+    /// Sampling-settings label, e.g. "temp=0.2,seed=42" or "default".
+    pub settings: String,
+    pub n_runs: usize,
+    pub gates_pass_rate: f64,
+    pub parse_failure_rate_mean: f64,
+    /// Mean of `length_finish_rate` over runs where it is `Some`. `None` when none.
+    pub length_finish_rate_mean: Option<f64>,
+    pub repairs_per_call_mean: f64,
+    pub tool_success_rate_mean: f64,
+    pub verifier_retries_mean: f64,
+    pub turns_mean: f64,
+    pub wall_clock_s_mean: f64,
+    pub escalation_rate: f64,
+    pub n_with_verdict: usize,
+    pub approved_first_try_rate: Option<f64>,
+    pub bounces_to_approval_mean: Option<f64>,
+}
+
+/// Render the sampling-settings label matching `rexymcp runs`.
+fn settings_label(run: &PhaseRun) -> String {
+    match (
+        run.generation_params.temperature,
+        run.generation_params.seed,
+    ) {
+        (None, None) => "default".to_string(),
+        (Some(t), None) => format!("temp={t}"),
+        (None, Some(s)) => format!("seed={s}"),
+        (Some(t), Some(s)) => format!("temp={t},seed={s}"),
+    }
+}
+
+/// Internal accumulator for a single (model, settings) bucket.
+#[derive(Debug, Default)]
+struct SettingsAccumulator {
+    n: usize,
+    gates_all_pass: usize,
+    parse_failure_rate_sum: f64,
+    repairs_per_call_sum: f64,
+    tool_success_rate_sum: f64,
+    verifier_retries_sum: f64,
+    turns_sum: f64,
+    wall_clock_s_sum: f64,
+    escalated_count: usize,
+    length_finish_rate_sum: f64,
+    length_finish_n: usize,
+    n_with_verdict: usize,
+    approved_first_try_count: usize,
+    bounces_sum: f64,
+    bounces_n: usize,
+}
+
+/// Aggregate runs into a **model × settings** competency matrix.
+///
+/// Unlike [`aggregate`] (model × tag, which explodes per tag), each run
+/// contributes to exactly one (model, settings) bucket.
+pub fn aggregate_by_settings(
+    runs: &[PhaseRun],
+    filter: &ScorecardFilter,
+) -> Vec<SettingsScorecardRow> {
+    let mut buckets: BTreeMap<(String, String), SettingsAccumulator> = BTreeMap::new();
+
+    for run in runs {
+        if let Some(model) = filter.model
+            && run.model != model
+        {
+            continue;
+        }
+
+        if !filter.tags.is_empty() && !filter.tags.iter().all(|t| run.tags.contains(t)) {
+            continue;
+        }
+
+        let key = (run.model.clone(), settings_label(run));
+        let acc = buckets.entry(key).or_default();
+        acc.n += 1;
+
+        if gates_all_pass(&run.gates) {
+            acc.gates_all_pass += 1;
+        }
+        acc.parse_failure_rate_sum += run.parse_failure_rate;
+        acc.repairs_per_call_sum += run.repairs_per_call;
+        acc.tool_success_rate_sum += run.tool_success_rate;
+        acc.verifier_retries_sum += run.verifier_retries as f64;
+        acc.turns_sum += run.turns as f64;
+        acc.wall_clock_s_sum += run.wall_clock_s;
+
+        if run.escalated {
+            acc.escalated_count += 1;
+        }
+
+        if let Some(lr) = run.length_finish_rate {
+            acc.length_finish_rate_sum += lr;
+            acc.length_finish_n += 1;
+        }
+
+        if run.architect_verdict.is_some() {
+            acc.n_with_verdict += 1;
+            if run.architect_verdict.as_deref() == Some("approved_first_try") {
+                acc.approved_first_try_count += 1;
+            }
+        }
+
+        if let Some(b) = run.bounces_to_approval {
+            acc.bounces_sum += b as f64;
+            acc.bounces_n += 1;
+        }
+    }
+
+    let mut rows: Vec<SettingsScorecardRow> = buckets
+        .into_iter()
+        .filter_map(|((model, settings), acc)| {
+            if acc.n < filter.min_runs {
+                return None;
+            }
+
+            let n = acc.n as f64;
+
+            Some(SettingsScorecardRow {
+                model,
+                settings,
+                n_runs: acc.n,
+                gates_pass_rate: acc.gates_all_pass as f64 / n,
+                parse_failure_rate_mean: acc.parse_failure_rate_sum / n,
+                length_finish_rate_mean: if acc.length_finish_n > 0 {
+                    Some(acc.length_finish_rate_sum / acc.length_finish_n as f64)
+                } else {
+                    None
+                },
+                repairs_per_call_mean: acc.repairs_per_call_sum / n,
+                tool_success_rate_mean: acc.tool_success_rate_sum / n,
+                verifier_retries_mean: acc.verifier_retries_sum / n,
+                turns_mean: acc.turns_sum / n,
+                wall_clock_s_mean: acc.wall_clock_s_sum / n,
+                escalation_rate: acc.escalated_count as f64 / n,
+                n_with_verdict: acc.n_with_verdict,
+                approved_first_try_rate: if acc.n_with_verdict > 0 {
+                    Some(acc.approved_first_try_count as f64 / acc.n_with_verdict as f64)
+                } else {
+                    None
+                },
+                bounces_to_approval_mean: if acc.bounces_n > 0 {
+                    Some(acc.bounces_sum / acc.bounces_n as f64)
+                } else {
+                    None
+                },
+            })
+        })
+        .collect();
+
+    rows.sort_by(|a, b| {
+        a.settings
+            .cmp(&b.settings)
+            .then(b.n_runs.cmp(&a.n_runs))
+            .then(a.model.cmp(&b.model))
+    });
+
+    rows
+}
+
 /// One row of the model × tag matrix.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ScorecardRow {
@@ -553,5 +716,111 @@ mod tests {
         assert_eq!(rows[3].tag, "z");
         assert_eq!(rows[3].model, "beta");
         assert_eq!(rows[3].n_runs, 1);
+    }
+
+    fn make_run_with_settings(
+        model: &str,
+        tags: &[&str],
+        temperature: Option<f64>,
+        seed: Option<u64>,
+        length_finish_rate: Option<f64>,
+    ) -> PhaseRun {
+        PhaseRun {
+            ts: 1_717_000_000_000,
+            model: model.to_string(),
+            generation_params: GenerationParams { temperature, seed },
+            phase_id: "test".to_string(),
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            status: "complete".to_string(),
+            escalated: false,
+            gates: all_pass_gates(),
+            parse_failure_rate: 0.1,
+            repairs_per_call: 0.5,
+            verifier_retries: 2,
+            tool_success_rate: 0.9,
+            turns: 7,
+            wall_clock_s: 12.5,
+            tokens: TokenBreakdown::default(),
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: None,
+            served_model: None,
+            length_finish_rate,
+            context_window: None,
+        }
+    }
+
+    #[test]
+    fn by_settings_buckets_distinct_settings() {
+        let runs = vec![
+            make_run_with_settings("m1", &["t"], Some(0.2), None, None),
+            make_run_with_settings("m1", &["t"], Some(0.7), None, None),
+            make_run_with_settings("m1", &["t"], Some(0.2), None, None),
+        ];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 2);
+        let row_02 = rows.iter().find(|r| r.settings == "temp=0.2").unwrap();
+        let row_07 = rows.iter().find(|r| r.settings == "temp=0.7").unwrap();
+        assert_eq!(row_02.n_runs, 2);
+        assert_eq!(row_07.n_runs, 1);
+    }
+
+    #[test]
+    fn by_settings_default_label_for_none() {
+        let runs = vec![make_run_with_settings("m1", &["t"], None, None, None)];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].settings, "default");
+    }
+
+    #[test]
+    fn by_settings_does_not_explode_per_tag() {
+        let runs = vec![make_run_with_settings(
+            "m1",
+            &["a", "b", "c"],
+            None,
+            None,
+            None,
+        )];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].n_runs, 1);
+    }
+
+    #[test]
+    fn by_settings_length_finish_rate_mean() {
+        let runs = vec![
+            make_run_with_settings("m1", &["t"], Some(0.2), None, Some(0.2)),
+            make_run_with_settings("m1", &["t"], Some(0.2), None, Some(0.4)),
+        ];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].length_finish_rate_mean.is_some());
+        assert!((rows[0].length_finish_rate_mean.unwrap() - 0.3).abs() < f64::EPSILON);
+
+        let runs_none = vec![
+            make_run_with_settings("m1", &["t"], None, None, None),
+            make_run_with_settings("m1", &["t"], None, None, None),
+        ];
+        let rows_none = aggregate_by_settings(&runs_none, &ScorecardFilter::default());
+        assert!(rows_none[0].length_finish_rate_mean.is_none());
+    }
+
+    #[test]
+    fn by_settings_min_runs_drops_low_sample() {
+        let runs = vec![
+            make_run_with_settings("m1", &["t"], Some(0.2), None, None),
+            make_run_with_settings("m1", &["t"], Some(0.7), None, None),
+            make_run_with_settings("m1", &["t"], Some(0.7), None, None),
+        ];
+        let filter = ScorecardFilter {
+            min_runs: 2,
+            ..Default::default()
+        };
+        let rows = aggregate_by_settings(&runs, &filter);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].settings, "temp=0.7");
+        assert_eq!(rows[0].n_runs, 2);
     }
 }
