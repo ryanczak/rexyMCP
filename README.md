@@ -2,7 +2,7 @@
 
 **Let Claude be the architect. Let a local model do the coding.**
 
-rexyMCP is named after **Rexy**, my cattle dog. Rexy love to *herds*. rexyMCP 
+rexyMCP is named after **Rexy**, my cattle dog. Rexy loves to *herd*. rexyMCP 
 keeps your local LLM moving in the right direction, nudges it forward, keeps
 it on task, and returns completed work. Claude Code is the Architect. rexyMCP 
 manages the Executor: a local model running on an OpenAI-compatible endpoint 
