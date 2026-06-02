@@ -49,7 +49,7 @@ loop, and the `PhaseRun` store has been accumulating records since M4.
 | #  | Phase                                                                   | Status |
 |----|-------------------------------------------------------------------------|--------|
 | 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | done (approved_first_try) |
-| 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | todo |
+| 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | done (approved_after_1) |
 
 The benchmark suite (exit criterion 2) is split: **02** lays the provenance
 data model (a `bench_suite` field + a scorecard source filter) that lets

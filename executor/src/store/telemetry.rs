@@ -41,6 +41,12 @@ pub struct PhaseRun {
     pub generation_params: GenerationParams,
     pub phase_id: String,
     pub tags: Vec<String>,
+    /// Provenance. `None` = a normal production phase run. `Some(name)` = a
+    /// controlled benchmark run belonging to suite `name`. Serde-defaults to
+    /// `None` so records written before this field existed still deserialize
+    /// (as production).
+    #[serde(default)]
+    pub bench_suite: Option<String>,
     // outcome
     pub status: String,
     pub escalated: bool,
@@ -124,6 +130,7 @@ mod tests {
             bugs_filed: None,
             bounces_to_approval: None,
             architect_verdict: None,
+            bench_suite: None,
         }
     }
 
@@ -149,5 +156,24 @@ mod tests {
     fn read_missing_file_is_empty() {
         let records = read(Path::new("/nonexistent/phase_runs.jsonl")).unwrap();
         assert!(records.is_empty());
+    }
+
+    #[test]
+    fn record_without_bench_suite_field_deserializes_as_production() {
+        // Hand-write a valid PhaseRun JSON line minus the `bench_suite` key,
+        // mimicking a record written before this field existed.
+        let json_without_field = r#"{"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+
+        let run: PhaseRun = serde_json::from_str(json_without_field).unwrap();
+        assert_eq!(run.bench_suite, None);
+    }
+
+    #[test]
+    fn round_trip_preserves_some_bench_suite() {
+        let mut run = sample();
+        run.bench_suite = Some("smoke".to_string());
+        let json = serde_json::to_string(&run).unwrap();
+        let back: PhaseRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.bench_suite, Some("smoke".to_string()));
     }
 }
