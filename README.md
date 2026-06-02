@@ -1,6 +1,6 @@
 # rexyMCP
 
-**Let Claude be the *Architect*. Let a local model do the *Execition*.**
+**Let Claude be the *Architect*. Let a local model do the *Execution*.**
 
 **rexyMCP** is named after Rexy, my cattle dog. Rexy loves to *herd*. **rexyMCP** 
 keeps your local LLM moving in the right direction, nudges it forward, keeps
