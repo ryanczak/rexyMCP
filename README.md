@@ -145,12 +145,16 @@ at milestone close.
 - **Redacted JSONL session log** — every turn (prompts, parsed tool calls, tool
   results, progress, verifier runs) is written to disk with secrets redacted, so
   a lean result never means lost detail.
-- **Cross-project telemetry & scorecard** — each run emits a `PhaseRun` record
-  (model, generation settings, gates, parse-failure rate, verifier retries, turns,
-  tokens, and — at review — the architect's verdict) into a shared store. The
-  `model_scorecard` aggregates those records so you can see which model has
-  actually earned its keep on which kind of work, and decide which model and
-  settings to run next.
+- **Per-run statistics & settings scorecard** — each run emits a `PhaseRun`
+  record (model, sampling settings, served-model id, length-truncation rate,
+  context window, gates, reliability/efficiency metrics, and — at review — the
+  architect's verdict) into a shared telemetry store. Two CLI views let you act
+  on that data: `rexymcp runs` lists individual runs with all their stats so you
+  can see exactly what happened on each dispatch; `rexymcp scorecard` aggregates
+  runs into a **`model × settings` competency matrix** so you can compare e.g.
+  `temperature=0.2` vs `temperature=0.7` for your model on your kind of work. The
+  `model_scorecard` MCP tool (Claude-facing) provides the `model × tag` slice for
+  the architect to consult at dispatch time.
 
 **The MCP server (`rexymcp serve`)**
 
@@ -172,8 +176,14 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
   `PhaseResult` as JSON), no MCP client required.
 - `rexymcp serve` — start the MCP stdio server.
 - `rexymcp status` — read a session log and report the latest phase progress
-  (human summary or `--json`). This is the pull-based liveness path while a phase
-  is mid-flight.
+  (human summary or `--json`). The pull-based liveness path while a phase is
+  mid-flight.
+- `rexymcp runs` — list individual `PhaseRun` records with per-run stats (model,
+  settings, gates, reliability, provenance, verdict). Filterable by `--model` /
+  `--tag`; `--json` for scripting.
+- `rexymcp scorecard` — aggregate runs into a **`model × settings` competency
+  matrix** so you can compare sampling settings for a given model. Filterable by
+  `--model` / `--tag` / `--min-runs`; `--json` for scripting.
 
 **The Claude Code plugin**
 
@@ -186,6 +196,67 @@ workflow as skills and slash commands:
   either approve it or file a bug.
 - `/rexymcp:escalate` — decide what to do with a `hard_fail` briefing
   (refined re-dispatch, session takeover, or resume).
+
+## Built for small / local models
+
+rexyMCP is designed around the reality that a 7B–27B local model **will** make
+mistakes that a frontier model would not. Every layer of the executor has a
+specific answer to that constraint:
+
+| Challenge | rexyMCP's answer |
+|---|---|
+| Small models emit malformed tool calls — trailing commas, fenced JSON, near-miss key names | **Forgiving 6-stage parser** repairs on the fly and feeds model-visible feedback when it can't, rather than silently failing or aborting the turn |
+| The model gets into a loop, retrying the same broken edit | **Loop detector** (part of the governor) recognizes repetition patterns and converts them to a `hard_fail` briefing before they burn the turn budget |
+| The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit-class tool call and injects the compiler diagnostics back into the turn for a retry — the model sees what's broken and fixes it without a wasted round-trip |
+| Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: the loop tracks which files the model has read this session and refuses to patch files it hasn't seen, preventing blind overwrites |
+| The context window fills up mid-phase | **Context budgeting + compaction**: configurable `max_context_pct` triggers a summary compaction before the window is exhausted, so the model doesn't hit a hard cutoff in the middle of a thought |
+| The model uses `bash` irresponsibly | **Security scope confinement** restricts every file and shell operation to the target-repo root, and a bash classifier blocks the command categories most likely to cause damage |
+| You don't know if a model is actually good for your codebase | **Per-run telemetry** records the objective outcome of every dispatch — gates, parse-failure rate, truncation rate, turns, the architect's verdict — so over time you accumulate real evidence about which models and settings earn their keep on your kind of work |
+
+The result is that models that would be too unreliable to use unguarded — Qwen
+7B, Gemma 9B, a freshly-quantized 27B — become useful executors for bounded,
+spec-driven implementation work, precisely because the loop catches and
+corrects their failure modes automatically.
+
+## The improvement loop
+
+rexyMCP doesn't just use a workflow — it *learns from it*. Every milestone
+closes with a retrospective, and every recurring failure pattern feeds back into
+the process docs that govern all future work.
+
+**How it works:**
+
+1. **The architect labels every run.** Each `execute_phase` call produces a
+   `PhaseRun` record; when the architect approves or bounces a phase, it fills
+   in the supervision fields — `architect_verdict`, `bounces_to_approval`,
+   `bugs_filed`. Hard-fail briefings describe the blocker precisely. Review
+   bounces come with a structured bug report (severity, what's wrong, how to
+   fix, verification steps). All of this is structured data, not narrative, so
+   it accumulates over time without becoming noise.
+2. **Patterns surface through the scorecard.** `rexymcp runs` and `rexymcp
+   scorecard` make it visible which models + settings produce first-try
+   approvals, how often a given model truncates, where bounces cluster. The
+   data is passive — a byproduct of normal use, not a separate eval apparatus.
+3. **Recurring failures fold into the workflow docs.** When a failure class
+   hits two occurrences it's a trend; at three it's a documented fix. The
+   calibration discipline is explicit: one occurrence is data, two is a
+   trend, three is a rule change. The architect folds the lesson into
+   `WORKFLOW.md` (the spec-writing contract) or `STANDARDS.md` (the DoD),
+   with sign-off, so every future phase starts with that knowledge pre-applied.
+   The WORKFLOW.md embedded in the plugin is the canonical copy — changes here
+   propagate to every new project that bootstraps from it.
+
+**A concrete example from building rexyMCP itself:** during M7, the executor
+(Qwen3.6-27B) twice failed by mutating a shared type used at many call sites,
+getting trapped by the verifier's 3-strike limit before it could finish
+updating all the callers. Two occurrences → a trend → a fold: the
+["Prefer additive change shapes"](docs/dev/WORKFLOW.md) rule was added to the
+spec-writing contract. The very next phase, the architect used an additive new
+variant instead of mutating the existing one. Zero cascade. The fold earned its
+keep on the first application.
+
+The improvement loop turns rexyMCP's own development history into a better
+tool for every project that uses it.
 
 ## Installation
 
