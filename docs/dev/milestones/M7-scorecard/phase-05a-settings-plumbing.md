@@ -1,7 +1,7 @@
 # Phase 05a: settings plumbing — make sampling settings configurable, sent, and recorded
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-04 (done — `rexymcp runs` displays `generation_params`, which
 are always `default`/`None` today; this phase makes them real). No dependency on
 phase-05b.
@@ -232,6 +232,62 @@ generation_params: GenerationParams {
 
 (`GenerationParams` is already imported here.)
 
+### Task 5 — Complete the caller cascade (worked examples) — **READ THIS; the first attempt halted here**
+
+The first dispatch correctly extended **two function signatures** but did not
+update **all of their callers**, producing two `E0061` "wrong number of arguments"
+compile errors that blocked the verifier. The signature changes are already on
+disk and correct; what remains is purely mechanical caller updates. Apply **every**
+edit below verbatim — do not skip any, and `cargo build` after to confirm zero
+`E0061` remain.
+
+**Already done (do not redo):** `build_chat_body` now takes `temperature`/`seed`
+trailing params; `OpenAiClient` has the two fields; `OpenAiClient::new` takes and
+stores them; `config.rs` has the fields + `impl Default`.
+
+**5a. Production `build_chat_body` call inside `OpenAiClient::chat`** (was
+`openai.rs:165`, the line `let body = build_chat_body(&self.model, system,
+converted, tools);`). The client now holds the settings, so pass them:
+
+```rust
+let body = build_chat_body(&self.model, system, converted, tools, self.temperature, self.seed);
+```
+
+**5b. `make_client`** (`executor/src/ai/mod.rs`) — append the two config knobs to
+the `OpenAiClient::new` call (this is the `ai/mod.rs` `E0061`):
+
+```rust
+pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
+    Box::new(OpenAiClient::new(
+        cfg.api_key.clone().unwrap_or_default(),
+        cfg.model.clone(),
+        cfg.base_url.clone(),
+        Duration::from_secs(cfg.first_token_timeout_secs),
+        Duration::from_secs(cfg.stream_idle_timeout_secs),
+        cfg.temperature,
+        cfg.seed,
+    ))
+}
+```
+
+**5c. Every `build_chat_body` call site in the `#[cfg(test)] mod tests` of
+`openai.rs`** — there are several (the `build_chat_body_*` tests around
+`openai.rs:551–575`). Each currently passes 4 args and must gain `, None, None`
+(or real values where the new test asserts on them). Find them all with
+`grep -n "build_chat_body(" executor/src/ai/backends/openai.rs` and update **each**
+— `cargo test` will not compile until all are fixed. Example:
+
+```rust
+// before:
+let body = build_chat_body("qwen2.5", "system prompt", vec![], None);
+// after:
+let body = build_chat_body("qwen2.5", "system prompt", vec![], None, None, None);
+```
+
+**Completion check for the cascade:** `grep -rn "build_chat_body(\|OpenAiClient::new(" executor`
+and confirm **every** call passes the full argument count (6 for `build_chat_body`,
+7 for `OpenAiClient::new`). Then `cargo build` must show zero `E0061`.
+
 ## Acceptance criteria
 
 - [ ] `ExecutorConfig` has `temperature: Option<f64>` and `seed: Option<u64>`,
@@ -341,3 +397,42 @@ halves against real artifacts and quote the output in the completion Update Log:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-02
+
+The first attempt (`hard_fail`, `VerifierFailurePersistent` after 3 consecutive
+compile failures) got ~70% of the way: it correctly added the config fields +
+`impl Default`, extended `build_chat_body`'s signature and body insertion, and
+added the `temperature`/`seed` fields + params to `OpenAiClient`/`OpenAiClient::new`.
+It then **halted on two `E0061` errors** because it changed two function signatures
+but did not update all their callers: the production `build_chat_body` call inside
+`chat()` and `make_client`'s `OpenAiClient::new` call. **Your partial work is on
+disk and correct — build on it; do not revert it.** The new **Task 5** above gives
+the exact verbatim edits for every remaining caller (5a/5b/5c) plus a grep-based
+completion check. Apply all of Task 5, then finish Task 4 (the `runner.rs` emit
+site — still `GenerationParams::default()`) and the Test plan. Run `cargo build`
+before `cargo test` to confirm the `E0061`s are gone.
+
+### Update — 2026-06-02 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the failure was an incomplete mechanical caller cascade after a
+signature change — a weak-model gap that worked examples (new Task 5) fix, not a
+case for takeover on first failure.
+
+### Update — 2026-06-02 (started)
+
+**Executor:** rexyMCP executor
+**Tasks:** Implement Tasks 1–4: config fields, client threading, request-body insertion, emit-site population, tests.
+
+### Notes for executor — 2026-06-02 (bounce, bug-05a-1)
+
+The **code is correct and all gates are green** — reviewer re-ran fmt/build/clippy/
+test (548 executor + 142 mcp pass) and verified every acceptance criterion plus the
+end-to-end `rexymcp runs` rendering. **Do not change any source file.** The bounce
+([bug-05a-1](bugs/bug-05a-1.md)) is purely the end-of-phase bookkeeping you skipped:
+(1) append a `### Update — 2026-06-02 (complete)` entry to this Update Log per the
+WORKFLOW.md completion template (summary, the four command outputs, the E2E output,
+files changed, new test names, commit subject); (2) commit all of phase-05a (the
+five source files + the two docs) as **one** `feat:` commit. Then flip Status back
+to `review`. See bug-05a-1 for the exact checklist.
