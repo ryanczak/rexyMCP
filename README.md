@@ -1,13 +1,13 @@
 # rexyMCP
 
-**Let Claude be the *Architect*. Let a local model do the *Execution*.**
+**Let Claude be the *Architect*. Let a local model do the execution.**
 
 **rexyMCP** is named after Rexy, my cattle dog. Rexy loves to *herd*. **rexyMCP** 
 keeps your local LLM moving in the right direction, nudges it forward, keeps
 it on task and returns completed work. Claude Code is the *Architect* and **rexyMCP** 
 shepherds the *Executor*: a local model running on an OpenAI-compatible endpoint 
 such as LM Studio, Ollama, or vLLM. The *Executor* does the coding. The *Architect* 
-decomposes your idea into an product plan with milestones with spec'd phases; 
+decomposes your idea into a product plan with milestones and spec'd phases; 
 the *Executor* codes each phase to spec and the *Architect* reviews the output, all while 
 **rexyMCP** keeps the local model on task, in-bounds, and honest using realtime data.
 
