@@ -4,27 +4,24 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M7 is complete** (closed 2026-06-02; all in-scope phases
-01/04/05a/05b/05c/06 approved). This is a **milestone boundary**: the executor must
-not pick up work while this says "none". The next milestone (M8) starts only on
-explicit human sign-off.
+**Active phase:** [M8 / phase-01 — `rexymcp dashboard` scaffold: event loop +
+single summary pane](milestones/M8-dashboard/phase-01-dashboard-scaffold.md)
+(`todo` — ready to dispatch; human sign-off given 2026-06-02).
 
-**M7 retrospective:** see [the M7 README Notes](milestones/M7-scorecard/README.md#m7-retrospective-2026-06-02).
-One WORKFLOW fold landed (additive change shapes); two watched items stay single
-occurrences (bookkeeping drop-off, date hallucination) — no further folds.
+**phase-01 in one line:** add `rexymcp dashboard --repo <path>` — a `ratatui`-powered
+live TUI that polls the latest session JSONL every 500 ms, displays the existing
+`StatusSummary` in a single bordered pane, and exits on `q`/`Esc`. This is the
+event-loop + data scaffold; phase 02 adds the btop-style multi-panel layout. **New
+dependencies authorized:** `ratatui = "0.30"` and `crossterm = "0.28"` (the only
+`Cargo.toml` edits in M8). `rexymcp status` is unchanged.
 
-**Open follow-ups before/at M8 kickoff (human-gated):**
-1. **Architecture realignment.** `docs/architecture.md`'s "Model effectiveness metrics
-   & routing" section still describes the dropped benchmark/automated-routing direction
-   and does not mention `rexymcp runs`/`scorecard` or the per-run-statistics substrate.
-   Needs an architect pass (principal-engineer territory).
-2. **M8 — Live session dashboard** (queued; see `docs/architecture.md` § Status): a
-   `rexymcp dashboard` read-only TUI over the live session JSONL, motivated by the
-   opacity of a blocking `execute_phase` call through Claude Code's MCP interface (no
-   `progressToken`). Not yet decomposed into phases.
-3. **README positioning pass** (user-requested): highlight rexyMCP's small-model-friendly
-   features (forgiving tool-call parser, code-quality gates, loop detection, verifier,
-   context budgeting) and the virtuous architect/WORKFLOW improvement cycle.
+**M7 done** (2026-06-02): per-run statistics substrate complete (runs, scorecard,
+provenance). One WORKFLOW fold (additive change shapes). Architecture.md and
+README.md realignment done. All open follow-ups cleared.
+
+**M8 design:** `ratatui` + `crossterm`; two phases (scaffold → btop panels);
+`rexymcp status` preserved for scripting/CI; read-only, no side effects, hermetic
+data layer (tests exercise `load_data` without a real terminal).
 
 **Phase-05 split history (2026-06-02):** the original combined phase-05 was split at
 draft time into **05a (settings — done)**; then 05b was itself split into **05b

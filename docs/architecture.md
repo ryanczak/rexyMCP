@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
 > **Status:** Living design doc. M1–M7 are implemented (`executor/` + `mcp/`);
-> M8 (live session dashboard) is queued. This document is the source of truth for
+> M8 (live session dashboard) is in progress. This document is the source of truth for
 > the *intended* design; the code under `executor/` and `mcp/` is the source of
 > truth for what actually runs. Milestones are listed in the **Status** section at
 > the bottom — that list is the project plan.
