@@ -187,7 +187,10 @@ async fn run_phase_with(
         verifier: seams.verifier,
         commands: &inp.cfg.commands,
         runner: seams.runner,
-        generation_params: GenerationParams::default(),
+        generation_params: GenerationParams {
+            temperature: inp.cfg.executor.temperature,
+            seed: inp.cfg.executor.seed,
+        },
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
     };
@@ -219,6 +222,8 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         inp.cfg.executor.base_url.clone(),
         std::time::Duration::from_secs(inp.cfg.executor.first_token_timeout_secs),
         std::time::Duration::from_secs(inp.cfg.executor.stream_idle_timeout_secs),
+        inp.cfg.executor.temperature,
+        inp.cfg.executor.seed,
     );
 
     let client: &dyn AiClient = match inp.test_client {

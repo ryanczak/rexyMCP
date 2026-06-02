@@ -35,6 +35,13 @@ pub struct ExecutorConfig {
     /// Budget (seconds) for the gap between tokens once streaming has begun.
     #[serde(default = "default_stream_idle_timeout_secs")]
     pub stream_idle_timeout_secs: u64,
+    /// Sampling temperature sent on every chat request. `None` omits the key,
+    /// letting the endpoint apply its own default.
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    /// Deterministic sampling seed sent on every chat request. `None` omits it.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 fn default_first_token_timeout_secs() -> u64 {
@@ -54,6 +61,8 @@ impl Default for ExecutorConfig {
             api_key: None,
             first_token_timeout_secs: default_first_token_timeout_secs(),
             stream_idle_timeout_secs: default_stream_idle_timeout_secs(),
+            temperature: None,
+            seed: None,
         }
     }
 }
@@ -363,5 +372,68 @@ escalation_slots = 1
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.executor.first_token_timeout_secs, 600);
         assert_eq!(cfg.executor.stream_idle_timeout_secs, 180);
+    }
+
+    #[test]
+    fn config_defaults_sampling_settings_to_none() {
+        let cfg = ExecutorConfig::default();
+        assert_eq!(cfg.temperature, None);
+        assert_eq!(cfg.seed, None);
+    }
+
+    #[test]
+    fn config_loads_sampling_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+temperature = 0.2
+seed = 42
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.temperature, Some(0.2));
+        assert_eq!(cfg.executor.seed, Some(42));
+    }
+
+    #[test]
+    fn config_omits_sampling_settings_keeps_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.temperature, None);
+        assert_eq!(cfg.executor.seed, None);
     }
 }

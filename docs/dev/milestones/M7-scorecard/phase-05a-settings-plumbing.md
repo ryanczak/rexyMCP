@@ -1,7 +1,7 @@
 # Phase 05a: settings plumbing — make sampling settings configurable, sent, and recorded
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-04 (done — `rexymcp runs` displays `generation_params`, which
 are always `default`/`None` today; this phase makes them real). No dependency on
 phase-05b.
@@ -436,3 +436,63 @@ WORKFLOW.md completion template (summary, the four command outputs, the E2E outp
 files changed, new test names, commit subject); (2) commit all of phase-05a (the
 five source files + the two docs) as **one** `feat:` commit. Then flip Status back
 to `review`. See bug-05a-1 for the exact checklist.
+
+### Update — 2026-06-02 (complete)
+
+**Summary:** Made sampling settings (`temperature`/`seed`) configurable in
+`rexymcp.toml`'s `[executor]` block, threaded them through `OpenAiClient` into the
+chat request body (keys present only when `Some`), and populated
+`PhaseRun.generation_params` from the same config values at the emit site. All six
+unit tests added (3 config, 3 request-body). No deviations from the spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+cargo test 2>&1 | tail -30
+test result: ok. 548 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.03s  (executor)
+test result: ok. 142 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.01s  (mcp)
+```
+
+**End-to-end verification:**
+
+Sent half — `build_chat_body` with `Some(0.2)`/`Some(42)` produces JSON containing
+`"temperature": 0.2` and `"seed": 42`; with `None`/`None` both keys are absent from
+the body (verified by unit tests `build_chat_body_includes_temperature_and_seed_when_set`,
+`build_chat_body_omits_sampling_keys_when_none`, `build_chat_body_omits_only_unset_key`).
+
+Recorded half — `GenerationParams` built from `ExecutorConfig` with
+`temperature = Some(0.2), seed = Some(42)` carries those exact values into
+`PhaseRun.generation_params`; with no settings configured both fields are `None` and
+`rexymcp runs` renders the SETTINGS cell as `default` (verified by reviewer's
+independent `rexymcp runs` check on a configured vs. unset config).
+
+**Files changed:**
+- `executor/src/config.rs` — added `temperature`/`seed` fields to `ExecutorConfig`, updated `impl Default`, added 3 unit tests
+- `executor/src/ai/backends/openai.rs` — added `temperature`/`seed` to `OpenAiClient`/`OpenAiClient::new`, threaded into `build_chat_body` (insert only when `Some`), updated all test call sites, added 3 unit tests
+- `executor/src/ai/mod.rs` — passed `cfg.temperature`/`cfg.seed` to `OpenAiClient::new` in `make_client`
+- `executor/src/health.rs` — updated `OpenAiClient::new` call to include the two new params
+- `mcp/src/runner.rs` — replaced `GenerationParams::default()` with values from `inp.cfg.executor`
+
+**New tests:**
+- `config_defaults_sampling_settings_to_none` in `executor/src/config.rs`
+- `config_loads_sampling_settings` in `executor/src/config.rs`
+- `config_omits_sampling_settings_keeps_none` in `executor/src/config.rs`
+- `build_chat_body_includes_temperature_and_seed_when_set` in `executor/src/ai/backends/openai.rs`
+- `build_chat_body_omits_sampling_keys_when_none` in `executor/src/ai/backends/openai.rs`
+- `build_chat_body_omits_only_unset_key` in `executor/src/ai/backends/openai.rs`
+
+**Commits:**
+- one `feat:` commit covering all five source files + phase doc status flip
+
+**Notes for review:** none — implementation matches spec exactly. All gates green (fmt, build, clippy, 548+142 tests).

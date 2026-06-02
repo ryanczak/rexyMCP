@@ -85,6 +85,8 @@ pub fn build_chat_body(
     system: &str,
     messages: Vec<Value>,
     tools: Option<&[ToolSchema]>,
+    temperature: Option<f64>,
+    seed: Option<u64>,
 ) -> Value {
     let mut combined_system = String::from(system);
     let mut non_system = Vec::with_capacity(messages.len());
@@ -118,6 +120,12 @@ pub fn build_chat_body(
     } else {
         body["tool_choice"] = json!("none");
     }
+    if let Some(t) = temperature {
+        body["temperature"] = json!(t);
+    }
+    if let Some(s) = seed {
+        body["seed"] = json!(s);
+    }
     body
 }
 
@@ -127,6 +135,8 @@ pub struct OpenAiClient {
     base_url: String,
     first_token_timeout: Duration,
     stream_idle_timeout: Duration,
+    temperature: Option<f64>,
+    seed: Option<u64>,
 }
 
 impl OpenAiClient {
@@ -136,6 +146,8 @@ impl OpenAiClient {
         base_url: String,
         first_token_timeout: Duration,
         stream_idle_timeout: Duration,
+        temperature: Option<f64>,
+        seed: Option<u64>,
     ) -> Self {
         let resolved_url = if base_url.is_empty() {
             "https://api.openai.com/v1".to_string()
@@ -148,6 +160,8 @@ impl OpenAiClient {
             base_url: resolved_url,
             first_token_timeout,
             stream_idle_timeout,
+            temperature,
+            seed,
         }
     }
 }
@@ -162,7 +176,14 @@ impl AiClient for OpenAiClient {
         tools: Option<&[ToolSchema]>,
     ) -> Result<()> {
         let converted = convert_messages(messages);
-        let body = build_chat_body(&self.model, system, converted, tools);
+        let body = build_chat_body(
+            &self.model,
+            system,
+            converted,
+            tools,
+            self.temperature,
+            self.seed,
+        );
 
         let mut first_token_seen = false;
         let mut retries = 0;
@@ -549,17 +570,17 @@ mod tests {
 
     #[test]
     fn build_chat_body_has_stream_true_and_model() {
-        let body = build_chat_body("qwen2.5", "system prompt", vec![], None);
+        let body = build_chat_body("qwen2.5", "system prompt", vec![], None, None, None);
         assert_eq!(body["stream"], true);
         assert_eq!(body["model"], "qwen2.5");
     }
 
     #[test]
     fn build_chat_body_tool_choice_none_when_no_tools() {
-        let body = build_chat_body("m", "sys", vec![], None);
+        let body = build_chat_body("m", "sys", vec![], None, None, None);
         assert_eq!(body["tool_choice"], "none");
 
-        let body = build_chat_body("m", "sys", vec![], Some(&[]));
+        let body = build_chat_body("m", "sys", vec![], Some(&[]), None, None);
         assert_eq!(body["tool_choice"], "none");
     }
 
@@ -570,9 +591,30 @@ mod tests {
             description: "bar".into(),
             parameters: json!({}),
         }];
-        let body = build_chat_body("m", "sys", vec![], Some(&tools));
+        let body = build_chat_body("m", "sys", vec![], Some(&tools), None, None);
         assert_eq!(body["tool_choice"], "auto");
         assert!(body.get("tools").is_some());
+    }
+
+    #[test]
+    fn build_chat_body_includes_temperature_and_seed_when_set() {
+        let body = build_chat_body("m", "sys", vec![], None, Some(0.2), Some(42));
+        assert_eq!(body["temperature"], 0.2);
+        assert_eq!(body["seed"], 42);
+    }
+
+    #[test]
+    fn build_chat_body_omits_sampling_keys_when_none() {
+        let body = build_chat_body("m", "sys", vec![], None, None, None);
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("seed").is_none());
+    }
+
+    #[test]
+    fn build_chat_body_omits_only_unset_key() {
+        let body = build_chat_body("m", "sys", vec![], None, Some(0.7), None);
+        assert_eq!(body["temperature"], 0.7);
+        assert!(body.get("seed").is_none());
     }
 
     #[test]

@@ -191,6 +191,8 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
         cfg.base_url.clone(),
         Duration::from_secs(cfg.first_token_timeout_secs),
         Duration::from_secs(cfg.stream_idle_timeout_secs),
+        cfg.temperature,
+        cfg.seed,
     ))
 }
 
@@ -244,6 +246,8 @@ mod tests {
             api_key: Some("key".into()),
             first_token_timeout_secs: 600,
             stream_idle_timeout_secs: 90,
+            temperature: None,
+            seed: None,
         };
         let _c = make_client(&cfg);
     }
@@ -257,6 +261,8 @@ mod tests {
             api_key: Some("local".into()),
             first_token_timeout_secs: 600,
             stream_idle_timeout_secs: 90,
+            temperature: None,
+            seed: None,
         };
         let _c = make_client(&cfg);
     }
@@ -270,6 +276,8 @@ mod tests {
             api_key: Some("local".into()),
             first_token_timeout_secs: 600,
             stream_idle_timeout_secs: 90,
+            temperature: None,
+            seed: None,
         };
         let _c = make_client(&cfg);
     }

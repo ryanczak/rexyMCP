@@ -120,6 +120,8 @@ mod tests {
             api_key: None,
             first_token_timeout_secs: 600,
             stream_idle_timeout_secs: 90,
+            temperature: None,
+            seed: None,
         };
         let health = check(&cfg).await;
         assert!(!health.reachable);
