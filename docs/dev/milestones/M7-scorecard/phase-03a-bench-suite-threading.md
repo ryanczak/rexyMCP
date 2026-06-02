@@ -1,7 +1,13 @@
 # Phase 03a: thread `bench_suite` through the loop + stamp a single benchmarked run
 
+> **⚠ ROLLED BACK 2026-06-02 — benchmarking deprecated.** The code from this
+> phase (the `LoopDeps.bench_suite` threading + the `run-phase --bench-suite`
+> CLI flag) was reverted in commit `971d0c4`. The benchmark feature is dropped;
+> M7 is being redirected toward detailed per-run statistics for regular rexyMCP
+> runs. Retained for historical context only — do not dispatch.
+
 **Milestone:** M7 — Model scorecard & routing
-**Status:** in-progress (bounced — see [bug-03a-1](bugs/bug-03a-1.md))
+**Status:** rolled-back
 **Depends on:** phase-02 (done). `PhaseRun.bench_suite` and the scorecard
 `SourceFilter` exist; this phase makes the executor loop actually *write* a
 non-`None` value when asked.

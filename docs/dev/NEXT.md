@@ -4,29 +4,31 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M7 / phase-03b — `rexymcp bench` multi-model sweep + one
-minimal fixture](milestones/M7-scorecard/phase-03b-bench-sweep.md)
-(`todo` — ready to dispatch).
+**Active phase:** none — **M7 is being redirected** (benchmarking deprecated
+2026-06-02). The next phase for the new direction (detailed per-run statistics +
+scorecard over regular runs) has not been drafted yet; it is the next
+`/rexymcp:architect` task, to be designed with the user. Do not dispatch.
 
-phase-01 (terminal `Err` → `hard_fail`) is `done` (approved_first_try
-2026-06-01). phase-02 (benchmark provenance + scorecard `SourceFilter`) is
-`done` (approved_after_1 2026-06-01). phase-03a (thread `bench_suite` through
-`LoopDeps`/`emit_phase_run` + a `run-phase --bench-suite` flag, the stamped
-single-run primitive) is `done` (approved_after_1 2026-06-02; one minor bounce
-on a prohibited `#[allow]`, fixed via the `RunFullArgs` grouping idiom).
+**Direction change (2026-06-02).** The benchmark-suite approach is dropped. The
+scorecard concept is **kept**, but it will track **regular rexyMCP runs**, not
+specialized benchmark runs. New goal: let users see detailed statistics for each
+rexyMCP run so they can decide which local LLM to use and which settings work
+best for it. Phases **02 / 03a / 03b** were rolled back — benchmark code reverted
+(`971d0c4` phase-03a, `dc5b6be` phase-02), the unlanded 03b sweep discarded, and
+the three phase docs banner-marked `rolled-back`. The `bench_suite` field on
+`PhaseRun`, the scorecard `SourceFilter`, the `LoopDeps`/CLI threading, and the
+sweep are all gone; `PhaseRun` + scorecard are back to their post-phase-01 state.
 
-**phase-03b in one line:** add a `rexymcp bench` command that runs a benchmark
-suite (reference phase docs against a frozen fixture) across one or more
-`--model`s, copying the pristine fixture into a fresh `TempDir` per run and
-emitting a `bench_suite`-stamped `PhaseRun` for each. Ships the sweep engine +
-**one** minimal `smoke` fixture (a standalone cargo crate + one trivial phase);
-the curated breadth is phase-03c. Authorizes two scoped `Cargo.toml` edits
-(`exclude = ["benchmarks"]` on the workspace; `tempfile` dev→prod in mcp).
-
-**phase-03 split (decided 2026-06-01/02 with the user):** 03a = the
-stamp/threading primitive (done). 03b = the sweep engine + one fixture (`--model`
-repeatable CLI flag; copy-into-`TempDir`-per-run). 03c = the curated breadth
-(language × kind × size matrix + per-suite command config), drafted after 03b.
+**Open follow-ups for the redesign:**
+- `docs/architecture.md` § "Model effectiveness metrics & routing" still carries
+  the "Benchmark vs. telemetry" + automated-routing language — needs an architect
+  pass to realign with the per-run-statistics direction.
+- Pre-existing red tests unrelated to the rollback: `config.rs` commit `6282060`
+  bumped `stream_idle_timeout_secs` default 90→180 but left
+  `config_defaults_first_token_and_idle_timeouts` (`config.rs:309`) and
+  `config_omits_timeouts_keeps_defaults` (`config.rs:365`) asserting `90`. Two
+  failing tests; fix the asserts to `180` (or whatever final value) before the
+  next phase is reviewed.
 
 **M6 closed** via [phase-06b — dogfood execution + retrospective +
 close](milestones/M6-plugin/phase-06b-dogfood-close.md). The ms_pacman dogfood
@@ -63,11 +65,13 @@ unreachable with Claude Code's current client.
 LLM with no token cost. Per-project `[budget] max_turns` was already
 configurable; only the defaults moved.
 
-**Last completed:** [M7 / phase-03a](milestones/M7-scorecard/phase-03a-bench-suite-threading.md)
-— approved_after_1 2026-06-02 (one minor `#[allow]` bounce, fixed via grouping).
+**Last completed:** [M7 / phase-01](milestones/M7-scorecard/phase-01-backend-error-degradation.md)
+— approved_first_try 2026-06-01. (phase-02/03a/03b rolled back 2026-06-02 —
+benchmarking deprecated.)
 
-**Milestone:** [M7 — Model scorecard & routing](milestones/M7-scorecard/README.md)
-— in progress (M1–M6 done; M7 phase-01/02/03a done; phase-03b in `todo`).
+**Milestone:** [M7 — Per-run statistics & model scorecard](milestones/M7-scorecard/README.md)
+— in progress, redirecting (M1–M6 done; M7 phase-01 done; benchmarking dropped;
+per-run statistics direction pending design).
 
 ---
 

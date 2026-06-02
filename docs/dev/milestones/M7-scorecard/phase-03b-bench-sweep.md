@@ -1,7 +1,13 @@
 # Phase 03b: `rexymcp bench` multi-model sweep + one minimal fixture
 
+> **⚠ ROLLED BACK 2026-06-02 — benchmarking deprecated.** Never landed: the one
+> dispatch stalled mid-run and its partial work was discarded. The benchmark
+> feature is dropped; M7 is being redirected toward detailed per-run statistics
+> for regular rexyMCP runs. Retained for historical context only — do not
+> dispatch.
+
 **Milestone:** M7 — Model scorecard & routing
-**Status:** todo
+**Status:** rolled-back
 **Depends on:** phase-03a (done). The stamped single-run primitive
 (`run_phase` with `bench_suite: Some(name)`) exists; this phase drives it once
 per (model, benchmark phase) over a copied fixture.

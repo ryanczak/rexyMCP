@@ -1,7 +1,14 @@
 # Phase 02: benchmark provenance on PhaseRun + scorecard source filter
 
+> **⚠ ROLLED BACK 2026-06-02 — benchmarking deprecated.** The code from this
+> phase (the `bench_suite` field on `PhaseRun`, the scorecard `SourceFilter`, the
+> `ModelScorecardParams` benchmark params) was reverted in commit `dc5b6be`. The
+> benchmark feature is dropped; M7 is being redirected toward detailed per-run
+> statistics for regular rexyMCP runs. Retained for historical context only — do
+> not dispatch.
+
 **Milestone:** M7 — Model scorecard & routing
-**Status:** todo
+**Status:** rolled-back
 **Depends on:** phase-01 (done). The telemetry store, `PhaseRun`, the scorecard aggregation, and the `model_scorecard` MCP tool all exist (M4/M5); this phase extends them.
 **Estimated diff:** ~200 lines (one field + serde default + a filter enum + filter logic + MCP param mapping + tests)
 **Tags:** language=rust, kind=feature, size=m

@@ -1,81 +1,78 @@
-# M7 — Model scorecard & routing
+# M7 — Per-run statistics & model scorecard
 
-**Goal:** Consume the `PhaseRun` telemetry accumulated since M4 to produce a
-meaningful model-vs-model competency matrix and a routing policy that maps a
-phase's tags to the best-scoring local model.
+> **⚠ DIRECTION CHANGE — 2026-06-02.** The benchmark-suite approach is
+> **deprecated**. M7 originally aimed at a curated benchmark suite (the same
+> phases run by each model) plus an automated routing policy. That is dropped.
+> The scorecard concept is **kept**, but it now aggregates **regular rexyMCP
+> runs**, not specialized benchmark runs. Phases **02 / 03a / 03b** were rolled
+> back (code reverted in `971d0c4` + `dc5b6be`; benchmark partial work
+> discarded). Phase-01 stands. The detailed phase plan for the new direction is
+> the next architect task — the exit criteria below are the high-level target,
+> not yet decomposed into phase docs.
 
-**Status:** in progress — phase-01 done; later phases drafted on demand.
+**Goal:** Give rexyMCP users **detailed, per-run statistics** for every regular
+run, so they can make informed decisions about **which local LLM to use** and
+**which settings work best** for that LLM. The `model_scorecard` aggregation is
+retained, fed by ordinary production telemetry rather than benchmark records.
 
-**Depends on:** M6 (done) — the full stack is live, the dogfood validated the
-loop, and the `PhaseRun` store has been accumulating records since M4.
+**Status:** in progress — phase-01 done; benchmarking deprecated; the per-run
+statistics direction is pending design.
 
-**Exit criteria:**
+**Depends on:** M6 (done) — the full stack is live, and the `PhaseRun` store has
+been accumulating regular-run records since M4.
 
-- **Terminal backend `Err` → `hard_fail` degradation (phase-01, carry-over from
-  M6).** A mid-phase terminal model error (after ≥1 completed turn) degrades to
-  a `hard_fail` `PhaseResult` with briefing + partial artifacts, instead of
+**Exit criteria** (high-level target for the new direction — to be decomposed
+into phase docs):
+
+- **Terminal backend `Err` → `hard_fail` degradation (phase-01 — DONE).** A
+  mid-phase terminal model error (after ≥1 completed turn) degrades to a
+  `hard_fail` `PhaseResult` with briefing + partial artifacts, instead of
   aborting `execute_phase`. Pre-work connection errors (at turn 0) remain `Err`.
-  Rationale: the architecture's escalation contract is "return a structured
-  result, let the host re-invoke"; aborting discards recoverable work.
-- **Curated benchmark suite.** A small set of reference phases (one per tag
-  combination: language × kind × size) that can be dispatched against multiple
-  models to produce controlled, apples-to-apples `PhaseRun` records. The
-  benchmark runner picks the right phase per model-under-test and emits records
-  into the shared telemetry store.
-- **`model_scorecard` meaningful output.** With real `PhaseRun` data flowing,
-  the Layer 2 `model_scorecard` tool (already implemented in M5) produces a
-  non-trivial `model × tag → { n_runs, first_pass_rate, mean_turns,
-  parse_failure_rate, mean_bugs, … }` matrix with sample sizes. The phase
-  verifies it produces useful output on real data and fixes any gaps in the
-  aggregation.
-- **Routing policy.** A `recommend_model(tags)` function that reads the
-  scorecard, selects the best-scoring model for a given tag set (argmax of
-  `first_pass_rate` subject to a minimum sample size), and exposes an
-  exploration policy (epsilon-greedy) so new models still get sampled. The
-  architect can call this before dispatch, or `execute_phase` can accept a
-  `model: "auto"` sentinel that invokes it.
+- **Per-run statistics surface.** Each regular run's detailed stats — model,
+  generation settings (temperature/seed/…), gates, parse-failure rate,
+  repairs-per-call, verifier retries, tool-success rate, turns, wall-clock,
+  tokens, bounces, verdict — are viewable per run, so a user can compare runs
+  and see which model + settings performed best.
+- **Scorecard over regular runs.** The `model_scorecard` tool (M5) aggregates
+  ordinary `PhaseRun` records (no benchmark provenance) into a model × tag (and,
+  candidate, model × settings) competency matrix with sample sizes.
 
 ## Architecture references
 
 - `docs/architecture.md` — "Model effectiveness metrics & routing" (the
-  `PhaseRun` schema, the scorecard aggregation, the routing policy design).
+  `PhaseRun` schema, the scorecard aggregation). **Note:** the "Benchmark vs.
+  telemetry" and automated-"Routing" portions of that section are now superseded
+  by this direction change and need an architect pass to realign.
 - `docs/architecture.md` § Layer 1 "Escalation = Claude Code itself" and
   "The `PhaseResult` / briefing contract" (grounds the phase-01 decision).
-- `docs/architecture.md` § Layer 2 — `model_scorecard` tool (what the
-  aggregation exposes to the architect).
+- `docs/architecture.md` § Layer 2 — `model_scorecard` tool.
 
 ## Phases
 
 | #  | Phase                                                                   | Status |
 |----|-------------------------------------------------------------------------|--------|
 | 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | done (approved_first_try) |
-| 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | done (approved_after_1) |
-| 03a | thread `bench_suite` through the loop + stamp a single benchmarked run ([phase-03a-bench-suite-threading.md](phase-03a-bench-suite-threading.md)) | done (approved_after_1) |
-| 03b | `rexymcp bench` multi-model sweep + one minimal fixture ([phase-03b-bench-sweep.md](phase-03b-bench-sweep.md)) | todo |
+| 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | rolled-back (benchmarking deprecated) |
+| 03a | thread `bench_suite` through the loop + stamp a single benchmarked run ([phase-03a-bench-suite-threading.md](phase-03a-bench-suite-threading.md)) | rolled-back (benchmarking deprecated) |
+| 03b | `rexymcp bench` multi-model sweep + one minimal fixture ([phase-03b-bench-sweep.md](phase-03b-bench-sweep.md)) | rolled-back (never landed) |
 
-The benchmark suite (exit criterion 2) is split: **02** lays the provenance
-data model (a `bench_suite` field + a scorecard source filter) that lets
-benchmark and production runs share one store while staying distinguishable;
-**03a** threads that field through `LoopDeps`/`emit_phase_run` + a
-`run-phase --bench-suite` flag so a single run can be stamped (the writer of
-non-`None` provenance); **03b** adds the `rexymcp bench` multi-model sweep
-engine + a copy-into-`TempDir`-per-run mechanism + **one** minimal `smoke`
-fixture (the engine, not the breadth); **03c** adds the curated breadth (the
-language × kind × size phase matrix + per-suite command config); later phases
-cover scorecard data analysis + gaps and the routing policy (exit criteria
-3–4), drafted on demand.
+The next phases (the per-run statistics surface + scorecard-over-regular-runs)
+have not been drafted — they are the next `/rexymcp:architect` task, to be
+designed with the user.
 
 ## Notes
 
 **Phase-01 is a carry-over from M6.** The M6 retrospective (phase-06b) decided
 that mid-phase terminal backend errors should degrade to `hard_fail` rather than
-aborting `execute_phase`. It is the only M7 phase with well-defined scope today
-(the implementation sites are known: `executor/src/agent/mod.rs:238` and
-`:271-273`); phases 02–04 depend on having real `PhaseRun` data and a running
-benchmark setup, which is data that comes from *using* the system rather than
-from the design.
+aborting `execute_phase`. Implemented and approved.
 
-**Routing depends on data.** A routing policy trained on N<5 runs per tag is
-not a routing policy, it's noise. Phase-04 should be blocked until the
-scorecard has a minimum sample size (suggest: 5+ runs per tag combination
-exercised). The M7 retrospective will assess whether that threshold is met.
+**Benchmarking deprecation (2026-06-02).** The benchmark-suite path (phases
+02 / 03a / 03b) was rolled back. Rationale: rather than build a separate
+controlled-benchmark apparatus (curated fixtures, a multi-model sweep, a
+`bench_suite` provenance distinction), the scorecard will track **regular**
+rexyMCP runs and surface detailed per-run statistics, letting the user make the
+model/settings call directly. The reverted commits removed the `bench_suite`
+field on `PhaseRun`, the scorecard `SourceFilter`, the `LoopDeps`/CLI threading,
+and the (unlanded) sweep. The phase docs are retained with rolled-back banners
+for historical context. `docs/architecture.md`'s benchmark/routing language
+still needs an architect pass to match this direction.
