@@ -4,25 +4,25 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M7 / phase-05b — chat-stream provenance: served model id +
-`finish_reason`](milestones/M7-scorecard/phase-05b-stream-provenance.md)
+**Active phase:** [M7 / phase-05c — context window:
+`max_model_len` from `/v1/models`](milestones/M7-scorecard/phase-05c-context-window.md)
 (`todo` — ready to dispatch).
 
-**phase-05b in one line:** capture two values the chat response already sends but
-the client discards — the **served model id** (response `model` field) and
-**`finish_reason`** (recording the fraction of completions that ended in `length`,
-a truncation/reliability signal). Both ride a new `AiEvent::Done` struct variant →
-aggregated in `RunMetrics` → recorded as `PhaseRun.served_model` /
-`length_finish_rate` (`#[serde(default)]` so old records still parse) → shown in
-`rexymcp runs`. **Known risk:** the `AiEvent::Done` variant change has 7 call sites
-+ ~5 `PhaseRun` literals; Task 6 enumerates them all (the 05a cascade lesson applied
-proactively).
+**phase-05c in one line:** record the **endpoint-reported context window**
+(`max_model_len` from `GET /v1/models`, distinct from the configured
+`budget.context_length`) in `PhaseRun.context_window` and show it in `rexymcp runs`.
+Best-effort: `None` when the endpoint omits it or the fetch fails — never blocks a
+run. Fetched in `run_phase` (the prod wrapper, only when no test client is injected),
+threaded via `AssemblyInput` → `LoopDeps` → emit. **Known risk:** three *additive*
+struct-field cascades (`PhaseRun` ~6 literals, `LoopDeps` 8, `AssemblyInput` ~3);
+Task 6 gives grep-verified site lists per the new WORKFLOW "additive change shapes"
+fold — build struct-by-struct.
 
-**phase-05a done** (approved_after_2 2026-06-02): sampling settings real. The journey
-(1 hard_fail on the caller cascade + 1 review bounce on bookkeeping) is the reason
-05b pre-injects the full `AiEvent::Done` cascade up front. **Calibration to watch:**
-this executor skipped its end-of-phase commit + completion-log once; a recurrence on
-05b would warrant a contract fold (user sign-off).
+**phase-05b done** (approved_after_1 2026-06-02): served model + `finish_reason`
+recorded via the additive `AiEvent::Completion` variant. The additive restructure
+(after a hard_fail that mutated `Done`) validated the WORKFLOW fold on first use, and
+the bug-05a-1 bookkeeping drop-off did **not** recur — so that calibration stays at 1
+occurrence (data, not a trend).
 
 **Phase-05 split history (2026-06-02):** the original combined phase-05 was split at
 draft time into **05a (settings — done)**; then 05b was itself split into **05b
