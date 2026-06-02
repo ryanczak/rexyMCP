@@ -4,10 +4,21 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M7 is being redirected** (benchmarking deprecated
-2026-06-02). The next phase for the new direction (detailed per-run statistics +
-scorecard over regular runs) has not been drafted yet; it is the next
-`/rexymcp:architect` task, to be designed with the user. Do not dispatch.
+**Active phase:** [M7 / phase-04 — `rexymcp runs`: per-run statistics CLI
+view](milestones/M7-scorecard/phase-04-runs-cli.md) (`todo` — ready to dispatch).
+
+**phase-04 in one line:** add a `rexymcp runs` CLI command that lists individual
+`PhaseRun` records (model, settings, gates, reliability/efficiency, verdict),
+filterable by `--model`/`--tag`, newest-first, human table + `--json`. Read-only
+over the existing telemetry store; mirrors the `status` module + `model_scorecard`
+path-resolution patterns. The first slice of the redirected M7.
+
+**Per-run statistics plan (designed 2026-06-02 with the user):** 04 = the
+read-only `rexymcp runs` view (this). 05 = settings plumbing (make
+`generation_params` real — configurable, sent to the model, recorded; it is
+default `None` today). 06 = a `model × settings` slice on the scorecard (depends
+on 05). Surface decision: CLI (matches "users see detailed statistics" + the
+existing `rexymcp status` pattern); an MCP `list_runs` tool can come later.
 
 **Direction change (2026-06-02).** The benchmark-suite approach is dropped. The
 scorecard concept is **kept**, but it will track **regular rexyMCP runs**, not
@@ -70,8 +81,8 @@ configurable; only the defaults moved.
 benchmarking deprecated.)
 
 **Milestone:** [M7 — Per-run statistics & model scorecard](milestones/M7-scorecard/README.md)
-— in progress, redirecting (M1–M6 done; M7 phase-01 done; benchmarking dropped;
-per-run statistics direction pending design).
+— in progress (M1–M6 done; M7 phase-01 done; benchmarking dropped; per-run
+statistics direction designed → phases 04/05/06; phase-04 active).
 
 ---
 

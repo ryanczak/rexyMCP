@@ -55,10 +55,21 @@ into phase docs):
 | 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | rolled-back (benchmarking deprecated) |
 | 03a | thread `bench_suite` through the loop + stamp a single benchmarked run ([phase-03a-bench-suite-threading.md](phase-03a-bench-suite-threading.md)) | rolled-back (benchmarking deprecated) |
 | 03b | `rexymcp bench` multi-model sweep + one minimal fixture ([phase-03b-bench-sweep.md](phase-03b-bench-sweep.md)) | rolled-back (never landed) |
+| 04 | `rexymcp runs` — per-run statistics CLI view ([phase-04-runs-cli.md](phase-04-runs-cli.md)) | todo |
 
-The next phases (the per-run statistics surface + scorecard-over-regular-runs)
-have not been drafted — they are the next `/rexymcp:architect` task, to be
-designed with the user.
+**The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
+into three phases:
+
+- **04 — `rexymcp runs` (this).** A read-only CLI view that lists individual
+  `PhaseRun` records (model, settings, gates, reliability/efficiency, verdict),
+  filterable by model/tag, newest-first. The most direct "see detailed statistics
+  for each run." Works on existing data.
+- **05 — settings plumbing.** Make sampling settings (temperature/seed/…)
+  configurable, sent to the model, and recorded with real values in `PhaseRun`.
+  Today `generation_params` is always default `None` — this makes the "which
+  settings" axis real.
+- **06 — settings slice on the scorecard.** Aggregate/compare `model × settings`
+  (depends on 05's real data).
 
 ## Notes
 
