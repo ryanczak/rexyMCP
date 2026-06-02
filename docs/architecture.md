@@ -1,9 +1,10 @@
 # rexyMCP — Architecture
 
-> **Status:** Design. No code exists yet. This document is the source of truth
-> for the *intended* design; `src/` (once it exists) is the source of truth for
-> what actually runs. Milestones are listed in the **Status** section at the
-> bottom — that list is the project plan.
+> **Status:** Living design doc. M1–M6 are implemented (`executor/` + `mcp/`);
+> M7 is in progress. This document is the source of truth for the *intended*
+> design; the code under `executor/` and `mcp/` is the source of truth for what
+> actually runs. Milestones are listed in the **Status** section at the bottom —
+> that list is the project plan.
 
 ## What rexyMCP is
 
@@ -328,7 +329,7 @@ sample size."
 
 ### Layer 2 — `mcp` crate (binary)
 
-An MCP **stdio** server built on the `rmcp` crate. It exposes two tools:
+An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
 
 - **`execute_phase`** — args: `phase_doc_path` (string), `repo_path` (string,
   the target-repo root), optional `model` / `profile` override. Calls the
