@@ -4,7 +4,7 @@
 meaningful model-vs-model competency matrix and a routing policy that maps a
 phase's tags to the best-scoring local model.
 
-**Status:** in progress — phase-01 in progress; later phases drafted on demand.
+**Status:** in progress — phase-01 done; later phases drafted on demand.
 
 **Depends on:** M6 (done) — the full stack is live, the dogfood validated the
 loop, and the `PhaseRun` store has been accumulating records since M4.
@@ -48,7 +48,7 @@ loop, and the `PhaseRun` store has been accumulating records since M4.
 
 | #  | Phase                                                                   | Status |
 |----|-------------------------------------------------------------------------|--------|
-| 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | review |
+| 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | done (approved_first_try) |
 
 Phases 02 (benchmark suite), 03 (scorecard data analysis + gaps), and 04
 (routing policy) draft on demand.

@@ -1,7 +1,7 @@
 # Phase 01: terminal backend Err → hard_fail degradation
 
 **Milestone:** M7 — Model scorecard & routing
-**Status:** review
+**Status:** done
 **Depends on:** M6 (done) — M6 retrospective (phase-06b) made this decision; the implementation sites are identified.
 **Estimated diff:** ~80 lines (new enum variant + two loop sites + two new tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -329,3 +329,11 @@ executor/src/agent/mod.rs:1771:                Blocker::HardFail(HardFailSignal:
 - Created `MockAiClientChatError` inside the test module (not in `ai/testing.rs`) to avoid editing an unauthorized file. This mock returns `Err` from `chat()` on a configured call index, exercising the site A (`chat_fut`) error path.
 - Both new tests use a `read_file` tool call on turn 0 to ensure `turns > 0` when the error hits on turn 1.
 - End-to-end verification: N/A (no CLI-visible surface; hermetic tests are the definitive verification).
+
+### Review verdict — 2026-06-01
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (local, via rexyMCP `execute_phase`)
+- **Scope deviations:** none — `MockAiClientChatError` was correctly placed in the test module rather than editing the unauthorized `ai/testing.rs`, and declared in Notes for review (exactly the declare-deviations discipline).
+- **Calibration:** none. Both sites match the spec verbatim; the two new tests are real (prime `turns > 0` with a turn-0 `read_file`, assert `Ok(HardFail)` + `BackendError` blocker — would fail under the old unconditional-`Err` behavior). Independent re-run: fmt ✓ · build ✓ (zero warnings) · clippy ✓ · test **542 executor + 131 mcp** ✓. Minor nit (not bounced): the executor's Update Log entries are dated `2025-01-09` — the local model lacks the real date; harmless.
