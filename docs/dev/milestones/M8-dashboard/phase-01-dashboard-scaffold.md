@@ -1,7 +1,7 @@
 # Phase 01: `rexymcp dashboard` scaffold — event loop + single summary pane
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** in-progress (bounced — see [bugs/bug-01-1.md](bugs/bug-01-1.md): duplicate crossterm version)
 **Depends on:** M7 (done) — specifically `mcp/src/status.rs` (`load_status`,
 `summarize`, `find_latest_session_log`, `sessions_dir`), whose data pipeline this
 phase wraps in a live TUI.
@@ -94,11 +94,17 @@ This phase is **authorized** to add exactly these two crates to
 
 ```toml
 ratatui = "0.30"
-crossterm = "0.28"
+crossterm = "0.29"
 ```
 
 Pin to these versions; do not use `*` or a range wider than minor. Add them
 under `[dependencies]`, not `[dev-dependencies]`.
+
+> **Corrected 2026-06-02 (bug-01-1):** this originally pinned `crossterm =
+> "0.28"`, but `ratatui 0.30` uses `crossterm 0.29` for its backend. A `"0.28"`
+> pin produces two crossterm copies in the tree (the event loop on one, ratatui's
+> terminal backend on the other). The crossterm version **must** match the one
+> ratatui drives the terminal with — `"0.29"`.
 
 ### Task 2 — New module `mcp/src/dashboard.rs` (`mod dashboard;` in main.rs)
 
@@ -224,8 +230,9 @@ Add `mod dashboard;` alongside the other module declarations.
 
 ## Acceptance criteria
 
-- [ ] `ratatui = "0.30"` and `crossterm = "0.28"` appear in `mcp/Cargo.toml`
-      `[dependencies]`; no other crates added.
+- [ ] `ratatui = "0.30"` and `crossterm = "0.29"` appear in `mcp/Cargo.toml`
+      `[dependencies]`; no other crates added; `Cargo.lock` holds exactly one
+      crossterm version (`0.29.x`).
 - [ ] `rexymcp dashboard --repo <path>` launches a live TUI, polls the latest
       session log every ~500 ms, displays the current `StatusSummary` content in
       a bordered pane, and refreshes on each poll.
@@ -279,8 +286,9 @@ Ships a real CLI surface. Verify against the built binary and quote in the Updat
 
 ## Authorizations
 
-- [x] May add `ratatui = "0.30"` and `crossterm = "0.28"` to `mcp/Cargo.toml`
-      `[dependencies]` (the only Cargo.toml edit in M8).
+- [x] May add `ratatui = "0.30"` and `crossterm = "0.29"` to `mcp/Cargo.toml`
+      `[dependencies]` (the only Cargo.toml edit in M8). *(was `0.28`; corrected
+      per bug-01-1.)*
 - [x] May add `mcp/src/dashboard.rs` (new module) and declare `mod dashboard;` in
       `main.rs`; add `Commands::Dashboard` variant and handler.
 - [ ] May add `#[derive(Default)]` to `StatusSummary` in `status.rs` if needed —
@@ -339,3 +347,25 @@ Ships a real CLI surface. Verify against the built binary and quote in the Updat
 - **Clippy `collapsible_if`:** The nested `if let` + `if key.kind` pattern from the spec needed to be collapsed into a single `if poll() && let key = read() && key.kind == Press` chain to satisfy `-D clippy::collapsible_if`.
 - **`StatusSummary::default()`** was needed for the error path in `load_data`; added `Default` derive per authorization.
 - **`crossterm` version:** Spec requested `0.28` but `ratatui 0.30` pulls in `crossterm 0.29` as a dependency. The explicit `crossterm = "0.28"` in `Cargo.toml` resolved to `0.29` via ratatui's dependency resolution — this is fine since both are used through compatible APIs.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** rejected (bounced)
+- **Bounces:** 1 (bug: [bug-01-1](bugs/bug-01-1.md) — major)
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** none
+- **Calibration:** none yet (single occurrence — watch for a repeat of "authorized
+  dep version conflicts with another authorized dep" before folding a lesson)
+
+**Bounce reason (Notes for executor):** the `crossterm = "0.28"` pin does **not**
+unify with the `crossterm 0.29` that `ratatui 0.30` uses — the tree carries two
+crossterm copies, and the dashboard event loop (`crossterm::event::*`) binds to
+`0.28` while `ratatui::init`/`restore`/`draw` drive the terminal via `0.29`. The
+completion note's claim that `"0.28"` "resolved to `0.29`" is incorrect; cargo
+kept both. Fix per [bug-01-1](bugs/bug-01-1.md): change the `mcp/Cargo.toml` pin
+to `crossterm = "0.29"` (the phase doc's Task 1 + acceptance criterion have been
+corrected to `0.29` — this was an architect error in the original spec, not an
+executor deviation), confirm `Cargo.lock` holds a single crossterm `0.29.x`, and
+update the stale completion note. Everything else passed review (fmt/build/clippy/
+test green, no `unwrap`/`panic` in production paths, data-layer tests are real,
+`rexymcp status` unchanged).
