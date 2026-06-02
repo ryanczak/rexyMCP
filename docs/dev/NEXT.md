@@ -88,6 +88,13 @@ benchmarking deprecated.)
 — in progress (M1–M6 done; M7 phase-01 done; benchmarking dropped; per-run
 statistics direction designed → phases 04/05/06; phase-04 active).
 
+**Queued (after M7):** **M8 — Live session dashboard.** A `rexymcp dashboard` CLI
+command: a real-time, read-only TUI over the live session JSONL (the same source
+`rexymcp status` reads), recorded in `docs/architecture.md` § Status. Not yet
+expanded into phases — milestone boundaries are a human gate. Note: this refined
+the "No terminal UI" non-goal to "no interactive TUI *agent*; a read-only live
+dashboard is allowed."
+
 ---
 
 Executor: do not pick up work while this says "none." Wait for the architect to

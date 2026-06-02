@@ -98,7 +98,7 @@ It is built by lifting and adapting Rexy modules. The lift/drop map:
 | Session JSONL log + reader | `rexy/src/store/sessions/jsonl.rs` (`SessionLogger`, `SessionRecord`, `SessionEvent`, `read_session_log`) | **Lift / adapt.** The executor's turn-by-turn record; query tools read it back. |
 | Telemetry store (per-phase metrics) | `rexy/src/store/telemetry.rs` | **Lift / adapt.** Cross-project `PhaseRun` records — the substrate for the model scorecard. |
 | Result truncation/formatting; error model | `rexy/src/result/`, `rexy/src/error/` | **Lift / adapt.** |
-| TUI (fullscreen / classic) | `rexy/src/tui/` | **Drop.** No terminal UI; progress flows over MCP. |
+| TUI (fullscreen / classic) | `rexy/src/tui/` | **Drop.** The executor library is headless — progress flows to the session log / MCP, not a UI. (A read-only CLI dashboard over that log is a separate Layer-2 feature; see M8.) |
 | Local planner (TODO decomposition) | `rexy/src/planner/` | **Drop.** Decomposition is the architect's (Claude's) job. |
 | Escalation **cloud transport** | `rexy/src/escalation/` | **Drop the transport; keep the briefing.** See below. |
 
@@ -462,8 +462,12 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
 
 ## Non-goals
 
-- **No terminal UI.** rexyMCP is a bridge, not an interactive agent. Progress is
-  surfaced through MCP, not a TUI.
+- **No interactive TUI agent.** The executor loop is headless; rexyMCP is a
+  bridge, not an interactive coding agent, and the executor surfaces its progress
+  through the session log and MCP, not a terminal interface. This does **not**
+  exclude a **read-only** live dashboard over that session data (the planned
+  `rexymcp dashboard`, M8) — a monitoring view of the same JSONL `rexymcp status`
+  already reads is a viewer, not an agent surface.
 - **No local planning/decomposition.** The architect (Claude) owns milestone and
   phase decomposition. The executor implements one already-written phase.
 - **No internal cloud escalation.** Escalation returns to Claude; rexyMCP never
@@ -541,3 +545,12 @@ The project plan. Each entry becomes a milestone with its own
    apparatus, and informs a human decision rather than auto-routing. See the M7
    README direction-change note.) Depends on having data, so it lands after the
    loop (M4) and server (M5) have been producing records.
+8. **M8 — Live session dashboard.** A `rexymcp dashboard` CLI command: a
+   real-time, full-screen **read-only TUI** that shows live rexyMCP session data
+   as a phase runs — turn / stage, current tool, verifier pass/fail, files
+   changed, token usage, the `awaiting_model` heartbeat, and terminal status — by
+   tailing the per-record-flushed session JSONL under `<repo>/.rexymcp/sessions/`
+   (the same source `rexymcp status` reads, but live, continuously refreshed, and
+   able to track concurrent sessions). It is a monitoring view, not an
+   interactive agent surface (see Non-goals); the one-shot `rexymcp status`
+   remains the scriptable path. Lands after M7.
