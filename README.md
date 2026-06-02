@@ -4,7 +4,7 @@
 
 **rexyMCP** is named after Rexy, my cattle dog. Rexy loves to *herd*. **rexyMCP** 
 keeps your local LLM moving in the right direction, nudges it forward, keeps
-it on task and returns completed work. Claude Code is the *Architect* and *rexyMCP** 
+it on task and returns completed work. Claude Code is the *Architect* and **rexyMCP** 
 shepherds the *Executor*: a local model running on an OpenAI-compatible endpoint 
 such as LM Studio, Ollama, or vLLM. The *Executor* does the coding. Claude 
 decomposes your idea into an architecture and milestones with spec'd phases; 
