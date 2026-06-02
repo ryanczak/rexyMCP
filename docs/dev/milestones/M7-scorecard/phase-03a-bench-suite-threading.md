@@ -1,7 +1,7 @@
 # Phase 03a: thread `bench_suite` through the loop + stamp a single benchmarked run
 
 **Milestone:** M7 — Model scorecard & routing
-**Status:** todo
+**Status:** in-progress (bounced — see [bug-03a-1](bugs/bug-03a-1.md))
 **Depends on:** phase-02 (done). `PhaseRun.bench_suite` and the scorecard
 `SourceFilter` exist; this phase makes the executor loop actually *write* a
 non-`None` value when asked.
@@ -278,3 +278,28 @@ runs are exercised).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-01 (bounce)
+
+The implementation is functionally complete and all gates pass, but the run is
+bounced on **one minor issue**: [bug-03a-1](bugs/bug-03a-1.md). You added
+`#[allow(clippy::too_many_arguments)]` to the `run_full` test helper
+(`executor/src/agent/mod.rs:2595`) to absorb the 8th argument. That is a
+prohibited lint-silencing shim (`STANDARDS.md` §1; `CLAUDE.md` Hard rules) and
+this phase did not authorize it. The project's documented idiom for this exact
+lint is to **group the parameters into a struct** — see `RunPhaseConfig` /
+`Seams` / `AssemblyInput` in `mcp/src/runner.rs:200` ("grouped to stay under
+clippy's argument limit"). Fix per the bug doc: remove the `#[allow]`, group
+`run_full`'s params into a small args struct, update the call sites. Everything
+else (the `LoopDeps` field, the emit read, the runner threading, the CLI flag,
+the three new tests) is correct — do not change it. Re-run the full command set
+before returning, and add a completion Update Log entry this time (the previous
+run left it empty).
+
+**Not a problem — for your awareness:** your one-line edit to
+`mcp/src/server.rs` (`bench_suite: None` in the `execute_phase` path's
+`RunPhaseConfig`) was *required* to keep that caller compiling once
+`RunPhaseConfig` gained the field, and is correct. The phase doc's Out-of-scope
+("do not touch `mcp/src/server.rs`") was in tension with Task 2 step 5 ("update
+every existing `RunPhaseConfig` construction"); you resolved it the right way.
+Leave that edit as-is.
