@@ -1,7 +1,7 @@
 # Phase 03a: thread `bench_suite` through the loop + stamp a single benchmarked run
 
 **Milestone:** M7 — Model scorecard & routing
-**Status:** in-progress (bounced — see [bug-03a-1](bugs/bug-03a-1.md))
+**Status:** done
 **Depends on:** phase-02 (done). `PhaseRun.bench_suite` and the scorecard
 `SourceFilter` exist; this phase makes the executor loop actually *write* a
 non-`None` value when asked.
@@ -303,3 +303,53 @@ run left it empty).
 ("do not touch `mcp/src/server.rs`") was in tension with Task 2 step 5 ("update
 every existing `RunPhaseConfig` construction"); you resolved it the right way.
 Leave that edit as-is.
+
+### Completion (reconstructed by reviewer) — 2026-06-02
+
+The fix re-dispatch flipped `Status:` to `review` but its completion Update Log
+entry never landed — the `execute_phase` SSE stream stalled (90s no-data
+timeout) during finalization, truncating the result payload + log write. The
+status flip persisted; the narrative did not. [bug-03a-1](bugs/bug-03a-1.md) is
+**fixed exactly as specified**: the `#[allow(clippy::too_many_arguments)]` is
+gone, replaced by a `RunFullArgs<'a>` params struct (`mod.rs:2597`) following the
+`RunPhaseConfig` / `Seams` grouping idiom; all `run_full` call sites updated to
+struct literals. Command set re-run independently by the reviewer (all green):
+
+- `cargo fmt --all --check` — clean.
+- `cargo build` — clean, zero warnings.
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean, **no
+  `#[allow]` masking it** (the bug's load-bearing check).
+- `cargo test` — **682 passed, 0 failed, 2 ignored** (546 executor + 136 mcp),
+  including `emit_stamps_bench_suite_when_set`,
+  `emit_leaves_bench_suite_none_for_production`, and
+  `run_phase_threads_bench_suite_to_emit`.
+
+**End-to-end verification:** `cargo run -p rexymcp -- run-phase --help` lists the
+new flag:
+
+```
+--bench-suite <BENCH_SUITE>  Stamp emitted PhaseRun records as a benchmark run of this suite. Omit for a normal production run
+```
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 — [bug-03a-1](bugs/bug-03a-1.md) (minor): a prohibited
+  `#[allow(clippy::too_many_arguments)]` on the `run_full` test helper, fixed on
+  re-dispatch via the `RunFullArgs` grouping idiom. No functional defect either
+  run; the stamp behavior was correct from the first dispatch.
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. The one-line `mcp/src/server.rs` edit
+  (`bench_suite: None` in the `execute_phase` path) was a *forced* `E0063` fix
+  once `RunPhaseConfig` gained the field — correct and minimal; the phase doc's
+  Out-of-scope contradicted its own Task 2.5 and the executor resolved it right.
+- **Calibration:** the `execute_phase` SSE stall recurred on this re-dispatch
+  (truncating finalization, completion entry reconstructed above) despite the
+  vLLM retune between dispatches — so the tuning has not eliminated it. Pattern
+  count is now 3 across the session (phase-02 ×2, phase-03a ×1); it is an
+  infrastructure issue (long local-LLM inference vs. the 90s no-data SSE
+  timeout), not an executor defect, and does not corrupt results (the executor's
+  pre-stall status flip + on-disk work let the reviewer reconstruct cleanly each
+  time). Worth a fold discussion if it persists into 03b — candidate fixes: raise
+  the server-side SSE idle timeout, or have `execute_phase` emit a keepalive so
+  the stream never goes 90s silent.

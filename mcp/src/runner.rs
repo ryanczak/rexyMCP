@@ -107,6 +107,7 @@ struct AssemblyInput<'a> {
     standards: &'a str,
     model: &'a str,
     telemetry_dir: Option<&'a Path>,
+    bench_suite: Option<&'a str>,
     progress: Option<&'a dyn ProgressCallback>,
 }
 
@@ -189,6 +190,7 @@ async fn run_phase_with(
         runner: seams.runner,
         generation_params: GenerationParams::default(),
         telemetry_dir: inp.telemetry_dir,
+        bench_suite: inp.bench_suite,
         progress: inp.progress,
     };
 
@@ -204,6 +206,7 @@ pub struct RunPhaseConfig<'a> {
     pub standards: &'a str,
     pub model_override: Option<&'a str>,
     pub telemetry_dir: Option<&'a Path>,
+    pub bench_suite: Option<&'a str>,
     pub progress: Option<&'a dyn ProgressCallback>,
     /// Inject a test client. `None` → production `OpenAiClient`.
     pub test_client: Option<&'a dyn AiClient>,
@@ -250,6 +253,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         standards: inp.standards,
         model,
         telemetry_dir: inp.telemetry_dir,
+        bench_suite: inp.bench_suite,
         progress: inp.progress,
     };
 
@@ -415,6 +419,7 @@ mod tests {
             standards: "standards",
             model: "test-model",
             telemetry_dir: None,
+            bench_suite: None,
             progress: None,
         };
 
@@ -459,10 +464,68 @@ mod tests {
             standards: "",
             model: "model",
             telemetry_dir: None,
+            bench_suite: None,
             progress: None,
         };
         let result = run_phase_with(&inp, &seams).await;
 
         assert!(result.is_err(), "should error on non-existent root");
+    }
+
+    #[tokio::test]
+    async fn run_phase_threads_bench_suite_to_emit() {
+        let dir = TempDir::new().unwrap();
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let phase_doc_path = dir.path().join("phase-01-test.md");
+        std::fs::write(
+            &phase_doc_path,
+            "# Phase 01: Test\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\n",
+        )
+        .unwrap();
+
+        let telem_dir = dir.path().join("telem");
+        std::fs::create_dir_all(&telem_dir).unwrap();
+
+        let cfg = Config::default();
+        let mock = MockAiClient::new(vec!["Done.".to_string()]);
+        let clock = || 1234567890u64;
+
+        let seams = Seams {
+            client: &mock,
+            verifier: &NoopVerifier,
+            runner: &NoopRunner,
+            clock: &clock,
+        };
+
+        let inp = AssemblyInput {
+            cfg: &cfg,
+            phase_doc_path: &phase_doc_path,
+            repo_path: &repo_dir,
+            standards: "standards",
+            model: "test-model",
+            telemetry_dir: Some(&telem_dir),
+            bench_suite: Some("smoke"),
+            progress: None,
+        };
+
+        let result = run_phase_with(&inp, &seams).await.unwrap();
+        assert_eq!(
+            result.status,
+            rexymcp_executor::phase::PhaseStatus::Complete
+        );
+
+        // Read back the emitted PhaseRun and verify the bench_suite stamp.
+        let jsonl_path = telem_dir.join("phase_runs.jsonl");
+        let content = std::fs::read_to_string(&jsonl_path).expect("phase_runs.jsonl should exist");
+        let line = content.lines().next().expect("at least one line");
+        let run: rexymcp_executor::store::telemetry::PhaseRun =
+            serde_json::from_str(line).expect("valid PhaseRun JSON");
+        assert_eq!(
+            run.bench_suite,
+            Some("smoke".to_string()),
+            "bench_suite should be threaded through to the emitted PhaseRun"
+        );
     }
 }

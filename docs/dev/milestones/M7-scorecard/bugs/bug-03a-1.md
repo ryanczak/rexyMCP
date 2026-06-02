@@ -1,8 +1,10 @@
 # Bug 1 on phase-03a: `#[allow(clippy::too_many_arguments)]` silences a diagnostic instead of following the project's grouping idiom
 
 **Severity:** minor
-**Status:** open
+**Status:** verified
 **Filed:** 2026-06-01
+**Verified:** 2026-06-02 — `#[allow]` removed, replaced by `RunFullArgs` struct
+(`mod.rs:2597`); clippy clean with no shim; all tests green.
 
 ## What's wrong
 

@@ -101,6 +101,10 @@ pub struct LoopDeps<'a> {
     pub generation_params: GenerationParams,
     /// Cross-project telemetry dir for the `PhaseRun` record; `None` disables it.
     pub telemetry_dir: Option<&'a Path>,
+    /// Benchmark provenance to stamp on the emitted `PhaseRun`. `None` = a
+    /// production run; `Some(name)` = a controlled benchmark run of suite
+    /// `name`. The phase-03b sweep sets this; production callers pass `None`.
+    pub bench_suite: Option<&'a str>,
     /// Optional liveness callback. `None` disables progress entirely (no
     /// callback invocations, no `Progress` log events, no numstat
     /// computation). Best-effort when `Some`: a callback that panics is
@@ -1206,7 +1210,7 @@ fn emit_phase_run(
         bugs_filed: None,
         bounces_to_approval: None,
         architect_verdict: None,
-        bench_suite: None,
+        bench_suite: deps.bench_suite.map(|s| s.to_string()),
     };
     let _ = telemetry::append(dir, &run);
 }
@@ -1310,6 +1314,7 @@ mod tests {
                 seed: None,
             },
             telemetry_dir: None,
+            bench_suite: None,
             progress: None,
         }
     }
@@ -2023,6 +2028,7 @@ mod tests {
             runner: &NoopRunner,
             generation_params: GenerationParams::default(),
             telemetry_dir: None,
+            bench_suite: None,
             progress: None,
         };
 
@@ -2135,6 +2141,7 @@ mod tests {
             runner: &NoopRunner,
             generation_params: GenerationParams::default(),
             telemetry_dir: None,
+            bench_suite: None,
             progress: None,
         };
         execute_phase(&input(), d).await.unwrap()
@@ -2586,33 +2593,38 @@ mod tests {
     }
 
     /// Full run with injectable command runner + command config + telemetry dir.
-    async fn run_full(
-        dir: &TempDir,
-        client: &dyn AiClient,
-        verifier: &dyn FileVerifier,
-        runner: &dyn CommandRunner,
-        commands: &CommandConfig,
-        telemetry_dir: Option<&Path>,
+    /// Grouped to stay under clippy's argument limit.
+    struct RunFullArgs<'a> {
+        dir: &'a TempDir,
+        client: &'a dyn AiClient,
+        verifier: &'a dyn FileVerifier,
+        runner: &'a dyn CommandRunner,
+        commands: &'a CommandConfig,
+        telemetry_dir: Option<&'a Path>,
+        bench_suite: Option<&'a str>,
         max_turns: usize,
-    ) -> PhaseResult {
-        let scope = Scope::new(dir.path()).unwrap();
+    }
+
+    async fn run_full(args: RunFullArgs<'_>) -> PhaseResult {
+        let scope = Scope::new(args.dir.path()).unwrap();
         let registry = registry_over(scope);
         let budget = Budget::new(1_000_000);
         let d = LoopDeps {
-            client,
+            client: args.client,
             registry: &registry,
             tools: &[],
             budget: &budget,
-            max_turns,
-            project_root: dir.path(),
+            max_turns: args.max_turns,
+            project_root: args.dir.path(),
             model: "test-model",
             session_id: SESSION_ID,
             clock: &clock_zero,
-            verifier,
-            commands,
-            runner,
+            verifier: args.verifier,
+            commands: args.commands,
+            runner: args.runner,
             generation_params: GenerationParams::default(),
-            telemetry_dir,
+            telemetry_dir: args.telemetry_dir,
+            bench_suite: args.bench_suite,
             progress: None,
         };
         execute_phase(&input(), d).await.unwrap()
@@ -2634,15 +2646,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            None,
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert!(result.diff.contains("-original"), "diff: {}", result.diff);
@@ -2666,15 +2679,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            None,
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert!(result.diff.contains("+line1"));
@@ -2699,15 +2713,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            None,
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert!(
@@ -2730,7 +2745,17 @@ mod tests {
             test: Some("cargo test".to_string()),
         };
 
-        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &runner,
+            commands: &commands,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
+        .await;
 
         assert_eq!(result.status, PhaseStatus::Complete);
         let ran = runner.ran();
@@ -2758,7 +2783,17 @@ mod tests {
             test: None,
         };
 
-        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &runner,
+            commands: &commands,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
+        .await;
 
         assert_eq!(
             result
@@ -2786,7 +2821,17 @@ mod tests {
             test: None,
         };
 
-        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 10).await;
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &runner,
+            commands: &commands,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 10,
+        })
+        .await;
 
         assert_eq!(result.status, PhaseStatus::HardFail);
         assert!(
@@ -2802,15 +2847,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            None,
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(result.log_path, Some(log_path(dir.path())));
@@ -2824,15 +2870,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            None,
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(result.status, PhaseStatus::Complete);
@@ -2852,15 +2899,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         let runs = read_runs(&telem);
@@ -2875,15 +2923,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            None,
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: None,
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(result.status, PhaseStatus::Complete);
@@ -2898,15 +2947,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        let result = run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem_file),
-            8,
-        )
+        let result = run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem_file),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(result.status, PhaseStatus::Complete);
@@ -2922,15 +2972,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            10,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 10,
+        })
         .await;
 
         let runs = read_runs(&telem);
@@ -2952,15 +3003,16 @@ mod tests {
             test: Some("cargo test".to_string()),
         };
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &runner,
-            &commands,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &runner,
+            commands: &commands,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         let gates = read_runs(&telem)[0].gates.clone();
@@ -2987,15 +3039,16 @@ mod tests {
             test: None,
         };
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &runner,
-            &commands,
-            Some(&telem),
-            10,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &runner,
+            commands: &commands,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 10,
+        })
         .await;
 
         let gates = read_runs(&telem)[0].gates.clone();
@@ -3017,15 +3070,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         let rate = read_runs(&telem)[0].tool_success_rate;
@@ -3047,15 +3101,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         let rate = read_runs(&telem)[0].parse_failure_rate;
@@ -3076,15 +3131,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token(&hermes)], vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert!(
@@ -3103,15 +3159,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![checked(vec![diag("err")])]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(read_runs(&telem)[0].verifier_retries, 1);
@@ -3137,15 +3194,16 @@ mod tests {
         ]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(read_runs(&telem)[0].tokens.input_tokens, 15);
@@ -3158,15 +3216,16 @@ mod tests {
         let client = MockAiClientScript::new(vec![vec![token("done")]]);
         let verifier = MockFileVerifier::new(vec![]);
 
-        run_full(
-            &dir,
-            &client,
-            &verifier,
-            &NoopRunner,
-            &EMPTY_COMMANDS,
-            Some(&telem),
-            8,
-        )
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
         .await;
 
         assert_eq!(read_runs(&telem)[0].wall_clock_s, 0.0);
@@ -3228,6 +3287,7 @@ mod tests {
                 seed: None,
             },
             telemetry_dir: None,
+            bench_suite: None,
             progress: Some(capture),
         }
     }
@@ -3299,6 +3359,7 @@ mod tests {
                     seed: None,
                 },
                 telemetry_dir: self.telemetry_dir,
+                bench_suite: None,
                 progress: Some(self.capture),
             }
         }
@@ -3481,6 +3542,7 @@ mod tests {
                 seed: None,
             },
             telemetry_dir: None,
+            bench_suite: None,
             progress: Some(&PanicCallback),
         };
         execute_phase(&input(), d).await.unwrap();
@@ -3678,6 +3740,61 @@ mod tests {
         assert_eq!(
             count_before, count_after,
             "no new awaiting_model records should appear after chat resolves"
+        );
+    }
+
+    #[tokio::test]
+    async fn emit_stamps_bench_suite_when_set() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: Some("smoke"),
+            max_turns: 8,
+        })
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].bench_suite,
+            Some("smoke".to_string()),
+            "bench_suite should be stamped on the emitted PhaseRun"
+        );
+    }
+
+    #[tokio::test]
+    async fn emit_leaves_bench_suite_none_for_production() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+        let client = MockAiClientScript::new(vec![vec![token("done")]]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(RunFullArgs {
+            dir: &dir,
+            client: &client,
+            verifier: &verifier,
+            runner: &NoopRunner,
+            commands: &EMPTY_COMMANDS,
+            telemetry_dir: Some(&telem),
+            bench_suite: None,
+            max_turns: 8,
+        })
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].bench_suite, None,
+            "bench_suite must be None for a production run"
         );
     }
 }

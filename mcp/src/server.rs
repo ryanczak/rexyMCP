@@ -104,6 +104,7 @@ pub(crate) async fn execute_phase_inner_with_client(
         standards: &standards,
         model_override: params.model.as_deref(),
         telemetry_dir,
+        bench_suite: None,
         progress,
         test_client,
     })
