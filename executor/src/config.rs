@@ -42,7 +42,7 @@ fn default_first_token_timeout_secs() -> u64 {
 }
 
 fn default_stream_idle_timeout_secs() -> u64 {
-    90
+    180
 }
 
 impl Default for ExecutorConfig {
