@@ -526,3 +526,45 @@ Use this step whenever the phase touches an external library, a third-
 party manifest format, a tool's CLI flag set, or any other surface the
 architect can't introspect from inside their own session. Skipping it
 when it applies is how silent improvisations enter the codebase.
+
+### Prefer additive change shapes; avoid wide-blast-radius breaking changes
+
+When a phase requires modifying a type used at many call sites (an enum variant,
+a function signature, a trait method), the architect must choose whether the spec
+asks the executor to **mutate** the existing symbol or **add** a new one.
+
+**Mutation is high-risk** when the type has many call sites: every site stops
+compiling the moment the definition changes, the executor must update all of them
+before the build is green again, and the verifier's consecutive-failure limit (3
+strikes) can fire before the cascade completes — leaving the codebase in a
+broken-in-progress state. The more call sites, the narrower the window.
+
+**Additive shapes sidestep this entirely.** A new enum variant, a new struct field
+with `#[serde(default)]`, a new function that takes the role of the old one — these
+keep the codebase compiling at every step. Only the *new* code needs updating; the
+old code keeps working until it is deliberately migrated.
+
+**At draft time, before speccing a multi-site mutation, ask:**
+- Is there an additive shape that achieves the same behavioral goal?
+  - Add a *sibling* variant instead of changing the existing one?
+  - Add a *new* field with `#[serde(default)]` instead of widening an existing
+    field's type?
+  - Add a *new* function and migrate callers one-by-one instead of changing the
+    signature of the current one?
+- If mutation is unavoidable, can the blast radius be bounded to ≤ 3 sites (within
+  the verifier's retry budget)?
+
+If yes to either, use the additive shape and pre-inject it. If the blast radius
+exceeds ~3 sites and no additive alternative exists, flag it explicitly in the phase
+doc and instruct the executor to `cargo build` after **each individual site** before
+moving to the next.
+
+**What to pre-inject when a multi-site change is unavoidable:**
+Give the executor a `grep`-verified complete list of every site, in the order to
+update them, with a "build after this site" instruction after any site that would
+break a separate file. An incomplete list is how this class of failure happens — the
+executor changes the definition and runs out of runway.
+
+*(Folded from M7/phase-05b: two hard_fails of the same class — breaking a
+multi-site type change — on two separate phases, Qwen3.6-27B-FP8. Additive
+restructure resolved both.)*

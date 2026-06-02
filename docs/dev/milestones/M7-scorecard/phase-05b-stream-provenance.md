@@ -1,7 +1,7 @@
 # Phase 05b: chat-stream provenance — served model id + finish_reason
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-05a (done — settings are now configurable/sent/recorded) and
 phase-04 (done — `rexymcp runs` displays the record). This phase captures two values
 the chat response already carries but the client currently discards.
@@ -42,11 +42,13 @@ source and is **phase-05c** — out of scope here (see Out of scope).
 
 1. Read `docs/dev/STANDARDS.md` top to bottom.
 2. Read the architecture reference above.
-3. Read this entire phase doc — **including Task 6, the full `AiEvent::Done`
-   cascade** — before touching code. This phase changes one enum variant that has
-   **seven** call sites; phase-05a's first attempt hard-failed by changing a
-   signature without updating every caller. Task 6 lists all seven. Do them all,
-   then `cargo build` before `cargo test`.
+3. Read this entire phase doc before touching code. **The enum change here is
+   ADDITIVE: you add a new `AiEvent::Completion` variant and you do NOT modify the
+   existing `Done` variant or any of its call sites.** This keeps the crate
+   compiling at every step. (A prior attempt instead *mutated* `Done` into a struct
+   variant, which broke the whole crate at once and got the verifier stuck before
+   the cascade finished — do not do that.) The only edits forced by the new variant
+   are **two** `match` arms (Task 6); everything else is additive.
 4. Confirm `cargo clippy --all-targets --all-features -- -D warnings` and
    `cargo test` are green on the current tree before changing anything.
 
@@ -64,7 +66,12 @@ pub enum AiEvent {
 }
 ```
 
-`Done` must grow to carry the finish_reason and served model alongside usage.
+**`Done` stays exactly as it is.** A new sibling variant `Completion { finish_reason,
+model }` carries the provenance, emitted just before `Done`. This is additive — no
+existing `AiEvent::Done(...)` construction or match changes — so the crate keeps
+compiling while you work. The only code that *must* change for the new variant is
+the two exhaustive `match` statements over `AiEvent` (the agent loop and one test),
+which gain a `Completion` arm.
 
 ### The SSE parse loop discards `model` and `finish_reason` (`executor/src/ai/backends/openai.rs:190`)
 
@@ -126,14 +133,16 @@ added.
 
 ## Spec
 
-### Task 1 — Extend `AiEvent::Done` to a struct variant (`executor/src/ai/types.rs`)
+### Task 1 — ADD an `AiEvent::Completion` variant (`executor/src/ai/types.rs`) — leave `Done` alone
+
+Add a new variant to the `AiEvent` enum. **Do NOT touch the `Done(TokenBreakdown)`
+variant** — it stays exactly as it is:
 
 ```rust
-    Done {
-        usage: TokenBreakdown,
-        /// Endpoint `finish_reason` for the completion (`stop`/`length`/`tool_calls`/…). `None` if the backend omitted it.
+    Done(TokenBreakdown),   // ← UNCHANGED — do not edit this line
+    /// Per-completion provenance, emitted once just before `Done`. Either field may be `None`.
+    Completion {
         finish_reason: Option<String>,
-        /// Served model id from the chat response `model` field. `None` if absent.
         model: Option<String>,
     },
 ```
@@ -154,10 +163,12 @@ if let Some(fr) = v["choices"].get(0).and_then(|c| c.get("finish_reason")).and_t
 }
 ```
 
-Change the terminal send to the struct form:
+**Leave the existing `let _ = tx.send(AiEvent::Done(usage));` line unchanged.**
+Immediately **before** it, add one send for the new variant:
 
 ```rust
-let _ = tx.send(AiEvent::Done { usage, finish_reason, model: served_model });
+let _ = tx.send(AiEvent::Completion { finish_reason, model: served_model });
+let _ = tx.send(AiEvent::Done(usage));   // ← UNCHANGED
 ```
 
 ### Task 3 — Aggregate in `RunMetrics` (`executor/src/agent/mod.rs`)
@@ -170,12 +181,13 @@ Add fields to `RunMetrics` and initialize them in `started_at`:
     total_finishes: usize,
 ```
 
-Update the `Done` consumption arm (agent/mod.rs:320) to fold in the new data
-**and** keep the token accounting:
+**Leave the existing `AiEvent::Done(breakdown) => metrics.add_tokens(&breakdown),`
+arm unchanged.** Add a new arm next to it (this is one of the two forced match-arm
+edits):
 
 ```rust
-AiEvent::Done { usage, finish_reason, model } => {
-    metrics.add_tokens(&usage);
+AiEvent::Done(breakdown) => metrics.add_tokens(&breakdown),   // ← UNCHANGED
+AiEvent::Completion { finish_reason, model } => {
     if let Some(m) = model {
         metrics.served_model = Some(m);
     }
@@ -216,28 +228,25 @@ rate** (render as a percentage, e.g. `12%`, or `—` when `None`). Pin **behavio
 not spacing**: both values must appear per row; column layout is the executor's
 call. The empty/`(no runs)` path is unchanged.
 
-### Task 6 — Complete the `AiEvent::Done` cascade (worked examples) — do ALL of these
+### Task 6 — The two forced `match` arms + the `PhaseRun` literal additions
 
-Changing the `Done` variant breaks every construction and the two consumption
-sites. Update **all seven**, then `cargo build` to confirm zero `E0599`/`E0026`/
-pattern errors. Find them with
-`grep -rn "AiEvent::Done\|Done(" executor mcp` and cross-check against this list:
+Because `AiEvent::Completion` is a **new** variant, the only code it *breaks* is the
+two **exhaustive `match` statements** over `AiEvent`. Every existing
+`AiEvent::Done(...)` construction (in `testing.rs:259`, `agent/mod.rs:1636`/`:1752`/
+`:3126`, and the `openai.rs` send) stays **exactly as it is** — do not touch them.
 
-- **Construction — production:** `openai.rs` terminal send → already covered in
-  Task 2 (the struct form).
-- **Construction — `executor/src/ai/testing.rs:259`** (`MockAiClientEvents` sample):
-  `AiEvent::Done { usage: TokenBreakdown::default(), finish_reason: None, model: None }`.
-- **Construction — `executor/src/agent/mod.rs:1636`, `:1752`, `:3126`** (loop tests):
-  same struct form. For `:3126` (currently `AiEvent::Done(TokenBreakdown { … })`),
-  keep the populated `TokenBreakdown` as the `usage:` field and add
-  `finish_reason: None, model: None` (or a real `finish_reason` if a test asserts on
-  it — see Test plan).
-- **Consumption — `executor/src/agent/mod.rs:320`** → the Task 3 struct-match arm.
-- **Consumption — `executor/src/ai/testing.rs:275`** (`AiEvent::Done(_) => {}`) →
-  `AiEvent::Done { .. } => {}`.
+The two `match` arms to add (confirm with `grep -rn "AiEvent::Token" executor` —
+each exhaustive match has a `Token` arm):
 
-Then update every **`PhaseRun { … }` struct literal** to include the two new fields
-(Rust requires all fields in a literal even when `Option`/defaulted). Find them with
+1. **`executor/src/agent/mod.rs` main loop** (the `match` with `AiEvent::Token(s)`,
+   `AiEvent::Done(breakdown)`, `AiEvent::Error(e)` arms) → add the `AiEvent::Completion`
+   arm from Task 3. Leave the `Done` and `Error` arms unchanged.
+2. **`executor/src/ai/testing.rs:275`** (the test `match` whose `Done` arm is
+   `AiEvent::Done(_) => {}`) → add a sibling arm `AiEvent::Completion { .. } => {}`.
+   Leave the `Done(_)` arm as-is.
+
+Then add the two new fields to every **`PhaseRun { … }` struct literal** (Rust
+requires all fields in a literal even when `Option`/defaulted). Find them with
 `grep -rn "PhaseRun {" executor mcp` — the sites are `telemetry.rs` `sample()`,
 `agent/mod.rs` `emit_phase_run` (Task 4, the real one), `mcp/src/scorecard.rs` test
 helper, and `mcp/src/runs.rs` `make_run` / `make_run_with_params`. Add
@@ -247,16 +256,18 @@ emit site uses the Task 4 values). **The hand-written JSONL string fixtures in
 deserialize without the new fields; that is the whole reason the fields are
 defaulted.
 
-**Completion check:** `cargo build` clean, then `grep -rn "AiEvent::Done" executor`
-shows only struct-form uses, and `cargo test` compiles (all `PhaseRun` literals
-have the fields).
+**Completion check:** `cargo build` clean (do this before `cargo test`). Because the
+change is additive, the crate should compile after the two `match` arms exist and
+the `PhaseRun` literals are updated — there is no window where `Done`'s own call
+sites are broken.
 
 ## Acceptance criteria
 
-- [ ] `AiEvent::Done` is a struct variant carrying `usage`, `finish_reason:
-      Option<String>`, `model: Option<String>`; all seven call sites updated.
+- [ ] A new `AiEvent::Completion { finish_reason: Option<String>, model:
+      Option<String> }` variant exists; the existing `Done(TokenBreakdown)` variant
+      and all its call sites are unchanged.
 - [ ] The SSE parser captures the response `model` and `finish_reason` and sends
-      them in `Done`.
+      them in a `Completion` event just before `Done`.
 - [ ] `RunMetrics` aggregates a served model and a `length`-finish count/total; a
       run that saw one `finish_reason: "length"` out of two completions records
       `length_finish_rate == Some(0.5)`; a run that saw no finish_reasons records
@@ -280,17 +291,19 @@ logic at whatever seam is unit-testable; if not cleanly reachable, cover it via 
 agent-loop test below and note it in "Notes for review". (Do **not** add a live
 test.)
 
-In `executor/src/agent/mod.rs` tests, using `MockAiClientEvents` to script `Done`:
+In `executor/src/agent/mod.rs` tests, using `MockAiClientEvents` to script
+`Completion` events (script a `Completion` then a `Done` per turn, mirroring what
+`openai.rs` now emits):
 
-- `length_finish_rate_is_fraction_of_length_finishes` — script two completions, one
-  `Done { finish_reason: Some("length"), .. }` and one `Some("stop")`; assert the
-  emitted `PhaseRun.length_finish_rate == Some(0.5)`. (Assert via the emitted record
-  or the `RunMetrics` fold, whichever the loop exposes.)
-- `length_finish_rate_none_when_no_finish_reasons` — all `Done { finish_reason:
-  None, .. }`; assert `length_finish_rate == None` (must-NOT be `Some(0.0)`; the
-  divide-by-zero boundary).
-- `served_model_recorded_from_done` — a `Done { model: Some("served-x"), .. }` →
-  emitted `PhaseRun.served_model == Some("served-x")`.
+- `length_finish_rate_is_fraction_of_length_finishes` — two completions, one
+  `AiEvent::Completion { finish_reason: Some("length".into()), model: None }` and one
+  `Some("stop")`; assert the emitted `PhaseRun.length_finish_rate == Some(0.5)`.
+- `length_finish_rate_none_when_no_finish_reasons` — no `Completion` events with a
+  `finish_reason` (or none at all); assert `length_finish_rate == None` (must-NOT be
+  `Some(0.0)`; the divide-by-zero boundary).
+- `served_model_recorded_from_completion` — a `Completion { model:
+  Some("served-x".into()), finish_reason: None }` → emitted
+  `PhaseRun.served_model == Some("served-x")`.
 
 In `executor/src/store/telemetry.rs` tests:
 
@@ -318,10 +331,11 @@ In `mcp/src/runs.rs` tests:
 
 ## Authorizations
 
-- [x] May extend `AiEvent::Done`, parse the two values in `openai.rs`, aggregate in
-      `RunMetrics`, add the two `#[serde(default)]` fields to `PhaseRun`, populate
-      them at the emit site, and render them in `mcp/src/runs.rs` — updating all
-      seven `Done` call sites and all `PhaseRun` struct literals as required.
+- [x] May add the `AiEvent::Completion` variant (leaving `Done` untouched), parse
+      the two values in `openai.rs`, aggregate in `RunMetrics`, add the two
+      `#[serde(default)]` fields to `PhaseRun`, populate them at the emit site, and
+      render them in `mcp/src/runs.rs` — adding the two `Completion` match arms and
+      updating all `PhaseRun` struct literals as required.
 - [ ] No new dependencies. No `Cargo.toml` edits.
 - [ ] No `docs/architecture.md` / `STANDARDS.md` / `WORKFLOW.md` edits.
 - [ ] Do **not** change the `model_scorecard` aggregation, the `AiClient` trait
@@ -343,3 +357,28 @@ In `mcp/src/runs.rs` tests:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-02 (refined after hard_fail)
+
+The first attempt `hard_fail`ed (`VerifierFailurePersistent`): it **mutated** the
+existing `Done` variant into a struct variant, which broke the whole crate at once
+(every `AiEvent::Done(...)` call site stopped compiling), and the verifier hit its
+3-strike limit before the cascade could be finished. The working tree has been reset
+to a clean, green state.
+
+**The spec is now restructured to be additive** and the partial work is gone — start
+fresh from the current tree. The key change: **add a new `AiEvent::Completion`
+variant; do NOT touch `Done`.** Tasks 1, 2, 3, and 6 now spell this out. The crate
+stays compiling throughout because every existing `Done` construction/match is left
+exactly as-is; the only forced edits for the new variant are **two** `match` arms
+(Task 6). Build (`cargo build`) after adding those two arms + the `PhaseRun` fields
+and literals — there is no all-or-nothing window this time.
+
+### Update — 2026-06-02 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the failure was a verifier-trap from a breaking enum change, not a
+spec-clarity gap — so the refinement restructures the design to be additive (new
+`Completion` variant, `Done` untouched), a different and untried lever that keeps the
+crate compiling and plays to the executor's additive-edit strength, rather than a
+takeover that would forfeit the model telemetry point.
