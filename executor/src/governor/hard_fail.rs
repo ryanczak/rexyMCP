@@ -26,6 +26,9 @@ pub enum HardFailSignal {
         tool: String,
         bytes: usize,
     },
+    BackendError {
+        message: String,
+    },
 }
 
 impl HardFailSignal {
@@ -46,6 +49,9 @@ impl HardFailSignal {
                 format!(
                     "tool {tool} produced {bytes} bytes (over {RUNAWAY_OUTPUT_BYTES} threshold)"
                 )
+            }
+            Self::BackendError { message } => {
+                format!("backend error: {message}")
             }
         }
     }

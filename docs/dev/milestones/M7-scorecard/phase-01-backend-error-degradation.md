@@ -1,7 +1,7 @@
 # Phase 01: terminal backend Err → hard_fail degradation
 
 **Milestone:** M7 — Model scorecard & routing
-**Status:** todo
+**Status:** review
 **Depends on:** M6 (done) — M6 retrospective (phase-06b) made this decision; the implementation sites are identified.
 **Estimated diff:** ~80 lines (new enum variant + two loop sites + two new tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -285,4 +285,47 @@ tests pass.
 
 ## Update Log
 
-(Filled in by the executor.)
+### Update — 2025-01-09 (started)
+
+**Executor:** rexyMCP executor LLM
+**Tasks:** Implementing all 5 spec tasks — new `HardFailSignal::BackendError` variant, degrade site A (chat_fut error) and site B (AiEvent::Error), add comment to existing test, add two new tests.
+
+### Update — 2025-01-09 (complete)
+
+**Tasks completed:**
+- Task 1: Added `HardFailSignal::BackendError { message: String }` variant with `describe()` arm in `executor/src/governor/hard_fail.rs`.
+- Task 2: Replaced site A (`chat_fut` error) with `turns`-branching logic — `turns == 0` returns `Err`, `turns > 0` degrades to `Ok(hard_fail_result(...))`.
+- Task 3: Replaced site B (`AiEvent::Error`) with same branching pattern.
+- Task 4: Added comment above `ai_event_error_propagates_as_err` test.
+- Task 5: Added `backend_error_after_progress_degrades_to_hard_fail` (uses new `MockAiClientChatError` mock that returns `Err` from `chat()` on a configured call index) and `ai_event_error_after_progress_degrades_to_hard_fail` (uses `MockAiClientScript` with `AiEvent::Error` on turn 2).
+
+**Verification commands:**
+```
+cargo fmt --all --check — clean
+cargo clippy --all-targets --all-features -- -D warnings — clean
+cargo test — 542 passed, 0 failed, 2 ignored
+```
+
+**Grep proof for spec-pinned literal:**
+```
+$ grep -rn 'BackendError' executor/src/
+executor/src/governor/hard_fail.rs:29:    BackendError {
+executor/src/governor/hard_fail.rs:53:            Self::BackendError { message } => {
+executor/src/agent/mod.rs:245:                                HardFailSignal::BackendError { message: e.to_string() };
+executor/src/agent/mod.rs:326:                    let signal = HardFailSignal::BackendError { message: e.clone() };
+executor/src/agent/mod.rs:1731:                Blocker::HardFail(HardFailSignal::BackendError { .. })
+executor/src/agent/mod.rs:1771:                Blocker::HardFail(HardFailSignal::BackendError { .. })
+```
+
+**Files changed:**
+- `executor/src/governor/hard_fail.rs` — added `BackendError` variant + `describe()` arm
+- `executor/src/agent/mod.rs` — degraded site A and site B, added comment to existing test, added `MockAiClientChatError` mock + two new tests
+- `docs/dev/milestones/M7-scorecard/phase-01-backend-error-degradation.md` — status `todo` → `review`, update log
+- `docs/dev/milestones/M7-scorecard/README.md` — phase table row `todo` → `review`
+
+**Commit:** `fix: degrade mid-phase backend errors to hard_fail with briefing`
+
+**Notes for review:**
+- Created `MockAiClientChatError` inside the test module (not in `ai/testing.rs`) to avoid editing an unauthorized file. This mock returns `Err` from `chat()` on a configured call index, exercising the site A (`chat_fut`) error path.
+- Both new tests use a `read_file` tool call on turn 0 to ensure `turns > 0` when the error hits on turn 1.
+- End-to-end verification: N/A (no CLI-visible surface; hermetic tests are the definitive verification).

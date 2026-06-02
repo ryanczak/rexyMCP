@@ -48,7 +48,7 @@ loop, and the `PhaseRun` store has been accumulating records since M4.
 
 | #  | Phase                                                                   | Status |
 |----|-------------------------------------------------------------------------|--------|
-| 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | todo |
+| 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | review |
 
 Phases 02 (benchmark suite), 03 (scorecard data analysis + gaps), and 04
 (routing policy) draft on demand.

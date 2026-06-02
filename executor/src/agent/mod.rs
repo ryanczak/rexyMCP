@@ -235,7 +235,57 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         loop {
             tokio::select! {
                 result = &mut chat_fut => {
-                    result.map_err(|e| Error::Backend(e.to_string()))?;
+                    match result {
+                        Ok(()) => {}
+                        Err(e) if turns == 0 => {
+                            return Err(Error::Backend(e.to_string()))
+                        }
+                        Err(e) => {
+                            let signal =
+                                HardFailSignal::BackendError { message: e.to_string() };
+                            log_event(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                turns,
+                                SessionEvent::HardFail {
+                                    reason: signal.describe(),
+                                },
+                            );
+                            log_session_end(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                "hard_fail",
+                                turns,
+                            );
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "hard_fail",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "hard_fail",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(hard_fail_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                Vec::new(),
+                                signal,
+                                artifacts,
+                            ));
+                        }
+                    }
                     break;
                 }
                 _ = heartbeat.tick() => {
@@ -269,8 +319,46 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 }
                 AiEvent::Done(breakdown) => metrics.add_tokens(&breakdown),
                 AiEvent::Error(e) => {
-                    log_session_end(&log_handle, &redactor, deps.clock, "error", turns);
-                    return Err(Error::Backend(e));
+                    if turns == 0 {
+                        log_session_end(&log_handle, &redactor, deps.clock, "error", turns);
+                        return Err(Error::Backend(e));
+                    }
+                    let signal = HardFailSignal::BackendError { message: e.clone() };
+                    log_event(
+                        &log_handle,
+                        &redactor,
+                        deps.clock,
+                        turns,
+                        SessionEvent::HardFail {
+                            reason: signal.describe(),
+                        },
+                    );
+                    log_session_end(&log_handle, &redactor, deps.clock, "hard_fail", turns);
+                    emit_phase_run(
+                        &deps,
+                        input,
+                        "hard_fail",
+                        Gates::default(),
+                        &metrics,
+                        &scorer,
+                        turns,
+                    );
+                    let artifacts = build_artifacts(
+                        &pre_edit_content,
+                        deps.project_root,
+                        log_path.clone(),
+                        "hard_fail",
+                        turns,
+                        CommandOutputs::default(),
+                    );
+                    return Ok(hard_fail_result(
+                        input,
+                        &recent_tool_calls,
+                        deps.project_root,
+                        Vec::new(),
+                        signal,
+                        artifacts,
+                    ));
                 }
             }
         }
@@ -1125,12 +1213,13 @@ fn emit_phase_run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::testing::MockAiClientScript;
+    use crate::ai::testing::{MockAiClientScript, MockCall};
     use crate::ai::types::TokenBreakdown;
     use crate::phase::PhaseStatus;
     use crate::security::scope::Scope;
     use crate::tools::{patch, read_file, write_file};
     use serde_json::json;
+    use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
     fn registry_over(scope: Scope) -> ToolRegistry {
@@ -1535,6 +1624,7 @@ mod tests {
         assert!(tried[1].one_line.contains("succeeded"));
     }
 
+    // Turn-0 case: backend error before any work stays Err (nothing to preserve).
     #[tokio::test]
     async fn ai_event_error_propagates_as_err() {
         let dir = TempDir::new().unwrap();
@@ -1553,6 +1643,135 @@ mod tests {
         assert!(
             result.is_err(),
             "AiEvent::Error must surface as Err, not a PhaseResult"
+        );
+    }
+
+    // ── M7-01: backend error degradation ──────────────────────────────────
+
+    /// Mock that returns `Err` from `chat()` on a configured call number.
+    /// Used to exercise the `chat_fut` error path (site A).
+    struct MockAiClientChatError {
+        error_on_call: Arc<Mutex<usize>>,
+        events: Arc<Mutex<VecDeque<Vec<AiEvent>>>>,
+        calls: Arc<Mutex<Vec<MockCall>>>,
+    }
+
+    impl MockAiClientChatError {
+        fn new(events: Vec<Vec<AiEvent>>, error_on_call: usize) -> Self {
+            Self {
+                error_on_call: Arc::new(Mutex::new(error_on_call)),
+                events: Arc::new(Mutex::new(events.into_iter().collect())),
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AiClient for MockAiClientChatError {
+        async fn chat(
+            &self,
+            system_prompt: &str,
+            messages: Vec<Message>,
+            tx: mpsc::UnboundedSender<AiEvent>,
+            tools: Option<&[ToolSchema]>,
+        ) -> anyhow::Result<()> {
+            let call_idx = {
+                let mut calls = self.calls.lock().unwrap();
+                let idx = calls.len();
+                calls.push(MockCall {
+                    system_prompt: system_prompt.to_string(),
+                    messages,
+                    tool_count: tools.map(|t| t.len()).unwrap_or(0),
+                });
+                idx
+            };
+            let error_on = *self.error_on_call.lock().unwrap();
+            if call_idx == error_on {
+                return Err(anyhow::anyhow!("transient backend failure"));
+            }
+            let events = self.events.lock().unwrap().pop_front();
+            if let Some(evts) = events {
+                for e in evts {
+                    let _ = tx.send(e);
+                }
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn backend_error_after_progress_degrades_to_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        // Turn 0: a tool call (read_file) → loop continues with turns=1.
+        // Turn 1: chat() returns Err → should degrade to hard_fail.
+        let client = MockAiClientChatError::new(
+            vec![vec![native("read_file", json!({ "path": path }))]],
+            1, // second chat() call (index 1) returns error
+        );
+        let budget = Budget::new(1_000_000);
+
+        let result =
+            execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path())).await;
+
+        assert!(
+            result.is_ok(),
+            "backend error after progress must degrade to Ok(hard_fail), not Err"
+        );
+        let phase_result = result.unwrap();
+        assert_eq!(phase_result.status, PhaseStatus::HardFail);
+        assert!(phase_result.briefing.is_some());
+        let briefing = phase_result.briefing.unwrap();
+        assert!(
+            matches!(
+                briefing.current_blocker,
+                Blocker::HardFail(HardFailSignal::BackendError { .. })
+            ),
+            "expected BackendError hard-fail signal, got {:?}",
+            briefing.current_blocker
+        );
+    }
+
+    #[tokio::test]
+    async fn ai_event_error_after_progress_degrades_to_hard_fail() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let path = dir.path().join("f.txt").to_string_lossy().to_string();
+        // Turn 0: a tool call (read_file) → loop continues with turns=1.
+        // Turn 1: AiEvent::Error in the stream → should degrade to hard_fail.
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![
+                token("starting second"),
+                AiEvent::Error("mid-phase error".to_string()),
+                AiEvent::Done(TokenBreakdown::default()),
+            ],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        let result =
+            execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path())).await;
+
+        assert!(
+            result.is_ok(),
+            "AiEvent::Error after progress must degrade to Ok(hard_fail), not Err"
+        );
+        let phase_result = result.unwrap();
+        assert_eq!(phase_result.status, PhaseStatus::HardFail);
+        assert!(phase_result.briefing.is_some());
+        let briefing = phase_result.briefing.unwrap();
+        assert!(
+            matches!(
+                briefing.current_blocker,
+                Blocker::HardFail(HardFailSignal::BackendError { .. })
+            ),
+            "expected BackendError hard-fail signal, got {:?}",
+            briefing.current_blocker
         );
     }
 
@@ -1831,7 +2050,6 @@ mod tests {
     // ── 07c: verifier retry + hard-fail ───────────────────────────────────
 
     use crate::governor::verifier::{Baseline as Bl, Diagnostic, Severity};
-    use std::sync::Mutex;
 
     /// Verifier mock: pops a scripted `VerifierResult` per `verify` call (an
     /// exhausted script yields `Unsupported`), returns a configured baseline, and
@@ -3300,7 +3518,6 @@ mod tests {
 
     use crate::ai::testing::MockAiClientPending;
 
-    use std::sync::Arc;
     use tokio::sync::Notify;
 
     #[tokio::test]
