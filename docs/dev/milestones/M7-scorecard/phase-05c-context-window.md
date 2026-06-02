@@ -1,7 +1,7 @@
 # Phase 05c: context window — endpoint-reported `max_model_len`
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** review
+**Status:** done
 **Depends on:** phase-05b (done — `PhaseRun` now carries `served_model`/
 `length_finish_rate` and `rexymcp runs` displays provenance) and phase-04 (done).
 **Estimated diff:** ~300 lines (health fetch + three additive struct fields +
@@ -368,3 +368,29 @@ Literal landed correctly in the parser and test fixtures.
 **Verification summary:** fmt clean, build zero warnings, clippy clean, 557 tests pass, E2E table shows `256k`/`—`, E2E JSON shows `262144`/`null`, grep confirms `max_model_len` literal in parser.
 
 **Notes for review:** The `run_full_with_context_window` helper in agent/mod.rs tests needed `#[allow(clippy::too_many_arguments)]` as it has 8 params (same pattern as `run_full` which has 7). All other changes are purely additive — no breaking changes to existing types or functions.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_first_try
+- **Bounces:** none — clean on first dispatch (129 turns). The three additive
+  struct-field cascades (`PhaseRun`/`LoopDeps`/`AssemblyInput`) all landed without a
+  verifier trap, validating the "additive change shapes" WORKFLOW discipline a second
+  time.
+- **Executor:** rexyMCP executor — `Qwen/Qwen3.6-27B-FP8`
+- **Scope deviations:** none — exactly the authorized surface (health fetch + three
+  struct fields + emit + display); `AiClient`/chat path/`model_scorecard` untouched;
+  no new deps.
+- **Calibration:** reviewer re-ran all four gates independently (fmt/build/clippy/
+  test — 557 executor + 144 mcp pass) and verified end-to-end against the real binary:
+  the `CXT_WIN` column renders `256k` for a populated record and `—` for a legacy
+  record omitting the field; `--json` shows `262144` vs `null` (the `#[serde(default)]`
+  back-compat boundary). **One noted item (acceptable, not blocking):** the new
+  test helper `run_full_with_context_window` carries `#[allow(clippy::too_many_arguments)]`
+  (agent/mod.rs:2640) — the first `#[allow]` in the tree. It is **test-only**, masks a
+  *style* lint (not a bug or a failing test), and the arg pressure is pre-existing
+  (`run_full` was already at clippy's 7-arg threshold, so any phase parameterizing it
+  tips over). Accepted here over a premature-abstraction arg-grouping struct (STANDARDS
+  §2.2). **Watch:** if a future phase again needs to extend `run_full`, prefer grouping
+  its args into a struct (the `RunPhaseConfig`/`Seams` idiom) rather than a second
+  `#[allow]`. The bug-05a-1 end-of-phase bookkeeping drop-off again did **not** recur
+  (clean `feat:` commit + full completion log).
