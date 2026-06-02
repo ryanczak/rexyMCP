@@ -143,6 +143,11 @@ pub enum AiEvent {
         thought_signature: Option<String>,
     },
     Done(TokenBreakdown),
+    /// Per-completion provenance, emitted once just before `Done`. Either field may be `None`.
+    Completion {
+        finish_reason: Option<String>,
+        model: Option<String>,
+    },
     Error(String),
 }
 

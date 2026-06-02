@@ -63,7 +63,7 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
 
     let mut lines = Vec::new();
     lines.push(
-        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT".to_string(),
+        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC".to_string(),
     );
 
     for run in runs {
@@ -91,9 +91,24 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
 
         let verdict = run.architect_verdict.as_deref().unwrap_or("—");
 
+        let served_model = run.served_model.as_deref().unwrap_or("—");
+        let trunc = run
+            .length_finish_rate
+            .map(|r| format!("{:.0}%", r * 100.0))
+            .unwrap_or_else(|| "—".to_string());
+
         lines.push(format!(
-            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {}",
-            age, run.model, tags, settings, gates, run.turns, run.status, verdict
+            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {}",
+            age,
+            run.model,
+            tags,
+            settings,
+            gates,
+            run.turns,
+            run.status,
+            verdict,
+            served_model,
+            trunc
         ));
     }
 
@@ -158,6 +173,8 @@ mod tests {
             bugs_filed: None,
             bounces_to_approval: None,
             architect_verdict: verdict.map(|s| s.to_string()),
+            served_model: None,
+            length_finish_rate: None,
         }
     }
 
@@ -193,6 +210,8 @@ mod tests {
             bugs_filed: None,
             bounces_to_approval: None,
             architect_verdict: None,
+            served_model: None,
+            length_finish_rate: None,
         }
     }
 
@@ -369,5 +388,40 @@ model = "qwen"
         assert_eq!(humanize_age(192_000), "3m12s");
         assert_eq!(humanize_age(3_840_000), "1h");
         assert_eq!(humanize_age(172_800_000), "2d");
+    }
+
+    #[test]
+    fn format_runs_shows_served_model_and_truncation() {
+        let mut run_with_provenance = make_run(1000, "qwen", &["rust"], None);
+        run_with_provenance.served_model = Some("qwen-served".into());
+        run_with_provenance.length_finish_rate = Some(0.25);
+
+        let run_without_provenance = make_run(2000, "gemma", &["feature"], None);
+
+        let runs = vec![run_with_provenance, run_without_provenance];
+        let out = format_runs(&runs, 5000);
+
+        // Run with provenance: served model and truncation rate appear
+        assert!(
+            out.contains("qwen-served"),
+            "expected served model in output: {out}"
+        );
+        assert!(
+            out.contains("25%"),
+            "expected 25%% truncation rate in output: {out}"
+        );
+
+        // Run without provenance: both render as "—"
+        // The gemma line should contain two "—" sentinels for served_model and trunc
+        let gemma_line = out
+            .lines()
+            .find(|l| l.contains("gemma"))
+            .expect("expected a gemma line in output: {out}");
+        // Count "—" occurrences on the gemma line — verdict is also "—", so we need at least 3
+        let dash_count = gemma_line.matches('—').count();
+        assert!(
+            dash_count >= 3,
+            "expected at least 3 '—' sentinels on gemma line (verdict + served_model + trunc): {gemma_line}"
+        );
     }
 }

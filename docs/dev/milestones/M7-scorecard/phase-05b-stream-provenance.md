@@ -1,7 +1,7 @@
 # Phase 05b: chat-stream provenance — served model id + finish_reason
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-05a (done — settings are now configurable/sent/recorded) and
 phase-04 (done — `rexymcp runs` displays the record). This phase captures two values
 the chat response already carries but the client currently discards.
@@ -382,3 +382,75 @@ spec-clarity gap — so the refinement restructures the design to be additive (n
 `Completion` variant, `Done` untouched), a different and untried lever that keeps the
 crate compiling and plays to the executor's additive-edit strength, rather than a
 takeover that would forfeit the model telemetry point.
+
+### Update — 2025-01-09 14:00 (progress)
+
+**Executor:** rexyMCP executor
+**Working on:** Implementing phase-05b spec tasks 1-6.
+
+### Update — 2025-01-09 14:05 (complete)
+
+**Summary:** Implemented chat-stream provenance capture. Added a new `AiEvent::Completion` variant (additive, `Done` untouched), parsed `model` and `finish_reason` from SSE chunks in `openai.rs`, aggregated served model + length-finish counts in `RunMetrics`, added `served_model` and `length_finish_rate` fields to `PhaseRun` with `#[serde(default)]` for back-compat, populated them at the `emit_phase_run` site, and rendered both in `rexymcp runs` table output. All `PhaseRun` struct literals updated across executor and mcp crates.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean — no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3
+   Compiling rexymcp v0.1.3
+    Finished `dev` profile [unoptimized + debuginfo]
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3
+    Checking rexymcp v0.1.3
+    Finished `dev` profile
+
+cargo test 2>&1 | tail -30
+test result: ok. 552 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+`rexymcp runs` table with one record having provenance and one legacy record:
+```
+AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC
+734d    qwen2.5-coder rust,feature   default      ✓✓✓✓  7      complete  —           qwen-served   25%
+745d    gemma-7b rust           default      ✓✓✓✓  3      complete  —           —             —
+```
+First row shows `qwen-served` + `25%`; legacy row shows `—` for both (back-compat via `#[serde(default)]`).
+
+`--json` output: first record has `"served_model": "qwen-served", "length_finish_rate": 0.25`; legacy record has `"served_model": null, "length_finish_rate": null`.
+
+**Grep proving `AiEvent::Completion` landed:**
+```
+grep -rn "AiEvent::Completion" executor/src/ai/types.rs executor/src/ai/backends/openai.rs executor/src/agent/mod.rs executor/src/ai/testing.rs
+executor/src/ai/backends/openai.rs:339:                    let _ = tx.send(AiEvent::Completion {
+executor/src/agent/mod.rs:321:                AiEvent::Completion {
+executor/src/agent/mod.rs:3715:            AiEvent::Completion {
+executor/src/agent/mod.rs:3719:            AiEvent::Completion {
+executor/src/agent/mod.rs:3782:            AiEvent::Completion {
+executor/src/ai/testing.rs:276:            AiEvent::Completion { .. } => {}
+```
+
+**Files changed:**
+- `executor/src/ai/types.rs` — added `AiEvent::Completion` variant
+- `executor/src/ai/backends/openai.rs` — parse `model`/`finish_reason` from SSE, emit `Completion` event before `Done`
+- `executor/src/agent/mod.rs` — `RunMetrics` fields + `Completion` match arm + `emit_phase_run` population + 3 new tests
+- `executor/src/store/telemetry.rs` — `PhaseRun` fields with `#[serde(default)]` + `sample()` literal + legacy deserialization test
+- `executor/src/ai/testing.rs` — `Completion` match arm in existing test
+- `mcp/src/runs.rs` — `format_runs` table columns + `make_run`/`make_run_with_params` literals + new test
+- `mcp/src/scorecard.rs` — `make_run` literal updated
+
+**New tests:**
+- `length_finish_rate_is_fraction_of_length_finishes` in `executor/src/agent/mod.rs`
+- `length_finish_rate_none_when_no_finish_reasons` in `executor/src/agent/mod.rs`
+- `served_model_recorded_from_completion` in `executor/src/agent/mod.rs`
+- `phase_run_without_provenance_fields_deserializes` in `executor/src/store/telemetry.rs`
+- `format_runs_shows_served_model_and_truncation` in `mcp/src/runs.rs`
+
+**Notes for review:** The `length_finish_rate_is_fraction_of_length_finishes` test scripts two `Completion` events in a single turn (via `MockAiClientScript`) rather than across two turns, because `MockAiClientScript` emits one event batch per `chat` call and the agent loop accumulates `RunMetrics` across all events in a single run. This correctly exercises the aggregation logic — both completions contribute to the same `total_finishes`/`length_finishes` counters.

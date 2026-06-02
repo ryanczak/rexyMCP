@@ -205,6 +205,8 @@ impl AiClient for OpenAiClient {
             let mut leftover = String::new();
             let mut usage = TokenBreakdown::default();
             let mut in_reasoning = false;
+            let mut served_model: Option<String> = None;
+            let mut finish_reason: Option<String> = None;
 
             const MAX_LEFTOVER_BYTES: usize = 1 << 20;
 
@@ -304,6 +306,16 @@ impl AiClient for OpenAiClient {
                                     if let Some(u) = v.get("usage").and_then(|u| u.as_object()) {
                                         usage = parse_openai_usage(u);
                                     }
+                                    if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
+                                        served_model = Some(m.to_string());
+                                    }
+                                    if let Some(fr) = v["choices"]
+                                        .get(0)
+                                        .and_then(|c| c.get("finish_reason"))
+                                        .and_then(|f| f.as_str())
+                                    {
+                                        finish_reason = Some(fr.to_string());
+                                    }
                                 }
                             }
                         }
@@ -324,6 +336,10 @@ impl AiClient for OpenAiClient {
                     if !tool_id.is_empty() {
                         emit_tool_call_generic(&tx, &tool_id, &tool_name, &tool_args);
                     }
+                    let _ = tx.send(AiEvent::Completion {
+                        finish_reason,
+                        model: served_model,
+                    });
                     let _ = tx.send(AiEvent::Done(usage));
                     return Ok(());
                 }

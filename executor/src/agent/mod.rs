@@ -318,6 +318,20 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     }
                 }
                 AiEvent::Done(breakdown) => metrics.add_tokens(&breakdown),
+                AiEvent::Completion {
+                    finish_reason,
+                    model,
+                } => {
+                    if let Some(m) = model {
+                        metrics.served_model = Some(m);
+                    }
+                    if let Some(fr) = finish_reason {
+                        metrics.total_finishes += 1;
+                        if fr == "length" {
+                            metrics.length_finishes += 1;
+                        }
+                    }
+                }
                 AiEvent::Error(e) => {
                     if turns == 0 {
                         log_session_end(&log_handle, &redactor, deps.clock, "error", turns);
@@ -1117,6 +1131,9 @@ struct RunMetrics {
     verifier_retries: usize,
     tokens: TokenBreakdown,
     start_ms: u64,
+    served_model: Option<String>,
+    length_finishes: usize,
+    total_finishes: usize,
 }
 
 impl RunMetrics {
@@ -1129,6 +1146,9 @@ impl RunMetrics {
             verifier_retries: 0,
             tokens: TokenBreakdown::default(),
             start_ms,
+            served_model: None,
+            length_finishes: 0,
+            total_finishes: 0,
         }
     }
 
@@ -1206,6 +1226,9 @@ fn emit_phase_run(
         bugs_filed: None,
         bounces_to_approval: None,
         architect_verdict: None,
+        served_model: metrics.served_model.clone(),
+        length_finish_rate: (metrics.total_finishes > 0)
+            .then(|| metrics.length_finishes as f64 / metrics.total_finishes as f64),
     };
     let _ = telemetry::append(dir, &run);
 }
@@ -3678,5 +3701,107 @@ mod tests {
             count_before, count_after,
             "no new awaiting_model records should appear after chat resolves"
         );
+    }
+
+    // ── 09: Chat-stream provenance (phase-05b) ─────────────────────────
+
+    #[tokio::test]
+    async fn length_finish_rate_is_fraction_of_length_finishes() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+
+        // Single turn emitting two Completion events (mock allows arbitrary event sequences)
+        let turn1 = vec![
+            AiEvent::Completion {
+                finish_reason: Some("length".into()),
+                model: Some("served-x".into()),
+            },
+            AiEvent::Completion {
+                finish_reason: Some("stop".into()),
+                model: None,
+            },
+            AiEvent::Done(TokenBreakdown::default()),
+            AiEvent::Token("done".into()),
+        ];
+        let client = MockAiClientScript::new(vec![turn1]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].length_finish_rate, Some(0.5));
+        assert_eq!(runs[0].served_model, Some("served-x".into()));
+    }
+
+    #[tokio::test]
+    async fn length_finish_rate_none_when_no_finish_reasons() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+
+        // No Completion events at all — only Token + Done
+        let turn1 = vec![
+            AiEvent::Token("done".into()),
+            AiEvent::Done(TokenBreakdown::default()),
+        ];
+        let client = MockAiClientScript::new(vec![turn1]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].length_finish_rate, None);
+        assert_eq!(runs[0].served_model, None);
+    }
+
+    #[tokio::test]
+    async fn served_model_recorded_from_completion() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+
+        let turn1 = vec![
+            AiEvent::Completion {
+                finish_reason: None,
+                model: Some("served-model-v2".into()),
+            },
+            AiEvent::Done(TokenBreakdown::default()),
+            AiEvent::Token("done".into()),
+        ];
+        let client = MockAiClientScript::new(vec![turn1]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].served_model, Some("served-model-v2".into()));
     }
 }

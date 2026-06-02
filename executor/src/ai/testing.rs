@@ -273,6 +273,7 @@ mod tests {
         }
         match rx.try_recv().unwrap() {
             AiEvent::Done(_) => {}
+            AiEvent::Completion { .. } => {}
             other => panic!("expected Done, got {:?}", other),
         }
         assert!(rx.try_recv().is_err(), "expected no more events");

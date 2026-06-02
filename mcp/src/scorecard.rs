@@ -197,6 +197,8 @@ mod tests {
             bugs_filed: None,
             bounces_to_approval: bounces,
             architect_verdict: verdict.map(|s| s.to_string()),
+            served_model: None,
+            length_finish_rate: None,
         }
     }
 
