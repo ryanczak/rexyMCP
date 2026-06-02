@@ -223,13 +223,16 @@ The richest signal for "why did this executor get stuck" is the
 exactly what the briefing compresses, so the log is where Claude goes when the
 compression lost the detail it needs.
 
-#### Model effectiveness metrics & routing
+#### Model effectiveness metrics & the scorecard
 
 rexyMCP is well-positioned to measure *which local model does well on which kind
-of work*, because every phase is a spec'd unit with objective gates and an
-architect grade — the labeled dataset is a byproduct of the normal workflow, not
-something to manufacture. The same session log that powers troubleshooting also
-feeds a per-phase metrics record.
+of work, run with which settings* — because every phase is a spec'd unit with
+objective gates and an architect grade, the labeled dataset is a byproduct of the
+normal workflow, not something to manufacture. The same session log that powers
+troubleshooting also feeds a per-phase metrics record. The payoff is a **human
+decision aid**: when you have a fleet of local models and a pile of sampling
+settings, the scorecard tells you which combination has actually been earning its
+keep on work like the work in front of you.
 
 **The `PhaseRun` record.** At the end of each `execute_phase`, the executor emits
 one summary record (alongside the JSONL turn log) into a **cross-project**
@@ -274,12 +277,36 @@ doc's Update Log + the milestone retrospective, which are its substrate.
 **Phase tagging.** Phase-doc frontmatter carries a `Tags:` line (language, kind,
 size) so runs are categorizable. The architect sets it when drafting the phase.
 
-**Scorecard.** A Layer 2 tool, `model_scorecard(tags?)`, aggregates `PhaseRun`
-into a competency matrix — `model × tag → { n_runs, first_pass_rate, mean_turns,
-parse_failure_rate, mean_bugs, … }` with sample sizes — so the architect can see,
-e.g., "Qwen leads on `rust`/`feature`, Gemma on `go`/*." The governor's
-per-(task-type, tool) scorer (lift/drop map above) is the *within-session* seed
-of this same matrix; persisting it cross-session is what makes it durable.
+**Scorecard.** A Layer 2 tool, `model_scorecard`, aggregates `PhaseRun` records
+into a competency matrix that answers the two questions a user actually has when
+picking how to run the executor:
+
+- *Which model for this kind of work?* — the `model × tag` slice:
+  `model × tag → { n_runs, first_pass_rate, mean_turns, parse_failure_rate,
+  mean_bugs, … }` with sample sizes, e.g. "Qwen leads on `rust`/`feature`, Gemma
+  on `go`/*."
+- *Which settings for this model?* — the same metrics sliced by
+  `generation_params` (temperature, seed, and any other sampling knobs recorded
+  on the run), e.g. "Qwen at `temperature=0.2` first-passes `rust` work more
+  often than at `0.7`." Settings ride along on every `PhaseRun`, so this slice is
+  a byproduct of normal use, exactly like the model slice — no special apparatus.
+
+Every cell carries its **sample size**, and that is load-bearing, not decoration:
+this is passive production telemetry, so each phase ran once at its own
+difficulty, and any single cell is confounded. Small models are high-variance;
+trends become legible across N runs, never one. The reader weighs a cell as
+evidence, not proof — which is exactly why the tool reports `n_runs` next to
+every number. The governor's per-(task-type, tool) scorer (lift/drop map above) is
+the *within-session* seed of this same matrix; persisting it cross-session is what
+makes it durable.
+
+**Per-run detail.** Aggregates tell you *which* model/settings tend to win; the
+individual `PhaseRun` records tell you *why* a specific run went the way it did.
+The scorecard drills from a cell down to the runs in it — each with its model,
+settings, gates, reliability metrics, turns, tokens, and verdict — and from a run
+down to its JSONL session log for the full transcript. Same **pull, not push**
+discipline as the log: the detail exists on demand and never floods Claude's
+context until asked for.
 
 **Project review (human view).** A sibling Layer 2 view, `project_review`,
 aggregates the *same* `PhaseRun` records along the **milestone × phase** axis
@@ -289,18 +316,15 @@ retrospectives / calibration folds. It is the human's in-depth project-state len
 — pull-on-demand, never bubbled into Claude's context per call — and reuses the
 scorecard's storage, not a parallel one.
 
-**Benchmark vs. telemetry.** Passive **production telemetry** (every real phase)
-gives breadth and drift detection but is confounded — each phase runs once, by
-one model, at its own difficulty. A small curated **benchmark suite** (the same
-phases run by each model) gives controlled head-to-head rankings. Both emit the
-same `PhaseRun` schema; small models are high-variance, so a routing decision
-needs a minimum sample size, never one run.
-
-**Routing** (own milestone — depends on having data). A policy maps a phase's
-tags to the best-scoring model (argmax of a chosen objective, subject to a
-minimum sample size), with an exploration policy (epsilon-greedy / bandit) so new
-models still get tried and the matrix doesn't ossify. The architect can also read
-the scorecard and choose the `model` argument to `execute_phase` directly.
+**Model selection is the human's call.** rexyMCP surfaces the data; the architect
+(or user) reads the scorecard and chooses the `model` and settings for the next
+`execute_phase`. There is no automated tag→model router. A weak-model fleet is
+high-variance and the best pick depends on context the human holds — a deadline,
+which model is already warm, how costly a bounce is here, a model just added that
+has no track record yet. The scorecard exists to **inform** that decision, not to
+make it; its job is to turn a pile of accumulated runs into a legible "for work
+like this, these model+settings combos have been earning their keep, at this
+sample size."
 
 ### Layer 2 — `mcp` crate (binary)
 
@@ -315,10 +339,11 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes two tools:
 - **`executor_log_search`**, **`executor_log_tail`**, **`get_turn`** — read back
   the JSONL session log (see "Session log & troubleshooting tools"). Each caps
   its own output so a debugging query can't re-flood Claude's context.
-- **`model_scorecard`** — args: optional `tags` filter. Aggregates the `PhaseRun`
-  telemetry into the model × tag competency matrix (see "Model effectiveness
-  metrics & routing"). Lets the architect choose which model to dispatch a phase
-  to.
+- **`model_scorecard`** — args: optional `tags` / `model` / `min_runs` filters.
+  Aggregates the `PhaseRun` telemetry into the `model × tag` (and `model ×
+  settings`) competency matrix with per-cell sample sizes (see "Model
+  effectiveness metrics & the scorecard"). Lets the user see which model +
+  settings to dispatch a phase with.
 
 Practical concerns this layer owns:
 
@@ -470,7 +495,7 @@ The project plan. Each entry becomes a milestone with its own
    `store/sessions/jsonl.rs` writer. Also emits the per-phase **`PhaseRun`
    metrics record** (objective fields: gates, turns, tokens, parse-failure rate,
    verifier retries) into the cross-project telemetry store — see "Model
-   effectiveness metrics & routing." Also owns the **read-before-edit
+   effectiveness metrics & the scorecard." Also owns the **read-before-edit
    invariant**: the loop tracks a per-session working set of files the executor
    has read (with mtime), and `patch` refuses to edit a file the executor hasn't
    read this session or that changed on disk underneath it. The M2 `patch` tool
@@ -504,9 +529,14 @@ The project plan. Each entry becomes a milestone with its own
    existing one). Milestone boundaries always stop for human sign-off. An opt-in
    autonomous loop (off by default) can chain draft → dispatch → review until a
    blocker or milestone boundary.
-7. **M7 — Model scorecard & routing.** Consume the `PhaseRun` telemetry
-   accumulated from M4 onward: a curated benchmark suite for controlled
-   model-vs-model head-to-heads, the `model_scorecard` aggregation, and a routing
-   policy that maps a phase's tags to the best-scoring model (with a minimum
-   sample size and an exploration policy). Depends on having data, so it lands
-   after the loop (M4) and server (M5) have been producing records.
+7. **M7 — Per-run statistics & model scorecard.** Consume the `PhaseRun`
+   telemetry accumulated from M4 onward to give the user detailed per-run
+   statistics and a `model_scorecard` aggregation, so they can decide **which
+   local model to use and which settings work best for it**. Surfaces the
+   `model × tag` and `model × settings` slices with per-run drill-down, and the
+   per-cell sample sizes that keep high-variance small-model data honest. (An
+   earlier benchmark-suite + automated-routing plan was dropped 2026-06-02 — the
+   scorecard tracks regular production runs, not a separate controlled-benchmark
+   apparatus, and informs a human decision rather than auto-routing. See the M7
+   README direction-change note.) Depends on having data, so it lands after the
+   loop (M4) and server (M5) have been producing records.
