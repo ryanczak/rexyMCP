@@ -1,7 +1,7 @@
 # Phase 05a: settings plumbing — make sampling settings configurable, sent, and recorded
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (done — `rexymcp runs` displays `generation_params`, which
 are always `default`/`None` today; this phase makes them real). No dependency on
 phase-05b.
@@ -496,3 +496,27 @@ independent `rexymcp runs` check on a configured vs. unset config).
 - one `feat:` commit covering all five source files + phase doc status flip
 
 **Notes for review:** none — implementation matches spec exactly. All gates green (fmt, build, clippy, 548+142 tests).
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_after_2
+- **Bounces:** 2 prior failed cycles — (1) `hard_fail` on first dispatch
+  (`VerifierFailurePersistent`: changed `build_chat_body`/`OpenAiClient::new`
+  signatures but left `E0061` callers; resolved by refined re-dispatch with
+  worked examples, Task 5); (2) review bounce [bug-05a-1](bugs/bug-05a-1.md)
+  (minor — completion Update Log entry missing + work uncommitted). Both fixed;
+  the code landed correct and green on the second dispatch, the bookkeeping on
+  the third.
+- **Executor:** rexyMCP executor — `Qwen/Qwen3.6-27B-FP8`
+- **Scope deviations:** none. Touched only the five specced source files
+  (`config.rs`, `ai/backends/openai.rs`, `ai/mod.rs`, `health.rs`,
+  `mcp/runner.rs`) + the two docs; `GenerationParams`/`PhaseRun`/`AiClient`
+  trait/`MockAiClient` untouched as required; no new deps.
+- **Calibration:** reviewer re-ran all four gates independently (fmt/build/clippy/
+  test — 548 executor + 142 mcp pass) and verified the config→record→`rexymcp runs`
+  display end-to-end and the sent-side `build_chat_body` insert/omit behavior
+  (negative test asserts key *absence*, not `null`). **Calibration data (1
+  occurrence, not yet a trend):** on the dispatch that produced correct code, the
+  executor skipped its end-of-phase completion-log + commit ritual (STANDARDS §8) —
+  watch for recurrence on phase-05b; a 2nd occurrence would warrant making the
+  completion ritual more prominent in the executor contract (user-signed fold).

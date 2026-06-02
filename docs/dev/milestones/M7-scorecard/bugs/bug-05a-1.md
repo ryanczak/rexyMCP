@@ -1,8 +1,10 @@
 # Bug 1 on phase-05a: completion Update Log entry missing and work uncommitted
 
 **Severity:** minor
-**Status:** open
+**Status:** verified
 **Filed:** 2026-06-02
+**Verified:** 2026-06-02 — completion Update Log entry added; phase-05a landed as one
+`feat:` commit (`b52114c`); all four gates re-run green by the reviewer.
 
 ## What's wrong
 
