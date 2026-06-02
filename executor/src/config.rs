@@ -306,7 +306,7 @@ dir = "/var/lib/rexymcp"
     fn config_defaults_first_token_and_idle_timeouts() {
         let cfg = ExecutorConfig::default();
         assert_eq!(cfg.first_token_timeout_secs, 600);
-        assert_eq!(cfg.stream_idle_timeout_secs, 90);
+        assert_eq!(cfg.stream_idle_timeout_secs, 180);
     }
 
     #[test]
@@ -362,6 +362,6 @@ escalation_slots = 1
 
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.executor.first_token_timeout_secs, 600);
-        assert_eq!(cfg.executor.stream_idle_timeout_secs, 90);
+        assert_eq!(cfg.executor.stream_idle_timeout_secs, 180);
     }
 }
