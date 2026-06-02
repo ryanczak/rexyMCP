@@ -1,7 +1,7 @@
 # Phase 04: `rexymcp runs` — per-run statistics CLI view
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done). The `PhaseRun` telemetry store, `telemetry::read`,
 and the `rexymcp` CLI all exist (M4/M5); this phase adds a read-only view over the
 store.
@@ -433,3 +433,22 @@ $ grep -n "no runs" mcp/src/runs.rs
 **Commit:** one conventional commit (`feat: add rexymcp runs CLI subcommand`)
 
 **Notes for review:** None — implementation matches spec exactly.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor (headless) — `Qwen/Qwen3.6-27B-FP8`
+- **Scope deviations:** none. Touched only `mcp/src/runs.rs`, `mcp/src/main.rs`,
+  the two phase/milestone docs, and a `Cargo.lock` version-string sync
+  (`0.1.2 → 0.1.3`); no `Cargo.toml` edit, no new dependency, `executor/`
+  untouched.
+- **Calibration:** none actionable. Reviewer re-ran all four gates
+  independently (fmt/build/clippy/test — 542 passed) and verified the CLI
+  end-to-end against the real binary: `--help` lists all five flags, the human
+  table renders newest-first, `--model` and AND-`--tag` filters select
+  correctly, `--json` emits `PhaseRun` records, and the telemetry-disabled path
+  exits 1 without panicking. Two cosmetic nits noted but not filed: the Update
+  Log carries the executor's wrong wall-clock date (`2025-07-13`), and table
+  columns drift when a cell overflows its pad width (the phase doc pins
+  behavior, not spacing).

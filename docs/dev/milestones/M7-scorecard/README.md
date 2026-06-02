@@ -55,7 +55,7 @@ into phase docs):
 | 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | rolled-back (benchmarking deprecated) |
 | 03a | thread `bench_suite` through the loop + stamp a single benchmarked run ([phase-03a-bench-suite-threading.md](phase-03a-bench-suite-threading.md)) | rolled-back (benchmarking deprecated) |
 | 03b | `rexymcp bench` multi-model sweep + one minimal fixture ([phase-03b-bench-sweep.md](phase-03b-bench-sweep.md)) | rolled-back (never landed) |
-| 04 | `rexymcp runs` — per-run statistics CLI view ([phase-04-runs-cli.md](phase-04-runs-cli.md)) | review |
+| 04 | `rexymcp runs` — per-run statistics CLI view ([phase-04-runs-cli.md](phase-04-runs-cli.md)) | done (approved_first_try) |
 
 **The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
 into three phases:
