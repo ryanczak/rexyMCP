@@ -6,13 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo runs a strict **architect / executor** development process. Before writing code, read in order:
 
-1. `AGENTS.md` — the executor contract (binding rules: confirmation gate, phase lifecycle, hard rules, lift-from-Rexy protocol).
-2. `docs/dev/STANDARDS.md` — the Definition of Done your work is reviewed against.
-3. `docs/dev/WORKFLOW.md` — phase lifecycle, status transitions, Update Log templates, bug-report cycle.
-4. `docs/dev/NEXT.md` — names the active phase; then read that phase doc end-to-end and its milestone README.
-5. `docs/architecture.md` — the source of truth for the intended product design.
+1. `docs/dev/STANDARDS.md` — the Definition of Done your work is reviewed against.
+2. `docs/dev/WORKFLOW.md` — phase lifecycle, status transitions, Update Log templates, bug-report cycle.
+3. `docs/dev/NEXT.md` — names the active phase; then read that phase doc end-to-end and its milestone README.
+4. `docs/architecture.md` — the source of truth for the intended product design.
 
-**Source-of-truth precedence when docs disagree:** `docs/architecture.md` > active phase doc > `STANDARDS.md` > `AGENTS.md`. If you spot a conflict, stop and file a blocker — do not pick a side.
+**Source-of-truth precedence when docs disagree:** `docs/architecture.md` > active phase doc > `STANDARDS.md`. If you spot a conflict, stop and file a blocker — do not pick a side.
 
 ## Commands
 
@@ -43,9 +42,7 @@ rexyMCP bridges **Claude Code (architect)** to a **local LLM (executor)** over a
 
 Three layers (see `docs/architecture.md`): the `executor` library (turn cycle: parse → tool dispatch via governor → verifier → final command set), the `mcp` server, and a Claude Code plugin package (skills + slash commands, M6). Escalation returns the briefing to Claude rather than calling any cloud LLM — rexyMCP never links a cloud provider.
 
-The project is built **by lifting modules from Rexy** (`~/src/rexy`). Rexy is a parts donor, **not a dependency** — nothing links against it. When a phase authorizes a lift: copy and adapt the code in, re-root `crate::` paths, adapt errors to `executor::error::Error`, and lift only what the phase names. You may read `~/src/rexy/src` but never write there.
-
-Milestones M1→M7 are listed in `docs/architecture.md` §Status; current work is M2 (executor tools & security).
+Milestones M1→M7 are listed in `docs/architecture.md` §Status; M1–M6 are done. Active work is M7 (model scorecard & routing) — see `docs/dev/NEXT.md`.
 
 ## Error model
 
@@ -55,7 +52,7 @@ Milestones M1→M7 are listed in `docs/architecture.md` §Status; current work i
 
 ## Hard rules (stop-and-file-a-blocker triggers)
 
-Do not, without explicit phase-doc authorization: add a dependency (`Cargo.toml`) or run `cargo add`/`cargo remove`; write `unsafe`; widen scope (note adjacent bugs in "Notes for review", don't fix them); add `#[allow]`/`#[ignore]` to mask a diagnostic; leave `TODO`/`FIXME`/`dbg!`/`println!`/commented-out code; or edit `Cargo.toml`, `rustfmt.toml`, `clippy.toml`, `.github/workflows/*`, `docs/architecture.md`, `STANDARDS.md`, `WORKFLOW.md`, `AGENTS.md`, or any phase doc other than the active one.
+Do not, without explicit phase-doc authorization: add a dependency (`Cargo.toml`) or run `cargo add`/`cargo remove`; write `unsafe`; widen scope (note adjacent bugs in "Notes for review", don't fix them); add `#[allow]`/`#[ignore]` to mask a diagnostic; leave `TODO`/`FIXME`/`dbg!`/`println!`/commented-out code; or edit `Cargo.toml`, `rustfmt.toml`, `clippy.toml`, `.github/workflows/*`, `docs/architecture.md`, `STANDARDS.md`, `WORKFLOW.md`, or any phase doc other than the active one.
 
 ## Testing
 

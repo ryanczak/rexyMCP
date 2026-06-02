@@ -1,3 +1,8 @@
+> **Archived.** This was the opencode executor contract, used during M1–M6
+> development. Superseded in M6 by the embedded executor contract at
+> `executor/templates/executor_contract.md`, which is injected by `execute_phase`
+> at runtime. No longer read by any part of the stack.
+
 # AGENTS.md — Executor role
 
 You are an **executor LLM** on the rexyMCP project, driven via **opencode**. You
