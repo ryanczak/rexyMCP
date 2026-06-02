@@ -50,13 +50,17 @@ loop, and the `PhaseRun` store has been accumulating records since M4.
 |----|-------------------------------------------------------------------------|--------|
 | 01 | terminal backend `Err` → `hard_fail` degradation ([phase-01-backend-error-degradation.md](phase-01-backend-error-degradation.md)) | done (approved_first_try) |
 | 02 | benchmark provenance on `PhaseRun` + scorecard source filter ([phase-02-benchmark-provenance.md](phase-02-benchmark-provenance.md)) | done (approved_after_1) |
+| 03a | thread `bench_suite` through the loop + stamp a single benchmarked run ([phase-03a-bench-suite-threading.md](phase-03a-bench-suite-threading.md)) | todo |
 
 The benchmark suite (exit criterion 2) is split: **02** lays the provenance
 data model (a `bench_suite` field + a scorecard source filter) that lets
 benchmark and production runs share one store while staying distinguishable;
-**03** adds the benchmark runner + fixtures (the writer of non-`None`
-provenance); later phases cover scorecard data analysis + gaps and the routing
-policy (exit criteria 3–4), drafted on demand.
+**03a** threads that field through `LoopDeps`/`emit_phase_run` + a
+`run-phase --bench-suite` flag so a single run can be stamped (the writer of
+non-`None` provenance); **03b** adds the curated frozen-fixture suite + the
+`rexymcp bench` multi-model sweep (pristine fixture tree copied into a
+`TempDir` per run); later phases cover scorecard data analysis + gaps and the
+routing policy (exit criteria 3–4), drafted on demand.
 
 ## Notes
 

@@ -4,20 +4,28 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M7 / phase-02 — benchmark provenance on `PhaseRun` + scorecard
-source filter](milestones/M7-scorecard/phase-02-benchmark-provenance.md)
+**Active phase:** [M7 / phase-03a — thread `bench_suite` through the loop + stamp
+a single benchmarked run](milestones/M7-scorecard/phase-03a-bench-suite-threading.md)
 (`todo` — ready to dispatch).
 
 phase-01 (terminal `Err` → `hard_fail`) is `done` (approved_first_try
 2026-06-01; first phase dispatched + reviewed entirely through the live plugin).
+phase-02 (benchmark provenance on `PhaseRun` + scorecard `SourceFilter`) is
+`done` (approved_after_1 2026-06-01; one `hard_fail` bounce on a missing
+`ModelScorecardParams` field, resolved by refined re-dispatch; two `execute_phase`
+SSE stalls during the run — user is tuning vLLM to eliminate them).
 
-**phase-02 in one line:** add a serde-defaulted `bench_suite: Option<String>` to
-`PhaseRun` (`None` = production) and a `SourceFilter` to the scorecard so
-benchmark and production runs can share one telemetry store while staying
-distinguishable. Foundational data-model slice the benchmark runner (phase-03)
-depends on. Load-bearing constraint pinned in the spec: the `#[serde(default)]`
-is what keeps the real records already in `phase_runs.jsonl` from being dropped
-on read.
+**phase-03a in one line:** thread a `bench_suite: Option<&str>` through
+`LoopDeps` → `emit_phase_run` (which phase-02 hardcoded to `None` at
+`mod.rs:1209`) and the `mcp/src/runner.rs` chain, plus a `run-phase
+--bench-suite <name>` CLI flag, so a single phase run can be *stamped* as a
+benchmark run. Completes phase-02's explicit deferral; the run primitive the
+phase-03b sweep calls once per (model, benchmark phase).
+
+**phase-03 split (decided 2026-06-01 with the user):** 03a = the stamp/threading
+primitive (this phase). 03b = the curated frozen-fixture suite + the `rexymcp
+bench` multi-model sweep, with a pristine fixture tree copied into a
+`tempfile::TempDir` per run for hermetic isolation (drafted after 03a lands).
 
 **M6 closed** via [phase-06b — dogfood execution + retrospective +
 close](milestones/M6-plugin/phase-06b-dogfood-close.md). The ms_pacman dogfood
@@ -54,11 +62,11 @@ unreachable with Claude Code's current client.
 LLM with no token cost. Per-project `[budget] max_turns` was already
 configurable; only the defaults moved.
 
-**Last completed:** [M6 / phase-06b](milestones/M6-plugin/phase-06b-dogfood-close.md)
-— approved_first_try 2026-06-01 (architect-authored retrospective; M6 closed).
+**Last completed:** [M7 / phase-02](milestones/M7-scorecard/phase-02-benchmark-provenance.md)
+— approved_after_1 2026-06-01 (one hard_fail bounce, refined re-dispatch).
 
 **Milestone:** [M7 — Model scorecard & routing](milestones/M7-scorecard/README.md)
-— in progress (M1–M6 done; M7 phase-01 in `todo`).
+— in progress (M1–M6 done; M7 phase-01 + phase-02 done; phase-03a in `todo`).
 
 ---
 
