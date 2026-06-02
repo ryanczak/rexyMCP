@@ -101,6 +101,8 @@ pub struct LoopDeps<'a> {
     pub generation_params: GenerationParams,
     /// Cross-project telemetry dir for the `PhaseRun` record; `None` disables it.
     pub telemetry_dir: Option<&'a Path>,
+    /// Endpoint-reported model context window (`max_model_len`); `None` if unknown.
+    pub context_window: Option<usize>,
     /// Optional liveness callback. `None` disables progress entirely (no
     /// callback invocations, no `Progress` log events, no numstat
     /// computation). Best-effort when `Some`: a callback that panics is
@@ -1229,6 +1231,7 @@ fn emit_phase_run(
         served_model: metrics.served_model.clone(),
         length_finish_rate: (metrics.total_finishes > 0)
             .then(|| metrics.length_finishes as f64 / metrics.total_finishes as f64),
+        context_window: deps.context_window,
     };
     let _ = telemetry::append(dir, &run);
 }
@@ -1333,6 +1336,7 @@ mod tests {
             },
             telemetry_dir: None,
             progress: None,
+            context_window: None,
         }
     }
 
@@ -2046,6 +2050,7 @@ mod tests {
             generation_params: GenerationParams::default(),
             telemetry_dir: None,
             progress: None,
+            context_window: None,
         };
 
         execute_phase(&input(), d).await.unwrap();
@@ -2158,6 +2163,7 @@ mod tests {
             generation_params: GenerationParams::default(),
             telemetry_dir: None,
             progress: None,
+            context_window: None,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -2617,6 +2623,31 @@ mod tests {
         telemetry_dir: Option<&Path>,
         max_turns: usize,
     ) -> PhaseResult {
+        run_full_with_context_window(
+            dir,
+            client,
+            verifier,
+            runner,
+            commands,
+            telemetry_dir,
+            max_turns,
+            None,
+        )
+        .await
+    }
+
+    /// Same as `run_full` but with an explicit `context_window` value.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_full_with_context_window(
+        dir: &TempDir,
+        client: &dyn AiClient,
+        verifier: &dyn FileVerifier,
+        runner: &dyn CommandRunner,
+        commands: &CommandConfig,
+        telemetry_dir: Option<&Path>,
+        max_turns: usize,
+        context_window: Option<usize>,
+    ) -> PhaseResult {
         let scope = Scope::new(dir.path()).unwrap();
         let registry = registry_over(scope);
         let budget = Budget::new(1_000_000);
@@ -2636,6 +2667,7 @@ mod tests {
             generation_params: GenerationParams::default(),
             telemetry_dir,
             progress: None,
+            context_window,
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -3251,6 +3283,7 @@ mod tests {
             },
             telemetry_dir: None,
             progress: Some(capture),
+            context_window: None,
         }
     }
 
@@ -3322,6 +3355,7 @@ mod tests {
                 },
                 telemetry_dir: self.telemetry_dir,
                 progress: Some(self.capture),
+                context_window: None,
             }
         }
     }
@@ -3504,6 +3538,7 @@ mod tests {
             },
             telemetry_dir: None,
             progress: Some(&PanicCallback),
+            context_window: None,
         };
         execute_phase(&input(), d).await.unwrap();
     }
@@ -3803,5 +3838,38 @@ mod tests {
         let runs = read_runs(&telem);
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].served_model, Some("served-model-v2".into()));
+    }
+
+    #[tokio::test]
+    async fn context_window_recorded_from_loop_deps() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+
+        let turn1 = vec![
+            AiEvent::Completion {
+                finish_reason: None,
+                model: Some("served-model-v2".into()),
+            },
+            AiEvent::Done(TokenBreakdown::default()),
+            AiEvent::Token("done".into()),
+        ];
+        let client = MockAiClientScript::new(vec![turn1]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full_with_context_window(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+            Some(262_144),
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].context_window, Some(262_144));
     }
 }

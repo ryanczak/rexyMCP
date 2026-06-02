@@ -199,6 +199,7 @@ mod tests {
             architect_verdict: verdict.map(|s| s.to_string()),
             served_model: None,
             length_finish_rate: None,
+            context_window: None,
         }
     }
 

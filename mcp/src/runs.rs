@@ -63,7 +63,7 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
 
     let mut lines = Vec::new();
     lines.push(
-        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC".to_string(),
+        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN".to_string(),
     );
 
     for run in runs {
@@ -97,8 +97,19 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             .map(|r| format!("{:.0}%", r * 100.0))
             .unwrap_or_else(|| "—".to_string());
 
+        let cxt_win = run
+            .context_window
+            .map(|n| {
+                if n >= 1024 {
+                    format!("{}k", n / 1024)
+                } else {
+                    format!("{}", n)
+                }
+            })
+            .unwrap_or_else(|| "—".to_string());
+
         lines.push(format!(
-            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {}",
+            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {:<7} {}",
             age,
             run.model,
             tags,
@@ -108,7 +119,8 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             run.status,
             verdict,
             served_model,
-            trunc
+            trunc,
+            cxt_win
         ));
     }
 
@@ -175,6 +187,7 @@ mod tests {
             architect_verdict: verdict.map(|s| s.to_string()),
             served_model: None,
             length_finish_rate: None,
+            context_window: None,
         }
     }
 
@@ -212,6 +225,7 @@ mod tests {
             architect_verdict: None,
             served_model: None,
             length_finish_rate: None,
+            context_window: None,
         }
     }
 
@@ -422,6 +436,33 @@ model = "qwen"
         assert!(
             dash_count >= 3,
             "expected at least 3 '—' sentinels on gemma line (verdict + served_model + trunc): {gemma_line}"
+        );
+    }
+
+    #[test]
+    fn format_runs_shows_context_window() {
+        let mut run_with_cxt = make_run(1000, "qwen", &["rust"], None);
+        run_with_cxt.context_window = Some(262_144);
+
+        let run_without_cxt = make_run(2000, "gemma", &["feature"], None);
+
+        let runs = vec![run_with_cxt, run_without_cxt];
+        let out = format_runs(&runs, 5000);
+
+        // Run with context window: compact form appears (262144 / 1024 = 256k)
+        assert!(
+            out.contains("256k"),
+            "expected 256k context window in output: {out}"
+        );
+
+        // Run without context window: renders as "—"
+        let gemma_line = out
+            .lines()
+            .find(|l| l.contains("gemma"))
+            .expect("expected a gemma line in output: {out}");
+        assert!(
+            gemma_line.contains('—'),
+            "expected '—' sentinel for missing context window on gemma line: {gemma_line}"
         );
     }
 }

@@ -65,6 +65,10 @@ pub struct PhaseRun {
     pub served_model: Option<String>,
     #[serde(default)]
     pub length_finish_rate: Option<f64>,
+    /// Endpoint-reported context window (`max_model_len` from `/v1/models`);
+    /// `None` if unknown or the endpoint does not report it.
+    #[serde(default)]
+    pub context_window: Option<usize>,
 }
 
 /// Append one `PhaseRun` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`,
@@ -131,6 +135,7 @@ mod tests {
             architect_verdict: None,
             served_model: None,
             length_finish_rate: None,
+            context_window: None,
         }
     }
 
@@ -165,6 +170,15 @@ mod tests {
         let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
         assert_eq!(run.served_model, None);
         assert_eq!(run.length_finish_rate, None);
+        assert_eq!(run.model, "qwen2.5-coder");
+    }
+
+    #[test]
+    fn phase_run_without_context_window_deserializes() {
+        // Legacy JSONL line lacking context_window
+        let legacy_json = r#"{"ts":1717000000000,"model":"qwen2.5-coder","generation_params":{"temperature":null,"seed":null},"phase_id":"phase-08","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"input_tokens":0,"output_tokens":0,"cache_read_tokens":0,"cache_write_tokens":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null,"served_model":null,"length_finish_rate":null}"#;
+        let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(run.context_window, None);
         assert_eq!(run.model, "qwen2.5-coder");
     }
 }

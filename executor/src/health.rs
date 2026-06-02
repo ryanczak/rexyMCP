@@ -32,6 +32,37 @@ fn parse_models_list(body: &str) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Find the `max_model_len` for `model_id` in a `/v1/models` response body.
+/// `None` if the body is unparseable, the model is absent, or the entry has no
+/// `max_model_len`.
+pub fn parse_model_max_len(body: &str, model_id: &str) -> Option<usize> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let data = value.get("data")?.as_array()?;
+    data.iter()
+        .find(|e| e.get("id").and_then(|i| i.as_str()) == Some(model_id))
+        .and_then(|e| e.get("max_model_len"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+}
+
+/// Best-effort: fetch `/v1/models` and return `model`'s context window. Any error
+/// (network, parse, missing field) yields `None` — never fails.
+pub async fn fetch_context_window(cfg: &ExecutorConfig, model: &str) -> Option<usize> {
+    let url = build_models_url(&cfg.base_url);
+    let api_key = cfg.api_key.clone();
+    let resp = send_with_retry(move || {
+        let mut req = http().get(&url);
+        if let Some(ref key) = api_key {
+            req = req.bearer_auth(key);
+        }
+        req
+    })
+    .await
+    .ok()?;
+    let body = resp.text().await.ok()?;
+    parse_model_max_len(&body, model)
+}
+
 pub async fn list_models(cfg: &ExecutorConfig) -> Result<Vec<String>> {
     let url = build_models_url(&cfg.base_url);
     let api_key = cfg.api_key.clone();
@@ -127,5 +158,24 @@ mod tests {
         assert!(!health.reachable);
         assert_eq!(health.base_url, "http://127.0.0.1:1");
         assert!(health.models.is_empty());
+    }
+
+    #[test]
+    fn parse_model_max_len_finds_matching_model() {
+        let fixture = r#"{"object":"list","data":[{"id":"qwen2.5-coder","max_model_len":32768},{"id":"gemma2","max_model_len":262144}]}"#;
+        assert_eq!(parse_model_max_len(fixture, "gemma2"), Some(262144));
+        assert_eq!(parse_model_max_len(fixture, "qwen2.5-coder"), Some(32768));
+    }
+
+    #[test]
+    fn parse_model_max_len_none_for_absent_model() {
+        let fixture = r#"{"object":"list","data":[{"id":"gemma2","max_model_len":262144}]}"#;
+        assert_eq!(parse_model_max_len(fixture, "qwen2.5-coder"), None);
+    }
+
+    #[test]
+    fn parse_model_max_len_none_when_field_missing() {
+        let fixture = r#"{"object":"list","data":[{"id":"gemma2"}]}"#;
+        assert_eq!(parse_model_max_len(fixture, "gemma2"), None);
     }
 }

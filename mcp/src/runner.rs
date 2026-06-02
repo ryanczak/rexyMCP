@@ -108,6 +108,7 @@ struct AssemblyInput<'a> {
     model: &'a str,
     telemetry_dir: Option<&'a Path>,
     progress: Option<&'a dyn ProgressCallback>,
+    context_window: Option<usize>,
 }
 
 /// Register the full built-in tool set and derive schemas.
@@ -193,6 +194,7 @@ async fn run_phase_with(
         },
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
+        context_window: inp.context_window,
     };
 
     agent::execute_phase(&input, deps).await
@@ -256,6 +258,11 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         model,
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
+        context_window: if inp.test_client.is_none() {
+            rexymcp_executor::health::fetch_context_window(&inp.cfg.executor, model).await
+        } else {
+            None
+        },
     };
 
     run_phase_with(&assembly, &seams).await
@@ -421,6 +428,7 @@ mod tests {
             model: "test-model",
             telemetry_dir: None,
             progress: None,
+            context_window: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -465,6 +473,7 @@ mod tests {
             model: "model",
             telemetry_dir: None,
             progress: None,
+            context_window: None,
         };
         let result = run_phase_with(&inp, &seams).await;
 
