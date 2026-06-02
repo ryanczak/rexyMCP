@@ -1,10 +1,11 @@
 {
   "name": "rexymcp",
+  "description": "RexyMCP — architect/executor workflow over MCP, driving a local LLM through structured phases, review gates, and telemetry.",
   "owner": { "name": "Matt Ryanczak" },
   "plugins": [
     {
       "name": "rexymcp",
-      "source": "..",
+      "source": "./plugin",
       "displayName": "RexyMCP",
       "description": "Architect/executor workflow over MCP — Claude Code drives a local LLM through structured phases, review gates, and telemetry.",
       "version": "0.1.0",
