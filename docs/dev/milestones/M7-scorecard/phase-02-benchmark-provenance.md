@@ -1,7 +1,7 @@
 # Phase 02: benchmark provenance on PhaseRun + scorecard source filter
 
 **Milestone:** M7 — Model scorecard & routing
-**Status:** done
+**Status:** todo
 **Depends on:** phase-01 (done). The telemetry store, `PhaseRun`, the scorecard aggregation, and the `model_scorecard` MCP tool all exist (M4/M5); this phase extends them.
 **Estimated diff:** ~200 lines (one field + serde default + a filter enum + filter logic + MCP param mapping + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -363,94 +363,3 @@ must-match and a must-NOT-match example (the negative cases are the point).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
-
-### Notes for executor — 2026-06-01
-
-The previous dispatch **hard-failed on a build error** (`VerifierFailurePersistent`,
-3 consecutive identical failures) and never reached the Test plan. The working
-tree already holds most of the change — **continue against it, do not start over.**
-What is already on disk and correct:
-
-- `executor/src/store/telemetry.rs` — `#[serde(default)] pub bench_suite:
-  Option<String>` is on `PhaseRun` (Task 1).
-- `executor/src/agent/mod.rs` — the production emit sets `bench_suite: None`
-  (Task 2).
-- `mcp/src/scorecard.rs` — `SourceFilter` enum, the `source` field on
-  `ScorecardFilter`, and the `aggregate()` match arm are present (Task 3).
-- `mcp/src/server.rs` — the `source` derivation in `model_scorecard_inner`
-  (`params.bench_suite` / `params.production_only`) is present.
-
-**The single blocker:** `model_scorecard_inner` reads `params.bench_suite`
-(`server.rs:292`) and `params.production_only` (`server.rs:294`), but those two
-fields were **never added to the `ModelScorecardParams` struct** (`server.rs:247`).
-The build fails with `E0609` on both. **Do this edit FIRST**, then confirm the
-build, then finish the rest:
-
-1. **(Unblocks the build)** Add the two fields to `ModelScorecardParams` per
-   Task 4 — `pub bench_suite: Option<String>` and `pub production_only:
-   Option<bool>` with the doc comments shown in the spec.
-2. Append the description clause to the `model_scorecard` tool (`server.rs` tool
-   `description = ...`, the `model_scorecard` attribute, not `get_turn`) per
-   Task 4's last paragraph.
-3. Update **every existing** `ModelScorecardParams { … }` construction in
-   `server.rs` tests to add `bench_suite: None, production_only: None,` (they
-   currently set only `tags`/`model`/`min_runs`/`telemetry_path` — they will
-   fail `E0063` once the fields exist).
-4. Confirm the `make_run()` helper (`scorecard.rs:200`) and the `sample()`
-   helper (`telemetry.rs`) each set `bench_suite: None`; same `E0063` risk.
-5. **Write the Test plan in full** — none of it was reached last run. All five
-   named tests across `telemetry.rs`, `scorecard.rs`, and `server.rs`,
-   including the load-bearing back-compat test
-   `record_without_bench_suite_field_deserializes_as_production` and every
-   negative case.
-
-Run the build after step 1 to clear the blocker, then proceed; run the full
-command set (`fmt --check`, `build`, `clippy`, `test`) before returning.
-
-### Update — 2026-06-01 18:37 (escalation)
-
-**Chosen lever:** refined re-dispatch
-**Rationale:** first failure, single-class build blocker (two missing struct
-fields the consumer edit depended on) that a tighter, ordered spec prevents —
-takeover would forfeit the model-scorecard data point.
-
-### Completion (reconstructed by reviewer) — 2026-06-01
-
-The executor flipped `Status:` to `review` but its completion Update Log entry
-never landed — the `execute_phase` SSE stream stalled (90s no-data timeout on a
-long local-LLM inference) during finalization, so the result payload + log write
-were truncated. The status flip persisted; the narrative did not. Command set
-re-run independently by the reviewer (all green):
-
-- `cargo fmt --all --check` — clean.
-- `cargo build` — clean, zero warnings.
-- `cargo clippy --all-targets --all-features -- -D warnings` — clean.
-- `cargo test` — **679 passed, 0 failed, 2 ignored** (544 executor + 135 mcp).
-
-All six Test-plan tests present and green, including the load-bearing back-compat
-case `record_without_bench_suite_field_deserializes_as_production` and the
-precedence case `scorecard_params_bench_suite_takes_precedence`.
-
-**End-to-end verification:** N/A per the phase doc — telemetry-schema +
-aggregation change with no new CLI surface; the hermetic serde back-compat test
-against a field-less record is the definitive verification.
-
-### Review verdict — 2026-06-01
-
-- **Verdict:** approved_after_1
-- **Bounces:** 1 — the initial `hard_fail` (`VerifierFailurePersistent`: the
-  `source` mapping in `model_scorecard_inner` referenced `ModelScorecardParams`
-  fields that were never added → `E0609` ×2). Resolved by refined re-dispatch
-  (no review bug filed). All four Spec tasks and all eight acceptance criteria
-  verified met on re-run.
-- **Executor:** Qwen/Qwen3.6-27B-FP8
-- **Scope deviations:** none — diff is exactly the field + serde default +
-  `SourceFilter` + filter logic + MCP param mapping + tests, as specced. No
-  production `unwrap`/`expect`/`panic`, no `unsafe`, no `#[allow]`/`#[ignore]`,
-  no `TODO`/`dbg!`/`println!`.
-- **Calibration:** two consecutive `execute_phase` SSE stalls (90s no-data
-  timeout) on long local-LLM inference truncated executor finalization — the
-  first lost the result entirely (continued on re-dispatch), the second lost
-  only the completion-log write (work intact, reviewer reconstructed above).
-  Infrastructure pattern, not an executor defect; two occurrences = a trend to
-  watch, not yet a fold.

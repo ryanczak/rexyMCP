@@ -32,18 +32,6 @@ pub struct ScorecardRow {
     pub bounces_to_approval_mean: Option<f64>,
 }
 
-/// Which provenance of run the scorecard should aggregate.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum SourceFilter {
-    /// Both production and benchmark runs contribute.
-    #[default]
-    Any,
-    /// Only production runs (`bench_suite == None`).
-    ProductionOnly,
-    /// Only benchmark runs from this exact suite (`bench_suite == Some(name)`).
-    Suite(String),
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct ScorecardFilter<'a> {
     /// Restrict runs to those whose `tags` contains **all** of these tags.
@@ -52,8 +40,6 @@ pub struct ScorecardFilter<'a> {
     pub model: Option<&'a str>,
     /// Drop output rows with `n_runs < min_runs`. `0` = no minimum.
     pub min_runs: usize,
-    /// Restrict by run provenance. Default `Any`.
-    pub source: SourceFilter,
 }
 
 /// Maximum number of rows returned by the MCP tool.
@@ -96,20 +82,6 @@ pub fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardRo
 
         if !filter.tags.is_empty() && !filter.tags.iter().all(|t| run.tags.contains(t)) {
             continue;
-        }
-
-        match &filter.source {
-            SourceFilter::Any => {}
-            SourceFilter::ProductionOnly => {
-                if run.bench_suite.is_some() {
-                    continue;
-                }
-            }
-            SourceFilter::Suite(name) => {
-                if run.bench_suite.as_deref() != Some(name.as_str()) {
-                    continue;
-                }
-            }
         }
 
         for tag in &run.tags {
@@ -204,7 +176,6 @@ mod tests {
         escalated: bool,
         verdict: Option<&str>,
         bounces: Option<u32>,
-        bench_suite: Option<&str>,
     ) -> PhaseRun {
         PhaseRun {
             ts: 1_717_000_000_000,
@@ -226,7 +197,6 @@ mod tests {
             bugs_filed: None,
             bounces_to_approval: bounces,
             architect_verdict: verdict.map(|s| s.to_string()),
-            bench_suite: bench_suite.map(|s| s.to_string()),
         }
     }
 
@@ -266,8 +236,8 @@ mod tests {
     #[test]
     fn model_filter_only_matching_contribute() {
         let runs = vec![
-            make_run("m1", &["rust"], all_pass_gates(), false, None, None, None),
-            make_run("m2", &["rust"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["rust"], all_pass_gates(), false, None, None),
+            make_run("m2", &["rust"], all_pass_gates(), false, None, None),
         ];
         let filter = ScorecardFilter {
             model: Some("m1"),
@@ -288,14 +258,12 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
             ),
             make_run(
                 "m1",
                 &["rust", "feature"],
                 all_pass_gates(),
                 false,
-                None,
                 None,
                 None,
             ),
@@ -306,9 +274,8 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
             ),
-            make_run("m1", &["go"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["go"], all_pass_gates(), false, None, None),
         ];
         let filter = ScorecardFilter {
             tags: &["rust".to_string(), "feature".to_string()],
@@ -332,14 +299,12 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
             ),
             make_run(
                 "m2",
                 &["rust", "feature"],
                 all_pass_gates(),
                 false,
-                None,
                 None,
                 None,
             ),
@@ -364,7 +329,6 @@ mod tests {
             false,
             None,
             None,
-            None,
         )];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows.len(), 2);
@@ -381,7 +345,6 @@ mod tests {
             false,
             None,
             None,
-            None,
         )];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows.len(), 3);
@@ -393,8 +356,8 @@ mod tests {
     #[test]
     fn gates_pass_rate_all_pass_is_one() {
         let runs = vec![
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows[0].gates_pass_rate, 1.0);
@@ -403,10 +366,10 @@ mod tests {
     #[test]
     fn gates_pass_rate_mixed() {
         let runs = vec![
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["t"], all_fail_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
+            make_run("m1", &["t"], all_fail_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert!((rows[0].gates_pass_rate - 0.75).abs() < f64::EPSILON);
@@ -414,15 +377,7 @@ mod tests {
 
     #[test]
     fn gates_pass_rate_none_gate_counts_as_fail() {
-        let runs = vec![make_run(
-            "m1",
-            &["t"],
-            one_none_gate(),
-            false,
-            None,
-            None,
-            None,
-        )];
+        let runs = vec![make_run("m1", &["t"], one_none_gate(), false, None, None)];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows[0].gates_pass_rate, 0.0);
     }
@@ -430,8 +385,8 @@ mod tests {
     #[test]
     fn mean_fields_are_arithmetic_means() {
         let runs = vec![
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         let r = &rows[0];
@@ -446,9 +401,9 @@ mod tests {
     #[test]
     fn escalation_rate_mixed() {
         let runs = vec![
-            make_run("m1", &["t"], all_pass_gates(), true, None, None, None),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), true, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert!((rows[0].escalation_rate - 1.0 / 3.0).abs() < f64::EPSILON);
@@ -456,15 +411,7 @@ mod tests {
 
     #[test]
     fn n_with_verdict_zero_gives_none_supervision() {
-        let runs = vec![make_run(
-            "m1",
-            &["t"],
-            all_pass_gates(),
-            false,
-            None,
-            None,
-            None,
-        )];
+        let runs = vec![make_run("m1", &["t"], all_pass_gates(), false, None, None)];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows[0].n_with_verdict, 0);
         assert!(rows[0].approved_first_try_rate.is_none());
@@ -481,7 +428,6 @@ mod tests {
                 false,
                 Some("approved_first_try"),
                 None,
-                None,
             ),
             make_run(
                 "m1",
@@ -490,9 +436,8 @@ mod tests {
                 false,
                 Some("rejected"),
                 None,
-                None,
             ),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows[0].n_with_verdict, 2);
@@ -510,7 +455,6 @@ mod tests {
                 false,
                 Some("approved_first_try"),
                 None,
-                None,
             ),
             make_run(
                 "m1",
@@ -518,7 +462,6 @@ mod tests {
                 all_pass_gates(),
                 false,
                 Some("approved_first_try"),
-                None,
                 None,
             ),
         ];
@@ -537,7 +480,6 @@ mod tests {
                 false,
                 Some("approved_first_try"),
                 Some(0),
-                None,
             ),
             make_run(
                 "m1",
@@ -546,9 +488,8 @@ mod tests {
                 false,
                 Some("rejected"),
                 Some(2),
-                None,
             ),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert!((rows[0].bounces_to_approval_mean.unwrap() - 1.0).abs() < f64::EPSILON);
@@ -564,9 +505,8 @@ mod tests {
                 false,
                 Some("approved_first_try"),
                 None,
-                None,
             ),
-            make_run("m1", &["t"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["t"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert!(rows[0].bounces_to_approval_mean.is_none());
@@ -575,9 +515,9 @@ mod tests {
     #[test]
     fn min_runs_drops_low_sample_buckets() {
         let runs = vec![
-            make_run("m1", &["rare"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["common"], all_pass_gates(), false, None, None, None),
-            make_run("m1", &["common"], all_pass_gates(), false, None, None, None),
+            make_run("m1", &["rare"], all_pass_gates(), false, None, None),
+            make_run("m1", &["common"], all_pass_gates(), false, None, None),
+            make_run("m1", &["common"], all_pass_gates(), false, None, None),
         ];
         let filter = ScorecardFilter {
             min_runs: 2,
@@ -592,25 +532,9 @@ mod tests {
     #[test]
     fn sort_order_tag_asc_n_runs_desc_model_asc() {
         let runs = vec![
-            make_run(
-                "beta",
-                &["z", "a"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                None,
-            ),
-            make_run(
-                "alpha",
-                &["z", "a"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                None,
-            ),
-            make_run("alpha", &["z"], all_pass_gates(), false, None, None, None),
+            make_run("beta", &["z", "a"], all_pass_gates(), false, None, None),
+            make_run("alpha", &["z", "a"], all_pass_gates(), false, None, None),
+            make_run("alpha", &["z"], all_pass_gates(), false, None, None),
         ];
         let rows = aggregate(&runs, &ScorecardFilter::default());
         assert_eq!(rows.len(), 4);
@@ -626,88 +550,5 @@ mod tests {
         assert_eq!(rows[3].tag, "z");
         assert_eq!(rows[3].model, "beta");
         assert_eq!(rows[3].n_runs, 1);
-    }
-
-    #[test]
-    fn production_only_excludes_benchmark_runs() {
-        let runs = vec![
-            make_run("m1", &["rust"], all_pass_gates(), false, None, None, None),
-            make_run(
-                "m1",
-                &["rust"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                Some("smoke"),
-            ),
-        ];
-        let filter = ScorecardFilter {
-            source: SourceFilter::ProductionOnly,
-            ..Default::default()
-        };
-        let rows = aggregate(&runs, &filter);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].n_runs, 1);
-    }
-
-    #[test]
-    fn suite_filter_excludes_production_and_other_suites() {
-        let runs = vec![
-            make_run("m1", &["rust"], all_pass_gates(), false, None, None, None),
-            make_run(
-                "m1",
-                &["rust"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                Some("smoke"),
-            ),
-            make_run(
-                "m1",
-                &["rust"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                Some("perf"),
-            ),
-        ];
-        let filter = ScorecardFilter {
-            source: SourceFilter::Suite("smoke".to_string()),
-            ..Default::default()
-        };
-        let rows = aggregate(&runs, &filter);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].n_runs, 1);
-    }
-
-    #[test]
-    fn any_source_includes_all() {
-        let runs = vec![
-            make_run("m1", &["rust"], all_pass_gates(), false, None, None, None),
-            make_run(
-                "m1",
-                &["rust"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                Some("smoke"),
-            ),
-            make_run(
-                "m1",
-                &["rust"],
-                all_pass_gates(),
-                false,
-                None,
-                None,
-                Some("perf"),
-            ),
-        ];
-        let rows = aggregate(&runs, &ScorecardFilter::default());
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].n_runs, 3);
     }
 }

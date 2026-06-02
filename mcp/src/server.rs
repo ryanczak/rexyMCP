@@ -255,11 +255,6 @@ pub struct ModelScorecardParams {
     /// Override the cross-project `phase_runs.jsonl` path. `None` = resolve
     /// from `cfg.telemetry.dir`.
     pub telemetry_path: Option<String>,
-    /// Restrict to benchmark runs of this suite. Wins over `production_only`
-    /// when both are set.
-    pub bench_suite: Option<String>,
-    /// When `Some(true)` (and `bench_suite` unset), restrict to production runs.
-    pub production_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -294,19 +289,10 @@ pub(crate) fn model_scorecard_inner(
 
     let total_runs_considered = runs.len();
 
-    let source = if let Some(suite) = params.bench_suite.clone() {
-        scorecard::SourceFilter::Suite(suite)
-    } else if params.production_only == Some(true) {
-        scorecard::SourceFilter::ProductionOnly
-    } else {
-        scorecard::SourceFilter::Any
-    };
-
     let filter = scorecard::ScorecardFilter {
         tags: params.tags.as_deref().unwrap_or(&[]),
         model: params.model.as_deref(),
         min_runs: params.min_runs.unwrap_or(0),
-        source,
     };
 
     let mut rows = scorecard::aggregate(&runs, &filter);
@@ -368,7 +354,7 @@ impl RexyMcpServer {
     }
 
     #[rmcp::tool(
-        description = "Aggregate the cross-project PhaseRun telemetry into a model × tag competency matrix. Returns per-bucket gates pass rate, reliability means (parse-failure / repairs / tool-success / verifier-retries), efficiency (turns / wall-clock), escalation rate, and supervision metrics (approved_first_try_rate, bounces_to_approval_mean). Filter by tags (AND semantics, exact match), model, min_runs, or run provenance with production_only or bench_suite (bench_suite wins). Output capped at 500 rows."
+        description = "Aggregate the cross-project PhaseRun telemetry into a model × tag competency matrix. Returns per-bucket gates pass rate, reliability means (parse-failure / repairs / tool-success / verifier-retries), efficiency (turns / wall-clock), escalation rate, and supervision metrics (approved_first_try_rate, bounces_to_approval_mean). Filter by tags (AND semantics, exact match), model, or min_runs. Output capped at 500 rows."
     )]
     async fn model_scorecard(
         &self,
@@ -921,8 +907,6 @@ dir = "{}"
             model: None,
             min_runs: None,
             telemetry_path: None,
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params).unwrap();
 
@@ -942,8 +926,6 @@ dir = "{}"
             model: None,
             min_runs: None,
             telemetry_path: Some(fixture.to_str().unwrap().to_string()),
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params).unwrap();
 
@@ -968,8 +950,6 @@ dir = "{}"
             model: None,
             min_runs: None,
             telemetry_path: Some(alt_path.to_str().unwrap().to_string()),
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params).unwrap();
 
@@ -1004,8 +984,6 @@ escalation_slots = 1
             model: None,
             min_runs: None,
             telemetry_path: None,
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params);
 
@@ -1024,8 +1002,6 @@ escalation_slots = 1
             model: None,
             min_runs: None,
             telemetry_path: None,
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params).unwrap();
 
@@ -1049,8 +1025,6 @@ escalation_slots = 1
             model: None,
             min_runs: None,
             telemetry_path: None,
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params).unwrap();
 
@@ -1082,51 +1056,11 @@ escalation_slots = 1
             model: None,
             min_runs: None,
             telemetry_path: None,
-            bench_suite: None,
-            production_only: None,
         };
         let result = model_scorecard_inner(&config_path, &params).unwrap();
 
         assert_eq!(result.rows.len(), scorecard::MAX_ROWS);
         assert!(result.truncated);
-    }
-
-    #[test]
-    fn scorecard_params_bench_suite_takes_precedence() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = make_config_with_telemetry(&temp_dir);
-        let telemetry_dir = temp_dir.path().join("telemetry");
-        std::fs::create_dir_all(&telemetry_dir).unwrap();
-        let path = telemetry_dir.join("phase_runs.jsonl");
-
-        // Three runs: production (None), smoke benchmark, perf benchmark — all
-        // with the same tag so they'd land in the same bucket without source
-        // filtering.
-        let lines = [
-            r#"{"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#,
-            r#"{"ts":1717000001000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p2","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"bench_suite":"smoke","warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#,
-            r#"{"ts":1717000002000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.5,"repairs_per_call":1.0,"verifier_retries":5,"tool_success_rate":0.5,"turns":20,"wall_clock_s":100.0,"tokens":{"prompt":0,"completion":0,"total":0},"bench_suite":"perf","warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#,
-        ];
-        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
-
-        // Both bench_suite and production_only set — bench_suite wins.
-        let params = ModelScorecardParams {
-            tags: None,
-            model: None,
-            min_runs: None,
-            telemetry_path: None,
-            bench_suite: Some("smoke".to_string()),
-            production_only: Some(true),
-        };
-        let result = model_scorecard_inner(&config_path, &params).unwrap();
-
-        // Only the smoke run should appear — production and perf are excluded.
-        assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].tag, "rust");
-        assert_eq!(result.rows[0].n_runs, 1);
-        // Verify it's the smoke run's data (parse_failure_rate 0.1), not
-        // production (0.0) or perf (0.5).
-        assert!((result.rows[0].parse_failure_rate_mean - 0.1).abs() < f64::EPSILON);
     }
 
     // --- Progress forwarding tests ---

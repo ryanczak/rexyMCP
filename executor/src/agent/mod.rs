@@ -1206,7 +1206,6 @@ fn emit_phase_run(
         bugs_filed: None,
         bounces_to_approval: None,
         architect_verdict: None,
-        bench_suite: None,
     };
     let _ = telemetry::append(dir, &run);
 }
