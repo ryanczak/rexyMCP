@@ -1,7 +1,7 @@
 # Phase 04: `rexymcp runs` — per-run statistics CLI view
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (done). The `PhaseRun` telemetry store, `telemetry::read`,
 and the `rexymcp` CLI all exist (M4/M5); this phase adds a read-only view over the
 store.
@@ -383,3 +383,53 @@ This ships a **real CLI surface**, so verify against the built binary:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-13 (started)
+
+**Executor:** rexyMCP executor (headless)
+
+Implementing phase-04: new `mcp/src/runs.rs` module with `RunsFilter`, `select`, `format_runs`, `load_runs`; new `runs` CLI subcommand in `mcp/src/main.rs`.
+
+### Update — 2025-07-13 (complete)
+
+**Executor:** rexyMCP executor (headless)
+
+**Verification commands:**
+
+- `cargo fmt --all --check` — passed clean
+- `cargo build` — zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed clean
+- `cargo test` — 542 passed, 0 failed, 2 ignored
+
+**End-to-end verification:**
+
+1. `cargo run -p rexymcp -- runs --help` lists all five filters:
+   ```
+       --model <MODEL>          Restrict to one model (exact match)
+       --tag <TAGS>             Restrict to runs whose tags contain this tag; repeat for AND
+       --limit <LIMIT>          Max rows (most recent first); 0 = no limit [default: 20]
+       --telemetry-path <TELEMETRY_PATH>   Override the telemetry phase_runs.jsonl path
+       --json                   Emit JSON instead of a human table
+   ```
+
+2. Human table against a 2-line on-disk store (both runs shown, newest first):
+   ```
+   AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT
+   733d    gemma  python,refactor temp=0.2,seed=42 ✓✓✗✓  3      complete  —
+   733d    qwen   rust,feature   default      ✓✓✓✓  7      complete  approved_first_try
+   ```
+
+**Literal grep proof** — spec-pinned "(no runs)" sentinel:
+```
+$ grep -n "no runs" mcp/src/runs.rs
+61:        return "(no runs)".to_string();
+304:        assert!(out.contains("(no runs)"));
+```
+
+**Files changed:**
+- `mcp/src/runs.rs` — new module (RunsFilter, select, format_runs, load_runs, tests)
+- `mcp/src/main.rs` — `mod runs;`, `Runs` CLI variant + handler, `cli_parse_runs_collects_filters` test
+
+**Commit:** one conventional commit (`feat: add rexymcp runs CLI subcommand`)
+
+**Notes for review:** None — implementation matches spec exactly.

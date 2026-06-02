@@ -7,6 +7,7 @@ mod cap;
 mod log_query;
 mod roots;
 mod runner;
+mod runs;
 mod scorecard;
 mod server;
 mod status;
@@ -66,6 +67,32 @@ enum Commands {
         session: Option<String>,
 
         /// Emit the status as JSON instead of a human summary
+        #[arg(long)]
+        json: bool,
+    },
+    /// List individual PhaseRun records with their per-run statistics
+    Runs {
+        /// Path to the config file
+        #[arg(long)]
+        config: PathBuf,
+
+        /// Restrict to one model (exact match)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Restrict to runs whose tags contain this tag; repeat for AND
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+
+        /// Max rows (most recent first); 0 = no limit
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+
+        /// Override the telemetry phase_runs.jsonl path
+        #[arg(long)]
+        telemetry_path: Option<PathBuf>,
+
+        /// Emit JSON instead of a human table
         #[arg(long)]
         json: bool,
     },
@@ -186,6 +213,44 @@ async fn main() -> anyhow::Result<()> {
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
                 println!("{}", status::format_status(&summary, now_ms));
+            }
+            Ok(())
+        }
+        Commands::Runs {
+            config,
+            model,
+            tags,
+            limit,
+            telemetry_path,
+            json,
+        } => {
+            let filter = runs::RunsFilter {
+                model: model.as_deref(),
+                tags: &tags,
+                limit,
+            };
+
+            let selected = match runs::load_runs(&config, telemetry_path.as_deref(), &filter) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            };
+
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&selected).unwrap_or_else(|e| {
+                        format!("{{\"error\": \"failed to serialize runs: {}\"}}", e)
+                    })
+                );
+            } else {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                println!("{}", runs::format_runs(&selected, now_ms));
             }
             Ok(())
         }
@@ -321,5 +386,43 @@ mod tests {
     fn cli_parse_status_missing_repo_fails() {
         let result = Cli::try_parse_from(["rexymcp", "status"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_runs_collects_filters() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "runs",
+            "--config",
+            "rexymcp.toml",
+            "--model",
+            "qwen",
+            "--tag",
+            "rust",
+            "--tag",
+            "feature",
+            "--limit",
+            "5",
+            "--json",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Runs {
+                config,
+                model,
+                tags,
+                limit,
+                json,
+                ..
+            }) => {
+                assert_eq!(config, PathBuf::from("rexymcp.toml"));
+                assert_eq!(model.as_deref(), Some("qwen"));
+                assert_eq!(tags, ["rust", "feature"]);
+                assert_eq!(limit, 5);
+                assert!(json);
+            }
+            _ => panic!("expected Runs"),
+        }
     }
 }

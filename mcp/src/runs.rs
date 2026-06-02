@@ -1,0 +1,373 @@
+//! Per-run statistics view — `rexymcp runs` CLI subcommand.
+
+use std::path::Path;
+
+use rexymcp_executor::config::Config;
+use rexymcp_executor::store::telemetry::PhaseRun;
+
+/// Filter applied to the raw list of `PhaseRun` records before display.
+pub struct RunsFilter<'a> {
+    /// Exact model match. `None` = all models.
+    pub model: Option<&'a str>,
+    /// Run's `tags` must contain **all** of these (AND). Empty = no tag filter.
+    pub tags: &'a [String],
+    /// Cap on rows after sorting (most recent first). `0` = no cap.
+    pub limit: usize,
+}
+
+/// Filter, sort newest-first, and cap. Pure.
+pub fn select(mut runs: Vec<PhaseRun>, filter: &RunsFilter) -> Vec<PhaseRun> {
+    runs.retain(|r| {
+        if let Some(m) = filter.model
+            && r.model != m
+        {
+            return false;
+        }
+        if !filter.tags.is_empty() && !filter.tags.iter().all(|t| r.tags.contains(t)) {
+            return false;
+        }
+        true
+    });
+    runs.sort_by_key(|r| std::cmp::Reverse(r.ts));
+    if filter.limit != 0 && runs.len() > filter.limit {
+        runs.truncate(filter.limit);
+    }
+    runs
+}
+
+/// Compact "5s" / "3m12s" / "1h04m" / "2d" age string from a millisecond span.
+fn humanize_age(age_ms: u64) -> String {
+    let secs = age_ms / 1000;
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m{:02}s", secs / 60, secs % 60)
+    } else if secs < 86400 {
+        format!("{}h", secs / 3600)
+    } else {
+        format!("{}d", secs / 86400)
+    }
+}
+
+/// Render one gate field: `Some(true)` → `✓`, everything else → `✗`.
+fn gate_char(v: Option<bool>) -> char {
+    if v == Some(true) { '✓' } else { '✗' }
+}
+
+/// Format a list of runs as a human-readable table. `now_ms` is the current
+/// unix-millis clock, injected so the age column is testable.
+pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
+    if runs.is_empty() {
+        return "(no runs)".to_string();
+    }
+
+    let mut lines = Vec::new();
+    lines.push(
+        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT".to_string(),
+    );
+
+    for run in runs {
+        let age = humanize_age(now_ms.saturating_sub(run.ts));
+
+        let tags = run.tags.join(",");
+
+        let settings = match (
+            run.generation_params.temperature,
+            run.generation_params.seed,
+        ) {
+            (None, None) => "default".to_string(),
+            (Some(t), None) => format!("temp={t}"),
+            (None, Some(s)) => format!("seed={s}"),
+            (Some(t), Some(s)) => format!("temp={t},seed={s}"),
+        };
+
+        let gates = format!(
+            "{}{}{}{}",
+            gate_char(run.gates.fmt),
+            gate_char(run.gates.build),
+            gate_char(run.gates.lint),
+            gate_char(run.gates.test),
+        );
+
+        let verdict = run.architect_verdict.as_deref().unwrap_or("—");
+
+        lines.push(format!(
+            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {}",
+            age, run.model, tags, settings, gates, run.turns, run.status, verdict
+        ));
+    }
+
+    lines.join("\n")
+}
+
+/// Resolve the telemetry store path from config, read, filter, and return
+/// matching `PhaseRun` records.
+pub fn load_runs(
+    config_path: &Path,
+    telemetry_path: Option<&Path>,
+    filter: &RunsFilter,
+) -> Result<Vec<PhaseRun>, String> {
+    let cfg =
+        Config::load_with_env(config_path).map_err(|e| format!("failed to load config: {}", e))?;
+
+    let telemetry_file = if let Some(p) = telemetry_path {
+        p.to_path_buf()
+    } else if let Some(ref dir) = cfg.telemetry.dir {
+        dir.join("phase_runs.jsonl")
+    } else {
+        return Err(
+            "telemetry disabled: cfg.telemetry.dir not set and no --telemetry-path provided"
+                .to_string(),
+        );
+    };
+
+    let runs =
+        rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+    Ok(select(runs, filter))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rexymcp_executor::store::telemetry::{Gates, GenerationParams};
+    use tempfile::TempDir;
+
+    fn make_run(ts: u64, model: &str, tags: &[&str], verdict: Option<&str>) -> PhaseRun {
+        PhaseRun {
+            ts,
+            model: model.to_string(),
+            generation_params: GenerationParams::default(),
+            phase_id: "phase-01".to_string(),
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            status: "complete".to_string(),
+            escalated: false,
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            parse_failure_rate: 0.0,
+            repairs_per_call: 0.0,
+            verifier_retries: 0,
+            tool_success_rate: 1.0,
+            turns: 5,
+            wall_clock_s: 10.0,
+            tokens: Default::default(),
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: verdict.map(|s| s.to_string()),
+        }
+    }
+
+    fn make_run_with_params(
+        ts: u64,
+        model: &str,
+        tags: &[&str],
+        temperature: Option<f64>,
+        seed: Option<u64>,
+    ) -> PhaseRun {
+        PhaseRun {
+            ts,
+            model: model.to_string(),
+            generation_params: GenerationParams { temperature, seed },
+            phase_id: "phase-01".to_string(),
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            status: "complete".to_string(),
+            escalated: false,
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            parse_failure_rate: 0.0,
+            repairs_per_call: 0.0,
+            verifier_retries: 0,
+            tool_success_rate: 1.0,
+            turns: 5,
+            wall_clock_s: 10.0,
+            tokens: Default::default(),
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: None,
+        }
+    }
+
+    #[test]
+    fn select_filters_by_model_exact() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust"], None),
+            make_run(2000, "gemma", &["rust"], None),
+            make_run(3000, "qwen", &["feature"], None),
+        ];
+        let filter = RunsFilter {
+            model: Some("qwen"),
+            tags: &[],
+            limit: 0,
+        };
+        let result = select(runs, &filter);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|r| r.model == "qwen"));
+    }
+
+    #[test]
+    fn select_requires_all_tags() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust", "feature"], None),
+            make_run(2000, "qwen", &["rust"], None),
+        ];
+        let filter = RunsFilter {
+            model: None,
+            tags: &["rust".to_string(), "feature".to_string()],
+            limit: 0,
+        };
+        let result = select(runs, &filter);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].tags, ["rust", "feature"]);
+    }
+
+    #[test]
+    fn select_sorts_newest_first() {
+        let runs = vec![
+            make_run(100, "qwen", &[], None),
+            make_run(300, "qwen", &[], None),
+            make_run(200, "qwen", &[], None),
+        ];
+        let filter = RunsFilter {
+            model: None,
+            tags: &[],
+            limit: 0,
+        };
+        let result = select(runs, &filter);
+        assert_eq!(result[0].ts, 300);
+        assert_eq!(result[1].ts, 200);
+        assert_eq!(result[2].ts, 100);
+    }
+
+    #[test]
+    fn select_limit_caps_after_sort() {
+        let runs: Vec<PhaseRun> = (0..5)
+            .map(|i| make_run((i + 1) * 100, "qwen", &[], None))
+            .collect();
+        let filter = RunsFilter {
+            model: None,
+            tags: &[],
+            limit: 2,
+        };
+        let result = select(runs.clone(), &filter);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ts, 500);
+        assert_eq!(result[1].ts, 400);
+
+        let filter_all = RunsFilter {
+            model: None,
+            tags: &[],
+            limit: 0,
+        };
+        let result_all = select(runs, &filter_all);
+        assert_eq!(result_all.len(), 5);
+    }
+
+    #[test]
+    fn format_runs_includes_model_and_verdict() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust"], Some("approved_first_try")),
+            make_run(2000, "gemma", &["feature"], None),
+        ];
+        let out = format_runs(&runs, 5000);
+        assert!(out.contains("qwen"));
+        assert!(out.contains("approved_first_try"));
+        assert!(out.contains("gemma"));
+        assert!(out.contains("—"));
+    }
+
+    #[test]
+    fn format_runs_renders_default_settings() {
+        let runs = vec![
+            make_run_with_params(1000, "qwen", &[], None, None),
+            make_run_with_params(2000, "gemma", &[], Some(0.2), None),
+        ];
+        let out = format_runs(&runs, 5000);
+        assert!(
+            out.contains("default"),
+            "expected 'default' in output: {out}"
+        );
+        assert!(out.contains("0.2"), "expected '0.2' in output: {out}");
+    }
+
+    #[test]
+    fn format_runs_empty_is_no_runs_line() {
+        let out = format_runs(&[], 5000);
+        assert!(out.contains("(no runs)"));
+    }
+
+    #[test]
+    fn load_runs_reads_and_selects() {
+        let dir = TempDir::new().unwrap();
+        let telemetry_dir = dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+
+        let run1 = make_run(1000, "qwen", &["rust"], None);
+        let run2 = make_run(2000, "gemma", &["feature"], Some("good"));
+
+        let file = telemetry_dir.join("phase_runs.jsonl");
+        std::fs::write(
+            &file,
+            format!(
+                "{}\n{}\n",
+                serde_json::to_string(&run1).unwrap(),
+                serde_json::to_string(&run2).unwrap(),
+            ),
+        )
+        .unwrap();
+
+        let filter = RunsFilter {
+            model: None,
+            tags: &[],
+            limit: 0,
+        };
+        let result = load_runs(Path::new("/dev/null"), Some(&file), &filter).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ts, 2000); // newest first
+        assert_eq!(result[1].ts, 1000);
+    }
+
+    #[test]
+    fn load_runs_telemetry_disabled_errors() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("rexymcp.toml");
+        // Config with no [telemetry] section
+        std::fs::write(
+            &config,
+            r#"
+[executor]
+provider = "openai"
+base_url = "http://localhost:8000/v1"
+model = "qwen"
+"#,
+        )
+        .unwrap();
+
+        let filter = RunsFilter {
+            model: None,
+            tags: &[],
+            limit: 0,
+        };
+        let err = load_runs(&config, None, &filter).unwrap_err();
+        assert!(
+            err.contains("telemetry disabled"),
+            "expected telemetry disabled error: {err}"
+        );
+    }
+
+    #[test]
+    fn humanize_age_buckets() {
+        assert_eq!(humanize_age(5_000), "5s");
+        assert_eq!(humanize_age(192_000), "3m12s");
+        assert_eq!(humanize_age(3_840_000), "1h");
+        assert_eq!(humanize_age(172_800_000), "2d");
+    }
+}
