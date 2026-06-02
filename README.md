@@ -2,14 +2,14 @@
 
 **Let Claude be the architect. Let a local model do the coding.**
 
-rexyMCP is named after **Rexy**, my cattle dog. Rexy *herds*. rexyMCP keeps your
-local LLM moving in the right direction, nudges it forward, keeps it on task, and
-returns completed work. Claude Code is the Architect. rexyMCP manages the
-Executor: a local model running on an OpenAI-compatible endpoint such as LM
-Studio, Ollama, or vLLM. The Executor does the coding. Claude decomposes your
-idea into an architecture and milestones with spec'd phases; the Executor codes
-each phase to spec and Claude reviews what comes back — while rexyMCP keeps the
-local model on task, in bounds, and honest.
+rexyMCP is named after **Rexy**, my cattle dog. Rexy love to *herds*. rexyMCP 
+keeps your local LLM moving in the right direction, nudges it forward, keeps
+it on task, and returns completed work. Claude Code is the Architect. rexyMCP 
+manages the Executor: a local model running on an OpenAI-compatible endpoint 
+such as LM Studio, Ollama, or vLLM. The Executor does the coding. Claude 
+decomposes your idea into an architecture and milestones with spec'd phases; 
+the Executor codes each phase to spec and Claude reviews what comes back while 
+rexyMCP keeps the local model on task, in-bounds, and honest using objective data.
 
 ## Workflow
 
@@ -24,13 +24,13 @@ local model on task, in bounds, and honest.
    │
    ├─ writes docs/architecture.md
    ├─ writes docs/dev/milestones/M1-<slug>/README.md
-   └─ writes docs/dev/NEXT.md  ──────────────────────────────────────────┐
+   └─ writes docs/dev/NEXT.md  ───────────────────────────────────────────┐
                                                                           │
          ┌────────────────────────────────────────────────────────────────┘
          ▼
 /rexymcp:architect next     ← Claude drafts the next phase doc
    │
-   └─ writes docs/dev/milestones/M<n>-<slug>/phase-<m>-<slug>.md
+   └─ writes docs/dev/milestones/M<n>-<slug>/phase-<m>-<slug>.md ─────────┐ 
                                                                           │
          ┌────────────────────────────────────────────────────────────────┘
          ▼
@@ -38,14 +38,14 @@ local model on task, in bounds, and honest.
    │                            (local LLM does the work)
    │
    ├─ [complete]  ──────────────────────────────────────────────────────┐
-   │                                                                     │
+   │                                                                    │
    └─ [hard_fail / budget_exceeded]                                     │
         │                                                               │
         ▼                                                               │
    /rexymcp:escalate <phase>                                            │
         │                                                               │
-        ├─ refine spec → re-dispatch ─────────────────────────────────▶┤
-        └─ session takeover (Claude finishes it) ────────────────────▶┤
+        ├─ refine spec → re-dispatch ──────────────────────────────────▶┤
+        └─ session takeover (Claude finishes it) ──────────────────────▶┤
                                                                         │
          ┌──────────────────────────────────────────────────────────────┘
          ▼
