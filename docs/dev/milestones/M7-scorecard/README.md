@@ -59,6 +59,7 @@ into phase docs):
 | 05a | settings plumbing — temperature/seed configurable, sent, recorded ([phase-05a-settings-plumbing.md](phase-05a-settings-plumbing.md)) | done (approved_after_2) |
 | 05b | chat-stream provenance — served model id + `finish_reason`/length-truncation rate ([phase-05b-stream-provenance.md](phase-05b-stream-provenance.md)) | done (approved_after_1) |
 | 05c | context window — `max_model_len` from `/v1/models` ([phase-05c-context-window.md](phase-05c-context-window.md)) | done (approved_first_try) |
+| 06 | `model × settings` scorecard slice — `rexymcp scorecard` CLI ([phase-06-settings-scorecard.md](phase-06-settings-scorecard.md)) | todo |
 
 **The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
 into three phases. Phase 05 was split into **05a (settings)** and **05b
@@ -89,8 +90,13 @@ fit one executor session; endpoint-reported provenance (response parsing + new
   weights revision** — the OpenAI-compatible API does not expose these portably
   (only the model-id string does, by naming convention), and provider-native probes
   (Ollama `/api/show`, etc.) would break the "any OpenAI endpoint" promise.
-- **06 — settings slice on the scorecard.** Aggregate/compare `model × settings`
-  (and the new provenance/reliability signals), depends on 05a/05b/05c's real data.
+- **06 — settings slice on the scorecard (milestone closer).** A `rexymcp scorecard`
+  CLI that aggregates runs into a `model × settings` matrix (same quality/reliability/
+  efficiency means as the model × tag scorecard, plus `length_finish_rate`), so the
+  user can see which settings work best for a model. Additive: a new
+  `aggregate_by_settings` + CLI surface, leaving the existing model × tag
+  `model_scorecard` MCP tool untouched. Depends on 05a/05b/05c's real data. Drafted
+  2026-06-02.
 
 ## Notes
 

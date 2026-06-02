@@ -4,25 +4,32 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M7 / phase-05c — context window:
-`max_model_len` from `/v1/models`](milestones/M7-scorecard/phase-05c-context-window.md)
-(`todo` — ready to dispatch).
+**Active phase:** [M7 / phase-06 — `model × settings` scorecard slice:
+`rexymcp scorecard` CLI](milestones/M7-scorecard/phase-06-settings-scorecard.md)
+(`todo` — ready to dispatch). **This is the milestone-closing phase** — its approval
+triggers the M7 retrospective + close (a human gate).
 
-**phase-05c in one line:** record the **endpoint-reported context window**
-(`max_model_len` from `GET /v1/models`, distinct from the configured
-`budget.context_length`) in `PhaseRun.context_window` and show it in `rexymcp runs`.
-Best-effort: `None` when the endpoint omits it or the fetch fails — never blocks a
-run. Fetched in `run_phase` (the prod wrapper, only when no test client is injected),
-threaded via `AssemblyInput` → `LoopDeps` → emit. **Known risk:** three *additive*
-struct-field cascades (`PhaseRun` ~6 literals, `LoopDeps` 8, `AssemblyInput` ~3);
-Task 6 gives grep-verified site lists per the new WORKFLOW "additive change shapes"
-fold — build struct-by-struct.
+**phase-06 in one line:** add a `rexymcp scorecard` CLI that aggregates `PhaseRun`
+records into a **`model × settings`** matrix (the same quality/reliability/efficiency
+means as the existing model × tag scorecard, plus the new `length_finish_rate`
+signal), answering "which settings work best for this model?". **Additive** (a new
+`aggregate_by_settings` + a `scorecard_cli` module + a `Scorecard` subcommand —
+the existing `aggregate`/`ScorecardRow`/`model_scorecard` MCP tool are untouched, so
+no cascade). Mirrors phase-04's proven `runs.rs` CLI structure. The settings bucket
+key reuses the exact `temp=…,seed=…`/`default` label `rexymcp runs` shows.
 
-**phase-05b done** (approved_after_1 2026-06-02): served model + `finish_reason`
-recorded via the additive `AiEvent::Completion` variant. The additive restructure
-(after a hard_fail that mutated `Done`) validated the WORKFLOW fold on first use, and
-the bug-05a-1 bookkeeping drop-off did **not** recur — so that calibration stays at 1
-occurrence (data, not a trend).
+**phase-05a/05b/05c all done** (2026-06-02): the per-run statistics substrate is
+complete — settings (temp/seed), served model, length-truncation rate, and context
+window are captured per run and visible in `rexymcp runs`. 06 aggregates the settings
+axis. **Calibration health:** the additive-change-shape discipline prevented cascades
+twice (05b, 05c); the bug-05a-1 bookkeeping drop-off has not recurred across three
+phases — both remain data, no further folds.
+
+**After 06:** M7's in-scope phases are all done → the review skill writes the M7
+retrospective, folds any calibration, sets NEXT to "none", and asks for sign-off
+before M8. **Known M7 follow-up for the retrospective:** `docs/architecture.md`'s
+"Benchmark vs. telemetry" + automated-"Routing" language still describes the dropped
+benchmark direction and needs an architect realignment pass.
 
 **Phase-05 split history (2026-06-02):** the original combined phase-05 was split at
 draft time into **05a (settings — done)**; then 05b was itself split into **05b
