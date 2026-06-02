@@ -573,4 +573,11 @@ The project plan. Each entry becomes a milestone with its own
    status / diff, the final command outputs) give a second stream. Between the log
    and the repo there is ample signal; M8's hard part is *selection and layout*,
    not data acquisition. A monitoring view, not an interactive agent surface (see
-   Non-goals); `status` remains the scriptable one-shot path. Lands after M7.
+   Non-goals). **Open decision (resolve at M8 design): keep `rexymcp status` as a
+   separate one-shot command, or fold it into `dashboard`.** Both share the same
+   read/summarize core (`status.rs`'s `load_status` / `summarize`), so it is a
+   surface question, not an implementation one — but a live TUI is not pipeable,
+   whereas `status --json` serves scripting / CI, so folding only works if
+   `dashboard` keeps a non-interactive `--json` / `--once` mode (which is `status`
+   by another name). A scriptable one-shot path should survive in some form.
+   Lands after M7.
