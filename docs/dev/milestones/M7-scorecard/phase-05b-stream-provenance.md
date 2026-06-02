@@ -1,7 +1,7 @@
 # Phase 05b: chat-stream provenance — served model id + finish_reason
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** review
+**Status:** done
 **Depends on:** phase-05a (done — settings are now configurable/sent/recorded) and
 phase-04 (done — `rexymcp runs` displays the record). This phase captures two values
 the chat response already carries but the client currently discards.
@@ -454,3 +454,31 @@ executor/src/ai/testing.rs:276:            AiEvent::Completion { .. } => {}
 - `format_runs_shows_served_model_and_truncation` in `mcp/src/runs.rs`
 
 **Notes for review:** The `length_finish_rate_is_fraction_of_length_finishes` test scripts two `Completion` events in a single turn (via `MockAiClientScript`) rather than across two turns, because `MockAiClientScript` emits one event batch per `chat` call and the agent loop accumulates `RunMetrics` across all events in a single run. This correctly exercises the aggregation logic — both completions contribute to the same `total_finishes`/`length_finishes` counters.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_after_1
+- **Bounces:** one prior failed cycle — a `hard_fail` (`VerifierFailurePersistent`)
+  on the first dispatch, which mutated the existing `AiEvent::Done` tuple into a
+  struct variant and broke the whole crate before the 3-strike verifier limit.
+  Resolved by escalation → refined re-dispatch with an **additive** restructure (new
+  sibling `AiEvent::Completion` variant, `Done` untouched). No review bounce; the
+  re-dispatch landed clean.
+- **Executor:** rexyMCP executor — `Qwen/Qwen3.6-27B-FP8`
+- **Scope deviations:** one, benign and declared in Notes for review — the
+  `length_finish_rate_is_fraction_of_length_finishes` test scripts the two
+  `Completion` events in a single turn rather than across two turns. Acceptable:
+  `RunMetrics` accumulates per-run, so both completions hit the same
+  `total_finishes`/`length_finishes` counters and the 0.5 fraction is exercised
+  correctly.
+- **Calibration:** reviewer re-ran all four gates independently (fmt/build/clippy/
+  test — 552 executor + 143 mcp pass) and verified end-to-end against the real
+  binary: a provenance record renders `served_model` + a `25%` truncation cell while
+  a legacy JSONL line (omitting both fields) renders `—`/`—` and `--json`-defaults to
+  `null` (the `#[serde(default)]` back-compat boundary). **Two calibration wins:**
+  (1) the additive-change-shape discipline folded into WORKFLOW.md after the
+  hard_fail worked on its first application — the executor completed the additive
+  variant in 75 turns with no cascade failure; (2) the bug-05a-1 end-of-phase
+  drop-off (skipped commit + completion log) did **not** recur — the executor
+  committed one clean `feat:` and wrote a full completion entry. The completion-ritual
+  concern stays at 1 occurrence (data, not a trend); no contract fold needed yet.

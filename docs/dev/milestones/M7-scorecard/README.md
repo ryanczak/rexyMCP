@@ -57,7 +57,7 @@ into phase docs):
 | 03b | `rexymcp bench` multi-model sweep + one minimal fixture ([phase-03b-bench-sweep.md](phase-03b-bench-sweep.md)) | rolled-back (never landed) |
 | 04 | `rexymcp runs` — per-run statistics CLI view ([phase-04-runs-cli.md](phase-04-runs-cli.md)) | done (approved_first_try) |
 | 05a | settings plumbing — temperature/seed configurable, sent, recorded ([phase-05a-settings-plumbing.md](phase-05a-settings-plumbing.md)) | done (approved_after_2) |
-| 05b | chat-stream provenance — served model id + `finish_reason`/length-truncation rate ([phase-05b-stream-provenance.md](phase-05b-stream-provenance.md)) | review |
+| 05b | chat-stream provenance — served model id + `finish_reason`/length-truncation rate ([phase-05b-stream-provenance.md](phase-05b-stream-provenance.md)) | done (approved_after_1) |
 | 05c | context window — `max_model_len` from `/v1/models` ([phase-05c-context-window.md](phase-05c-context-window.md)) *(not yet drafted)* | planned |
 
 **The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
