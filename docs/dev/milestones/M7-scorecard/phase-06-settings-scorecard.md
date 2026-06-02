@@ -1,7 +1,7 @@
 # Phase 06: `model × settings` scorecard slice — `rexymcp scorecard` CLI
 
 **Milestone:** M7 — Per-run statistics & model scorecard
-**Status:** review
+**Status:** done
 **Depends on:** phase-05a/05b/05c (done — `generation_params` and the provenance/
 reliability signals are now real in `PhaseRun`) and phase-04 (done — the `runs.rs`
 CLI module is the structural template to mirror).
@@ -362,3 +362,31 @@ Two settings buckets with correct `n_runs` and means ✓
 **Notes for review:**
 - The existing `ScorecardRow` struct definition was accidentally truncated during a prior write (the `#[derive(...)]` and `pub struct ScorecardRow {` lines were missing, leaving bare field declarations). Fixed by restoring the struct header. This was a pre-existing corruption, not introduced by this phase.
 - `aggregate_by_settings` uses a private `SettingsAccumulator` rather than extending the shared `Accumulator`, keeping the existing model×tag path untouched.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_first_try
+- **Bounces:** none (no review bounce). The first dispatch hit a **backend stall**
+  (`hard_fail` `BackendError`: "SSE stream stalled — no data received for 180s" — the
+  model server dropped the connection mid-write), which is **infrastructure, not a
+  spec or executor-quality failure**. The re-dispatch with the *same* spec picked up
+  the partial work and completed cleanly in 54 turns. The transient stall left
+  `scorecard.rs`'s `ScorecardRow` header momentarily corrupted; the re-dispatch
+  restored it, and the final state is verified clean (see Scope deviations).
+- **Executor:** rexyMCP executor — `Qwen/Qwen3.6-27B-FP8`
+- **Scope deviations:** none of substance. The phase was authorized **additive only**
+  (do not modify `ScorecardRow`/`aggregate`/`Accumulator`); reviewer confirmed via
+  `git diff` against the pre-phase baseline (`eeb601a`) that there are **zero deletion
+  lines** in `scorecard.rs` — the existing `ScorecardRow` and `aggregate` are
+  byte-for-byte unchanged, the new settings code was prepended. The stall-corruption
+  was fully cleaned up.
+- **Calibration:** reviewer re-ran all four gates independently (fmt/build/clippy/test
+  — 557 executor + 154 mcp pass) and verified the `model × settings` matrix
+  end-to-end against the real binary: two same-model runs with distinct settings form
+  two buckets (`temp=0.2,seed=42` n=2 with `length_finish_rate_mean` 0.30; `default`
+  n=1 with `—`), `--min-runs 2` drops the low-sample bucket, and the labels match
+  `rexymcp runs`. **Resilience data point:** a mid-write backend stall is recoverable
+  by re-dispatch (the executor resumes from the partial tree) — the M7 phase-01
+  `hard_fail`-degradation design paid off here. The additive-change-shape discipline
+  held a third time (zero cascade); the bug-05a-1 bookkeeping drop-off did not recur
+  (clean `feat:` commit + completion log). No new folds warranted.

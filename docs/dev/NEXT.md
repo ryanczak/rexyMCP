@@ -4,32 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M7 / phase-06 — `model × settings` scorecard slice:
-`rexymcp scorecard` CLI](milestones/M7-scorecard/phase-06-settings-scorecard.md)
-(`todo` — ready to dispatch). **This is the milestone-closing phase** — its approval
-triggers the M7 retrospective + close (a human gate).
+**Active phase:** none — **M7 is complete** (closed 2026-06-02; all in-scope phases
+01/04/05a/05b/05c/06 approved). This is a **milestone boundary**: the executor must
+not pick up work while this says "none". The next milestone (M8) starts only on
+explicit human sign-off.
 
-**phase-06 in one line:** add a `rexymcp scorecard` CLI that aggregates `PhaseRun`
-records into a **`model × settings`** matrix (the same quality/reliability/efficiency
-means as the existing model × tag scorecard, plus the new `length_finish_rate`
-signal), answering "which settings work best for this model?". **Additive** (a new
-`aggregate_by_settings` + a `scorecard_cli` module + a `Scorecard` subcommand —
-the existing `aggregate`/`ScorecardRow`/`model_scorecard` MCP tool are untouched, so
-no cascade). Mirrors phase-04's proven `runs.rs` CLI structure. The settings bucket
-key reuses the exact `temp=…,seed=…`/`default` label `rexymcp runs` shows.
+**M7 retrospective:** see [the M7 README Notes](milestones/M7-scorecard/README.md#m7-retrospective-2026-06-02).
+One WORKFLOW fold landed (additive change shapes); two watched items stay single
+occurrences (bookkeeping drop-off, date hallucination) — no further folds.
 
-**phase-05a/05b/05c all done** (2026-06-02): the per-run statistics substrate is
-complete — settings (temp/seed), served model, length-truncation rate, and context
-window are captured per run and visible in `rexymcp runs`. 06 aggregates the settings
-axis. **Calibration health:** the additive-change-shape discipline prevented cascades
-twice (05b, 05c); the bug-05a-1 bookkeeping drop-off has not recurred across three
-phases — both remain data, no further folds.
-
-**After 06:** M7's in-scope phases are all done → the review skill writes the M7
-retrospective, folds any calibration, sets NEXT to "none", and asks for sign-off
-before M8. **Known M7 follow-up for the retrospective:** `docs/architecture.md`'s
-"Benchmark vs. telemetry" + automated-"Routing" language still describes the dropped
-benchmark direction and needs an architect realignment pass.
+**Open follow-ups before/at M8 kickoff (human-gated):**
+1. **Architecture realignment.** `docs/architecture.md`'s "Model effectiveness metrics
+   & routing" section still describes the dropped benchmark/automated-routing direction
+   and does not mention `rexymcp runs`/`scorecard` or the per-run-statistics substrate.
+   Needs an architect pass (principal-engineer territory).
+2. **M8 — Live session dashboard** (queued; see `docs/architecture.md` § Status): a
+   `rexymcp dashboard` read-only TUI over the live session JSONL, motivated by the
+   opacity of a blocking `execute_phase` call through Claude Code's MCP interface (no
+   `progressToken`). Not yet decomposed into phases.
+3. **README positioning pass** (user-requested): highlight rexyMCP's small-model-friendly
+   features (forgiving tool-call parser, code-quality gates, loop detection, verifier,
+   context budgeting) and the virtuous architect/WORKFLOW improvement cycle.
 
 **Phase-05 split history (2026-06-02):** the original combined phase-05 was split at
 draft time into **05a (settings — done)**; then 05b was itself split into **05b

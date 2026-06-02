@@ -15,8 +15,9 @@ run, so they can make informed decisions about **which local LLM to use** and
 **which settings work best** for that LLM. The `model_scorecard` aggregation is
 retained, fed by ordinary production telemetry rather than benchmark records.
 
-**Status:** in progress — phase-01 done; benchmarking deprecated; the per-run
-statistics direction is pending design.
+**Status:** **done** (2026-06-02) — phase-01 + 04 + 05a/05b/05c + 06 all approved;
+benchmarking deprecated (02/03a/03b rolled back). The per-run statistics substrate
+and the `model × settings` scorecard are complete. See the retrospective in Notes.
 
 **Depends on:** M6 (done) — the full stack is live, and the `PhaseRun` store has
 been accumulating regular-run records since M4.
@@ -59,7 +60,7 @@ into phase docs):
 | 05a | settings plumbing — temperature/seed configurable, sent, recorded ([phase-05a-settings-plumbing.md](phase-05a-settings-plumbing.md)) | done (approved_after_2) |
 | 05b | chat-stream provenance — served model id + `finish_reason`/length-truncation rate ([phase-05b-stream-provenance.md](phase-05b-stream-provenance.md)) | done (approved_after_1) |
 | 05c | context window — `max_model_len` from `/v1/models` ([phase-05c-context-window.md](phase-05c-context-window.md)) | done (approved_first_try) |
-| 06 | `model × settings` scorecard slice — `rexymcp scorecard` CLI ([phase-06-settings-scorecard.md](phase-06-settings-scorecard.md)) | review |
+| 06 | `model × settings` scorecard slice — `rexymcp scorecard` CLI ([phase-06-settings-scorecard.md](phase-06-settings-scorecard.md)) | done (approved_first_try) |
 
 **The per-run statistics direction (designed 2026-06-02 with the user)** decomposes
 into three phases. Phase 05 was split into **05a (settings)** and **05b
@@ -114,3 +115,62 @@ field on `PhaseRun`, the scorecard `SourceFilter`, the `LoopDeps`/CLI threading,
 and the (unlanded) sweep. The phase docs are retained with rolled-back banners
 for historical context. `docs/architecture.md`'s benchmark/routing language
 still needs an architect pass to match this direction.
+
+---
+
+## M7 retrospective (2026-06-02)
+
+**Outcome.** The per-run statistics direction shipped end-to-end. After the
+mid-milestone pivot away from benchmarking, M7 delivered six approved phases that
+make every regular run measurable and comparable:
+
+- **04** — `rexymcp runs` (per-run CLI view).
+- **05a** — settings (temperature/seed) configurable → sent → recorded.
+- **05b** — chat-stream provenance (served model id + `finish_reason`/length-truncation
+  rate) via the additive `AiEvent::Completion` event.
+- **05c** — endpoint context window (`max_model_len` from `/v1/models`), best-effort.
+- **06** — `rexymcp scorecard` `model × settings` competency matrix.
+
+A user can now see, per run and aggregated per (model, settings), the gates,
+reliability (parse-failure + length-truncation), efficiency (turns/wall-clock), and
+supervision (approved-first-try / bounces) signals — answering "which model and which
+settings work best."
+
+**What worked.**
+- **Decomposition under pressure.** The original phase-05 was too large; splitting it
+  into 05a/05b/05c at draft time (by data-source: settings / chat-stream / models
+  endpoint) kept each phase to one executor session.
+- **The architect/executor telemetry loop.** Verdicts and bounces were recorded as
+  `PhaseRun` data, and the recurring failure class drove a real doc improvement (below).
+
+**What broke, and the folds.**
+- **Caller-cascade hard_fails (05a, 05b).** The executor (Qwen3.6-27B) twice hard-failed
+  by making a breaking multi-site change (a function-signature change in 05a; an enum-
+  variant *mutation* in 05b) and getting caught by the verifier's 3-strike limit before
+  finishing the cascade. **Fold:** the WORKFLOW.md "Prefer additive change shapes"
+  discipline (commit `e27e92c`) — prefer a new variant/field/function over mutating a
+  symbol with wide blast radius, and pre-inject grep-verified site lists when a
+  multi-site change is unavoidable. **Validated three times afterward:** 05b (additive
+  `Completion` variant), 05c (three additive struct fields), and 06 (additive aggregation)
+  all landed with zero cascade failures.
+- **Bookkeeping drop-off (05a, bug-05a-1).** On one dispatch the executor produced
+  correct, green code but skipped its end-of-phase commit + completion-log. Filed as a
+  minor bounce; **did not recur** across 05b/05c/06 — stays at 1 occurrence (data, not a
+  trend), no fold.
+- **Backend stall (06).** The model server dropped the SSE connection mid-write
+  (`hard_fail` `BackendError`). Recovered cleanly by re-dispatch (the executor resumed
+  from the partial tree) — a live validation of the phase-01 `hard_fail`-degradation
+  design. Infrastructure, not a quality issue.
+- **Executor date hallucination (phase-04).** The executor stamped a wrong date in an
+  Update Log; corrected at review. 1 occurrence, noted.
+
+**Calibration ledger:** 1 fold landed (additive change shapes, user-approved). Two
+watched items (bookkeeping drop-off; date hallucination) remain single occurrences —
+no further folds warranted.
+
+**Carried follow-up (for M8 kickoff / an architect pass).**
+`docs/architecture.md`'s "Model effectiveness metrics & routing" section still carries
+the **deprecated** "Benchmark vs. telemetry" + automated-"Routing" language and does not
+yet describe the per-run-statistics direction, `rexymcp runs`, or the settings scorecard.
+This needs an architect realignment pass (architecture.md is principal-engineer
+territory, not executor-editable).
