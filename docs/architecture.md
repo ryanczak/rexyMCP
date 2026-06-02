@@ -561,6 +561,16 @@ The project plan. Each entry becomes a milestone with its own
    stage, current tool, verifier pass/fail, files changed, token usage, the
    `awaiting_model` heartbeat, and terminal status, across concurrent sessions.
    It is the richer sibling of `rexymcp status` — the same data source, but live
-   and continuously refreshed instead of one-shot. A monitoring view, not an
-   interactive agent surface (see Non-goals); `status` remains the scriptable
-   one-shot path. Lands after M7.
+   and continuously refreshed instead of one-shot. **Data sources — the dashboard
+   is data-rich without new plumbing.** The session JSONL already carries the live
+   feed: turn events, tool calls, the `ParseFailure`/repair history, verifier
+   outcomes, hard-fail signals, token usage, and per-file numstat of the target
+   repo's evolving diff (the `Progress` records `status` already reads). It is also
+   an *extensible store* — whatever additional session state the dashboard wants
+   can be persisted as new `SessionEvent` records and read back, since the log is
+   already the single source the loop flushes per record. Layered on that, metrics
+   derived directly from the **target repository** rexyMCP is working on (git
+   status / diff, the final command outputs) give a second stream. Between the log
+   and the repo there is ample signal; M8's hard part is *selection and layout*,
+   not data acquisition. A monitoring view, not an interactive agent surface (see
+   Non-goals); `status` remains the scriptable one-shot path. Lands after M7.
