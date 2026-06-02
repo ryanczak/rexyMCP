@@ -90,10 +90,13 @@ statistics direction designed → phases 04/05/06; phase-04 active).
 
 **Queued (after M7):** **M8 — Live session dashboard.** A `rexymcp dashboard` CLI
 command: a real-time, read-only TUI over the live session JSONL (the same source
-`rexymcp status` reads), recorded in `docs/architecture.md` § Status. Not yet
-expanded into phases — milestone boundaries are a human gate. Note: this refined
-the "No terminal UI" non-goal to "no interactive TUI *agent*; a read-only live
-dashboard is allowed."
+`rexymcp status` reads), recorded in `docs/architecture.md` § Status. **Why it's
+important:** a blocking `execute_phase` call is opaque through Claude Code's MCP
+interface (no `progressToken` → no progress notifications), so the user is blind
+to a running phase mid-flight; the dashboard gives deep live insight into the
+ongoing MCP session. Not yet expanded into phases — milestone boundaries are a
+human gate. Note: this refined the "No terminal UI" non-goal to "no interactive
+TUI *agent*; a read-only live dashboard is allowed."
 
 ---
 

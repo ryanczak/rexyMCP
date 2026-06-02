@@ -361,7 +361,11 @@ Practical concerns this layer owns:
   the `execute_phase: client progress_token absent` diagnostic). So the logged
   `SessionEvent::Progress` records are written unconditionally (independent of any
   live watcher), and `rexymcp status` is what surfaces motion to the human; MCP
-  progress fires only if a future client opts in with a token.
+  progress fires only if a future client opts in with a token. A richer live view
+  over this same JSONL — a full-screen, continuously refreshed dashboard — is
+  planned as **M8** (`rexymcp dashboard`): the opacity of a blocking
+  `execute_phase` call is exactly what leaves the user without insight mid-phase,
+  and a one-shot `status` only partly answers it.
 - **Context hygiene.** Returned output is capped (`MAX_MCP_OUTPUT_TOKENS`) so a
   phase's inner transcript can never flood Claude's context. Claude gets the
   `PhaseResult` summary + diff + (on failure) briefing — nothing more.
@@ -545,12 +549,18 @@ The project plan. Each entry becomes a milestone with its own
    apparatus, and informs a human decision rather than auto-routing. See the M7
    README direction-change note.) Depends on having data, so it lands after the
    loop (M4) and server (M5) have been producing records.
-8. **M8 — Live session dashboard.** A `rexymcp dashboard` CLI command: a
-   real-time, full-screen **read-only TUI** that shows live rexyMCP session data
-   as a phase runs — turn / stage, current tool, verifier pass/fail, files
-   changed, token usage, the `awaiting_model` heartbeat, and terminal status — by
-   tailing the per-record-flushed session JSONL under `<repo>/.rexymcp/sessions/`
-   (the same source `rexymcp status` reads, but live, continuously refreshed, and
-   able to track concurrent sessions). It is a monitoring view, not an
-   interactive agent surface (see Non-goals); the one-shot `rexymcp status`
-   remains the scriptable path. Lands after M7.
+8. **M8 — Live session dashboard.** **Why it matters (usability):** an
+   `execute_phase` call is opaque *and* blocking — Claude Code's MCP interface
+   surfaces nothing about what the executor is doing inside the call, and it
+   *cannot*, because the client sends no `progressToken`, so MCP progress
+   notifications never fire (see Layer 2 § "Liveness"). For minutes at a time the
+   user is blind to a running phase through the Claude UI. The dashboard is the
+   cure: a `rexymcp dashboard` CLI command — a real-time, full-screen **read-only
+   TUI** that gives deep insight into an in-flight MCP session by tailing the
+   per-record-flushed session JSONL under `<repo>/.rexymcp/sessions/`: turn /
+   stage, current tool, verifier pass/fail, files changed, token usage, the
+   `awaiting_model` heartbeat, and terminal status, across concurrent sessions.
+   It is the richer sibling of `rexymcp status` — the same data source, but live
+   and continuously refreshed instead of one-shot. A monitoring view, not an
+   interactive agent surface (see Non-goals); `status` remains the scriptable
+   one-shot path. Lands after M7.
