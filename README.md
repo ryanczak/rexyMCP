@@ -11,6 +11,21 @@ decomposes your idea into an product plan with milestones with spec'd phases;
 the *Executor* codes each phase to spec and the *Architect* reviews the output, all while 
 **rexyMCP** keeps the local model on task, in-bounds, and honest using realtime data.
 
+Two things make rexyMCP stand out. First, it is **purpose-built for small local
+models**: a forgiving tool-call parser that repairs malformed output instead of
+aborting, a post-edit verifier that feeds compiler diagnostics back into the
+turn, a loop detector that catches repetition before it burns the budget, and
+security-scoped tools that prevent the model from doing damage outside the
+target repo. Weaker models that would be too unreliable to use unguarded become
+productive executors for bounded, spec-driven work because the plumbing catches
+and corrects their failure modes automatically. Second, it implements a
+**virtuous cycle of continuous improvement**: every dispatch is a labeled data
+point — gates, parse-failure rate, truncation rate, turns, the architect's
+verdict — and recurring failure patterns fold back into the workflow contract
+(`WORKFLOW.md`) that governs all future work. The tool gets measurably better
+with use, and `rexymcp runs` / `rexymcp scorecard` close the loop so you can
+see exactly which models and settings are earning their keep on your codebase.
+
 ## Workflow
 
 ```
