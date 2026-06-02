@@ -4,11 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — [M7 / phase-01 — terminal backend `Err` → `hard_fail`
-degradation](milestones/M7-scorecard/phase-01-backend-error-degradation.md) is
-`done` (approved_first_try 2026-06-01; first phase dispatched + reviewed entirely
-through the live plugin). Run `/rexymcp:architect next` to draft M7 phase-02
-(benchmark suite).
+**Active phase:** [M7 / phase-02 — benchmark provenance on `PhaseRun` + scorecard
+source filter](milestones/M7-scorecard/phase-02-benchmark-provenance.md)
+(`todo` — ready to dispatch).
+
+phase-01 (terminal `Err` → `hard_fail`) is `done` (approved_first_try
+2026-06-01; first phase dispatched + reviewed entirely through the live plugin).
+
+**phase-02 in one line:** add a serde-defaulted `bench_suite: Option<String>` to
+`PhaseRun` (`None` = production) and a `SourceFilter` to the scorecard so
+benchmark and production runs can share one telemetry store while staying
+distinguishable. Foundational data-model slice the benchmark runner (phase-03)
+depends on. Load-bearing constraint pinned in the spec: the `#[serde(default)]`
+is what keeps the real records already in `phase_runs.jsonl` from being dropped
+on read.
 
 **M6 closed** via [phase-06b — dogfood execution + retrospective +
 close](milestones/M6-plugin/phase-06b-dogfood-close.md). The ms_pacman dogfood
