@@ -2,14 +2,14 @@
 
 **Let Claude be the architect. Let a local model do the coding.**
 
-rexyMCP is named after **Rexy**, my cattle dog. Rexy *herds*. rexyMCP keeps 
-your local LLM moving in the right direction, nudges them forward, 
-keeps them on task and returns completed work. Claude Code is the Architect. 
-rexyMCP manages the Executor: a local model running on an OpenAI-compatible 
-endpoint such as LM-Studio, ollama, or vLLM. The Executor does the coding. 
-Claude decomposes your idea into an architecure, milestones wth spec'd phases.
-The Executor codes each phase to spec and Claude reviews what comes back —
-while rexyMCP keeps the local model on task, in bounds, and honest.
+rexyMCP is named after **Rexy**, my cattle dog. Rexy *herds*. rexyMCP keeps your
+local LLM moving in the right direction, nudges it forward, keeps it on task, and
+returns completed work. Claude Code is the Architect. rexyMCP manages the
+Executor: a local model running on an OpenAI-compatible endpoint such as LM
+Studio, Ollama, or vLLM. The Executor does the coding. Claude decomposes your
+idea into an architecture and milestones with spec'd phases; the Executor codes
+each phase to spec and Claude reviews what comes back — while rexyMCP keeps the
+local model on task, in bounds, and honest.
 
 ## Workflow
 
@@ -145,8 +145,12 @@ at milestone close.
 - **Redacted JSONL session log** — every turn (prompts, parsed tool calls, tool
   results, progress, verifier runs) is written to disk with secrets redacted, so
   a lean result never means lost detail.
-- **Cross-project telemetry** — each run emits a `PhaseRun` record for the model
-  scorecard.
+- **Cross-project telemetry & scorecard** — each run emits a `PhaseRun` record
+  (model, generation settings, gates, parse-failure rate, verifier retries, turns,
+  tokens, and — at review — the architect's verdict) into a shared store. The
+  `model_scorecard` aggregates those records so you can see which model has
+  actually earned its keep on which kind of work, and decide which model and
+  settings to run next.
 
 **The MCP server (`rexymcp serve`)**
 
@@ -159,7 +163,7 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
 | `executor_log_search` | Search the session JSONL log by event type, tool name, or text. |
 | `executor_log_tail` | Return the last N records of a session log (capped per field). |
 | `get_turn` | Return all records for a single turn, uncapped — the raw-detail escape hatch. |
-| `model_scorecard` | Aggregate cross-project telemetry into a model × tag competency matrix. |
+| `model_scorecard` | Aggregate cross-project `PhaseRun` telemetry into a model × tag competency matrix, with per-cell sample sizes, to compare models. |
 
 **The CLI (`rexymcp`)**
 
@@ -315,7 +319,7 @@ docs/       architecture + the architect/executor dev process for rexyMCP itself
 rexyMCP is built phase-by-phase by its own workflow — Claude architecting, a
 local model executing — dogfooding the product on itself. Contributors and AI
 agents work the phase-driven process documented in
-[`AGENTS.md`](AGENTS.md), [`docs/dev/STANDARDS.md`](docs/dev/STANDARDS.md), and
+[`CLAUDE.md`](CLAUDE.md), [`docs/dev/STANDARDS.md`](docs/dev/STANDARDS.md), and
 [`docs/dev/WORKFLOW.md`](docs/dev/WORKFLOW.md). The full design lives in
 [`docs/architecture.md`](docs/architecture.md). The gates:
 
