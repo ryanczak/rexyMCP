@@ -47,11 +47,6 @@ enum Commands {
         /// Override the model ID from config
         #[arg(long)]
         model: Option<String>,
-
-        /// Stamp emitted PhaseRun records as a benchmark run of this suite.
-        /// Omit for a normal production run.
-        #[arg(long)]
-        bench_suite: Option<String>,
     },
     /// Run the MCP stdio server
     Serve {
@@ -116,7 +111,6 @@ async fn main() -> anyhow::Result<()> {
             phase_doc,
             repo,
             model,
-            bench_suite,
         } => {
             let cfg = Config::load_with_env(&config)?;
 
@@ -130,7 +124,6 @@ async fn main() -> anyhow::Result<()> {
                 standards: &standards,
                 model_override: model.as_deref(),
                 telemetry_dir: None,
-                bench_suite: bench_suite.as_deref(),
                 progress: None,
                 test_client: None,
             })
@@ -218,8 +211,6 @@ mod tests {
             "/tmp/repo",
             "--model",
             "qwen2.5-coder",
-            "--bench-suite",
-            "smoke",
         ])
         .unwrap();
 
@@ -229,7 +220,6 @@ mod tests {
                 phase_doc,
                 repo,
                 model,
-                bench_suite,
             }) => {
                 assert_eq!(config, PathBuf::from("rexymcp.toml"));
                 assert_eq!(
@@ -238,7 +228,6 @@ mod tests {
                 );
                 assert_eq!(repo, PathBuf::from("/tmp/repo"));
                 assert_eq!(model.as_deref(), Some("qwen2.5-coder"));
-                assert_eq!(bench_suite.as_deref(), Some("smoke"));
             }
             _ => panic!("expected RunPhase"),
         }
