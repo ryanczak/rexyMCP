@@ -1,14 +1,14 @@
 # rexyMCP
 
-**Let Claude be the architect. Let a local model do the typing.**
+**Let Claude be the architect. Let a local model do the coding.**
 
-rexyMCP is named after **Rexy**, my cattle dog. A cattle dog doesn't pull the
-plow — it *herds*: it keeps the herd moving in the right direction, nips at
-strays, and brings the work back to the rancher. rexyMCP herds **local LLMs**
-the same way. Claude Code is the rancher; rexyMCP is the dog; a small local
-model (Qwen, Gemma, or anything you can serve over an OpenAI-compatible
-endpoint) is the herd that does the legwork. Claude decomposes your idea into
-spec'd phases, hands each one to the local model, and reviews what comes back —
+rexyMCP is named after **Rexy**, my cattle dog. Rexy *herds* he keeps 
+your local LLM moving in the right direction, nudges them forward, 
+keeps them on task and returns completed work. Claude Code is the Architect. 
+rexyMCP manages the Executor: a local model running on an OpenAI-compatible 
+endpoint such as LM-Studio, ollama, or vLLM. The Executor does the coding. 
+Claude decomposes your idea into an architecure, milestones wth spec'd phases.
+The Executor codes each phase to spec and Claude reviews what comes back —
 while rexyMCP keeps the local model on task, in bounds, and honest.
 
 ## Workflow
