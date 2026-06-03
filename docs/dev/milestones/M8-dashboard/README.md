@@ -59,7 +59,7 @@ sibling built on the same `summarize()` core.
 | 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | done |
 | 07  | Compaction events — emit `SessionEvent::Compaction` from `compact()` ([phase-07-compaction-event.md](phase-07-compaction-event.md)) | done |
 | 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | done |
-| 09  | Redesign: header band + Compactions panel + Files left-trim ([phase-09-redesign-layout-compactions.md](phase-09-redesign-layout-compactions.md)) | review |
+| 09  | Redesign: header band + Compactions panel + Files left-trim ([phase-09-redesign-layout-compactions.md](phase-09-redesign-layout-compactions.md)) | done |
 
 ## Design decisions
 

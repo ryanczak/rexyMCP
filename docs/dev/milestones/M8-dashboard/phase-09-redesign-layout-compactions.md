@@ -1,7 +1,7 @@
 # Phase 09: Dashboard redesign — header band, Compactions panel, Files trim
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-07 (done — `SessionEvent::Compaction` is now in the JSONL, the
 data this phase's Compactions panel renders) and phase-08 (done — the loop the new
 layout renders in).
@@ -380,3 +380,24 @@ Confirmed: `FILE_PATH_MAX` const defined and used in `trim_path_left` and `files
 - (pending) — `feat: redesign dashboard layout with Compactions panel and file path trimming`
 
 **Notes for review:** None — implementation matches spec exactly.
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-labels "Claude (direct)" —
+  a hallucinated self-identity; the run went to the configured local endpoint per the
+  health check, not a cloud model.)
+- **Scope deviations:** none — all 4 spec tasks implemented exactly. Out-of-scope
+  respected: `activity_lines`/`budget_lines` content unchanged (just repositioned), no
+  Activity transcript, no Budget Tokens/Sec or "$ saved", no interactivity changes, no
+  color in Compactions, no executor change.
+- **Calibration:** none.
+- **Independent re-run:** fmt clean, build clean, clippy clean (all targets),
+  `cargo test -p rexymcp` 186 passed (6 new). No `unwrap`/`expect`/`panic`/`unsafe`/
+  `#[allow]` in production paths. The `compactions_lines_omits_ratio_when_after_zero`
+  negative test genuinely guards the divide-by-zero (asserts no ratio line emitted).
+- **E2E note:** the layout is verified by inspection of `render_dashboard` (four-panel
+  header band over Activity·Files body) plus the data-backed unit tests; the live TUI
+  launch (`cargo run -p rexymcp -- dashboard`) is not runnable headlessly, so — as with
+  phase-08 — the on-screen render is to be confirmed by the user on a live session.

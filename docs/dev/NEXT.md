@@ -4,31 +4,33 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-09](milestones/M8-dashboard/phase-09-redesign-layout-compactions.md)
-— first phase of the **dashboard redesign** (wireframe received 2026-06-03). Restructure
-to a four-panel header band (Session · Budget · Compactions · Heartbeat) over a body
-(Activity wide · Files), add the **Compactions panel** (renders phase-07's
-`SessionEvent::Compaction` data — count + compression ratio), and **left-trim** Files
-paths. mcp-only, no new interactivity, no new deps. Dispatch with
-`/rexymcp:dispatch phase-09`.
+**Active phase:** none — phase-09 is `done`; **next drafting target is phase-10
+(Activity transcript), but it is the riskiest phase of the redesign** and warrants a
+decomposition discussion before drafting. Run `/rexymcp:architect next` when ready.
 
-**Redesign roadmap (from the wireframe):**
-- **phase-09 (active):** header-band layout + Compactions panel + Files left-trim.
-- **phase-10 (next):** the big one — Activity panel becomes a **scrollable transcript**
-  of agent thought/messages/tool-calls, JSON parsed + color-formatted, tool output
-  shown. Needs raw-record reading + scroll-key handling; likely splits 10a/10b.
+**Redesign roadmap (from the wireframe received 2026-06-03):**
+- **phase-09 (done):** header-band layout (Session · Budget · Compactions · Heartbeat
+  over Activity · Files) + Compactions panel (renders phase-07 data) + Files left-trim.
+- **phase-10 (next to draft):** the big one — Activity panel becomes a **scrollable
+  transcript** of agent thought/messages/tool-calls, each record's JSON parsed +
+  color-formatted, tool output shown. Needs raw-record reading (not the distilled
+  `summarize`), scroll-key handling in `run_loop` (the first real interactivity), and
+  per-event rendering. **Likely splits 10a (raw-record reader + scroll mechanics) /
+  10b (formatted+colored rendering)** — decide at draft time.
 - **phase-11:** Budget panel gains **Tokens/Sec** and **"$ saved"**. *Blocked on two
-  decisions:* (1) the **$-saved pricing baseline** — saved vs. which cloud model's
-  $/token? (2) tokens/sec data source (derive from `Metrics` record ts deltas). Ask
-  the user before drafting.
+  decisions before drafting:* (1) the **$-saved pricing baseline** — saved vs. which
+  cloud model's $/token (configurable rate? a specific model?); (2) tokens/sec data
+  source (derive from `Metrics` record ts deltas, or capture a per-turn duration?).
 
-phase-07 is `done` (approved_first_try 2026-06-03): `SessionEvent::Compaction` emitted
-from the silent `compact()` firing (Gap C). Measurement roadmap (Gaps A/B/C) fully
-flushed to the JSONL; phase-09's Compactions panel is the first consumer of the Gap-C
-data.
+**phase-09 done** (2026-06-03, approved_first_try): four-panel header-band layout +
+Compactions panel (`summarize` folds `SessionEvent::Compaction` → count + token sums;
+panel shows events/freed/ratio with a divide-by-zero guard) + Files left-trim
+(`trim_path_left`, `FILE_PATH_MAX=40`). mcp-only, no new deps. Implemented by
+Qwen/Qwen3.6-27B-FP8 (Update Log mislabels itself "Claude (direct)").
 
-**Also pending:** confirm the phase-08 dashboard improvements on a live session (watch
-the auto-attach when the next executor session starts).
+**Still pending confirmation:** the phase-08/09 dashboard changes on a *live* session —
+watch the auto-attach and the new layout render when the next executor session starts
+(neither is verifiable headlessly).
 
 **phase-07 done** (2026-06-03): captured the `CompactionReport` at the `compact()`
 call site (`agent/mod.rs:182`) and logged a new `Compaction` variant (tokens
