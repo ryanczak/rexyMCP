@@ -187,7 +187,9 @@ impl AiClient for OpenAiClient {
 
         let mut first_token_seen = false;
         let mut retries = 0;
+        let mut stream_retries = 0;
         const MAX_FIRST_TOKEN_RETRIES: u32 = 2;
+        const MAX_STREAM_RETRIES: u32 = 3;
 
         loop {
             let response = send_with_retry(|| {
@@ -207,6 +209,10 @@ impl AiClient for OpenAiClient {
             let mut in_reasoning = false;
             let mut served_model: Option<String> = None;
             let mut finish_reason: Option<String> = None;
+
+            // Per-attempt buffers (discarded on retry):
+            let mut out = String::new();
+            let mut buffered_tool_calls: Vec<(String, String, String)> = Vec::new();
 
             const MAX_LEFTOVER_BYTES: usize = 1 << 20;
 
@@ -252,38 +258,37 @@ impl AiClient for OpenAiClient {
                                             .filter(|r| !r.is_empty());
                                         if let Some(chunk) = reasoning_chunk {
                                             if !in_reasoning {
-                                                let _ =
-                                                    tx.send(AiEvent::Token("</think>".to_string()));
+                                                out.push_str("</think>");
                                                 in_reasoning = true;
                                             }
-                                            let _ = tx.send(AiEvent::Token(chunk.to_string()));
+                                            out.push_str(chunk);
                                         }
                                         if let Some(content) =
                                             delta.get("content").and_then(|c| c.as_str())
                                             && !content.is_empty()
                                         {
                                             if in_reasoning {
-                                                let _ = tx
-                                                    .send(AiEvent::Token("</think>\n".to_string()));
+                                                out.push_str("</think>\n");
                                                 in_reasoning = false;
                                             }
-                                            let _ = tx.send(AiEvent::Token(content.to_string()));
+                                            out.push_str(content);
                                         }
                                         if let Some(tool_calls) =
                                             delta.get("tool_calls").and_then(|t| t.as_array())
                                             && let Some(tc) = tool_calls.first()
                                         {
                                             if in_reasoning {
-                                                let _ = tx
-                                                    .send(AiEvent::Token("</think>\n".to_string()));
+                                                out.push_str("</think>\n");
                                                 in_reasoning = false;
                                             }
                                             if let Some(id) = tc.get("id").and_then(|i| i.as_str())
                                             {
                                                 if !tool_id.is_empty() && tool_id != id {
-                                                    emit_tool_call_generic(
-                                                        &tx, &tool_id, &tool_name, &tool_args,
-                                                    );
+                                                    buffered_tool_calls.push((
+                                                        tool_id.clone(),
+                                                        tool_name.clone(),
+                                                        tool_args.clone(),
+                                                    ));
                                                 }
                                                 tool_id = id.to_string();
                                                 tool_args.clear();
@@ -330,9 +335,17 @@ impl AiClient for OpenAiClient {
 
             match stall_result {
                 Ok(()) => {
+                    // Flush trailing reasoning close if still open.
                     if in_reasoning {
-                        let _ = tx.send(AiEvent::Token("</think>\n".to_string()));
+                        out.push_str("</think>\n");
                     }
+                    // Emit consolidated token.
+                    let _ = tx.send(AiEvent::Token(out));
+                    // Emit buffered tool calls in arrival order.
+                    for (id, name, args) in buffered_tool_calls {
+                        emit_tool_call_generic(&tx, &id, &name, &args);
+                    }
+                    // Emit the final (in-progress) tool call if any.
                     if !tool_id.is_empty() {
                         emit_tool_call_generic(&tx, &tool_id, &tool_name, &tool_args);
                     }
@@ -344,6 +357,11 @@ impl AiClient for OpenAiClient {
                     return Ok(());
                 }
                 Err(e) => {
+                    if is_retriable_transport(&e) && stream_retries < MAX_STREAM_RETRIES {
+                        stream_retries += 1;
+                        tokio::time::sleep(stream_retry_backoff(stream_retries)).await;
+                        continue; // per-attempt buffer is discarded; request re-issued
+                    }
                     if should_retry_stall(first_token_seen, retries, MAX_FIRST_TOKEN_RETRIES) {
                         retries += 1;
                         continue;
@@ -384,6 +402,20 @@ fn select_timeout(
 /// Whether a first-token stall should be retried.
 fn should_retry_stall(first_token_seen: bool, retries: u32, max_retries: u32) -> bool {
     !first_token_seen && retries < max_retries
+}
+
+/// A stream error worth retrying: a transport/body failure (the connection
+/// dropped mid-stream), as opposed to a stall timeout or our own runaway-buffer
+/// abort, which are synthetic `anyhow` errors that don't downcast.
+fn is_retriable_transport(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<reqwest::Error>().is_some()
+}
+
+/// Bounded exponential backoff for mid-stream retries.
+/// Returns 250ms, 500ms, 1s, capped at ~2s.
+fn stream_retry_backoff(attempt: u32) -> Duration {
+    let ms = (250 * 2u64.pow(attempt.saturating_sub(1))).min(2000);
+    Duration::from_millis(ms)
 }
 
 /// Whether a delta carries a real token (non-empty content, reasoning, or tool calls).
@@ -472,8 +504,8 @@ mod tests {
     use super::super::super::types::{AiEvent, Message, ToolCall, ToolResult, ToolSchema};
     use super::{
         build_chat_body, convert_messages, delta_carries_token, drain_stream_with_retry,
-        emit_tool_call_generic, parse_openai_usage, render_openai_tools, select_timeout,
-        should_retry_stall,
+        emit_tool_call_generic, is_retriable_transport, parse_openai_usage, render_openai_tools,
+        select_timeout, should_retry_stall, stream_retry_backoff,
     };
     use futures_util::{StreamExt, stream};
     use serde_json::{Value, json};
@@ -855,6 +887,57 @@ mod tests {
             request_count_check.load(Ordering::SeqCst),
             1,
             "should not have retried after first token was seen"
+        );
+    }
+
+    #[tokio::test]
+    async fn is_retriable_transport_true_for_reqwest_error() {
+        // Construct a real reqwest::Error by attempting a connection to an
+        // unroutable address; wrap it in anyhow and assert it downcasts.
+        let reqwest_err = reqwest::get("http://10.255.255.1:1").await.unwrap_err();
+        let wrapped: anyhow::Error = reqwest_err.into();
+        assert!(
+            is_retriable_transport(&wrapped),
+            "reqwest transport error should be retriable"
+        );
+    }
+
+    #[test]
+    fn is_retriable_transport_false_for_synthetic_stall() {
+        let err = anyhow::anyhow!("SSE stream stalled — no data received");
+        assert!(
+            !is_retriable_transport(&err),
+            "synthetic stall error should not be retriable"
+        );
+    }
+
+    #[test]
+    fn is_retriable_transport_false_for_runaway_abort() {
+        let err = anyhow::anyhow!(
+            "SSE stream leftover buffer exceeded 1048576 bytes without a newline; \
+             aborting to prevent memory exhaustion"
+        );
+        assert!(
+            !is_retriable_transport(&err),
+            "runaway-buffer abort should not be retriable"
+        );
+    }
+
+    #[test]
+    fn stream_retry_backoff_is_bounded_and_increasing() {
+        let b1 = stream_retry_backoff(1);
+        let b2 = stream_retry_backoff(2);
+        let b3 = stream_retry_backoff(3);
+        let b10 = stream_retry_backoff(10);
+
+        assert_eq!(b1, Duration::from_millis(250), "attempt 1 = 250ms");
+        assert_eq!(b2, Duration::from_millis(500), "attempt 2 = 500ms");
+        assert_eq!(b3, Duration::from_millis(1000), "attempt 3 = 1s");
+        assert_eq!(b10, Duration::from_millis(2000), "attempt 10 capped at 2s");
+        assert!(b1 < b2 && b2 < b3, "backoff should be increasing");
+        assert!(
+            b3 < b10 || b3 == Duration::from_millis(1000),
+            "should grow then cap"
         );
     }
 }
