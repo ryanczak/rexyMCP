@@ -4,21 +4,38 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-10a](milestones/M8-dashboard/phase-10a-activity-transcript-scroll.md)
-— first half of the Activity transcript. Adds `load_records` (raw `Vec<SessionRecord>`
-reader, refactored out of `load_status`), carries records on `DashboardData`, builds a
-**one-plain-text-line-per-record** transcript for all 12 event types (full replay,
-chronological), and adds **scroll keys** (Up/Down/PageUp/PageDown/Home/End) with a pure
-`clamp_scroll`. Replaces (deletes) the old `activity_lines` signal summary. Color /
-multi-line / tool-output / auto-follow-tail are **10b**. mcp-only, no new deps.
-Dispatch with `/rexymcp:dispatch phase-10a`.
+**Active phase:** none — phase-10a is `done`; **next drafting target is phase-10b**
+(transcript rich rendering). Run `/rexymcp:architect next` when ready.
 
-NB: phase-09 shipped, then the user requested several **direct** dashboard formatting
-fixes (committed `ff859ea`/`570251e`/`33cfe45`, not via the executor): Session panel
-now carries phase/session/model/state/turn/stage/age (Heartbeat panel removed, header
-is 3 panels); Budget split into tokens-in/tokens-out lines; Files left-trim guarantees
-the `+N -N` numstat is always visible (`FILE_LINE_MAX=28`, per-entry path budget). The
-phase-10a spec is written against this current code.
+**phase-10b scope (from the locked 10a/10b split):** on top of 10a's
+`transcript_lines`/`transcript_line` structure — add **color** (per-event-type styling,
+e.g. tool FAIL red, hard-fail red/bold, completion/thought dim), **multi-line
+expansion** (Completion/agent-thought and ToolResult output shown in full or
+multi-line, not a one-line `preview()`), **tool-output rendering**, and the
+**auto-follow-tail** scroll default (start pinned to newest, stick to bottom until the
+user scrolls up; `End` re-pins). 10a deliberately deferred all of these. Likely needs
+the viewport height at render time for tail-follow — design at draft time.
+
+**phase-11 (after 10b):** Budget panel **Tokens/Sec** + **"$ saved"**. *Still blocked
+on:* (1) the **$-saved pricing baseline** — saved vs. which cloud model's $/token
+(configurable rate? a specific model?); (2) tokens/sec data source (derive from
+`Metrics` record ts deltas, or capture a per-turn duration?). Ask the user before
+drafting.
+
+**phase-10a done** (2026-06-03, approved_first_try): `load_records` raw-record reader
+(refactored out of `load_status`, behavior-preserving), `records` on `DashboardData`,
+one-plain-line-per-record transcript for all 12 event types (chronological), scroll
+keys (Up/Down/PgUp/PgDn/Home/End) + pure `clamp_scroll`. Deleted the old
+`activity_lines` summary. mcp-only. Qwen/Qwen3.6-27B-FP8. (Fold for future specs:
+`ToolCall` carries an `origin: Origin` field.)
+
+**Direct (non-executor) dashboard fixes shipped after phase-09** (`ff859ea`/`570251e`/
+`33cfe45`/`e89b26b`): Session panel carries phase/session/model/state/turn/stage/age
+(Heartbeat panel removed, header is 3 panels); Budget split into tokens-in/tokens-out;
+Files left-trim guarantees the `+N -N` numstat is always visible (`FILE_LINE_MAX=28`).
+
+**Still pending confirmation on a *live* session:** phase-08 auto-attach, phase-09
+layout, and now the phase-10a transcript + scrolling (none verifiable headlessly).
 
 **Redesign roadmap (from the wireframe received 2026-06-03):**
 - **phase-09 (done):** header-band layout (Session · Budget · Compactions · Heartbeat

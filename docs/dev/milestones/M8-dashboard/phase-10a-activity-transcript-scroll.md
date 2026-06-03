@@ -1,7 +1,7 @@
 # Phase 10a: Activity transcript — raw-record reader + scroll mechanics
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-09 (done — the current panel layout this builds on).
 **Estimated diff:** ~230 lines (`mcp/src/status.rs` reader + `mcp/src/dashboard.rs`
 transcript builder, scroll state, render wiring + tests).
@@ -372,3 +372,26 @@ cargo test -p rexymcp → 194 passed; 0 failed; 0 ignored
 **Notes for review:**
 - `ToolCall` struct has an `origin: Origin` field not mentioned in the phase spec's event listing; the test for `Parsed` variant needed `origin: Origin::Native` to compile. This is an external-API divergence from the spec's sketch.
 - One conventional commit per phase.
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. All 6 spec tasks implemented exactly; the one
+  authorized deletion (`activity_lines` + its 2 tests) was done. Out-of-scope held:
+  transcript is plain `Line::from` (no color/`Span` styling), one line per record (no
+  multi-line/tool-output expansion), oldest-first default offset 0 (no auto-follow-tail),
+  no executor change, `load_status` behavior-preserving.
+- **Calibration:** none. The `origin: Origin::Native` adaptation was a clean
+  declare-deviations handling — adapted in *test* code only, flagged in Notes for
+  review, not a silent production change. (Worth folding into future phase specs that
+  construct `ToolCall`: it now carries an `origin: Origin` field.)
+- **Independent re-run:** fmt clean, build clean, clippy `-D warnings` clean (all
+  targets), `cargo test -p rexymcp` 194 passed. No `unwrap`/`expect`/`panic`/`unsafe`/
+  `#[allow]` in production paths. Tests are real: `transcript_line_renders_each_variant`
+  pins per-variant text, `clamp_scroll_bounds_to_last_line` pins the boundary math,
+  `transcript_line_truncates_long_content` covers the long/short (positive+negative) cases.
+- **E2E note:** live scrolling needs a TTY (not headless-runnable); transcript content
+  and clamp are proven by unit tests. The interactive scroll itself is to be confirmed
+  by the user on a live session, as with phase-08/09.
