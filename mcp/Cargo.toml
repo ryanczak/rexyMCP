@@ -17,7 +17,7 @@ tokio = { workspace = true, features = ["signal"] }
 rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
 schemars = "1"
 ratatui = "0.30"
-crossterm = "0.28"
+crossterm = "0.29"
 
 [dev-dependencies]
 async-trait.workspace = true

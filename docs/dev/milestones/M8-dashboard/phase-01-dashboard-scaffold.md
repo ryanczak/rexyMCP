@@ -1,7 +1,7 @@
 # Phase 01: `rexymcp dashboard` scaffold — event loop + single summary pane
 
 **Milestone:** M8 — Live session dashboard
-**Status:** in-progress (bounced — see [bugs/bug-01-1.md](bugs/bug-01-1.md): duplicate crossterm version)
+**Status:** review
 **Depends on:** M7 (done) — specifically `mcp/src/status.rs` (`load_status`,
 `summarize`, `find_latest_session_log`, `sessions_dir`), whose data pipeline this
 phase wraps in a live TUI.
@@ -369,3 +369,19 @@ executor deviation), confirm `Cargo.lock` holds a single crossterm `0.29.x`, and
 update the stale completion note. Everything else passed review (fmt/build/clippy/
 test green, no `unwrap`/`panic` in production paths, data-layer tests are real,
 `rexymcp status` unchanged).
+
+### Update — 2026-06-02 (takeover — bug-01-1 fix)
+
+**Executor:** Claude Code (architect direct)
+
+**Fix:** Changed `crossterm = "0.28"` to `crossterm = "0.29"` in `mcp/Cargo.toml`.
+`Cargo.lock` now holds exactly one crossterm entry (`0.29.0`). The executor
+re-dispatch ran 1 turn and produced no changes (did not apply the fix); the
+architect applied the one-line fix directly as a takeover to unblock.
+
+**Verification commands (all passed):**
+- `cargo fmt --all --check` — clean
+- `cargo build` — zero new warnings; lockfile updated to single crossterm 0.29.0
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 557 (executor) + 158 (rexymcp) passed, 0 failed
+- `grep -A2 'name = "crossterm"' Cargo.lock` — single entry, `0.29.0`
