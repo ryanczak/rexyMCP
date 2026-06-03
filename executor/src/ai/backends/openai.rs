@@ -890,11 +890,12 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn is_retriable_transport_true_for_reqwest_error() {
-        // Construct a real reqwest::Error by attempting a connection to an
-        // unroutable address; wrap it in anyhow and assert it downcasts.
-        let reqwest_err = reqwest::get("http://10.255.255.1:1").await.unwrap_err();
+    #[test]
+    fn is_retriable_transport_true_for_reqwest_error() {
+        // Construct a reqwest::Error synchronously from an unparseable URL —
+        // no network I/O.  .build() fails at request-build time with a
+        // reqwest::Error, which is all we need for the downcast check.
+        let reqwest_err = reqwest::Client::new().get("not-a-url").build().unwrap_err();
         let wrapped: anyhow::Error = reqwest_err.into();
         assert!(
             is_retriable_transport(&wrapped),

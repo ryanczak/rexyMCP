@@ -1,7 +1,7 @@
 # Phase 05: executor stream-retry resilience — survive mid-stream connection drops
 
 **Milestone:** M8 — Live session dashboard
-**Status:** in-progress (bounced — see [bugs/bug-05-1.md](bugs/bug-05-1.md): non-hermetic test)
+**Status:** review
 **Depends on:** none (executor-crate resilience fix; independent of the dashboard
 phases). Closes `bug-executor-2`.
 **Estimated diff:** ~190 lines (`executor/src/ai/backends/openai.rs` buffering +
@@ -294,3 +294,47 @@ completion Update Log, and commit (the run skipped its closeout).
 
 **Re-dispatch note:** the implementation is done — **only fix the one test**; do not
 re-do the production logic.
+
+### Update — 2026-06-02 14:00 (complete)
+
+**Executor:** Claude Sonnet 4.5 (re-dispatch, bug-05-1 fix + closeout)
+
+**What I did:** Fixed the non-hermetic test per bug-05-1. Replaced the real network
+call (`reqwest::get("http://10.255.255.1:1")`) with a synchronous, no-I/O
+construction of `reqwest::Error` via `.get("not-a-url").build().unwrap_err()`.
+Changed `#[tokio::test] async fn` → `#[test] fn`. No production code touched.
+
+**Verification commands:**
+
+```
+$ cargo fmt --all --check          # clean
+$ cargo build                      # zero new warnings
+$ cargo clippy --all-targets --all-features -- -D warnings  # clean
+$ cargo test -p rexymcp-executor   # 563 passed, 0 failed; wall-clock ~6 s (was ~30 s)
+$ cargo test                       # full workspace: 563 passed, 0 failed
+```
+
+**Grep for spec-pinned literal (single consolidated flush):**
+```
+$ grep -n 'tx.send(AiEvent::Token' executor/src/ai/backends/openai.rs
+343:                    let _ = tx.send(AiEvent::Token(out));
+```
+Only the one consolidated flush on the success path — the four eager sites are gone.
+
+**New test names and pass status:**
+- `is_retriable_transport_true_for_reqwest_error` — passed (hermetic, no network)
+- `is_retriable_transport_false_for_synthetic_stall` — passed
+- `is_retriable_transport_false_for_runaway_abort` — passed
+- `stream_retry_backoff_is_bounded_and_increasing` — passed
+
+**End-to-end verification:** No CLI surface change. The fix is internal to the AI
+backend. `cargo test -p rexymcp-executor` completes in ~6 s wall-clock (CPU-bound,
+no I/O blocking), confirming the network call is gone. The grep confirms buffering
+is in place (single flush). All existing stall/retry tests continue to pass.
+
+**Files changed:** `executor/src/ai/backends/openai.rs` (1 test), phase doc status,
+M8 README phase table.
+
+**Notes for review:** bug-05-1 resolved. Production code from the original
+implementation (committed as `136713c`) is untouched and correct. Only the test was
+at fault.
