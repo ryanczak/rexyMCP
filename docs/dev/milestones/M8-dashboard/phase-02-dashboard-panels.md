@@ -1,7 +1,7 @@
 # Phase 02: dashboard paned layout — Session · Heartbeat · Files
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done) — the `mcp/src/dashboard.rs` event loop, `load_data`,
 `DashboardData`, and the single-pane renderer this phase splits into panels.
 **Estimated diff:** ~190 lines (`mcp/src/dashboard.rs` panel refactor + tests + one
@@ -370,3 +370,26 @@ and Files (bottom). Threaded `now_ms` from the wall clock through `run_loop` →
 `SystemTime::duration_since(UNIX_EPOCH)` result — the only error is a
 pre-1970 clock, a can't-happen at a system boundary; `0` yields a large age
 rather than panicking. This is permitted per phase doc Task 4.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** escalated (architect takeover — see takeover Update Log entry)
+- **Bounces:** none (no executor bounce; the model produced three false-`complete`
+  no-ops, root cause filed as [bug-executor-1](bugs/bug-executor-1.md) and fixed
+  by [phase-03](phase-03-think-only-fix.md))
+- **Executor:** Claude Code (architect direct). Qwen3.6-35B-A3B-FP8 could not
+  deliver — it is a reasoning model that planned the full implementation inside a
+  `<think>` block then emitted no tool call; the executor loop misread the empty
+  result as a clean exit.
+- **Scope deviations:** none. The README's original "parse/verify · budget" panels
+  were deliberately deferred at draft time (that data isn't in `StatusSummary`),
+  documented in the phase doc's Out of scope — not a deviation from this phase's spec.
+- **Calibration:** none folded. The think-only no-op is a real executor defect, not
+  a recurring spec/process pattern; it is fixed directly by phase-03 rather than via
+  a WORKFLOW fold.
+
+**Re-review confirmation:** independent fmt/build/clippy/test all green (163 mcp +
+557 executor, 0 failures); three-panel `Layout` split, heartbeat age line, files
+placeholder, and error full-pane all present; `rexymcp status` output unchanged;
+commit scope limited to the two authorized files plus docs. Six new formatter unit
+tests are real (assert on rendered `Line` text).

@@ -4,27 +4,28 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-02 — dashboard paned layout: Session · Heartbeat ·
-Files](milestones/M8-dashboard/phase-02-dashboard-panels.md) (`review` — architect
-takeover complete 2026-06-02; pending `/rexymcp:review phase-02`).
-
-**phase-02 in one line:** split phase-01's single dashboard pane into a btop-style
-three-panel layout via `ratatui::layout::Layout` — a top row split into **Session**
-(phase/session/model/state) and **Heartbeat** (turn/stage/message/freshness age),
-with a **Files** numstat panel filling below. Same data (`StatusSummary`), same
-event loop and `q`/`Esc` exit; only rendering changes. Reuses `status::humanize_age`
-(bumped to `pub(crate)` — the only `status.rs` change). Parse/verify + budget panels
-are **deferred** (that data isn't in `StatusSummary` yet). No new dependencies.
-
-**Queued next:** [M8 / phase-03 — executor bugfix: think-only completion treated as
+**Active phase:** [M8 / phase-03 — executor bugfix: think-only completion treated as
 clean exit](milestones/M8-dashboard/phase-03-think-only-fix.md) (`todo` — drafted
-2026-06-02). Closes `bug-executor-1`: in `executor/src/agent/mod.rs` the
+2026-06-02, ready to dispatch).
+
+**phase-03 in one line:** closes `bug-executor-1`. In `executor/src/agent/mod.rs` the
 `ParseResult::NoToolCall` branch doesn't distinguish "think-block-only, nothing
 emitted" from "genuine prose clean exit", causing reasoning models (Qwen3,
 DeepSeek-R1) to false-`complete` with zero work. Fix: check
 `strip_think_blocks(&completion).trim().is_empty() && completion.contains("</think>")`
 before the clean-exit path; route think-only responses through the existing
-parse-failure feedback loop instead.
+parse-failure feedback loop (log `ParseFailed`, push feedback, `continue`) instead.
+Two new tests. ⚠️ **Dispatch caveat:** the active backend (Qwen3.6-35B-A3B-FP8) is
+the very reasoning model that triggers this bug — it may itself false-`complete`
+this phase. Consider a non-reasoning model override or expect an architect takeover.
+
+**phase-02 done** (2026-06-02): split phase-01's single dashboard pane into a
+btop-style three-panel layout (Session · Heartbeat · Files) via
+`ratatui::layout::Layout`. Reuses `status::humanize_age` (bumped to `pub(crate)`).
+Parse/verify + budget panels deferred (data not in `StatusSummary`). Verdict:
+escalated (architect takeover — Qwen3.6-35B-A3B-FP8 produced three false-`complete`
+no-ops; root cause = [bug-executor-1](milestones/M8-dashboard/bugs/bug-executor-1.md),
+fixed by phase-03). `rexymcp status` unchanged.
 
 **phase-01 done** (2026-06-02): `rexymcp dashboard --repo <path>` scaffold —
 `ratatui` live TUI, 500 ms poll of the latest session JSONL, single bordered
