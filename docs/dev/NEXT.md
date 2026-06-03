@@ -4,17 +4,14 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — phase-10a is `done`; **next drafting target is phase-10b**
-(transcript rich rendering). Run `/rexymcp:architect next` when ready.
-
-**phase-10b scope (from the locked 10a/10b split):** on top of 10a's
-`transcript_lines`/`transcript_line` structure — add **color** (per-event-type styling,
-e.g. tool FAIL red, hard-fail red/bold, completion/thought dim), **multi-line
-expansion** (Completion/agent-thought and ToolResult output shown in full or
-multi-line, not a one-line `preview()`), **tool-output rendering**, and the
-**auto-follow-tail** scroll default (start pinned to newest, stick to bottom until the
-user scrolls up; `End` re-pins). 10a deliberately deferred all of these. Likely needs
-the viewport height at render time for tail-follow — design at draft time.
+**Active phase:** [M8 / phase-10b](milestones/M8-dashboard/phase-10b-transcript-rich-render.md)
+— transcript rich rendering. Restructures `transcript_line` → `record_lines` (returns
+`Vec<Line>`), adds **per-event-type color**, **multi-line expansion** for Completion
+(agent thought) + ToolResult (tool output) with a `TRANSCRIPT_CONTENT_MAX_LINES=20`
+cap, and **auto-follow-tail** via a pure `visible_offset(follow, offset, total,
+viewport)` helper (`render_dashboard` takes `(offset, follow)`; `run_loop` starts
+`follow=true`, manual keys turn it off, `End` re-pins). Fixes 10a's "starts at oldest"
+wart. mcp-only, no new deps. Dispatch with `/rexymcp:dispatch phase-10b`.
 
 **phase-11 (after 10b):** Budget panel **Tokens/Sec** + **"$ saved"**. *Still blocked
 on:* (1) the **$-saved pricing baseline** — saved vs. which cloud model's $/token

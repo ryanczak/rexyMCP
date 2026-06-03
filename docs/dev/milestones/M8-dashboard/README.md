@@ -61,6 +61,7 @@ sibling built on the same `summarize()` core.
 | 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | done |
 | 09  | Redesign: header band + Compactions panel + Files left-trim ([phase-09-redesign-layout-compactions.md](phase-09-redesign-layout-compactions.md)) | done |
 | 10a | Activity transcript: raw-record reader + scroll mechanics + plain text ([phase-10a-activity-transcript-scroll.md](phase-10a-activity-transcript-scroll.md)) | done |
+| 10b | Activity transcript: color + multi-line + tool output + tail-follow ([phase-10b-transcript-rich-render.md](phase-10b-transcript-rich-render.md)) | todo |
 
 ## Design decisions
 
