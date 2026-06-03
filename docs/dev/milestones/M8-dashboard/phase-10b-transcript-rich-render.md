@@ -1,7 +1,7 @@
 # Phase 10b: Activity transcript — color, multi-line, tool output, tail-follow
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** done
 **Depends on:** phase-10a (done — the `transcript_line` / `clamp_scroll` / scroll
 wiring this phase enriches).
 **Estimated diff:** ~230 lines (`mcp/src/dashboard.rs` transcript rebuild + scroll
@@ -298,3 +298,67 @@ and updating its three 10a tests (Spec task 7).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-09 (started)
+
+**Executor:** rexyMCP assistant
+
+**Tasks:** Implementing spec tasks 1–7: restructure `transcript_line` → `record_lines`
+with multi-line expansion, per-event-type color, `body_lines` helper, `visible_offset`
+tail-follow, wire into `render_dashboard` and `run_loop`, update tests.
+
+### Update — 2026-06-03 (escalation)
+
+**Chosen lever:** session takeover
+**Rationale:** Two hard_fails. First was a pure infra drop (SSE stall, no code written).
+Second: the executor completed **all production tasks (1–6) correctly and compiling**
+on disk, then got stuck on **task 7 (updating the stale 10a tests)** — it emitted three
+identical malformed `patch null` calls and the governor terminated it
+(`IdenticalToolCallRepetition`). The spec was sound (production code came out right), so
+refined re-dispatch wouldn't address the failure and would re-encounter the same
+test-churn wall. Architect finished task 7 (rewrote the `transcript_line`→`record_lines`
+tests + added the multi-line/cap/`visible_offset` tests) and fixed one latent
+`clippy::useless_format` (`format!("completion:")` → `.to_string()`).
+
+### Update — 2026-06-03 (complete — architect takeover)
+
+**Summary:** Production tasks 1–6 (record_lines multi-line + color, body_lines,
+visible_offset tail-follow, render/run_loop wiring) were implemented by the executor and
+left compiling on disk; the architect completed task 7 (test updates) where the executor
+stalled, and fixed a latent clippy `useless_format`.
+
+**Commands:**
+
+```
+cargo fmt --all --check        → clean
+cargo build                    → clean
+cargo clippy --all-targets --all-features -- -D warnings → clean (after the useless_format fix)
+cargo test                     → 199 mcp + 565 executor passed; 0 failed; 2 ignored
+```
+
+**End-to-end verification:** Live color/tail-follow needs a TTY (not headless-runnable);
+content/cap/offset logic proven by unit tests (`record_lines_*`, `visible_offset_*`,
+`transcript_lines_flatmaps_records`). On-screen render to be confirmed by the user on a
+live session, as with phase-08/09/10a.
+
+**Files changed:** `mcp/src/dashboard.rs` (executor: tasks 1–6; architect: task-7 tests
++ clippy fix).
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** escalated
+- **Bounces:** 2 hard_fails (infra SSE stall, then `IdenticalToolCallRepetition` on
+  test-update patches) — no bug docs filed (not spec defects).
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (production tasks 1–6) + Claude (direct) (task-7
+  tests + clippy fix).
+- **Scope deviations:** none. All spec tasks landed; out-of-scope held (no wrapping, no
+  multi-line for non-Completion/ToolResult variants, no executor change, other panels
+  untouched).
+- **Calibration:** none yet — **data point** for a possible future fold: the local
+  executor reliably implements production code but stalls on **mechanical multi-edit
+  test churn** (repeated identical failed patches). If this recurs, consider splitting
+  "implementation" and "test-update" into separate phases, or pinning smaller test
+  edits. One occurrence; hold for recurrence.
+- **Latent issue caught in takeover:** `format!("completion:")` would have failed the
+  clippy `-D warnings` gate (`useless_format`) — the executor never reached the lint
+  step (stalled earlier), so it was unguarded. Fixed to `.to_string()`.

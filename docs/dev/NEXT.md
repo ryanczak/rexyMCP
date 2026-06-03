@@ -4,14 +4,23 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-10b](milestones/M8-dashboard/phase-10b-transcript-rich-render.md)
-— transcript rich rendering. Restructures `transcript_line` → `record_lines` (returns
-`Vec<Line>`), adds **per-event-type color**, **multi-line expansion** for Completion
-(agent thought) + ToolResult (tool output) with a `TRANSCRIPT_CONTENT_MAX_LINES=20`
-cap, and **auto-follow-tail** via a pure `visible_offset(follow, offset, total,
-viewport)` helper (`render_dashboard` takes `(offset, follow)`; `run_loop` starts
-`follow=true`, manual keys turn it off, `End` re-pins). Fixes 10a's "starts at oldest"
-wart. mcp-only, no new deps. Dispatch with `/rexymcp:dispatch phase-10b`.
+**Active phase:** none — phase-10b is `done` (escalated/architect-takeover, 2026-06-03).
+The Activity transcript redesign is complete: per-event-type color, multi-line
+Completion/ToolResult expansion (cap 20), and auto-follow-tail (`visible_offset`).
+**The only remaining redesign piece is phase-11** (Budget Tokens/Sec + "$ saved"), which
+is **blocked on the $-saved pricing-baseline decision** — do not draft it until the user
+answers (saved vs. which cloud model's $/token? configurable rate? a specific model?).
+Run `/rexymcp:architect next` only after that decision; otherwise M8's redesign work is
+effectively done and the milestone can head toward its close gate.
+
+**phase-10b done** (2026-06-03, **escalated**): executor (Qwen/Qwen3.6-27B-FP8) wrote all
+production code (record_lines multi-line + color, body_lines, visible_offset tail-follow,
+render/run_loop wiring) correctly but stalled on the mechanical test-update churn
+(`IdenticalToolCallRepetition` on patch); architect-takeover finished the test updates +
+fixed a latent `clippy::useless_format`. 199 mcp + 565 executor tests pass. **Calibration
+data point (hold for recurrence):** the local executor implements production code well but
+stalls on repeated identical patch attempts during multi-edit test churn — if it recurs,
+split implementation vs. test-update into separate phases.
 
 **phase-11 (after 10b):** Budget panel **Tokens/Sec** + **"$ saved"**. *Still blocked
 on:* (1) the **$-saved pricing baseline** — saved vs. which cloud model's $/token
