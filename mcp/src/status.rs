@@ -233,16 +233,19 @@ pub fn resolve_session_log(repo: &Path, session: Option<&str>) -> Result<PathBuf
     }
 }
 
+/// Resolve the log to report on and return its raw records (chronological).
+/// Shares resolution + read with `load_status`; the dashboard transcript needs
+/// the raw records, not the distilled summary.
+pub fn load_records(repo: &Path, session: Option<&str>) -> Result<Vec<SessionRecord>, String> {
+    let log_path = resolve_session_log(repo, session)?;
+    read_session_log(&log_path).map_err(|e| format!("failed to read {}: {}", log_path.display(), e))
+}
+
 /// Resolve the log to report on, read it, and return `(summary, json_records)`.
 /// `session` selects a specific log file whose name contains the substring;
 /// `None` picks the most recently modified one.
 pub fn load_status(repo: &Path, session: Option<&str>) -> Result<StatusSummary, String> {
-    let log_path = resolve_session_log(repo, session)?;
-
-    let records = read_session_log(&log_path)
-        .map_err(|e| format!("failed to read {}: {}", log_path.display(), e))?;
-
-    Ok(summarize(&records))
+    Ok(summarize(&load_records(repo, session)?))
 }
 
 #[cfg(test)]
@@ -444,6 +447,35 @@ mod tests {
         let s = load_status(dir.path(), None).unwrap();
         assert_eq!(s.latest_stage.as_deref(), Some("verify"));
         assert_eq!(s.phase.as_deref(), Some("phase-01"));
+    }
+
+    #[test]
+    fn load_records_returns_raw_records_in_order() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+        let log = sessions.join("session-phase-01-abc.jsonl");
+        let body = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&rec(100, 0, start())).unwrap(),
+            serde_json::to_string(&rec(200, 1, progress(1, "verify"))).unwrap(),
+        );
+        std::fs::write(&log, body).unwrap();
+
+        let records = load_records(dir.path(), None).unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(matches!(
+            &records[0].event,
+            SessionEvent::SessionStart { .. }
+        ));
+        assert!(matches!(&records[1].event, SessionEvent::Progress { .. }));
+    }
+
+    #[test]
+    fn load_records_errs_when_no_logs() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let err = load_records(dir.path(), None).unwrap_err();
+        assert!(err.contains("no session logs found"));
     }
 
     #[test]

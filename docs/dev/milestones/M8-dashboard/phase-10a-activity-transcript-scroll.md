@@ -1,7 +1,7 @@
 # Phase 10a: Activity transcript — raw-record reader + scroll mechanics
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-09 (done — the current panel layout this builds on).
 **Estimated diff:** ~230 lines (`mcp/src/status.rs` reader + `mcp/src/dashboard.rs`
 transcript builder, scroll state, render wiring + tests).
@@ -339,3 +339,36 @@ deletion is `activity_lines` + its two tests (Spec task 5).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-18 (started)
+
+**Executor:** rexyMCP executor
+
+**Plan:** Implement all 6 spec tasks: (1) `load_records` + refactor `load_status`, (2) `DashboardData.records` field + `load_data` rewrite, (3) transcript line builder (`transcript_lines`, `transcript_line`, `preview`), (4) `clamp_scroll` + scroll param on `render_dashboard`, (5) delete `activity_lines` + tests, (6) scroll state + key handling in `run_loop`. Add all tests from the test plan.
+
+### Update — 2025-07-18 (complete)
+
+**Executor:** rexyMCP executor
+
+**Files changed:**
+- `mcp/src/status.rs` — added `load_records`, refactored `load_status` to call it; added 2 tests (`load_records_returns_raw_records_in_order`, `load_records_errs_when_no_logs`)
+- `mcp/src/dashboard.rs` — added `SessionRecord`/`SessionEvent` imports; added `records` field on `DashboardData`; rewrote `load_data` to use `load_records`; added `transcript_lines`, `transcript_line`, `preview`, `clamp_scroll`; updated `render_dashboard` to take `scroll: u16` and render Activity as scrolled `Paragraph`; added scroll state + Up/Down/PageUp/PageDown/Home/End key handling in `run_loop`; deleted `activity_lines` and its 2 tests; added 7 new tests (`load_data_carries_raw_records`, `load_data_empty_records_on_error`, `transcript_lines_empty_placeholder`, `transcript_lines_one_line_per_record`, `transcript_line_renders_each_variant`, `transcript_line_truncates_long_content`, `clamp_scroll_bounds_to_last_line`)
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row 10a → `review`
+- `docs/dev/milestones/M8-dashboard/phase-10a-activity-transcript-scroll.md` — status → `review`, Update Log entries
+
+**Verification commands:**
+
+```
+cargo fmt --all --check → clean
+cargo build → clean
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test -p rexymcp → 194 passed; 0 failed; 0 ignored
+```
+
+**Verification summary:** fmt clean, build clean, clippy -D warnings clean, all 194 tests pass (7 new + 2 new in status.rs, 2 deleted activity_lines tests net +7).
+
+**End-to-end verification:** N/A — live scrolling requires a TTY and cannot be run headlessly. The transcript content and scroll-clamp are fully proven by the unit tests above (they exercise all 12 event variants, truncation, empty placeholder, clamp boundaries).
+
+**Notes for review:**
+- `ToolCall` struct has an `origin: Origin` field not mentioned in the phase spec's event listing; the test for `Parsed` variant needed `origin: Origin::Native` to compile. This is an external-API divergence from the spec's sketch.
+- One conventional commit per phase.

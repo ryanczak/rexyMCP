@@ -60,7 +60,7 @@ sibling built on the same `summarize()` core.
 | 07  | Compaction events — emit `SessionEvent::Compaction` from `compact()` ([phase-07-compaction-event.md](phase-07-compaction-event.md)) | done |
 | 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | done |
 | 09  | Redesign: header band + Compactions panel + Files left-trim ([phase-09-redesign-layout-compactions.md](phase-09-redesign-layout-compactions.md)) | done |
-| 10a | Activity transcript: raw-record reader + scroll mechanics + plain text ([phase-10a-activity-transcript-scroll.md](phase-10a-activity-transcript-scroll.md)) | todo |
+| 10a | Activity transcript: raw-record reader + scroll mechanics + plain text ([phase-10a-activity-transcript-scroll.md](phase-10a-activity-transcript-scroll.md)) | in-progress |
 
 ## Design decisions
 

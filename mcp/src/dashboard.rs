@@ -13,26 +13,126 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
+
 use crate::status::{self, StatusSummary};
 
 /// Snapshot of the latest session data or an error loading it.
 pub struct DashboardData {
     pub summary: StatusSummary,
+    pub records: Vec<SessionRecord>,
     pub error: Option<String>,
 }
 
 /// Load the latest session data. Pure, testable.
 pub fn load_data(repo: &Path, session: Option<&str>) -> DashboardData {
-    match status::load_status(repo, session) {
-        Ok(summary) => DashboardData {
-            summary,
+    match status::load_records(repo, session) {
+        Ok(records) => DashboardData {
+            summary: status::summarize(&records),
+            records,
             error: None,
         },
         Err(e) => DashboardData {
             summary: StatusSummary::default(),
+            records: Vec::new(),
             error: Some(e),
         },
     }
+}
+
+/// Max chars of free-text content shown per transcript line in 10a (10b expands
+/// to full multi-line). Keeps one record = one line.
+const TRANSCRIPT_PREVIEW_MAX: usize = 100;
+
+/// Build one `Line` per record, in chronological order. Returns a placeholder
+/// when there are no records.
+fn transcript_lines(records: &[SessionRecord]) -> Vec<Line<'static>> {
+    if records.is_empty() {
+        return vec![Line::from("(no activity yet)")];
+    }
+    records.iter().map(transcript_line).collect()
+}
+
+/// Format a single record as a one-line transcript entry.
+fn transcript_line(rec: &SessionRecord) -> Line<'static> {
+    let summary = match &rec.event {
+        SessionEvent::SessionStart { model, phase, .. } => {
+            format!("session start — phase {phase}, model {model}")
+        }
+        SessionEvent::Prompt { rendered } => {
+            format!("prompt ({} chars)", rendered.chars().count())
+        }
+        SessionEvent::Completion { raw } => {
+            format!("completion: {}", preview(raw))
+        }
+        SessionEvent::Parsed { tool_call } => {
+            format!("→ call {}", tool_call.name)
+        }
+        SessionEvent::ParseFailed { failure } => {
+            format!("parse failed: {}", preview(&failure.feedback))
+        }
+        SessionEvent::ToolResult {
+            name,
+            succeeded,
+            output_preview,
+        } => {
+            let status = if *succeeded { "ok" } else { "FAIL" };
+            format!("tool {name} [{status}] {}", preview(output_preview))
+        }
+        SessionEvent::Verify { diagnostics } => {
+            format!("verify: {} diagnostic(s)", diagnostics.len())
+        }
+        SessionEvent::HardFail { reason } => {
+            format!("HARD FAIL: {reason}")
+        }
+        SessionEvent::Progress { stage, .. } => {
+            format!("progress: {stage}")
+        }
+        SessionEvent::SessionEnd { status, turns } => {
+            format!("session end — {status} ({turns} turns)")
+        }
+        SessionEvent::Metrics {
+            input_tokens,
+            output_tokens,
+            ..
+        } => {
+            format!("metrics: {input_tokens} in / {output_tokens} out")
+        }
+        SessionEvent::Compaction {
+            tokens_before,
+            tokens_after,
+            ..
+        } => {
+            format!("compaction: {tokens_before} → {tokens_after} tokens")
+        }
+    };
+    Line::from(format!("[t{}] {}", rec.turn, summary))
+}
+
+/// Replace newlines/tabs with spaces and truncate to `TRANSCRIPT_PREVIEW_MAX`
+/// chars with a trailing `…` when longer. Char-based, not byte-based.
+fn preview(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| match c {
+            '\n' | '\t' => ' ',
+            other => other,
+        })
+        .collect();
+    let chars: Vec<char> = cleaned.chars().collect();
+    if chars.len() <= TRANSCRIPT_PREVIEW_MAX {
+        chars.into_iter().collect()
+    } else {
+        let mut result: String = chars.into_iter().take(TRANSCRIPT_PREVIEW_MAX).collect();
+        result.push('…');
+        result
+    }
+}
+
+/// Clamp a scroll offset so it can't run past the last line.
+fn clamp_scroll(scroll: u16, total_lines: usize) -> u16 {
+    let max = total_lines.saturating_sub(1) as u16;
+    scroll.min(max)
 }
 
 // --- Per-panel content formatters (pure, testable) ---
@@ -158,63 +258,6 @@ fn trim_path_left(path: &str, max: usize) -> String {
     format!("…{tail}")
 }
 
-/// Activity panel: tool / verify / parse / hard-fail signals.
-fn activity_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-
-    let has_any = summary.last_tool.is_some()
-        || summary.last_verify_diagnostics.is_some()
-        || summary.parse_failures > 0
-        || summary.hard_fail_reason.is_some();
-
-    if !has_any {
-        return vec![Line::from("(no activity yet)")];
-    }
-
-    if let Some(name) = &summary.last_tool {
-        let status = if summary.last_tool_ok.unwrap_or(true) {
-            Span::styled("ok", Style::new().fg(Color::Green))
-        } else {
-            Span::styled("FAIL", Style::new().fg(Color::Red))
-        };
-        lines.push(Line::from(vec![format!("tool: {name} ").into(), status]));
-    }
-
-    if let Some(n) = summary.last_verify_diagnostics {
-        if n == 0 {
-            lines.push(Line::from(Span::styled(
-                "verify: clean".to_string(),
-                Style::new().fg(Color::Green),
-            )));
-        } else {
-            lines.push(Line::from(Span::styled(
-                format!("verify: {n} diagnostic(s)"),
-                Style::new().fg(Color::Red),
-            )));
-        }
-    }
-
-    if summary.parse_failures > 0 {
-        lines.push(Line::from(Span::styled(
-            format!("parse failures: {}", summary.parse_failures),
-            Style::new().fg(Color::Yellow),
-        )));
-        if let Some(ref feedback) = summary.last_parse_feedback {
-            let truncated: String = feedback.chars().take(80).collect();
-            lines.push(Line::from(truncated));
-        }
-    }
-
-    if let Some(reason) = &summary.hard_fail_reason {
-        lines.push(Line::from(Span::styled(
-            format!("HARD FAIL: {reason}"),
-            Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )));
-    }
-
-    lines
-}
-
 /// Budget panel: token counts and context-window gauge.
 fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.last_input_tokens.is_none() {
@@ -262,7 +305,8 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 /// Render the dashboard into a three-panel header band (Session · Budget ·
 /// Compactions) above a body (Activity wide-left · Files right), or a
 /// single error pane when `data.error` is set.
-fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64) {
+/// Transcript is oldest-first; offset 0 shows the top (oldest).
+fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64, scroll: u16) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
             " Dashboard ",
@@ -302,10 +346,11 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
         Layout::horizontal([Constraint::Percentage(72), Constraint::Percentage(28)])
             .areas::<2>(body);
 
-    frame.render_widget(
-        panel(" Activity ", activity_lines(&data.summary)),
-        activity_area,
-    );
+    let transcript = transcript_lines(&data.records);
+    let activity = Paragraph::new(transcript)
+        .scroll((scroll, 0))
+        .block(Block::default().borders(Borders::ALL).title(" Activity "));
+    frame.render_widget(activity, activity_area);
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
 }
 
@@ -327,6 +372,8 @@ fn run_loop(
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use std::time::Duration;
 
+    let mut scroll: u16 = 0;
+
     loop {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -334,7 +381,8 @@ fn run_loop(
             .unwrap_or(0);
 
         let data = load_data(repo, session);
-        terminal.draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms))?;
+        scroll = clamp_scroll(scroll, transcript_lines(&data.records).len());
+        terminal.draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, scroll))?;
 
         if event::poll(Duration::from_millis(500))?
             && let Event::Key(key) = event::read()?
@@ -342,6 +390,12 @@ fn run_loop(
         {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Up => scroll = scroll.saturating_sub(1),
+                KeyCode::Down => scroll = scroll.saturating_add(1),
+                KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+                KeyCode::PageDown => scroll = scroll.saturating_add(10),
+                KeyCode::Home => scroll = 0,
+                KeyCode::End => scroll = u16::MAX,
                 _ => {}
             }
         }
@@ -385,7 +439,36 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let data = load_data(dir.path(), None);
         assert!(data.error.is_some());
+        assert!(data.records.is_empty());
         assert!(data.summary.ended.is_none());
+    }
+
+    #[test]
+    fn load_data_carries_raw_records() {
+        let dir = TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+        let log = sessions.join("session-phase-01-test.jsonl");
+        let body = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&rec(100, 0, start_event())).unwrap(),
+            serde_json::to_string(&rec(200, 1, progress_event(1, "verify"))).unwrap(),
+        );
+        std::fs::write(&log, body).unwrap();
+
+        let data = load_data(dir.path(), None);
+        assert!(data.error.is_none());
+        assert!(!data.records.is_empty());
+        assert_eq!(data.records.len(), 2);
+        assert_eq!(data.summary.phase.as_deref(), Some("phase-01"));
+    }
+
+    #[test]
+    fn load_data_empty_records_on_error() {
+        let dir = TempDir::new().unwrap();
+        let data = load_data(dir.path(), None);
+        assert!(data.error.is_some());
+        assert!(data.records.is_empty());
     }
 
     #[test]
@@ -499,30 +582,6 @@ mod tests {
         let lines = files_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no files changed")));
-    }
-
-    // --- activity_lines tests ---
-
-    #[test]
-    fn activity_lines_shows_tool_and_verify() {
-        let summary = StatusSummary {
-            last_tool: Some("bash".into()),
-            last_tool_ok: Some(true),
-            last_verify_diagnostics: Some(2),
-            ..StatusSummary::default()
-        };
-        let lines = activity_lines(&summary);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("bash")));
-        assert!(text.iter().any(|s| s.contains("2 diagnostic")));
-    }
-
-    #[test]
-    fn activity_lines_empty_placeholder() {
-        let summary = StatusSummary::default();
-        let lines = activity_lines(&summary);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("no activity")));
     }
 
     // --- budget_lines tests ---
@@ -703,5 +762,211 @@ mod tests {
             text[0]
         );
         assert!(text[0].contains("src/a.rs"));
+    }
+
+    // --- transcript_lines tests ---
+
+    #[test]
+    fn transcript_lines_empty_placeholder() {
+        let lines = transcript_lines(&[]);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("no activity")));
+    }
+
+    #[test]
+    fn transcript_lines_one_line_per_record() {
+        let records = vec![
+            rec(100, 0, start_event()),
+            rec(200, 1, progress_event(1, "verify")),
+            rec(300, 2, progress_event(2, "done")),
+        ];
+        let lines = transcript_lines(&records);
+        assert_eq!(lines.len(), 3);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text[0].contains("[t0]"));
+        assert!(text[1].contains("[t1]"));
+        assert!(text[2].contains("[t2]"));
+    }
+
+    #[test]
+    fn transcript_line_renders_each_variant() {
+        // SessionStart
+        let line = transcript_line(&rec(100, 0, start_event()));
+        let text = format!("{line}");
+        assert!(text.contains("[t0]"));
+        assert!(text.contains("session start"));
+        assert!(text.contains("phase-01"));
+        assert!(text.contains("test-model"));
+
+        // Completion
+        let comp = SessionEvent::Completion {
+            raw: "hello world".into(),
+        };
+        let line = transcript_line(&rec(200, 1, comp));
+        let text = format!("{line}");
+        assert!(text.contains("[t1]"));
+        assert!(text.contains("completion: hello world"));
+
+        // ToolResult ok
+        let tool_ok = SessionEvent::ToolResult {
+            name: "read_file".into(),
+            succeeded: true,
+            output_preview: "file contents".into(),
+        };
+        let line = transcript_line(&rec(300, 2, tool_ok));
+        let text = format!("{line}");
+        assert!(text.contains("[t2]"));
+        assert!(text.contains("tool read_file [ok]"));
+
+        // ToolResult FAIL
+        let tool_fail = SessionEvent::ToolResult {
+            name: "bash".into(),
+            succeeded: false,
+            output_preview: "error output".into(),
+        };
+        let line = transcript_line(&rec(400, 3, tool_fail));
+        let text = format!("{line}");
+        assert!(text.contains("[t3]"));
+        assert!(text.contains("tool bash [FAIL]"));
+
+        // SessionEnd
+        let end = SessionEvent::SessionEnd {
+            status: "complete".into(),
+            turns: 5,
+        };
+        let line = transcript_line(&rec(500, 5, end));
+        let text = format!("{line}");
+        assert!(text.contains("[t5]"));
+        assert!(text.contains("session end — complete (5 turns)"));
+
+        // Compaction
+        let compact = SessionEvent::Compaction {
+            tokens_before: 1000,
+            tokens_after: 600,
+            messages_signaturized: 3,
+            messages_evicted: 1,
+        };
+        let line = transcript_line(&rec(600, 4, compact));
+        let text = format!("{line}");
+        assert!(text.contains("[t4]"));
+        assert!(text.contains("compaction: 1000 → 600 tokens"));
+
+        // HardFail
+        let hf = SessionEvent::HardFail {
+            reason: "out of memory".into(),
+        };
+        let line = transcript_line(&rec(700, 3, hf));
+        let text = format!("{line}");
+        assert!(text.contains("[t3]"));
+        assert!(text.contains("HARD FAIL: out of memory"));
+
+        // Verify
+        let verify = SessionEvent::Verify {
+            diagnostics: vec![],
+        };
+        let line = transcript_line(&rec(800, 2, verify));
+        let text = format!("{line}");
+        assert!(text.contains("[t2]"));
+        assert!(text.contains("verify: 0 diagnostic(s)"));
+
+        // Metrics
+        let metrics = SessionEvent::Metrics {
+            input_tokens: 500,
+            output_tokens: 100,
+            context_pct: 0.3,
+        };
+        let line = transcript_line(&rec(900, 1, metrics));
+        let text = format!("{line}");
+        assert!(text.contains("[t1]"));
+        assert!(text.contains("metrics: 500 in / 100 out"));
+
+        // Prompt
+        let prompt = SessionEvent::Prompt {
+            rendered: "short prompt".into(),
+        };
+        let line = transcript_line(&rec(1000, 0, prompt));
+        let text = format!("{line}");
+        assert!(text.contains("[t0]"));
+        assert!(text.contains("prompt (12 chars)"));
+
+        // Progress
+        let prog = SessionEvent::Progress {
+            turn: 1,
+            stage: "verify".into(),
+            files_changed: vec![],
+            message: "done".into(),
+        };
+        let line = transcript_line(&rec(1100, 1, prog));
+        let text = format!("{line}");
+        assert!(text.contains("[t1]"));
+        assert!(text.contains("progress: verify"));
+
+        // Parsed
+        let parsed = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "write_file".into(),
+                arguments: serde_json::json!({}),
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let line = transcript_line(&rec(1200, 2, parsed));
+        let text = format!("{line}");
+        assert!(text.contains("[t2]"));
+        assert!(text.contains("→ call write_file"));
+
+        // ParseFailed
+        let pf = SessionEvent::ParseFailed {
+            failure: rexymcp_executor::parser::ParseFailure {
+                raw: String::new(),
+                detected_format: None,
+                candidates: vec![],
+                feedback: "expected a tool call".into(),
+            },
+        };
+        let line = transcript_line(&rec(1300, 3, pf));
+        let text = format!("{line}");
+        assert!(text.contains("[t3]"));
+        assert!(text.contains("parse failed: expected a tool call"));
+    }
+
+    #[test]
+    fn transcript_line_truncates_long_content() {
+        // Long raw — should be truncated with …
+        let long_raw = "a".repeat(150);
+        let comp = SessionEvent::Completion { raw: long_raw };
+        let line = transcript_line(&rec(100, 0, comp));
+        let text = format!("{line}");
+        assert!(
+            text.contains('…'),
+            "long content should have ellipsis: {text}"
+        );
+        // The summary portion (after "completion: ") should be bounded
+        let summary_part = text.strip_prefix("[t0] completion: ").unwrap();
+        assert!(
+            summary_part.chars().count() <= TRANSCRIPT_PREVIEW_MAX + 1,
+            "summary should be bounded to TRANSCRIPT_PREVIEW_MAX + ellipsis: {} chars",
+            summary_part.chars().count()
+        );
+
+        // Short raw — should NOT be truncated
+        let short_raw = "short".to_string();
+        let comp2 = SessionEvent::Completion { raw: short_raw };
+        let line2 = transcript_line(&rec(200, 1, comp2));
+        let text2 = format!("{line2}");
+        assert!(
+            !text2.contains('…'),
+            "short content should not have ellipsis: {text2}"
+        );
+        assert!(text2.contains("completion: short"));
+    }
+
+    // --- clamp_scroll tests ---
+
+    #[test]
+    fn clamp_scroll_bounds_to_last_line() {
+        assert_eq!(clamp_scroll(5, 3), 2);
+        assert_eq!(clamp_scroll(0, 0), 0);
+        assert_eq!(clamp_scroll(10, 100), 10);
+        assert_eq!(clamp_scroll(0, 1), 0);
     }
 }
