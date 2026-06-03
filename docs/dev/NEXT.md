@@ -4,14 +4,19 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M8 is back at its milestone-close gate (human sign-off
-required).** phase-08 is `done` (approved_first_try 2026-06-03); the dashboard now
-stays open until the user quits and auto-follows a newly-started session. Both M8
-Exit criteria remain met. Two options, your call:
-1. **Close M8** — write the retrospective, mark phase-07 (compaction) deferred/dropped,
-   and decide the next milestone (M9?). I won't cross this boundary without sign-off.
-2. **Do phase-07 first** — compaction events (`SessionEvent::Compaction`), the last
-   roadmap item (Gap C). Run `/rexymcp:architect next` to draft it.
+**Active phase:** [M8 / phase-07](milestones/M8-dashboard/phase-07-compaction-event.md)
+— emit `SessionEvent::Compaction` from the silent `compact()` firing (Gap C, the last
+measurement-roadmap item). `compact()` already returns a `CompactionReport`; the call
+site (`agent/mod.rs:182`) discards it. phase-07 captures it and logs a new
+`Compaction` variant (tokens before/after + messages signaturized/evicted). **Emit
+only** — rendering is deferred to the M8 dashboard redesign (phase-09+). Additive new
+variant; 4 edit sites (enum + emit + 2 exhaustive match arms, one cross-crate in
+`mcp/src/log_query.rs`); executor + mcp crates; no new deps. Dispatch with
+`/rexymcp:dispatch phase-07`.
+
+**M8 stays open after phase-07.** The milestone is being extended for a dashboard
+redesign (phase-09+); the user is producing UI wireframes before those phases are
+drafted. The milestone-close decision is deferred until the redesign work is scoped.
 
 **phase-08 done** (2026-06-03): fixed phase-01's auto-exit-on-`ended` that made
 `rexymcp dashboard` flash up and exit when no phase was running. Removed the auto-exit
