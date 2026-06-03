@@ -38,13 +38,15 @@ pub fn load_data(repo: &Path, session: Option<&str>) -> DashboardData {
 
 // --- Per-panel content formatters (pure, testable) ---
 
-/// Session panel: phase / session id / model / state.
-fn session_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+/// Session panel: phase / session / model / state / turn / stage / freshness.
+/// `now_ms` is injected (unix millis) so the age line is testable.
+fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     let phase = summary.phase.as_deref().unwrap_or("<unknown>");
     let session = summary.session_id.as_deref().unwrap_or("<unknown>");
-    lines.push(Line::from(format!("phase: {phase}  session: {session}")));
+    lines.push(Line::from(format!("phase: {phase}")));
+    lines.push(Line::from(format!("session: {session}")));
 
     if let Some(model) = &summary.model {
         lines.push(Line::from(format!("model: {model}")));
@@ -65,23 +67,11 @@ fn session_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
             }),
     )));
 
-    lines
-}
-
-/// Heartbeat panel: turn / stage / latest message / freshness age.
-/// `now_ms` is injected (unix millis) so the age line is testable.
-fn heartbeat_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-
     let stage = summary.latest_stage.as_deref().unwrap_or("<none>");
     lines.push(Line::from(format!(
         "turn {}, stage {stage}",
         summary.latest_turn
     )));
-
-    if let Some(msg) = &summary.latest_message {
-        lines.push(Line::from(msg.clone()));
-    }
 
     if let Some(ts) = summary.last_ts {
         let age_ms = now_ms.saturating_sub(ts);
@@ -123,7 +113,7 @@ fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         .map(|f| {
             Line::from(format!(
                 "  {} +{} -{}",
-                trim_path_left(&f.path, FILE_PATH_MAX),
+                trim_path_left(&f.path),
                 f.added,
                 f.removed
             ))
@@ -131,23 +121,22 @@ fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         .collect()
 }
 
-/// Max display width for a file path in the Files panel. Longer paths are
-/// left-trimmed so the filename (the meaningful tail) stays visible.
+/// Trim a file path to show the filename and as much trailing directory as
+/// fits. The `+N -N` numstat suffix is always appended by the caller;
+/// this function only touches the path component.
+///
+/// Strategy: always preserve the bare filename (last `/`-separated component).
+/// If the full path fits within `max` chars, return it unchanged. Otherwise
+/// return `…/{filename}` so the meaningful part is never clipped.
 const FILE_PATH_MAX: usize = 40;
 
-fn trim_path_left(path: &str, max: usize) -> String {
-    if path.chars().count() <= max {
+fn trim_path_left(path: &str) -> String {
+    if path.chars().count() <= FILE_PATH_MAX {
         return path.to_string();
     }
-    let tail: String = path
-        .chars()
-        .rev()
-        .take(max.saturating_sub(1))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("…{tail}")
+    // Extract the filename — the part after the last '/'.
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    format!("…/{filename}")
 }
 
 /// Activity panel: tool / verify / parse / hard-fail signals.
@@ -215,7 +204,10 @@ fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
 
     let in_toks = summary.last_input_tokens.unwrap_or(0);
     let out_toks = summary.last_output_tokens.unwrap_or(0);
-    let mut lines = vec![Line::from(format!("tokens: {in_toks} in / {out_toks} out"))];
+    let mut lines = vec![
+        Line::from(format!("tokens in:  {in_toks}")),
+        Line::from(format!("tokens out: {out_toks}")),
+    ];
 
     if let Some(pct) = summary.last_context_pct {
         if pct == 0.0 {
@@ -248,9 +240,9 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 
 // --- Renderer ---
 
-/// Render the dashboard into a four-panel header band (Session · Budget ·
-/// Compactions · Heartbeat) above a body (Activity wide-left · Files right),
-/// or a single error pane when `data.error` is set.
+/// Render the dashboard into a three-panel header band (Session · Budget ·
+/// Compactions) above a body (Activity wide-left · Files right), or a
+/// single error pane when `data.error` is set.
 fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
@@ -266,29 +258,24 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
 
     // Outer split: fixed-height header band + filling body.
     let [header, body] =
-        Layout::vertical([Constraint::Length(7), Constraint::Min(0)]).areas::<2>(area);
+        Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).areas::<2>(area);
 
-    // Header band: Session · Budget · Compactions · Heartbeat.
-    let [session_area, budget_area, compactions_area, heartbeat_area] = Layout::horizontal([
-        Constraint::Percentage(26),
-        Constraint::Percentage(20),
-        Constraint::Percentage(28),
-        Constraint::Percentage(26),
+    // Header band: Session (phase/session/model/state/turn/stage/age) · Budget · Compactions.
+    let [session_area, budget_area, compactions_area] = Layout::horizontal([
+        Constraint::Percentage(50),
+        Constraint::Percentage(25),
+        Constraint::Percentage(25),
     ])
-    .areas::<4>(header);
+    .areas::<3>(header);
 
     frame.render_widget(
-        panel(" Session ", session_lines(&data.summary)),
+        panel(" Session ", session_lines(&data.summary, now_ms)),
         session_area,
     );
     frame.render_widget(panel(" Budget ", budget_lines(&data.summary)), budget_area);
     frame.render_widget(
         panel(" Compactions ", compactions_lines(&data.summary)),
         compactions_area,
-    );
-    frame.render_widget(
-        panel(" Heartbeat ", heartbeat_lines(&data.summary, now_ms)),
-        heartbeat_area,
     );
 
     // Body: Activity (wide-left) · Files (right).
@@ -404,16 +391,17 @@ mod tests {
     // --- session_lines tests ---
 
     #[test]
-    fn session_lines_shows_phase_and_running_state() {
+    fn session_lines_shows_phase_session_separate_lines() {
         let summary = StatusSummary {
             phase: Some("phase-02".into()),
             session_id: Some("abc".into()),
             ended: None,
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary);
+        let lines = session_lines(&summary, 0);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("phase: phase-02")));
+        assert!(text.iter().any(|s| s == "phase: phase-02"));
+        assert!(text.iter().any(|s| s == "session: abc"));
         assert!(text.iter().any(|s| s.contains("running")));
     }
 
@@ -424,22 +412,20 @@ mod tests {
             ended: Some("complete".into()),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary);
+        let lines = session_lines(&summary, 0);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("ended (complete)")));
     }
 
-    // --- heartbeat_lines tests ---
-
     #[test]
-    fn heartbeat_lines_shows_turn_and_age() {
+    fn session_lines_shows_turn_stage_and_age() {
         let summary = StatusSummary {
             latest_turn: 5,
             latest_stage: Some("verify".into()),
             last_ts: Some(1000),
             ..StatusSummary::default()
         };
-        let lines = heartbeat_lines(&summary, 4000);
+        let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("turn 5")));
         assert!(text.iter().any(|s| s.contains("verify")));
@@ -447,12 +433,12 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_lines_omits_age_when_no_ts() {
+    fn session_lines_omits_age_when_no_ts() {
         let summary = StatusSummary {
             last_ts: None,
             ..StatusSummary::default()
         };
-        let lines = heartbeat_lines(&summary, 9999);
+        let lines = session_lines(&summary, 9999);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(!text.iter().any(|s| s.contains("last update")));
     }
@@ -603,6 +589,7 @@ mod tests {
 
     #[test]
     fn files_lines_trims_long_path_left() {
+        // Path longer than FILE_PATH_MAX; filename is "chars.rs".
         let long_path = "a/very/deeply/nested/path/that/is/definitely/longer/forty/chars.rs";
         assert!(long_path.chars().count() > FILE_PATH_MAX);
         let summary = StatusSummary {
@@ -617,36 +604,23 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert_eq!(text.len(), 1);
         let line = &text[0];
+        // Trimmed to "…/{filename}" — ellipsis prefix, filename preserved, numstat intact.
         assert!(
-            line.starts_with("  …"),
-            "trimmed path should start with ellipsis: {line}"
+            line.starts_with("  …/"),
+            "trimmed path should start with '…/': {line}"
+        );
+        assert!(
+            line.contains("chars.rs"),
+            "filename must be visible: {line}"
         );
         assert!(
             line.ends_with(" +5 -1"),
-            "line should end with numstat suffix: {line}"
+            "numstat suffix must always be present: {line}"
         );
-        // The path portion (between "  " and " +5 -1") should be exactly FILE_PATH_MAX chars
-        let path_part: String = line
-            .strip_prefix("  ")
-            .unwrap()
-            .strip_suffix(" +5 -1")
-            .unwrap()
-            .chars()
-            .collect();
-        assert_eq!(
-            path_part.chars().count(),
-            FILE_PATH_MAX,
-            "trimmed path should be exactly FILE_PATH_MAX chars: {path_part}"
-        );
-        // The tail should match the end of the original path
-        let tail_len = FILE_PATH_MAX.saturating_sub(1); // minus the ellipsis char
-        let original_tail: String = long_path
-            .chars()
-            .skip(long_path.chars().count() - tail_len)
-            .collect();
+        // Must NOT contain any intermediate directory components (they were trimmed).
         assert!(
-            path_part.ends_with(&original_tail),
-            "trimmed path should end with original path tail: {path_part} vs {original_tail}"
+            !line.contains("nested"),
+            "trimmed line must not contain intermediate dirs: {line}"
         );
     }
 
