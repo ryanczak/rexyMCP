@@ -102,6 +102,13 @@ fn compactions_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
+/// Total usable content width for a Files panel line (indent + path + space +
+/// numstat). Conservative for the 28%-wide panel at typical terminal widths.
+/// The path budget is computed per-entry as `FILE_LINE_MAX - 2 - 1 - numstat_width`,
+/// so the total rendered line is always ≤ `FILE_LINE_MAX + 2` chars regardless of
+/// how large the added/removed counts are.
+const FILE_LINE_MAX: usize = 28;
+
 /// Files panel: one line per changed file, or a placeholder when none.
 fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.files_changed.is_empty() {
@@ -111,37 +118,36 @@ fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         .files_changed
         .iter()
         .map(|f| {
+            let numstat = format!("+{} -{}", f.added, f.removed);
+            // Path budget = total line max − indent(2) − separator(1) − numstat.
+            // This guarantees the numstat is always visible regardless of its width.
+            let path_max = FILE_LINE_MAX.saturating_sub(1 + numstat.chars().count());
             Line::from(format!(
-                "  {} +{} -{}",
-                trim_path_left(&f.path),
-                f.added,
-                f.removed
+                "  {} {}",
+                trim_path_left(&f.path, path_max),
+                numstat
             ))
         })
         .collect()
 }
 
-/// Trim a file path to show the filename and as much trailing directory as
-/// fits. The `+N -N` numstat suffix is always appended by the caller;
-/// this function only touches the path component.
+/// Trim a file path to fit within `max` chars, always keeping the filename visible.
 ///
-/// Strategy: always preserve the bare filename (last `/`-separated component).
-/// If the full path fits within `max` chars, return it unchanged. Otherwise
-/// return `…/{filename}` so the meaningful part is never clipped.
-const FILE_PATH_MAX: usize = 40;
-
-fn trim_path_left(path: &str) -> String {
-    if path.chars().count() <= FILE_PATH_MAX {
+/// Three tiers:
+/// 1. Full path fits → return unchanged.
+/// 2. `…/{filename}` fits → return with directory trimmed.
+/// 3. Filename itself is too long → left-trim the filename, returning `…{tail}`.
+fn trim_path_left(path: &str, max: usize) -> String {
+    if path.chars().count() <= max {
         return path.to_string();
     }
-    // Try "…/{filename}" — preserves the full filename when it fits.
     let filename = path.rsplit('/').next().unwrap_or(path);
     let with_prefix = format!("…/{filename}");
-    if with_prefix.chars().count() <= FILE_PATH_MAX {
+    if with_prefix.chars().count() <= max {
         return with_prefix;
     }
-    // Filename itself is too long — left-trim it too, keeping the tail.
-    let available = FILE_PATH_MAX.saturating_sub(1); // one char reserved for '…'
+    // Filename itself exceeds the budget — keep the rightmost tail.
+    let available = max.saturating_sub(1); // one char for '…'
     let tail: String = filename
         .chars()
         .rev()
@@ -603,9 +609,8 @@ mod tests {
 
     #[test]
     fn files_lines_trims_long_path_left() {
-        // Path longer than FILE_PATH_MAX; filename is "chars.rs".
+        // Path longer than FILE_LINE_MAX; filename "chars.rs" is short enough to fit.
         let long_path = "a/very/deeply/nested/path/that/is/definitely/longer/forty/chars.rs";
-        assert!(long_path.chars().count() > FILE_PATH_MAX);
         let summary = StatusSummary {
             files_changed: vec![FileNumstat {
                 path: long_path.into(),
@@ -618,32 +623,37 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert_eq!(text.len(), 1);
         let line = &text[0];
-        // Trimmed to "…/{filename}" — ellipsis prefix, filename preserved, numstat intact.
+        // Numstat always visible.
         assert!(
-            line.starts_with("  …/"),
-            "trimmed path should start with '…/': {line}"
+            line.ends_with(" +5 -1"),
+            "numstat must always be visible: {line}"
         );
+        // Filename preserved via "…/{filename}" trimming.
         assert!(
             line.contains("chars.rs"),
             "filename must be visible: {line}"
         );
         assert!(
-            line.ends_with(" +5 -1"),
-            "numstat suffix must always be present: {line}"
-        );
-        // Must NOT contain any intermediate directory components (they were trimmed).
-        assert!(
             !line.contains("nested"),
-            "trimmed line must not contain intermediate dirs: {line}"
+            "intermediate dirs must be trimmed: {line}"
+        );
+        // Path portion fits within FILE_LINE_MAX.
+        let path_part = line
+            .strip_prefix("  ")
+            .unwrap()
+            .strip_suffix(" +5 -1")
+            .unwrap();
+        assert!(
+            path_part.chars().count() <= FILE_LINE_MAX,
+            "path portion must fit within FILE_LINE_MAX ({FILE_LINE_MAX}): '{path_part}' ({} chars)",
+            path_part.chars().count()
         );
     }
 
     #[test]
     fn files_lines_trims_long_filename_from_left() {
-        // Filename alone exceeds FILE_PATH_MAX — must be left-trimmed too.
-        let long_filename =
-            "a_very_long_filename_that_definitely_exceeds_forty_characters_limit.rs";
-        assert!(long_filename.chars().count() > FILE_PATH_MAX);
+        // Filename alone exceeds FILE_LINE_MAX — must be left-trimmed too.
+        let long_filename = "a_very_long_filename_that_definitely_exceeds_the_budget_limit.rs";
         let path = format!("src/{long_filename}");
         let summary = StatusSummary {
             files_changed: vec![FileNumstat {
@@ -656,23 +666,22 @@ mod tests {
         let lines = files_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let line = &text[0];
-        // Must start with '…' (filename was trimmed from the left).
+        // Numstat always visible.
+        assert!(
+            line.ends_with(" +2 -0"),
+            "numstat must always be visible: {line}"
+        );
+        // Path starts with '…' (was trimmed).
         assert!(line.starts_with("  …"), "must start with ellipsis: {line}");
-        // Must NOT contain '/' after the ellipsis (no directory separator when
-        // the filename itself was trimmed, as opposed to "…/filename" form).
+        // Path portion fits within FILE_LINE_MAX.
         let path_part = line
             .strip_prefix("  ")
             .unwrap()
             .strip_suffix(" +2 -0")
             .unwrap();
         assert!(
-            path_part.chars().count() <= FILE_PATH_MAX,
-            "path portion must fit within FILE_PATH_MAX: {path_part}"
-        );
-        // Numstat must be intact.
-        assert!(
-            line.ends_with(" +2 -0"),
-            "numstat must always be visible: {line}"
+            path_part.chars().count() <= FILE_LINE_MAX,
+            "path portion must fit within FILE_LINE_MAX ({FILE_LINE_MAX}): '{path_part}'"
         );
     }
 
