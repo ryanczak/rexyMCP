@@ -4,16 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-01 — `rexymcp dashboard` scaffold: event loop +
-single summary pane](milestones/M8-dashboard/phase-01-dashboard-scaffold.md)
-(`todo` — ready to dispatch; human sign-off given 2026-06-02).
+**Active phase:** [M8 / phase-02 — dashboard paned layout: Session · Heartbeat ·
+Files](milestones/M8-dashboard/phase-02-dashboard-panels.md) (`todo` — drafted
+2026-06-02, ready to dispatch).
 
-**phase-01 in one line:** add `rexymcp dashboard --repo <path>` — a `ratatui`-powered
-live TUI that polls the latest session JSONL every 500 ms, displays the existing
-`StatusSummary` in a single bordered pane, and exits on `q`/`Esc`. This is the
-event-loop + data scaffold; phase 02 adds the btop-style multi-panel layout. **New
-dependencies authorized:** `ratatui = "0.30"` and `crossterm = "0.28"` (the only
-`Cargo.toml` edits in M8). `rexymcp status` is unchanged.
+**phase-02 in one line:** split phase-01's single dashboard pane into a btop-style
+three-panel layout via `ratatui::layout::Layout` — a top row split into **Session**
+(phase/session/model/state) and **Heartbeat** (turn/stage/message/freshness age),
+with a **Files** numstat panel filling below. Same data (`StatusSummary`), same
+event loop and `q`/`Esc` exit; only rendering changes. Reuses `status::humanize_age`
+(bumped to `pub(crate)` — the only `status.rs` change). Parse/verify + budget panels
+are **deferred** (that data isn't in `StatusSummary` yet). No new dependencies.
+
+**phase-01 done** (2026-06-02): `rexymcp dashboard --repo <path>` scaffold —
+`ratatui` live TUI, 500 ms poll of the latest session JSONL, single bordered
+`StatusSummary` pane, `q`/`Esc`/`Ctrl-C` exit, auto-exit on `ended`. Bounced once
+([bug-01-1](milestones/M8-dashboard/bugs/bug-01-1.md): the authorized `crossterm
+0.28` pin couldn't unify with `ratatui 0.30`'s `crossterm 0.29`, leaving two
+crossterm copies — fixed by aligning to `crossterm = "0.29"`; an architect spec
+error, not an executor miss). Verdict: escalated (architect-direct takeover fix
+after a backend-glitched no-op re-dispatch). `rexymcp status` unchanged.
 
 **M7 done** (2026-06-02): per-run statistics substrate complete (runs, scorecard,
 provenance). One WORKFLOW fold (additive change shapes). Architecture.md and
