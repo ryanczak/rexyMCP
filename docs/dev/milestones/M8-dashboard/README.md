@@ -8,11 +8,11 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01–06a done. phase-06a flushes `SessionEvent::Metrics`
-per turn; **phase-06b** (drafted, todo) renders it as the Budget panel — once it
-lands, both Exit criteria ("parse/verifier signal" + "budget consumed") are met and
-M8 can close (with optional **phase-07**, compaction events). See the "Measurement
-roadmap" note below.
+**Status:** in progress — phase-01–06b done. **Both Exit criteria are now met**
+("parse/verifier signal" via phase-04's Activity panel; "budget consumed" via 06b's
+Budget panel). **At a milestone-close gate (awaiting human sign-off):** close M8 now
+(drop/defer the optional **phase-07** compaction events), or do phase-07 first. See
+the "Measurement roadmap" note below.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -51,7 +51,7 @@ sibling built on the same `summarize()` core.
 | 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | done |
 | 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | done |
 | 06a | metrics event — executor emits per-turn `SessionEvent::Metrics` (tokens + context %) ([phase-06a-metrics-event.md](phase-06a-metrics-event.md)) | done |
-| 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | review |
+| 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | done |
 | 07  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
 
 ## Design decisions

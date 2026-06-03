@@ -1,7 +1,7 @@
 # Phase 06b: Budget panel — render live token / context-window usage
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (done) — the executor now emits `SessionEvent::Metrics`
 per turn; this phase folds it into `StatusSummary` and renders it. Mirrors phase-04
 (the Activity panel) almost exactly.
@@ -306,3 +306,22 @@ $ grep -r "unmeasured" mcp/src/dashboard.rs
 ```
 
 **Notes for review:** None — implementation matches spec exactly.
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 — clean first-try, no infra interruption this
+  time. ~130-line mcp-only feature, all gates green.
+- **Scope deviations:** none. Confined to the two authorized files (`status.rs`,
+  `dashboard.rs`) + docs; `format_status` untouched; no executor-crate changes.
+- **Calibration:** none. (The 27B variant has now cleanly delivered three mcp panels
+  — phase-04, and 06b — when the backend doesn't drop; the model is reliably capable
+  on this class of work.)
+
+**Re-review confirmation:** independent fmt/clippy/test green (175 mcp + 564 executor,
+0 failures); `summarize` folds `Metrics` (latest-wins, verified by
+`summarize_records_latest_metrics`); the Budget panel renders tokens + a colored
+context gauge; the pinned negative case (`Some(0.0)` → "unmeasured", not "0%") is
+covered by `budget_lines_unmeasured_when_zero_pct`; `unwrap_or(0)` is safe `Option`
+defaulting (not a forbidden `.unwrap()`); commit scope is clean.

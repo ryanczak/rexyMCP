@@ -4,17 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-06b — Budget panel: render live token / context-window
-usage](milestones/M8-dashboard/phase-06b-budget-panel.md) (`todo` — drafted
-2026-06-03, ready to dispatch).
+**Active phase:** none — **M8 is at a milestone-close gate (human sign-off required).**
+phase-06b is `done`; **both M8 Exit criteria are now met** (parse/verifier signal +
+budget consumed). Two options, your call:
+1. **Close M8** — write the retrospective, mark phase-07 (compaction) deferred/dropped,
+   and decide the next milestone (M9?). I won't cross this boundary without sign-off.
+2. **Do phase-07 first** — compaction events (`SessionEvent::Compaction`), the last
+   roadmap item (Gap C). Run `/rexymcp:architect next` to draft it.
 
-**phase-06b in one line:** the render half of "budget consumed" (Gap B). phase-06a
-emits `SessionEvent::Metrics` per turn but `summarize` drops it; fold it into
-`StatusSummary` (`last_input_tokens`, `last_output_tokens`, `last_context_pct`) and
-add a fifth **Budget** panel (full-width row beneath the 2×2 grid) with token counts
-and a colored context-window gauge (green/yellow/red). mcp-only, mirrors phase-04.
-**Lands the second Exit criterion** — after this M8 can close (only optional phase-07
-compaction remains).
+**phase-06b done** (2026-06-03): the Budget panel — `summarize` folds
+`SessionEvent::Metrics` into `StatusSummary` (`last_input_tokens`, `last_output_tokens`,
+`last_context_pct`); the dashboard gained a fifth full-width Budget panel with token
+counts and a colored context-window gauge (green <50 / yellow 50–80 / red ≥80;
+`0.0` = unmeasured). Verdict: approved_first_try (Qwen/Qwen3.6-27B-FP8, clean, no infra
+drop). mcp-only.
 
 **phase-06a done** (2026-06-02): `SessionEvent::Metrics { input_tokens, output_tokens,
 context_pct }` added to the enum and emitted once per turn right after the `Completion`
