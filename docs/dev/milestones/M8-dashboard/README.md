@@ -8,12 +8,10 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01/02/03 done; phase-04 (Activity panel) drafted,
-todo. The Exit criteria split into two remaining slices: **phase-04** surfaces the
-parse/verifier/tool signals already in the JSONL (closes "parse/verifier signal"),
-and **phase-05** captures + shows live token / context-window usage (closes "budget
-consumed"). **phase-06** (optional) records compaction firings. See the
-"Measurement roadmap" note below.
+**Status:** in progress — phase-01/02/03/04 done. The "parse/verifier signal" Exit
+criterion is now met (phase-04's Activity panel). Remaining: **phase-05** captures +
+shows live token / context-window usage (closes "budget consumed"), and **phase-06**
+(optional) records compaction firings. See the "Measurement roadmap" note below.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -49,7 +47,7 @@ sibling built on the same `summarize()` core.
 | 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | done |
 | 02  | paned layout — Session · Heartbeat · Files ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) | done |
 | 03  | executor bugfix — think-only completion treated as clean exit ([phase-03-think-only-fix.md](phase-03-think-only-fix.md)) | done |
-| 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | todo |
+| 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | done |
 | 05  | Budget panel — capture + show live token / context-window usage *(not yet drafted)* | planned |
 | 06  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
 

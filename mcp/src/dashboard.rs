@@ -106,6 +106,63 @@ fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         .collect()
 }
 
+/// Activity panel: tool / verify / parse / hard-fail signals.
+fn activity_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    let has_any = summary.last_tool.is_some()
+        || summary.last_verify_diagnostics.is_some()
+        || summary.parse_failures > 0
+        || summary.hard_fail_reason.is_some();
+
+    if !has_any {
+        return vec![Line::from("(no activity yet)")];
+    }
+
+    if let Some(name) = &summary.last_tool {
+        let status = if summary.last_tool_ok.unwrap_or(true) {
+            Span::styled("ok", Style::new().fg(Color::Green))
+        } else {
+            Span::styled("FAIL", Style::new().fg(Color::Red))
+        };
+        lines.push(Line::from(vec![format!("tool: {name} ").into(), status]));
+    }
+
+    if let Some(n) = summary.last_verify_diagnostics {
+        if n == 0 {
+            lines.push(Line::from(Span::styled(
+                "verify: clean".to_string(),
+                Style::new().fg(Color::Green),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                format!("verify: {n} diagnostic(s)"),
+                Style::new().fg(Color::Red),
+            )));
+        }
+    }
+
+    if summary.parse_failures > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("parse failures: {}", summary.parse_failures),
+            Style::new().fg(Color::Yellow),
+        )));
+        if let Some(ref feedback) = summary.last_parse_feedback {
+            let truncated: String = feedback.chars().take(80).collect();
+            lines.push(Line::from(truncated));
+        }
+    }
+
+    if let Some(reason) = &summary.hard_fail_reason {
+        lines.push(Line::from(Span::styled(
+            format!("HARD FAIL: {reason}"),
+            Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    lines
+}
+
 // --- Panel helpers ---
 
 /// Wrap lines in a bordered `Block` with the given title.
@@ -115,7 +172,7 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 
 // --- Renderer ---
 
-/// Render the dashboard into a three-panel paned layout (or a single error
+/// Render the dashboard into a four-panel 2×2 grid (or a single error
 /// pane when `data.error` is set).
 fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64) {
     if let Some(ref err) = data.error {
@@ -130,7 +187,7 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
         return;
     }
 
-    // Outer split: fixed-height top row + filling bottom region (Files).
+    // Outer split: fixed-height top row + filling bottom region.
     let [top, bottom] =
         Layout::vertical([Constraint::Length(8), Constraint::Min(0)]).areas::<2>(area);
 
@@ -144,7 +201,17 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
         panel(" Heartbeat ", heartbeat_lines(&data.summary, now_ms)),
         right,
     );
-    frame.render_widget(panel(" Files ", files_lines(&data.summary)), bottom);
+
+    // Bottom row: Files (left) | Activity (right).
+    let [files_area, activity_area] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .areas::<2>(bottom);
+
+    frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
+    frame.render_widget(
+        panel(" Activity ", activity_lines(&data.summary)),
+        activity_area,
+    );
 }
 
 // --- Entry points ---
@@ -348,5 +415,29 @@ mod tests {
         let lines = files_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no files changed")));
+    }
+
+    // --- activity_lines tests ---
+
+    #[test]
+    fn activity_lines_shows_tool_and_verify() {
+        let summary = StatusSummary {
+            last_tool: Some("bash".into()),
+            last_tool_ok: Some(true),
+            last_verify_diagnostics: Some(2),
+            ..StatusSummary::default()
+        };
+        let lines = activity_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("bash")));
+        assert!(text.iter().any(|s| s.contains("2 diagnostic")));
+    }
+
+    #[test]
+    fn activity_lines_empty_placeholder() {
+        let summary = StatusSummary::default();
+        let lines = activity_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("no activity")));
     }
 }

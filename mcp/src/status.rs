@@ -26,23 +26,25 @@ pub struct StatusSummary {
     pub last_ts: Option<u64>,
     /// `Some(status)` once the loop wrote a `SessionEnd`; `None` while running.
     pub ended: Option<String>,
+    /// Count of `ParseFailed` records seen so far.
+    pub parse_failures: usize,
+    /// Feedback text from the most recent `ParseFailed`, if any.
+    pub last_parse_feedback: Option<String>,
+    /// Diagnostic count from the most recent `Verify`. `None` = no verify yet;
+    /// `Some(0)` = the last verify was clean.
+    pub last_verify_diagnostics: Option<usize>,
+    /// Name of the most recent `ToolResult`, and whether it succeeded.
+    pub last_tool: Option<String>,
+    pub last_tool_ok: Option<bool>,
+    /// Reason from a `HardFail` record, if one was logged.
+    pub hard_fail_reason: Option<String>,
 }
 
 /// Fold a session log's records into the latest-state summary. Pure: the
 /// "running vs. ended" distinction is `ended.is_none()`, and freshness is left
 /// to the caller (it owns the clock).
 pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
-    let mut summary = StatusSummary {
-        session_id: None,
-        phase: None,
-        model: None,
-        latest_turn: 0,
-        latest_stage: None,
-        latest_message: None,
-        files_changed: Vec::new(),
-        last_ts: None,
-        ended: None,
-    };
+    let mut summary = StatusSummary::default();
 
     for rec in records {
         summary.last_ts = Some(match summary.last_ts {
@@ -75,7 +77,23 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 summary.ended = Some(status.clone());
                 summary.latest_turn = summary.latest_turn.max(*turns);
             }
-            _ => {}
+            SessionEvent::ParseFailed { failure } => {
+                summary.parse_failures += 1;
+                summary.last_parse_feedback = Some(failure.feedback.clone());
+            }
+            SessionEvent::Verify { diagnostics } => {
+                summary.last_verify_diagnostics = Some(diagnostics.len());
+            }
+            SessionEvent::ToolResult {
+                name, succeeded, ..
+            } => {
+                summary.last_tool = Some(name.clone());
+                summary.last_tool_ok = Some(*succeeded);
+            }
+            SessionEvent::HardFail { reason } => {
+                summary.hard_fail_reason = Some(reason.clone());
+            }
+            _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
     }
 
@@ -210,6 +228,46 @@ mod tests {
             stage: stage.into(),
             files_changed: vec![],
             message: format!("turn={turn} stage={stage} +0/-0 files=0"),
+        }
+    }
+
+    fn parse_failed(feedback: &str) -> SessionEvent {
+        SessionEvent::ParseFailed {
+            failure: rexymcp_executor::parser::ParseFailure {
+                raw: String::new(),
+                detected_format: None,
+                candidates: vec![],
+                feedback: feedback.into(),
+            },
+        }
+    }
+
+    fn verify(diagnostics: usize) -> SessionEvent {
+        SessionEvent::Verify {
+            diagnostics: (0..diagnostics)
+                .map(|i| rexymcp_executor::governor::verifier::Diagnostic {
+                    path: std::path::PathBuf::from("src/test.rs"),
+                    message: format!("diag {i}"),
+                    severity: rexymcp_executor::governor::verifier::Severity::Warning,
+                    line: 1,
+                    column: Some(1),
+                    code: None,
+                })
+                .collect(),
+        }
+    }
+
+    fn tool_result(name: &str, succeeded: bool) -> SessionEvent {
+        SessionEvent::ToolResult {
+            name: name.into(),
+            succeeded,
+            output_preview: String::new(),
+        }
+    }
+
+    fn hard_fail(reason: &str) -> SessionEvent {
+        SessionEvent::HardFail {
+            reason: reason.into(),
         }
     }
 
@@ -352,5 +410,58 @@ mod tests {
             out.contains("stage awaiting_model"),
             "status output should show awaiting_model stage: {out}"
         );
+    }
+
+    #[test]
+    fn summarize_counts_parse_failures() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, parse_failed("first error")),
+            rec(300, 2, parse_failed("second error")),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.parse_failures, 2);
+        assert_eq!(s.last_parse_feedback.as_deref(), Some("second error"));
+    }
+
+    #[test]
+    fn summarize_records_last_verify() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, verify(3)),
+            rec(300, 2, verify(0)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.last_verify_diagnostics, Some(0));
+    }
+
+    #[test]
+    fn summarize_records_last_tool() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, tool_result("bash", false)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.last_tool.as_deref(), Some("bash"));
+        assert_eq!(s.last_tool_ok, Some(false));
+    }
+
+    #[test]
+    fn summarize_records_hard_fail() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, hard_fail("boom"))];
+        let s = summarize(&recs);
+        assert_eq!(s.hard_fail_reason.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn summarize_clean_run_has_no_activity() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, progress(1, "turn_start"))];
+        let s = summarize(&recs);
+        assert_eq!(s.parse_failures, 0);
+        assert_eq!(s.last_parse_feedback, None);
+        assert_eq!(s.last_verify_diagnostics, None);
+        assert_eq!(s.last_tool, None);
+        assert_eq!(s.last_tool_ok, None);
+        assert_eq!(s.hard_fail_reason, None);
     }
 }

@@ -1,7 +1,7 @@
 # Phase 04: surface parse / verify / tool signals — the Activity panel
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** done
 **Depends on:** phase-02 (done) — extends `StatusSummary` / `summarize` and the
 `dashboard.rs` paned renderer. Independent of phase-03.
 **Estimated diff:** ~260 lines (`mcp/src/status.rs` summarize + `mcp/src/dashboard.rs`
@@ -273,3 +273,82 @@ with phases 01–02). Verify against the built binary and quote in the Update Lo
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-01-09 00:00 (started)
+
+**Executor:** rexyMCP executor
+
+Implementing phase-04: extend `StatusSummary` with activity fields, fold
+`ParseFailed`/`Verify`/`ToolResult`/`HardFail` in `summarize`, add Activity
+panel to dashboard with 2×2 layout.
+
+### Update — 2026-06-02 (escalation)
+
+**Chosen lever:** session takeover (closeout only)
+**Rationale:** the run returned `hard_fail` with blocker
+`BackendError: "error decoding response body"` at turn 77 — a transient backend
+connection drop during the *end-to-end verification* step, **after** all four
+tasks were implemented and fmt/build/clippy/test had already passed. Refined
+re-dispatch would wastefully re-run already-complete, already-green work and risk
+re-hitting backend flakiness or no-op confusion on work the executor would find
+already done. The executor (Qwen/Qwen3.6-27B-FP8) did the implementation
+correctly; the architect performed only the commit + status flip the wire-drop
+interrupted.
+
+### Update — 2026-06-02 (complete — architect closeout of an infra hard_fail)
+
+**Summary:** Phase-04 was fully implemented by the executor before a backend
+connection drop aborted the run at the e2e-verification step. All four tasks
+landed: `StatusSummary` gained the six activity fields; `summarize` switched to
+`StatusSummary::default()` and folds `ParseFailed` / `Verify` / `ToolResult` /
+`HardFail` (the old `_ => {}` now only skips `Prompt`/`Completion`/`Parsed`);
+`dashboard.rs` gained `activity_lines` and a fourth **Activity** panel in a 2×2
+grid. `format_status` was correctly left unchanged. The architect verified and
+closed out (commit + status) since the executor's clean `complete` return never
+arrived.
+
+**Acceptance criteria:** all met (verified independently below).
+
+**Verification commands (architect re-run, all passed):**
+- `cargo fmt --all --check` — clean
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 170 (mcp) + 559 (executor) passed, 0 failed
+- 7 new tests green: `summarize_counts_parse_failures`, `summarize_records_last_verify`,
+  `summarize_records_last_tool`, `summarize_records_hard_fail`,
+  `summarize_clean_run_has_no_activity`, `activity_lines_shows_tool_and_verify`,
+  `activity_lines_empty_placeholder`
+
+**End-to-end verification:** `cargo build` clean; the executor's own e2e run (per
+the session log) wrote a session JSONL with tool_result/verify/parse_failed records
+and confirmed `status --json` surfaces the new fields before the backend dropped.
+
+**Files changed:**
+- `mcp/src/status.rs` — six `StatusSummary` fields + four `summarize` arms (+111/-12)
+- `mcp/src/dashboard.rs` — `activity_lines` + Activity panel, 2×2 layout (+94/-3)
+
+**New tests (7):** 5 in `status.rs`, 2 in `dashboard.rs` (listed above).
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_first_try (closed via architect takeover of an
+  infrastructure hard_fail — see note)
+- **Bounces:** none. The `hard_fail` was a backend connection drop
+  (`error decoding response body`), **not** a model or spec failure; the
+  implementation passed all gates before the wire died.
+- **Executor:** Qwen/Qwen3.6-27B-FP8 — **the model implemented the entire phase
+  correctly** (all 4 tasks, 7 real tests, all gates green). The architect only
+  performed the commit + status flip the backend drop prevented. This is a
+  *positive* scorecard data point: the 27B non-reasoning variant handled a
+  ~205-line multi-file feature with no bounce.
+- **Scope deviations:** none. Confined to the two authorized files; `format_status`
+  correctly untouched; no executor-crate or `Cargo.toml` changes.
+- **Calibration:** none folded. Backend-drop hard_fails are infra flakiness, not a
+  process signal. (Second infra-induced hard_fail this milestone after phase-03's
+  `RunawayOutput` — if backend instability keeps truncating otherwise-complete runs,
+  consider a retry/resume mechanism, but that's an executor-design question, not a
+  WORKFLOW fold.)
+
+**Re-review confirmation:** independent fmt/clippy/test all green; `summarize` folds
+the four events correctly; Activity panel renders tool/verify/parse/hard-fail; both
+spot-checked tests fail if the new code is removed; no forbidden patterns; no
+unwrap/panic in production.
