@@ -4,9 +4,21 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — phase-09 is `done`; **next drafting target is phase-10
-(Activity transcript), but it is the riskiest phase of the redesign** and warrants a
-decomposition discussion before drafting. Run `/rexymcp:architect next` when ready.
+**Active phase:** [M8 / phase-10a](milestones/M8-dashboard/phase-10a-activity-transcript-scroll.md)
+— first half of the Activity transcript. Adds `load_records` (raw `Vec<SessionRecord>`
+reader, refactored out of `load_status`), carries records on `DashboardData`, builds a
+**one-plain-text-line-per-record** transcript for all 12 event types (full replay,
+chronological), and adds **scroll keys** (Up/Down/PageUp/PageDown/Home/End) with a pure
+`clamp_scroll`. Replaces (deletes) the old `activity_lines` signal summary. Color /
+multi-line / tool-output / auto-follow-tail are **10b**. mcp-only, no new deps.
+Dispatch with `/rexymcp:dispatch phase-10a`.
+
+NB: phase-09 shipped, then the user requested several **direct** dashboard formatting
+fixes (committed `ff859ea`/`570251e`/`33cfe45`, not via the executor): Session panel
+now carries phase/session/model/state/turn/stage/age (Heartbeat panel removed, header
+is 3 panels); Budget split into tokens-in/tokens-out lines; Files left-trim guarantees
+the `+N -N` numstat is always visible (`FILE_LINE_MAX=28`, per-entry path budget). The
+phase-10a spec is written against this current code.
 
 **Redesign roadmap (from the wireframe received 2026-06-03):**
 - **phase-09 (done):** header-band layout (Session · Budget · Compactions · Heartbeat
