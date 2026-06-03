@@ -23,6 +23,7 @@ pub fn event_type_str(event: &SessionEvent) -> &'static str {
         SessionEvent::HardFail { .. } => "hard_fail",
         SessionEvent::Progress { .. } => "progress",
         SessionEvent::SessionEnd { .. } => "session_end",
+        SessionEvent::Metrics { .. } => "metrics",
     }
 }
 

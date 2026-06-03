@@ -1,7 +1,7 @@
 # Phase 06a: executor emits a per-turn `SessionEvent::Metrics`
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** done
 **Depends on:** none (executor-crate change). Produces the data **phase-06b** (Budget
 panel) will render.
 **Estimated diff:** ~90 lines (`executor/src/store/sessions/event.rs` +
@@ -231,3 +231,60 @@ The fix is internal to the executor loop (no CLI surface). Verify:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-02 (escalation)
+
+**Chosen lever:** session takeover (test-fix + closeout only)
+**Rationale:** the executor ran 109 turns and implemented everything correctly
+(variant added, emit site correct, `log_query.rs` updated), but a backend
+connection drop (`error decoding response body`) aborted the run before the
+closeout step. The one failing test (`logs_metrics_event_per_turn`) had a spec
+error in the budget value — `Budget::new(1_000)` overflows the system prompt
+before turn 1, so no `Metrics` record is ever emitted. The implementation is
+sound; the architect fixed the test budget (`1_000` → `100_000`) and the fmt
+issue (one line too long in the assertion), verified all 564 tests pass, and
+committed.
+
+### Update — 2026-06-02 (complete — architect closeout of infra hard_fail)
+
+**Executor:** Qwen/Qwen3.6-27B-FP8 (implementation, 109 turns); architect
+fixed one test + fmt and committed.
+
+**What landed:**
+- `executor/src/store/sessions/event.rs` — `SessionEvent::Metrics { input_tokens:
+  u32, output_tokens: u32, context_pct: f64 }` variant added (+8 lines)
+- `executor/src/agent/mod.rs` — per-turn `log_event(SessionEvent::Metrics { … })`
+  emit site right after the `Completion` log; one `#[tokio::test]`
+  `logs_metrics_event_per_turn` with correct budget (`100_000`) and fmt fix (+73 lines)
+- `mcp/src/log_query.rs` — `SessionEvent::Metrics { .. } => "metrics"` arm (+1 line)
+
+**Verification commands (all passed):**
+- `cargo fmt --all --check` — clean
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 170 (mcp) + 564 (executor) passed, 0 failed; `logs_metrics_event_per_turn` ok
+
+**End-to-end verification:**
+1. `cargo test -p rexymcp-executor logs_metrics_event` — 1 passed
+2. `grep -n 'SessionEvent::Metrics' executor/src/agent/mod.rs` — single emit site (line 410)
+
+**Notes for review:** the `log_query.rs` change (one arm added to `event_kind`) was
+the executor's own addition, not in the spec. It is correct and consistent with how
+the other events are handled; the spec's "No `cap.rs` change" authorization is
+about the *mcp redaction* path; `log_query.rs` is the *query tool* path and is
+a natural extension. No behavioral change; leaving it in.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_first_try (via architect closeout of an infra hard_fail)
+- **Bounces:** none. The `hard_fail` was a backend connection drop at turn 109,
+  post-implementation. The one test defect was a **spec error** (architect wrote
+  `Budget::new(1_000)` which overflows the system prompt; fixed to `100_000`).
+- **Executor:** Qwen/Qwen3.6-27B-FP8 — implemented all three tasks correctly.
+  Architect applied the test-budget fix and the fmt line-length fix, then
+  committed.
+- **Scope deviations:** `mcp/src/log_query.rs` gained a `Metrics` arm in the
+  `event_kind` function (the executor's own addition). Correct and consistent;
+  not in the original spec's authorization but within the spirit of the phase
+  (no behavior change, no new dep, consistent with every other event kind).
+- **Calibration:** none. Third infra hard_fail on an otherwise-complete run.
+  The pattern is now firm: add `run_in_background` / retry is worth a phase.

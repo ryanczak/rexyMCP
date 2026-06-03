@@ -401,6 +401,19 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             },
         );
 
+        // Per-turn resource snapshot: cumulative tokens + context budget fraction.
+        log_event(
+            &log_handle,
+            &redactor,
+            deps.clock,
+            turns,
+            SessionEvent::Metrics {
+                input_tokens: metrics.tokens.input_tokens,
+                output_tokens: metrics.tokens.output_tokens,
+                context_pct: deps.budget.fraction_used(&system, &messages),
+            },
+        );
+
         // Step 4 — turn the output into a ToolCall (native event wins; otherwise
         // run the forgiving text parser).
         let tool_call = if let Some(tc) = native_call {
@@ -1970,12 +1983,12 @@ mod tests {
             .await
             .unwrap();
 
-        // Progress records are logged unconditionally and interleave with the
-        // turn events; filter them out to assert the turn-event sequence.
+        // Progress and Metrics records are logged unconditionally and interleave
+        // with the turn events; filter them out to assert the turn-event sequence.
         let kinds: Vec<&str> = records(dir.path())
             .iter()
             .map(|r| event_kind(&r.event))
-            .filter(|k| *k != "progress")
+            .filter(|k| *k != "progress" && *k != "metrics")
             .collect();
         // SessionStart, Prompt, then turn 1: Completion, Parsed, ToolResult, then
         // turn 2 Completion, then SessionEnd.
@@ -2168,6 +2181,7 @@ mod tests {
             SessionEvent::HardFail { .. } => "hard_fail",
             SessionEvent::Progress { .. } => "progress",
             SessionEvent::SessionEnd { .. } => "session_end",
+            SessionEvent::Metrics { .. } => "metrics",
         }
     }
 
@@ -3299,6 +3313,65 @@ mod tests {
         .await;
 
         assert_eq!(read_runs(&telem)[0].tokens.input_tokens, 15);
+    }
+
+    #[tokio::test]
+    async fn logs_metrics_event_per_turn() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let tb = AiEvent::Done(TokenBreakdown {
+            input_tokens: 42,
+            output_tokens: 17,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+        });
+        let completion = AiEvent::Completion {
+            finish_reason: Some("stop".into()),
+            model: None,
+        };
+        let client = MockAiClientScript::new(vec![vec![token("done"), tb, completion]]);
+        // Real, non-sentinel ceiling so context_pct is non-zero.
+        // Must be large enough that the prompt doesn't overflow before turn 1.
+        let budget = Budget::new(100_000);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let recs = records(dir.path());
+        let metrics_recs: Vec<_> = recs
+            .iter()
+            .filter_map(|r| {
+                if let SessionEvent::Metrics {
+                    input_tokens,
+                    output_tokens,
+                    context_pct,
+                } = &r.event
+                {
+                    Some((*input_tokens, *output_tokens, *context_pct))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            !metrics_recs.is_empty(),
+            "expected at least one Metrics record, got {} total records: {:?}",
+            recs.len(),
+            recs.iter()
+                .map(|r| event_kind(&r.event))
+                .collect::<Vec<_>>()
+        );
+        let (in_tok, out_tok, ctx_pct) = metrics_recs.last().unwrap();
+        assert_eq!(*in_tok, 42, "input_tokens mismatch");
+        assert_eq!(*out_tok, 17, "output_tokens mismatch");
+        assert!(
+            *ctx_pct > 0.0,
+            "context_pct should be > 0 with a real ceiling and non-empty messages"
+        );
     }
 
     #[tokio::test]

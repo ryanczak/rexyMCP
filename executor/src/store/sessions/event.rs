@@ -59,4 +59,12 @@ pub enum SessionEvent {
         status: String,
         turns: usize,
     },
+    /// Per-turn resource snapshot: cumulative token usage and the fraction of
+    /// the context-window budget consumed going into this turn. `context_pct`
+    /// is 0.0 when the ceiling is the "unmeasured" sentinel (`usize::MAX`).
+    Metrics {
+        input_tokens: u32,
+        output_tokens: u32,
+        context_pct: f64,
+    },
 }

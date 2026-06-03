@@ -4,17 +4,15 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-06a — executor emits per-turn
-`SessionEvent::Metrics`](milestones/M8-dashboard/phase-06a-metrics-event.md) (`todo`
-— drafted 2026-06-02, ready to dispatch).
+**Active phase:** none. M8 phase-01–06a all `done`. Next is **phase-06b** (Budget
+panel — the render half) — run `/rexymcp:architect next` to draft it (human gate).
 
-**phase-06a in one line:** the producer half of the "budget consumed" Exit criterion
-(Gap B). The executor computes token usage (`RunMetrics.tokens`) and context fullness
-(`Budget::fraction_used`) but flushes neither per-turn to the JSONL. Add
-`SessionEvent::Metrics { input_tokens, output_tokens, context_pct }`, emit it once per
-turn right after the `Completion` record. Executor-crate only — `Budget::fraction_used`
-already exists and `cap.rs`'s catch-all passes the new variant through, so it's ~90
-lines. **phase-06b** (next) renders it as the dashboard Budget panel.
+**phase-06a done** (2026-06-02): `SessionEvent::Metrics { input_tokens, output_tokens,
+context_pct }` added to the enum and emitted once per turn right after the `Completion`
+record. `Budget::fraction_used` computes `context_pct`; `cap.rs` catch-all passes the
+new variant through. Verdict: approved_first_try via architect closeout of a third
+infra hard_fail (backend drop at turn 109, post-implementation). The one spec error
+was the test budget (`1_000` → `100_000`). Implemented by Qwen/Qwen3.6-27B-FP8.
 
 **phase-05 done** (2026-06-02): buffer-then-flush + mid-stream connection drop retry
 — closes `bug-executor-2`. The OpenAI backend now buffers the completion and emits
