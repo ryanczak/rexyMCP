@@ -4,8 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. M8 phase-01–05 all `done`. Next step is an **architect gate**
-— run `/rexymcp:architect next` to draft phase-06 (Budget panel).
+**Active phase:** [M8 / phase-06a — executor emits per-turn
+`SessionEvent::Metrics`](milestones/M8-dashboard/phase-06a-metrics-event.md) (`todo`
+— drafted 2026-06-02, ready to dispatch).
+
+**phase-06a in one line:** the producer half of the "budget consumed" Exit criterion
+(Gap B). The executor computes token usage (`RunMetrics.tokens`) and context fullness
+(`Budget::fraction_used`) but flushes neither per-turn to the JSONL. Add
+`SessionEvent::Metrics { input_tokens, output_tokens, context_pct }`, emit it once per
+turn right after the `Completion` record. Executor-crate only — `Budget::fraction_used`
+already exists and `cap.rs`'s catch-all passes the new variant through, so it's ~90
+lines. **phase-06b** (next) renders it as the dashboard Budget panel.
 
 **phase-05 done** (2026-06-02): buffer-then-flush + mid-stream connection drop retry
 — closes `bug-executor-2`. The OpenAI backend now buffers the completion and emits
@@ -24,25 +33,22 @@ positive scorecard data point — ~205-line multi-file feature, no bounce); arch
 closed out the commit after a transient backend drop (`error decoding response body`)
 aborted the run at the e2e step, post-gates. mcp-crate only; `format_status` unchanged.
 
-**phase-06 (next measurement phase, not yet drafted):** the Budget panel — closes
-the "budget consumed" Exit criterion. **Gap B** from the measurement roadmap: token
-usage and context-window % are computed in `RunMetrics` but only land in the
-end-of-run `PhaseRun`, never per-turn in the JSONL. Requires the **executor** to emit
-a new per-turn `SessionEvent::Metrics { input_tokens, output_tokens, context_pct, … }`,
-then `summarize` folds it and the dashboard renders a Budget panel. Highest-value
-metric it unlocks: live context-window utilization ("68% full, +4%/turn") — the
-overflow/compaction early-warning gauge.
+**phase-06b (drafted after 06a):** the Budget panel — the render half of the "budget
+consumed" Exit criterion. mcp-only, mirrors phase-04: `summarize` folds the new
+`Metrics` record into `StatusSummary` (tokens + context %), and the dashboard adds a
+Budget panel. Highest-value metric it unlocks: live context-window utilization
+("68% full, +4%/turn") — the overflow/compaction early-warning gauge.
 
 **Measurement roadmap (designed 2026-06-02 — see [M8 README Notes](milestones/M8-dashboard/README.md#notes)).**
 The system measures rich metrics at run-end (`PhaseRun`, the scorecard substrate) but
 flushes almost none to the live JSONL the dashboard reads. Three gap classes:
 **A — surfacing** (data in JSONL, `summarize` drops it) → **phase-04** (done).
 **B — capture** (token/context computed in `RunMetrics`, only in end-of-run
-`PhaseRun`; needs a per-turn `SessionEvent::Metrics` emit) → **phase-06** (Budget
-panel + executor emit). **C — unmeasured anywhere** (live context-window %, and
-compaction firings — `compact()` emits nothing) → phase-06 (`context_pct`) and
-**phase-07** (`SessionEvent::Compaction`). (phase-05 is the unrelated executor
-retry-resilience fix, slotted first.) The unifying move for B/C: flush
+`PhaseRun`; needs a per-turn `SessionEvent::Metrics` emit) → **phase-06a** (executor
+emit) + **phase-06b** (Budget panel). **C — unmeasured anywhere** (live context-window
+%, and compaction firings — `compact()` emits nothing) → phase-06a (`context_pct`) and
+**phase-07** (`SessionEvent::Compaction`). (phase-05 was the unrelated executor
+retry-resilience fix.) The unifying move for B/C: flush
 incremental metric snapshots to the JSONL, giving the live dashboard parity with the
 scorecard and enriching the JSONL as a forensic replay record.
 
