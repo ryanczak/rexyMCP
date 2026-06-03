@@ -12,11 +12,22 @@ decomposition discussion before drafting. Run `/rexymcp:architect next` when rea
 - **phase-09 (done):** header-band layout (Session · Budget · Compactions · Heartbeat
   over Activity · Files) + Compactions panel (renders phase-07 data) + Files left-trim.
 - **phase-10 (next to draft):** the big one — Activity panel becomes a **scrollable
-  transcript** of agent thought/messages/tool-calls, each record's JSON parsed +
-  color-formatted, tool output shown. Needs raw-record reading (not the distilled
-  `summarize`), scroll-key handling in `run_loop` (the first real interactivity), and
-  per-event rendering. **Likely splits 10a (raw-record reader + scroll mechanics) /
-  10b (formatted+colored rendering)** — decide at draft time.
+  transcript**. **Decisions locked with the user (2026-06-03):**
+  - **Scope = Everything (full replay).** All event types are scrollable items:
+    `Prompt`, `Completion` (agent thought), `Parsed`/`ToolResult` (+ tool output),
+    `Verify`, `ParseFailed`, `HardFail`, `Compaction`, `Progress`, `Metrics`,
+    `SessionStart`/`SessionEnd`. Not just tool/agent activity — the raw transcript.
+  - **Split 10a / 10b:**
+    - **phase-10a** — raw-record reader (read the full record stream, *not* the
+      distilled `summarize`) + scroll-key handling in `run_loop` (first real
+      interactivity: up/down/pgup/pgdn, scroll state) + **plain-text** item rendering
+      for every event type.
+    - **phase-10b** — per-event JSON parsing + color formatting + tool-output
+      rendering on top of 10a's plain-text items.
+  - Note for drafting: `summarize` distills; the transcript needs the raw
+    `Vec<SessionRecord>`. `load_data`/`DashboardData` currently carry only
+    `StatusSummary` — 10a must thread the raw records (or a rendered transcript)
+    through to the renderer. Keep the existing summary panels working unchanged.
 - **phase-11:** Budget panel gains **Tokens/Sec** and **"$ saved"**. *Blocked on two
   decisions before drafting:* (1) the **$-saved pricing baseline** — saved vs. which
   cloud model's $/token (configurable rate? a specific model?); (2) tokens/sec data
