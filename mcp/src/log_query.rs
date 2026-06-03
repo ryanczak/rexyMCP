@@ -24,6 +24,7 @@ pub fn event_type_str(event: &SessionEvent) -> &'static str {
         SessionEvent::Progress { .. } => "progress",
         SessionEvent::SessionEnd { .. } => "session_end",
         SessionEvent::Metrics { .. } => "metrics",
+        SessionEvent::Compaction { .. } => "compaction",
     }
 }
 

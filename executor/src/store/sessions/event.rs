@@ -67,4 +67,13 @@ pub enum SessionEvent {
         output_tokens: u32,
         context_pct: f64,
     },
+    /// Emitted each time the context compactor runs (on budget overflow at the
+    /// top of a turn). Mirrors `CompactionReport`: token totals before/after and
+    /// the message counts touched. Tokens freed = `tokens_before - tokens_after`.
+    Compaction {
+        tokens_before: usize,
+        tokens_after: usize,
+        messages_signaturized: usize,
+        messages_evicted: usize,
+    },
 }

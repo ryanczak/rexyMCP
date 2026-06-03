@@ -179,7 +179,19 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     loop {
         // Step 2 — budget: compact on overflow, give up if still over.
         if deps.budget.would_overflow(&system, &messages) {
-            compact(&mut messages, deps.budget, &system);
+            let report = compact(&mut messages, deps.budget, &system);
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::Compaction {
+                    tokens_before: report.tokens_before,
+                    tokens_after: report.tokens_after,
+                    messages_signaturized: report.messages_signaturized,
+                    messages_evicted: report.messages_evicted,
+                },
+            );
             if deps.budget.would_overflow(&system, &messages) {
                 log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
                 emit_phase_run(
@@ -2182,6 +2194,7 @@ mod tests {
             SessionEvent::Progress { .. } => "progress",
             SessionEvent::SessionEnd { .. } => "session_end",
             SessionEvent::Metrics { .. } => "metrics",
+            SessionEvent::Compaction { .. } => "compaction",
         }
     }
 
@@ -3371,6 +3384,57 @@ mod tests {
         assert!(
             *ctx_pct > 0.0,
             "context_pct should be > 0 with a real ceiling and non-empty messages"
+        );
+    }
+
+    #[tokio::test]
+    async fn logs_compaction_event_when_budget_overflows() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        // Tiny budget so overflow fires on turn 0 (system prompt alone is
+        // hundreds of tokens). The model is never called.
+        let client = MockAiClientScript::new(vec![]);
+        let budget = Budget::new(10);
+
+        execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        let recs = records(dir.path());
+        let compaction_recs: Vec<_> = recs
+            .iter()
+            .filter_map(|r| {
+                if let SessionEvent::Compaction {
+                    tokens_before,
+                    tokens_after,
+                    ..
+                } = &r.event
+                {
+                    Some((*tokens_before, *tokens_after))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            !compaction_recs.is_empty(),
+            "expected at least one Compaction record, got {} total records: {:?}",
+            recs.len(),
+            recs.iter()
+                .map(|r| event_kind(&r.event))
+                .collect::<Vec<_>>()
+        );
+
+        let (tokens_before, tokens_after) = compaction_recs.first().unwrap();
+        assert!(*tokens_before > 0, "tokens_before should be > 0");
+        assert!(
+            *tokens_before >= *tokens_after,
+            "tokens_before ({}) should be >= tokens_after ({})",
+            tokens_before,
+            tokens_after
         );
     }
 

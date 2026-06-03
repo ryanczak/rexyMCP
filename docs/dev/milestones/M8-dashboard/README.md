@@ -55,7 +55,7 @@ sibling built on the same `summarize()` core.
 | 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | done |
 | 06a | metrics event — executor emits per-turn `SessionEvent::Metrics` (tokens + context %) ([phase-06a-metrics-event.md](phase-06a-metrics-event.md)) | done |
 | 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | done |
-| 07  | Compaction events — emit `SessionEvent::Compaction` from `compact()` ([phase-07-compaction-event.md](phase-07-compaction-event.md)) | todo |
+| 07  | Compaction events — emit `SessionEvent::Compaction` from `compact()` ([phase-07-compaction-event.md](phase-07-compaction-event.md)) | review |
 | 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | done |
 
 ## Design decisions

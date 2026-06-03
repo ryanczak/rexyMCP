@@ -1,7 +1,7 @@
 # Phase 07: Compaction events — emit `SessionEvent::Compaction`
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a (done) — established the "executor flushes a per-turn
 metric record to the JSONL" pattern this phase mirrors for compaction.
 **Estimated diff:** ~60 lines (`event.rs` variant + `agent/mod.rs` emit + 2 match
@@ -305,3 +305,40 @@ its consumer span the two crates).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-18 (in-progress)
+
+**Executor:** rexyMCP executor LLM
+
+Started phase-07: adding `SessionEvent::Compaction` variant and emitting it from the `compact()` call site.
+
+### Update — 2025-07-18 (complete)
+
+**Executor:** rexyMCP executor LLM
+
+**Summary:** Added `SessionEvent::Compaction` variant and wired it to the existing `compact()` call site in the agent loop.
+
+**Files changed:**
+- `executor/src/store/sessions/event.rs` — added `Compaction` variant with `usize` fields mirroring `CompactionReport`
+- `executor/src/agent/mod.rs` — captured `CompactionReport` at the `compact()` call site and emitted `SessionEvent::Compaction` via `log_event`; added `event_kind` match arm; added `logs_compaction_event_when_budget_overflows` test
+- `mcp/src/log_query.rs` — added `event_type_str` match arm for `Compaction` → `"compaction"`
+- `docs/dev/milestones/M8-dashboard/phase-07-compaction-event.md` — status flip to `review` + Update Log
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row updated to `review`
+
+**Verification commands:**
+```
+cargo fmt --all --check — clean
+cargo build — clean (both crates)
+cargo clippy --all-targets --all-features -- -D warnings — clean
+cargo test — 565 passed, 0 failed, 2 ignored
+```
+
+**Verification summary:** All four gates passed clean. New test `logs_compaction_event_when_budget_overflows` confirms the compaction event is emitted to the JSONL when budget overflows, with `tokens_before > 0` and `tokens_before >= tokens_after`.
+
+**End-to-end verification:** The emit test reads back real `SessionRecord`s parsed from the on-disk JSONL the loop wrote (via the `records()` helper), proving the `Compaction` variant serializes with `"event_type":"compaction"` and round-trips correctly. The `event_type_str` match arm confirms the discriminant string is `"compaction"`.
+
+**Grep for spec-pinned literal:** `grep -r "compaction" executor/src/store/sessions/event.rs mcp/src/log_query.rs executor/src/agent/mod.rs` confirms `"compaction"` appears in both match arms and the serde discriminant (via `rename_all = "snake_case"` on the `Compaction` variant).
+
+**Notes for review:** No adaptations needed — spec matched the codebase exactly. The `compact()` call site was at the expected location, `CompactionReport` fields matched, and only the two expected exhaustive matches needed new arms.
+
+**Commit:** `feat: emit SessionEvent::Compaction from compact() call site`
