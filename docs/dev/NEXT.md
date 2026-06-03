@@ -4,21 +4,31 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M8 is staying open for a dashboard redesign (phase-09+),
-pending UI wireframes from the user.** Do not draft phase-09 until the wireframes
-land and the redesign scope is agreed.
+**Active phase:** [M8 / phase-09](milestones/M8-dashboard/phase-09-redesign-layout-compactions.md)
+— first phase of the **dashboard redesign** (wireframe received 2026-06-03). Restructure
+to a four-panel header band (Session · Budget · Compactions · Heartbeat) over a body
+(Activity wide · Files), add the **Compactions panel** (renders phase-07's
+`SessionEvent::Compaction` data — count + compression ratio), and **left-trim** Files
+paths. mcp-only, no new interactivity, no new deps. Dispatch with
+`/rexymcp:dispatch phase-09`.
 
-phase-07 is `done` (approved_first_try 2026-06-03): `SessionEvent::Compaction` is now
-emitted from the previously-silent `compact()` firing (Gap C). With 06a/06b (Gap B),
-phase-04 (Gap A), and 07 (Gap C) all landed, the **measurement roadmap is fully
-flushed to the live JSONL** — the compaction *render* in the dashboard is the one
-deferred piece, folded into the upcoming redesign.
+**Redesign roadmap (from the wireframe):**
+- **phase-09 (active):** header-band layout + Compactions panel + Files left-trim.
+- **phase-10 (next):** the big one — Activity panel becomes a **scrollable transcript**
+  of agent thought/messages/tool-calls, JSON parsed + color-formatted, tool output
+  shown. Needs raw-record reading + scroll-key handling; likely splits 10a/10b.
+- **phase-11:** Budget panel gains **Tokens/Sec** and **"$ saved"**. *Blocked on two
+  decisions:* (1) the **$-saved pricing baseline** — saved vs. which cloud model's
+  $/token? (2) tokens/sec data source (derive from `Metrics` record ts deltas). Ask
+  the user before drafting.
 
-**Next steps (user-driven):**
-1. Confirm the phase-08 dashboard improvements work on a live session (watch the
-   auto-attach when the next executor session starts).
-2. User produces UI wireframes for the dashboard redesign.
-3. Then `/rexymcp:architect next` to draft phase-09+ against those wireframes.
+phase-07 is `done` (approved_first_try 2026-06-03): `SessionEvent::Compaction` emitted
+from the silent `compact()` firing (Gap C). Measurement roadmap (Gaps A/B/C) fully
+flushed to the JSONL; phase-09's Compactions panel is the first consumer of the Gap-C
+data.
+
+**Also pending:** confirm the phase-08 dashboard improvements on a live session (watch
+the auto-attach when the next executor session starts).
 
 **phase-07 done** (2026-06-03): captured the `CompactionReport` at the `compact()`
 call site (`agent/mod.rs:182`) and logged a new `Compaction` variant (tokens
