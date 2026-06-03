@@ -9,9 +9,13 @@ and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
 **Status:** in progress — phase-01/02/03/04 done. The "parse/verifier signal" Exit
-criterion is now met (phase-04's Activity panel). Remaining: **phase-05** captures +
-shows live token / context-window usage (closes "budget consumed"), and **phase-06**
-(optional) records compaction firings. See the "Measurement roadmap" note below.
+criterion is now met (phase-04's Activity panel). **phase-05** is an executor-
+resilience fix (retry on mid-stream connection drop, `bug-executor-2`) that
+surfaced during phase-04 — independent of the dashboard track but slotted next
+because it hardens every future dispatch. The remaining measurement work:
+**phase-06** captures + shows live token / context-window usage (closes "budget
+consumed"), and **phase-07** (optional) records compaction firings. See the
+"Measurement roadmap" note below.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -48,8 +52,9 @@ sibling built on the same `summarize()` core.
 | 02  | paned layout — Session · Heartbeat · Files ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) | done |
 | 03  | executor bugfix — think-only completion treated as clean exit ([phase-03-think-only-fix.md](phase-03-think-only-fix.md)) | done |
 | 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | done |
-| 05  | Budget panel — capture + show live token / context-window usage *(not yet drafted)* | planned |
-| 06  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
+| 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | todo |
+| 06  | Budget panel — capture + show live token / context-window usage *(not yet drafted)* | planned |
+| 07  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
 
 ## Design decisions
 
@@ -98,16 +103,16 @@ per-record). Closing M8's Exit criteria means narrowing that gap. Three classes:
   end-of-run `PhaseRun`. Context-window fullness is checked against `Budget.ceiling`
   but never recorded. To show "budget consumed" *live*, the executor must emit a new
   per-turn `SessionEvent::Metrics { input_tokens, output_tokens, context_pct, … }`.
-  → **phase-05** (Budget panel + the executor-side emit).
+  → **phase-06** (Budget panel + the executor-side emit).
 - **Gap C — Not measured anywhere (even `PhaseRun` lacks it).**
   - *Live context-window utilization* — "prompt at 68% of the 256k window, +4%/turn."
     `PhaseRun` has the window *size* and *cumulative* tokens, never the per-turn
-    "how full right now." Highest-value missing live metric; delivered by phase-05's
+    "how full right now." Highest-value missing live metric; delivered by phase-06's
     `context_pct`.
   - *Compaction occurrences* — `compact()` (`agent/mod.rs:182`) fires silently. We
     never record when it ran or how much it evicted. (The M7 decisions doc flagged
     "Compaction monitoring (insufficient data)".) Fix: emit `SessionEvent::Compaction
-    { evicted_tokens, … }`. → **phase-06**; feeds both dashboard and scorecard.
+    { evicted_tokens, … }`. → **phase-07**; feeds both dashboard and scorecard.
   - *Model latency / tokens-per-second / per-tool time* — derivable from record `ts`
     deltas but never computed. Lower priority; a later phase if wanted.
 

@@ -4,9 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. M8 phase-01/02/03/04 are all `done`. The next phase
-(**phase-05**, Budget panel) is **not yet drafted** — run `/rexymcp:architect next`
-to draft it (a human gate).
+**Active phase:** [M8 / phase-05 — executor resilience: retry on mid-stream
+connection drop](milestones/M8-dashboard/phase-05-stream-retry-resilience.md)
+(`todo` — drafted 2026-06-02, ready to dispatch).
+
+**phase-05 in one line:** closes `bug-executor-2`. A mid-stream connection drop
+currently aborts the whole run to `hard_fail` (phase-04 lost a 76-turn run to one
+`error decoding response body`). Fix = **Option A buffer-then-flush**: the backend
+accumulates the completion and emits it only on stream-success, so a transient
+transport error (identified by `e.downcast_ref::<reqwest::Error>()` — stalls/aborts
+are synthetic `anyhow` errors that don't downcast) triggers a bounded, backed-off
+retry instead of aborting. Executor-crate only (`openai.rs`); no seam change needed.
+**Slotted before the Budget panel** because it hardens every future dispatch
+(including Budget's own, which is the next executor-crate change). Reorder via the
+NEXT pointer if you'd rather land the vLLM-side fix first and prioritize Budget.
 
 **phase-04 done** (2026-06-02): the Activity panel — `summarize` now folds the
 `ParseFailed` / `Verify` / `ToolResult` / `HardFail` records it previously dropped
@@ -17,24 +28,25 @@ positive scorecard data point — ~205-line multi-file feature, no bounce); arch
 closed out the commit after a transient backend drop (`error decoding response body`)
 aborted the run at the e2e step, post-gates. mcp-crate only; `format_status` unchanged.
 
-**phase-05 (next to draft):** the Budget panel — closes the "budget consumed" Exit
-criterion. This is **Gap B** from the measurement roadmap: token usage and
-context-window % are computed in `RunMetrics` but only land in the end-of-run
-`PhaseRun`, never per-turn in the JSONL. Requires the **executor** to emit a new
-per-turn `SessionEvent::Metrics { input_tokens, output_tokens, context_pct, … }`,
-then `summarize` folds it and the dashboard renders a Budget panel. Crosses the
-executor boundary (unlike 04). Highest-value metric it unlocks: live context-window
-utilization ("68% full, +4%/turn") — the overflow/compaction early-warning gauge.
+**phase-06 (next measurement phase, not yet drafted):** the Budget panel — closes
+the "budget consumed" Exit criterion. **Gap B** from the measurement roadmap: token
+usage and context-window % are computed in `RunMetrics` but only land in the
+end-of-run `PhaseRun`, never per-turn in the JSONL. Requires the **executor** to emit
+a new per-turn `SessionEvent::Metrics { input_tokens, output_tokens, context_pct, … }`,
+then `summarize` folds it and the dashboard renders a Budget panel. Highest-value
+metric it unlocks: live context-window utilization ("68% full, +4%/turn") — the
+overflow/compaction early-warning gauge.
 
 **Measurement roadmap (designed 2026-06-02 — see [M8 README Notes](milestones/M8-dashboard/README.md#notes)).**
 The system measures rich metrics at run-end (`PhaseRun`, the scorecard substrate) but
 flushes almost none to the live JSONL the dashboard reads. Three gap classes:
-**A — surfacing** (data in JSONL, `summarize` drops it) → **phase-04** (this).
+**A — surfacing** (data in JSONL, `summarize` drops it) → **phase-04** (done).
 **B — capture** (token/context computed in `RunMetrics`, only in end-of-run
-`PhaseRun`; needs a per-turn `SessionEvent::Metrics` emit) → **phase-05** (Budget
+`PhaseRun`; needs a per-turn `SessionEvent::Metrics` emit) → **phase-06** (Budget
 panel + executor emit). **C — unmeasured anywhere** (live context-window %, and
-compaction firings — `compact()` emits nothing) → phase-05 (`context_pct`) and
-**phase-06** (`SessionEvent::Compaction`). The unifying move for B/C: flush
+compaction firings — `compact()` emits nothing) → phase-06 (`context_pct`) and
+**phase-07** (`SessionEvent::Compaction`). (phase-05 is the unrelated executor
+retry-resilience fix, slotted first.) The unifying move for B/C: flush
 incremental metric snapshots to the JSONL, giving the live dashboard parity with the
 scorecard and enriching the JSONL as a forensic replay record.
 
