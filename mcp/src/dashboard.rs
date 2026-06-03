@@ -134,9 +134,23 @@ fn trim_path_left(path: &str) -> String {
     if path.chars().count() <= FILE_PATH_MAX {
         return path.to_string();
     }
-    // Extract the filename — the part after the last '/'.
+    // Try "…/{filename}" — preserves the full filename when it fits.
     let filename = path.rsplit('/').next().unwrap_or(path);
-    format!("…/{filename}")
+    let with_prefix = format!("…/{filename}");
+    if with_prefix.chars().count() <= FILE_PATH_MAX {
+        return with_prefix;
+    }
+    // Filename itself is too long — left-trim it too, keeping the tail.
+    let available = FILE_PATH_MAX.saturating_sub(1); // one char reserved for '…'
+    let tail: String = filename
+        .chars()
+        .rev()
+        .take(available)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("…{tail}")
 }
 
 /// Activity panel: tool / verify / parse / hard-fail signals.
@@ -621,6 +635,44 @@ mod tests {
         assert!(
             !line.contains("nested"),
             "trimmed line must not contain intermediate dirs: {line}"
+        );
+    }
+
+    #[test]
+    fn files_lines_trims_long_filename_from_left() {
+        // Filename alone exceeds FILE_PATH_MAX — must be left-trimmed too.
+        let long_filename =
+            "a_very_long_filename_that_definitely_exceeds_forty_characters_limit.rs";
+        assert!(long_filename.chars().count() > FILE_PATH_MAX);
+        let path = format!("src/{long_filename}");
+        let summary = StatusSummary {
+            files_changed: vec![FileNumstat {
+                path: path.clone(),
+                added: 2,
+                removed: 0,
+            }],
+            ..StatusSummary::default()
+        };
+        let lines = files_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let line = &text[0];
+        // Must start with '…' (filename was trimmed from the left).
+        assert!(line.starts_with("  …"), "must start with ellipsis: {line}");
+        // Must NOT contain '/' after the ellipsis (no directory separator when
+        // the filename itself was trimmed, as opposed to "…/filename" form).
+        let path_part = line
+            .strip_prefix("  ")
+            .unwrap()
+            .strip_suffix(" +2 -0")
+            .unwrap();
+        assert!(
+            path_part.chars().count() <= FILE_PATH_MAX,
+            "path portion must fit within FILE_PATH_MAX: {path_part}"
+        );
+        // Numstat must be intact.
+        assert!(
+            line.ends_with(" +2 -0"),
+            "numstat must always be visible: {line}"
         );
     }
 
