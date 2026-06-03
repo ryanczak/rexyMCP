@@ -4,8 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. M8 phase-01–06a all `done`. Next is **phase-06b** (Budget
-panel — the render half) — run `/rexymcp:architect next` to draft it (human gate).
+**Active phase:** [M8 / phase-06b — Budget panel: render live token / context-window
+usage](milestones/M8-dashboard/phase-06b-budget-panel.md) (`todo` — drafted
+2026-06-03, ready to dispatch).
+
+**phase-06b in one line:** the render half of "budget consumed" (Gap B). phase-06a
+emits `SessionEvent::Metrics` per turn but `summarize` drops it; fold it into
+`StatusSummary` (`last_input_tokens`, `last_output_tokens`, `last_context_pct`) and
+add a fifth **Budget** panel (full-width row beneath the 2×2 grid) with token counts
+and a colored context-window gauge (green/yellow/red). mcp-only, mirrors phase-04.
+**Lands the second Exit criterion** — after this M8 can close (only optional phase-07
+compaction remains).
 
 **phase-06a done** (2026-06-02): `SessionEvent::Metrics { input_tokens, output_tokens,
 context_pct }` added to the enum and emitted once per turn right after the `Completion`

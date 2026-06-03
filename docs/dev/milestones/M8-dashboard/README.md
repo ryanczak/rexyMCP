@@ -8,12 +8,11 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01/02/03/04/05 done. The "parse/verifier signal"
-Exit criterion is met (phase-04's Activity panel); phase-05 was the executor
-retry-resilience fix (`bug-executor-2`). Remaining for the "budget consumed" Exit
-criterion: **phase-06a** (executor emits a per-turn `SessionEvent::Metrics` with
-tokens + context %) → **phase-06b** (the Budget panel that renders it). **phase-07**
-(optional) records compaction firings. See the "Measurement roadmap" note below.
+**Status:** in progress — phase-01–06a done. phase-06a flushes `SessionEvent::Metrics`
+per turn; **phase-06b** (drafted, todo) renders it as the Budget panel — once it
+lands, both Exit criteria ("parse/verifier signal" + "budget consumed") are met and
+M8 can close (with optional **phase-07**, compaction events). See the "Measurement
+roadmap" note below.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -52,7 +51,7 @@ sibling built on the same `summarize()` core.
 | 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | done |
 | 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | done |
 | 06a | metrics event — executor emits per-turn `SessionEvent::Metrics` (tokens + context %) ([phase-06a-metrics-event.md](phase-06a-metrics-event.md)) | done |
-| 06b | Budget panel — render the live token / context-window metrics *(not yet drafted)* | planned |
+| 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | todo |
 | 07  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
 
 ## Design decisions
