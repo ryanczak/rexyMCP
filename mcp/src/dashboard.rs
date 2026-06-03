@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
@@ -447,9 +447,24 @@ fn render_dashboard(
 
     let transcript = transcript_lines(&data.records);
     let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
-    let display = visible_offset(follow, offset, transcript.len(), viewport);
-    let activity = Paragraph::new(transcript)
-        .scroll((display, 0))
+    // Word-wrap is enabled for the Activity panel. Paragraph::scroll counts
+    // *visual* rows (post-wrap), not logical lines, so scroll-to-bottom is
+    // unsolvable without measuring actual rendered heights. When tail-following,
+    // we instead truncate to the last (viewport * 2) logical lines and skip
+    // scrolling — the newest content naturally lands at the bottom. When the user
+    // scrolls manually we keep all lines and apply the offset (which is a logical-
+    // line approximation, fine for navigation but not pixel-perfect with wrapping).
+    let n = transcript.len();
+    let (display_lines, scroll_rows) = if follow {
+        let keep = (viewport as usize * 2).min(n);
+        (transcript[n.saturating_sub(keep)..].to_vec(), 0u16)
+    } else {
+        let display = visible_offset(false, offset, n, viewport);
+        (transcript, display)
+    };
+    let activity = Paragraph::new(display_lines)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_rows, 0))
         .block(Block::default().borders(Borders::ALL).title(" Activity "));
     frame.render_widget(activity, activity_area);
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
