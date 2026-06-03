@@ -1,7 +1,7 @@
 # Phase 03: fix think-only completion treated as clean exit
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** in-progress (refined re-dispatch after RunawayOutput hard_fail — see Update Log)
 **Depends on:** none (executor-crate fix; M8 phases 01–02 are independent)
 **Estimated diff:** ~80 lines (`executor/src/agent/mod.rs` branch + new tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -26,45 +26,121 @@ feedback prompting it to emit a tool call and the loop continues.
 ## Pre-flight
 
 1. Read `docs/dev/STANDARDS.md` top to bottom.
-2. Read `docs/dev/milestones/M8-dashboard/bugs/bug-executor-1.md` — the filed
-   bug; this phase closes it.
-3. Read this entire phase doc before touching code.
-4. Confirm `cargo clippy --all-targets --all-features -- -D warnings` and
+2. Read this entire phase doc before touching code.
+3. Confirm `cargo clippy --all-targets --all-features -- -D warnings` and
    `cargo test` are green before changing anything.
+
+> ⚠️ **DO NOT `read_file` `executor/src/agent/mod.rs` in full.** It is ~140 KB
+> and a whole-file read trips the executor's `RunawayOutput` safety limit — this
+> is exactly what hard-failed the first dispatch of this phase. **Everything you
+> need from that file is quoted verbatim below** (the `NoToolCall`/`Failed`
+> match arms in "Current state", and the test harness in "Reference excerpts").
+> Make your edits with the `patch` tool, anchoring on the quoted strings — you do
+> **not** need to open the file. If you must look something up, use `search` with
+> a narrow pattern (e.g. `search` for `ParseResult::Failed`), never a full read.
+> The same applies to `bug-executor-1.md` — its content is already summarized in
+> the Goal; you do not need to read it.
 
 ## Current state
 
-### The `NoToolCall` branch in `executor/src/agent/mod.rs` (lines ~409–435)
+### The `NoToolCall` / `Failed` match arms in `executor/src/agent/mod.rs` (VERBATIM)
 
-This is the exact code this phase modifies:
+This is the **exact, complete** code this phase modifies — copied verbatim from
+the file so you do not need to open it. Use it as your `patch` anchor.
 
 ```rust
-// agent/mod.rs ~line 409
-metrics.parse_attempts += 1;
-match parse(&completion, deps.registry) {
-    ParseResult::NoToolCall => {
-        log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
-        // Step 8 — clean completion runs the final command set.
-        let emit = EmitCtx { /* ... */ };
-        let (command_outputs, gates) =
-            run_command_set(deps.runner, deps.commands, deps.project_root, &emit).await;
-        emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
-        let artifacts = build_artifacts(/* ... "complete" ... */);
-        return Ok(PhaseResult::complete(artifacts));
-    }
-    ParseResult::Found(tc) => tc,
-    ParseResult::Failed(failure) => {
-        metrics.parse_failures += 1;
-        log_event(/* SessionEvent::ParseFailed { failure } */);
-        messages.push(assistant_text(&completion, turns));
-        messages.push(user_text(&failure.feedback, turns));
-        if turns >= deps.max_turns {
-            // ... budget_exceeded path ...
-        }
-        continue;
-    }
-}
+            metrics.parse_attempts += 1;
+            match parse(&completion, deps.registry) {
+                ParseResult::NoToolCall => {
+                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
+                    // Step 8 — clean completion runs the final command set.
+                    let emit = EmitCtx {
+                        progress: deps.progress,
+                        log_handle: &log_handle,
+                        redactor: &redactor,
+                        clock: deps.clock,
+                        pre_edit_content: &pre_edit_content,
+                        project_root: deps.project_root,
+                        turn: turns,
+                    };
+                    let (command_outputs, gates) =
+                        run_command_set(deps.runner, deps.commands, deps.project_root, &emit).await;
+                    emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
+                    let artifacts = build_artifacts(
+                        &pre_edit_content,
+                        deps.project_root,
+                        log_path.clone(),
+                        "complete",
+                        turns,
+                        command_outputs,
+                    );
+                    return Ok(PhaseResult::complete(artifacts));
+                }
+                ParseResult::Found(tc) => tc,
+                ParseResult::Failed(failure) => {
+                    metrics.parse_failures += 1;
+                    log_event(
+                        &log_handle,
+                        &redactor,
+                        deps.clock,
+                        turns,
+                        SessionEvent::ParseFailed {
+                            failure: failure.clone(),
+                        },
+                    );
+                    messages.push(assistant_text(&completion, turns));
+                    messages.push(user_text(&failure.feedback, turns));
+                    if turns >= deps.max_turns {
+                        log_session_end(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            "budget_exceeded",
+                            turns,
+                        );
+                        emit_phase_run(
+                            &deps,
+                            input,
+                            "budget_exceeded",
+                            Gates::default(),
+                            &metrics,
+                            &scorer,
+                            turns,
+                        );
+                        let artifacts = build_artifacts(
+                            &pre_edit_content,
+                            deps.project_root,
+                            log_path.clone(),
+                            "budget_exceeded",
+                            turns,
+                            CommandOutputs::default(),
+                        );
+                        return Ok(budget_exceeded_result(
+                            input,
+                            &recent_tool_calls,
+                            deps.project_root,
+                            turns_line(deps.max_turns),
+                            artifacts,
+                        ));
+                    }
+                    continue;
+                }
+            }
 ```
+
+**The minimal edit:** change the `ParseResult::NoToolCall => { … }` arm so it
+first checks for a think-only completion and, if so, falls through to the same
+feedback-and-continue behaviour as `ParseResult::Failed`. The cleanest `patch`
+replaces the **opening** of the `NoToolCall` arm — anchor on this exact slice:
+
+```rust
+                ParseResult::NoToolCall => {
+                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
+```
+
+and replace it with the think-only guard (see Spec Task 1) followed by the same
+two lines for the genuine-clean-exit path. The `Found` and `Failed` arms are
+shown only for context — **do not modify them.**
 
 ### `strip_think_blocks` — already exists, never called at agent level (`parser/mod.rs:21`)
 
@@ -116,55 +192,102 @@ log a `SessionEvent::ParseFailed`, push `assistant_text` + `user_text` onto
 
 ### Task 1 — Detect think-only in the `NoToolCall` branch
 
-In `executor/src/agent/mod.rs`, replace the `ParseResult::NoToolCall` arm with a
-two-way branch. Import `crate::parser::strip_think_blocks` at the top of the
-function (or inline the call — the function is `pub`).
+Modify the `ParseResult::NoToolCall` arm so it first checks whether the
+completion was think-only and, if so, behaves exactly like `ParseResult::Failed`
+(log `ParseFailed`, push feedback, budget-check, `continue`); otherwise it takes
+the original clean-exit path unchanged.
 
-The detection predicate:
-
-```rust
-let post_think = crate::parser::strip_think_blocks(&completion);
-let think_only = post_think.trim().is_empty() && completion.contains("</think>");
-```
-
-- `think_only == true` → treat as a recoverable parse failure (see below).
-- `think_only == false` → existing clean-exit path, unchanged.
-
-**Think-only path** (mirrors `ParseResult::Failed`, same structure):
+**Make this edit with `patch`.** Anchor on the exact two lines that open the arm:
 
 ```rust
-// think-only: model reasoned but emitted no action — treat as parse failure.
-metrics.parse_failures += 1;
-let failure = ParseFailure {
-    raw: completion.clone(),
-    detected_format: None,
-    candidates: vec![],
-    feedback: crate::parser::feedback::format_no_match(&completion),
-};
-log_event(
-    &log_handle,
-    &redactor,
-    deps.clock,
-    turns,
-    SessionEvent::ParseFailed {
-        failure: failure.clone(),
-    },
-);
-messages.push(assistant_text(&completion, turns));
-messages.push(user_text(&failure.feedback, turns));
-if turns >= deps.max_turns {
-    // ... same budget_exceeded path as ParseResult::Failed ...
-}
-continue;
+                ParseResult::NoToolCall => {
+                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
 ```
 
-The budget-exceeded block is a verbatim copy of the one in `ParseResult::Failed`
-(lines ~450–483). Do not factor it out — the spec does not authorize a
-refactor, and two copies in the same match arm is acceptable duplication for
-now.
+Replace that slice with the following (the rest of the original `NoToolCall` body
+— `EmitCtx { … }` through `return Ok(PhaseResult::complete(artifacts));` — stays
+exactly as it is, now guarded inside the `else`):
 
-**Note on `feedback::format_no_match` visibility:** it is currently `pub` in
-`parser/feedback.rs` — no visibility change needed.
+```rust
+                ParseResult::NoToolCall => {
+                    // A completion that is *only* a <think> block (empty after
+                    // stripping) is not a clean exit — the model reasoned but
+                    // emitted no action. Treat it as a recoverable parse failure
+                    // so it gets feedback to emit a tool call. bug-executor-1.
+                    let post_think = crate::parser::strip_think_blocks(&completion);
+                    if post_think.trim().is_empty() && completion.contains("</think>") {
+                        metrics.parse_failures += 1;
+                        let failure = crate::parser::ParseFailure {
+                            raw: completion.clone(),
+                            detected_format: None,
+                            candidates: vec![],
+                            feedback: crate::parser::feedback::format_no_match(&completion),
+                        };
+                        log_event(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            turns,
+                            SessionEvent::ParseFailed {
+                                failure: failure.clone(),
+                            },
+                        );
+                        messages.push(assistant_text(&completion, turns));
+                        messages.push(user_text(&failure.feedback, turns));
+                        if turns >= deps.max_turns {
+                            log_session_end(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                "budget_exceeded",
+                                turns,
+                            );
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "budget_exceeded",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "budget_exceeded",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(budget_exceeded_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                turns_line(deps.max_turns),
+                                artifacts,
+                            ));
+                        }
+                        continue;
+                    }
+                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
+```
+
+That is the whole change to the arm: the think-only guard is inserted, and the
+original `log_session_end(... "complete" ...)` line now follows the guard (so the
+genuine clean-exit path is unchanged). Everything after it in the original arm
+(`let emit = EmitCtx { … }` … `return Ok(PhaseResult::complete(artifacts));`) and
+the closing `}` stay exactly as before.
+
+**Paths/visibility — all already usable, no import or visibility changes needed:**
+- `crate::parser::strip_think_blocks` — `pub` (parser/mod.rs:21).
+- `crate::parser::ParseFailure` — `pub` struct (parser/mod.rs:112).
+- `crate::parser::feedback::format_no_match` — `pub` (parser/feedback.rs:43).
+- `SessionEvent`, `assistant_text`, `user_text`, `Gates`, `CommandOutputs`,
+  `budget_exceeded_result`, `turns_line`, `build_artifacts`, `emit_phase_run` are
+  all already in scope in this function (the `Failed` arm uses them).
+
+The duplicated budget-exceeded block is acceptable (it mirrors `ParseResult::Failed`);
+do **not** refactor it into a shared helper — that is out of scope.
 
 ### Task 2 — Two new unit tests
 
@@ -202,6 +325,72 @@ let client = MockAiClientScript::new(vec![
 **Regression guard** — confirm `no_tool_call_first_turn_completes_immediately`
 still passes (it will if the non-think-only path is unchanged; the existing
 test serves as the guard, no new test needed for this).
+
+### Reference excerpts — the test harness (VERBATIM, so you need not read the file)
+
+The `#[cfg(test)] mod tests` block in `executor/src/agent/mod.rs` already defines
+every helper your two tests need. Quoted here so you can write the tests by
+pattern-matching the existing `no_tool_call_first_turn_completes_immediately`
+test (shown last) without opening the 140 KB file. **Add your two `#[tokio::test]`
+functions immediately after that existing test** — `patch`-anchor on its closing
+`}` plus the next test's `#[tokio::test]` line.
+
+Module imports already present (top of the test module):
+
+```rust
+    use super::*;
+    use crate::ai::testing::{MockAiClientScript, MockCall};
+    use crate::phase::PhaseStatus;
+    use crate::security::scope::Scope;
+    use crate::tools::{patch, read_file, write_file};
+    use serde_json::json;
+    use tempfile::TempDir;
+```
+
+Helpers already defined in that module:
+
+```rust
+    fn registry_over(scope: Scope) -> ToolRegistry { /* read_file + write_file + patch */ }
+    fn input() -> PhaseInput { /* ... */ }
+    fn token(s: &str) -> AiEvent { AiEvent::Token(s.to_string()) }
+
+    // deps(client, registry, budget, max_turns, root) -> LoopDeps
+    fn deps<'a>(
+        client: &'a dyn AiClient,
+        registry: &'a ToolRegistry,
+        budget: &'a Budget,
+        max_turns: usize,
+        root: &'a Path,
+    ) -> LoopDeps<'a> { /* ... */ }
+```
+
+The existing test to mirror (verbatim):
+
+```rust
+    #[tokio::test]
+    async fn no_tool_call_first_turn_completes_immediately() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![vec![token("All done, nothing to call.")]]);
+        let budget = Budget::new(1_000_000);
+
+        let result = execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(result.briefing.is_none());
+        assert_eq!(client.calls().len(), 1);
+    }
+```
+
+Your two new tests follow the same shape. For
+`think_only_completion_at_budget_is_budget_exceeded`, pass `2` as the `max_turns`
+argument to `deps(&client, &registry, &budget, 2, dir.path())`. (`Budget::new`,
+`Scope`, `execute_phase`, `PhaseStatus`, `MockAiClientScript`, `token`, `input`,
+`deps`, `registry_over` are all already imported/defined — your tests need no new
+imports.)
 
 ## Acceptance criteria
 
@@ -259,3 +448,22 @@ The fix is internal to the executor loop — no CLI surface change. Verify:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-02
+
+This phase was refined after a first dispatch hard-failed with
+`RunawayOutput` (the executor `read_file`'d the 140 KB `executor/src/agent/mod.rs`
+in one shot and tripped the safety limit). **Do not read that file whole** — the
+⚠️ callout in Pre-flight, the verbatim match-arm quote in "Current state", and the
+verbatim test harness in "Reference excerpts" now contain everything you need.
+Make the source edit with `patch`, anchoring on the quoted `ParseResult::NoToolCall
+=> { log_session_end(... "complete" ...)` slice. Add the two tests right after the
+quoted `no_tool_call_first_turn_completes_immediately`. If you need to confirm a
+detail, use `search` with a narrow pattern — never a full-file read.
+
+### Update — 2026-06-02 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the hard_fail was a spec gap (the Pre-flight told the executor to
+read a 140 KB file that trips `RunawayOutput`), not a model failure — fixed by
+pre-injecting the needed code verbatim and forbidding the whole-file read.
