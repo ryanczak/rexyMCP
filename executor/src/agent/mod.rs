@@ -409,6 +409,65 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             metrics.parse_attempts += 1;
             match parse(&completion, deps.registry) {
                 ParseResult::NoToolCall => {
+                    // A completion that is *only* a <think> block (empty after
+                    // stripping) is not a clean exit — the model reasoned but
+                    // emitted no action. Treat it as a recoverable parse failure
+                    // so it gets feedback to emit a tool call. bug-executor-1.
+                    let post_think = crate::parser::strip_think_blocks(&completion);
+                    if post_think.trim().is_empty() && completion.contains("</think>") {
+                        metrics.parse_failures += 1;
+                        let failure = crate::parser::ParseFailure {
+                            raw: completion.clone(),
+                            detected_format: None,
+                            candidates: vec![],
+                            feedback: crate::parser::feedback::format_no_match(&completion),
+                        };
+                        log_event(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            turns,
+                            SessionEvent::ParseFailed {
+                                failure: failure.clone(),
+                            },
+                        );
+                        messages.push(assistant_text(&completion, turns));
+                        messages.push(user_text(&failure.feedback, turns));
+                        if turns >= deps.max_turns {
+                            log_session_end(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                "budget_exceeded",
+                                turns,
+                            );
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "budget_exceeded",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "budget_exceeded",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(budget_exceeded_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                turns_line(deps.max_turns),
+                                artifacts,
+                            ));
+                        }
+                        continue;
+                    }
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     // Step 8 — clean completion runs the final command set.
                     let emit = EmitCtx {
@@ -1375,6 +1434,43 @@ mod tests {
         assert_eq!(result.status, PhaseStatus::Complete);
         assert!(result.briefing.is_none());
         assert_eq!(client.calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn think_only_completion_is_not_complete() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![
+            vec![token("<think>I will read the file</think>\n\n")],
+            vec![token("All done.")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        let result = execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert_eq!(client.calls().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn think_only_completion_at_budget_is_budget_exceeded() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let client = MockAiClientScript::new(vec![
+            vec![token("<think>plan</think>\n\n")],
+            vec![token("<think>still thinking</think>\n")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        let result = execute_phase(&input(), deps(&client, &registry, &budget, 2, dir.path()))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status, PhaseStatus::BudgetExceeded);
     }
 
     #[tokio::test]

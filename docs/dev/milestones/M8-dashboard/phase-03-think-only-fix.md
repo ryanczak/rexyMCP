@@ -1,7 +1,7 @@
 # Phase 03: fix think-only completion treated as clean exit
 
 **Milestone:** M8 — Live session dashboard
-**Status:** in-progress (refined re-dispatch after RunawayOutput hard_fail — see Update Log)
+**Status:** review (refined re-dispatch after RunawayOutput hard_fail — see Update Log)
 **Depends on:** none (executor-crate fix; M8 phases 01–02 are independent)
 **Estimated diff:** ~80 lines (`executor/src/agent/mod.rs` branch + new tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -448,6 +448,59 @@ The fix is internal to the executor loop — no CLI surface change. Verify:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-02 12:00 (started)
+
+**Executor:** rexyMCP executor
+
+Implemented think-only completion detection in the `NoToolCall` branch and added two new unit tests.
+
+### Update — 2026-06-02 12:00 (complete)
+
+**Summary:** Inserted a think-only guard at the top of the `ParseResult::NoToolCall` arm in the agent turn loop. When `strip_think_blocks` returns empty and the completion contains `</think>`, the branch now behaves identically to `ParseResult::Failed`: logs a `ParseFailed` session event, pushes feedback into the conversation, checks the turn budget, and continues. The genuine clean-exit path is unchanged. Added two unit tests: one confirming recovery after a think-only turn, and one confirming budget exhaustion when all turns are think-only.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+✓ exit 0
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.54s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.50s
+
+cargo test -p rexymcp-executor 2>&1 | tail -30
+test result: ok. 559 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.03s
+```
+
+**End-to-end verification:**
+
+Internal fix — no CLI surface change. `cargo test -p rexymcp-executor` passes all 559 tests including the two new ones:
+- `think_only_completion_is_not_complete` — ok
+- `think_only_completion_at_budget_is_budget_exceeded` — ok
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — think-only guard in `NoToolCall` arm + two new unit tests
+
+**New tests:**
+- `think_only_completion_is_not_complete` in `executor/src/agent/mod.rs`
+- `think_only_completion_at_budget_is_budget_exceeded` in `executor/src/agent/mod.rs`
+
+**Commits:**
+- (pending) — `fix: detect think-only completions as parse failures in agent loop`
+
+**Notes for review:**
+- Grep proof for spec-pinned literal `bug-executor-1`: `grep -n 'bug-executor-1' executor/src/agent/mod.rs` → line 415, one match.
+- The duplicated budget-exceeded block mirrors `ParseResult::Failed` exactly per spec authorization; no shared helper introduced.
+- Existing regression test `no_tool_call_first_turn_completes_immediately` still passes (included in the 559 passing tests).
 
 ### Notes for executor — 2026-06-02
 
