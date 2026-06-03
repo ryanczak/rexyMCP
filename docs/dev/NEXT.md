@@ -4,20 +4,16 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-05 — executor resilience: retry on mid-stream
-connection drop](milestones/M8-dashboard/phase-05-stream-retry-resilience.md)
-(`todo` — drafted 2026-06-02, ready to dispatch).
+**Active phase:** none. M8 phase-01–05 all `done`. Next step is an **architect gate**
+— run `/rexymcp:architect next` to draft phase-06 (Budget panel).
 
-**phase-05 in one line:** closes `bug-executor-2`. A mid-stream connection drop
-currently aborts the whole run to `hard_fail` (phase-04 lost a 76-turn run to one
-`error decoding response body`). Fix = **Option A buffer-then-flush**: the backend
-accumulates the completion and emits it only on stream-success, so a transient
-transport error (identified by `e.downcast_ref::<reqwest::Error>()` — stalls/aborts
-are synthetic `anyhow` errors that don't downcast) triggers a bounded, backed-off
-retry instead of aborting. Executor-crate only (`openai.rs`); no seam change needed.
-**Slotted before the Budget panel** because it hardens every future dispatch
-(including Budget's own, which is the next executor-crate change). Reorder via the
-NEXT pointer if you'd rather land the vLLM-side fix first and prioritize Budget.
+**phase-05 done** (2026-06-02): buffer-then-flush + mid-stream connection drop retry
+— closes `bug-executor-2`. The OpenAI backend now buffers the completion and emits
+only on stream-success; transient transport errors (identified via
+`e.downcast_ref::<reqwest::Error>()`) trigger up to 3 bounded retries (250ms/500ms/
+1s backoff) instead of aborting. `bug-05-1` (non-hermetic test adding ~30 s to the
+suite) fixed on re-dispatch. Verdict: approved_after_1. Implemented by
+Qwen/Qwen3.6-27B-FP8.
 
 **phase-04 done** (2026-06-02): the Activity panel — `summarize` now folds the
 `ParseFailed` / `Verify` / `ToolResult` / `HardFail` records it previously dropped

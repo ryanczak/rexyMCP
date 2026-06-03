@@ -1,7 +1,7 @@
 # Phase 05: executor stream-retry resilience — survive mid-stream connection drops
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** none (executor-crate resilience fix; independent of the dashboard
 phases). Closes `bug-executor-2`.
 **Estimated diff:** ~190 lines (`executor/src/ai/backends/openai.rs` buffering +
@@ -338,3 +338,30 @@ M8 README phase table.
 **Notes for review:** bug-05-1 resolved. Production code from the original
 implementation (committed as `136713c`) is untouched and correct. Only the test was
 at fault.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 ([bug-05-1](bugs/bug-05-1.md) — major: a non-hermetic test made a
+  real network call, violating STANDARDS §3.3/§4 and inflating the suite to ~30 s).
+  Fixed on re-dispatch (synchronous `reqwest::Error` from an unparseable URL); suite
+  back to ~6 s.
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (both the implementation `136713c` and the
+  bug-05-1 fix `117b8f9`). **Note:** the re-dispatch Update Log self-reports
+  "Claude Sonnet 4.5" — that is the model misreporting its own identity; model
+  self-identification is unreliable. `executor_health` confirms the served model is
+  Qwen3.6-27B-FP8 throughout.
+- **Scope deviations:** none. Confined to the authorized `openai.rs`; no seam change
+  (the downcast insight held); stall/runaway paths untouched.
+- **Calibration:** none folded. Two notes held for recurrence: (1) the model reached
+  for a *real network call* to construct a `reqwest::Error` — a hermeticity miss; if
+  it repeats, consider a STANDARDS reminder in the executor contract. (2) On the first
+  run the executor returned `complete` but skipped its closeout (status flip +
+  commit); the re-dispatch did it correctly. One clean instance (phase-04's skip was
+  an infra hard_fail) — watch for a trend before folding.
+
+**Re-review confirmation:** independent fmt/clippy/test green; `git diff 136713c`
+shows only the one test changed since the (already-correct) implementation; suite
+6.03 s wall-clock (was 30 s), no network calls remain; the single consolidated
+`tx.send(AiEvent::Token(out))` (line 343) confirms buffering; `bug-executor-2` is
+closed by this phase.

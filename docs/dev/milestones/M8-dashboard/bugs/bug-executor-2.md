@@ -1,7 +1,7 @@
 # Executor bug 2: completed work discarded on a mid-stream connection drop
 
 **Severity:** major
-**Status:** open
+**Status:** verified (fixed by [phase-05](../phase-05-stream-retry-resilience.md), approved 2026-06-02)
 **Filed:** 2026-06-02
 **Observed during:** M8 phase-04 dispatch (Qwen/Qwen3.6-27B-FP8) — `hard_fail` at
 turn 77 after the implementation and all command gates had already passed.
