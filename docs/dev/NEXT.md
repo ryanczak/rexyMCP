@@ -4,13 +4,18 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M8 is at a milestone-close gate (human sign-off required).**
-phase-06b is `done`; **both M8 Exit criteria are now met** (parse/verifier signal +
-budget consumed). Two options, your call:
-1. **Close M8** — write the retrospective, mark phase-07 (compaction) deferred/dropped,
-   and decide the next milestone (M9?). I won't cross this boundary without sign-off.
-2. **Do phase-07 first** — compaction events (`SessionEvent::Compaction`), the last
-   roadmap item (Gap C). Run `/rexymcp:architect next` to draft it.
+**Active phase:** [M8 / phase-08](milestones/M8-dashboard/phase-08-stay-open-follow-session.md)
+— dashboard stays open until user-quit and auto-follows a newly-started session.
+**Reopened M8 from its close gate (2026-06-03, user decision)** to fix a usability
+bug: phase-01's auto-exit-on-`ended` makes `rexymcp dashboard` flash up and exit
+whenever no phase is actively running. phase-08 removes the auto-exit (Option A) and
+relies on the existing per-poll `find_latest_session_log` to attach to a new session
+when it starts (extracted into a testable `resolve_session_log`, pinning the
+follow-vs-`--session`-pin distinction). mcp-crate only, no new deps. Dispatch with
+`/rexymcp:dispatch phase-08`.
+
+The milestone-close decision (close M8, or do the optional **phase-07** compaction
+events first) is deferred until phase-08 lands.
 
 **phase-06b done** (2026-06-03): the Budget panel — `summarize` folds
 `SessionEvent::Metrics` into `StatusSummary` (`last_input_tokens`, `last_output_tokens`,

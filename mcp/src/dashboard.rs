@@ -289,16 +289,6 @@ fn run_loop(
                 _ => {}
             }
         }
-
-        if data.summary.ended.is_some() {
-            let now_ms2 = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            terminal.draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms2))?;
-            std::thread::sleep(Duration::from_secs(2));
-            break;
-        }
     }
 
     Ok(())

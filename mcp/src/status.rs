@@ -190,13 +190,13 @@ pub(crate) fn humanize_age(age_ms: u64) -> String {
     }
 }
 
-/// Resolve the log to report on, read it, and return `(summary, json_records)`.
-/// `session` selects a specific log file whose name contains the substring;
-/// `None` picks the most recently modified one.
-pub fn load_status(repo: &Path, session: Option<&str>) -> Result<StatusSummary, String> {
+/// Resolve which session log to read this poll. `session = None` follows the
+/// most-recently-modified log (so a newly-started session is picked up on the
+/// next poll); `session = Some(needle)` pins to the log whose file name contains
+/// `needle` and never moves off it, regardless of which log is newest.
+pub fn resolve_session_log(repo: &Path, session: Option<&str>) -> Result<PathBuf, String> {
     let dir = sessions_dir(repo);
-
-    let log_path = match session {
+    match session {
         Some(needle) => {
             let entries = std::fs::read_dir(&dir)
                 .map_err(|e| format!("no session logs under {}: {}", dir.display(), e))?;
@@ -211,11 +211,18 @@ pub fn load_status(repo: &Path, session: Option<&str>) -> Result<StatusSummary, 
                 })
                 .ok_or_else(|| {
                     format!("no session log matching '{needle}' under {}", dir.display())
-                })?
+                })
         }
         None => find_latest_session_log(&dir)
-            .ok_or_else(|| format!("no session logs found under {}", dir.display()))?,
-    };
+            .ok_or_else(|| format!("no session logs found under {}", dir.display())),
+    }
+}
+
+/// Resolve the log to report on, read it, and return `(summary, json_records)`.
+/// `session` selects a specific log file whose name contains the substring;
+/// `None` picks the most recently modified one.
+pub fn load_status(repo: &Path, session: Option<&str>) -> Result<StatusSummary, String> {
+    let log_path = resolve_session_log(repo, session)?;
 
     let records = read_session_log(&log_path)
         .map_err(|e| format!("failed to read {}: {}", log_path.display(), e))?;
@@ -226,6 +233,7 @@ pub fn load_status(repo: &Path, session: Option<&str>) -> Result<StatusSummary, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, SystemTime};
 
     fn rec(ts: u64, turn: usize, event: SessionEvent) -> SessionRecord {
         SessionRecord { ts, turn, event }
@@ -510,5 +518,88 @@ mod tests {
         assert_eq!(s.last_input_tokens, None);
         assert_eq!(s.last_output_tokens, None);
         assert_eq!(s.last_context_pct, None);
+    }
+
+    fn write_log_with_mtime(
+        dir: &std::path::Path,
+        name: &str,
+        mtime: SystemTime,
+    ) -> std::path::PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, "").unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_modified(mtime).unwrap();
+        path
+    }
+
+    #[test]
+    fn resolve_unpinned_picks_newest_log() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+
+        let t0 = SystemTime::UNIX_EPOCH;
+        let t1 = t0 + Duration::from_secs(10);
+
+        let _aaa = write_log_with_mtime(&sessions, "session-phase-01-aaa.jsonl", t0);
+        let bbb = write_log_with_mtime(&sessions, "session-phase-02-bbb.jsonl", t1);
+
+        let resolved = resolve_session_log(dir.path(), None).unwrap();
+        assert_eq!(resolved, bbb);
+    }
+
+    #[test]
+    fn resolve_unpinned_follows_when_newer_log_appears() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+
+        let t0 = SystemTime::UNIX_EPOCH;
+        let aaa = write_log_with_mtime(&sessions, "session-phase-01-aaa.jsonl", t0);
+
+        let resolved = resolve_session_log(dir.path(), None).unwrap();
+        assert_eq!(resolved, aaa);
+
+        let t1 = t0 + Duration::from_secs(10);
+        let bbb = write_log_with_mtime(&sessions, "session-phase-02-bbb.jsonl", t1);
+
+        let resolved = resolve_session_log(dir.path(), None).unwrap();
+        assert_eq!(resolved, bbb);
+    }
+
+    #[test]
+    fn resolve_pinned_ignores_newer_nonmatching_log() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+
+        let t0 = SystemTime::UNIX_EPOCH;
+        let t1 = t0 + Duration::from_secs(10);
+
+        let aaa = write_log_with_mtime(&sessions, "session-phase-01-aaa.jsonl", t0);
+        let _bbb = write_log_with_mtime(&sessions, "session-phase-02-bbb.jsonl", t1);
+
+        let resolved = resolve_session_log(dir.path(), Some("aaa")).unwrap();
+        assert_eq!(resolved, aaa);
+    }
+
+    #[test]
+    fn resolve_unpinned_errs_when_no_logs() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let err = resolve_session_log(dir.path(), None).unwrap_err();
+        assert!(err.contains("no session logs found"));
+    }
+
+    #[test]
+    fn resolve_pinned_errs_when_no_match() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+
+        let t0 = SystemTime::UNIX_EPOCH;
+        let _aaa = write_log_with_mtime(&sessions, "session-phase-01-aaa.jsonl", t0);
+
+        let err = resolve_session_log(dir.path(), Some("zzz")).unwrap_err();
+        assert!(err.contains("no session log matching 'zzz'"));
     }
 }
