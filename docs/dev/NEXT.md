@@ -4,19 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. M8 phase-01/02/03 are all `done`. There is no drafted phase
-ready to dispatch — the next step is an **architect decision** (a human gate), not a
-dispatch.
+**Active phase:** [M8 / phase-04 — Activity panel: surface parse/verify/tool/hard-fail
+signals](milestones/M8-dashboard/phase-04-activity-signals.md) (`todo` — drafted
+2026-06-02, ready to dispatch).
 
-**M8 is not yet at milestone close.** Its Exit criteria call for the dashboard to
-show *parse/verifier signal* and *budget consumed*, but phase-02 shipped only the
-Session/Heartbeat/Files panels — those two panels were deferred because the data
-isn't in `StatusSummary` (the `summarize` fold ignores `Verify`/`ParseFailed`, and
-there's no token/budget event). **Decision needed:** draft a **phase-04** data-
-enrichment + panel slice (extend the dashboard data layer to read those
-`SessionEvent` variants, then add the panels), **or** rescope M8's Exit criteria to
-declare the three-panel layout sufficient and close the milestone. Run
-`/rexymcp:architect next` to draft phase-04, or revise the M8 README Exit criteria.
+**phase-04 in one line:** the loop already logs `ParseFailed` / `Verify` /
+`ToolResult` / `HardFail` records, but `status::summarize` drops them (`_ => {}`).
+Fold them into `StatusSummary` (parse-failure count + last feedback, last verify
+diagnostic count, last tool + ok, hard-fail reason) and render a fourth **Activity**
+panel. mcp-crate only, no executor change — closes the "parse/verifier signal" half
+of M8's Exit criteria. `format_status` human text unchanged (new fields are additive
+in `status --json`).
+
+**Measurement roadmap (designed 2026-06-02 — see [M8 README Notes](milestones/M8-dashboard/README.md#notes)).**
+The system measures rich metrics at run-end (`PhaseRun`, the scorecard substrate) but
+flushes almost none to the live JSONL the dashboard reads. Three gap classes:
+**A — surfacing** (data in JSONL, `summarize` drops it) → **phase-04** (this).
+**B — capture** (token/context computed in `RunMetrics`, only in end-of-run
+`PhaseRun`; needs a per-turn `SessionEvent::Metrics` emit) → **phase-05** (Budget
+panel + executor emit). **C — unmeasured anywhere** (live context-window %, and
+compaction firings — `compact()` emits nothing) → phase-05 (`context_pct`) and
+**phase-06** (`SessionEvent::Compaction`). The unifying move for B/C: flush
+incremental metric snapshots to the JSONL, giving the live dashboard parity with the
+scorecard and enriching the JSONL as a forensic replay record.
 
 **phase-03 done** (2026-06-02): closed `bug-executor-1` — the agent loop's
 `ParseResult::NoToolCall` branch now distinguishes a think-block-only completion
