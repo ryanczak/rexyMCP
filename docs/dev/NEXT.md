@@ -4,20 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-03 — executor bugfix: think-only completion treated as
-clean exit](milestones/M8-dashboard/phase-03-think-only-fix.md) (`todo` — drafted
-2026-06-02, ready to dispatch).
+**Active phase:** none. M8 phase-01/02/03 are all `done`. There is no drafted phase
+ready to dispatch — the next step is an **architect decision** (a human gate), not a
+dispatch.
 
-**phase-03 in one line:** closes `bug-executor-1`. In `executor/src/agent/mod.rs` the
-`ParseResult::NoToolCall` branch doesn't distinguish "think-block-only, nothing
-emitted" from "genuine prose clean exit", causing reasoning models (Qwen3,
-DeepSeek-R1) to false-`complete` with zero work. Fix: check
-`strip_think_blocks(&completion).trim().is_empty() && completion.contains("</think>")`
-before the clean-exit path; route think-only responses through the existing
-parse-failure feedback loop (log `ParseFailed`, push feedback, `continue`) instead.
-Two new tests. ⚠️ **Dispatch caveat:** the active backend (Qwen3.6-35B-A3B-FP8) is
-the very reasoning model that triggers this bug — it may itself false-`complete`
-this phase. Consider a non-reasoning model override or expect an architect takeover.
+**M8 is not yet at milestone close.** Its Exit criteria call for the dashboard to
+show *parse/verifier signal* and *budget consumed*, but phase-02 shipped only the
+Session/Heartbeat/Files panels — those two panels were deferred because the data
+isn't in `StatusSummary` (the `summarize` fold ignores `Verify`/`ParseFailed`, and
+there's no token/budget event). **Decision needed:** draft a **phase-04** data-
+enrichment + panel slice (extend the dashboard data layer to read those
+`SessionEvent` variants, then add the panels), **or** rescope M8's Exit criteria to
+declare the three-panel layout sufficient and close the milestone. Run
+`/rexymcp:architect next` to draft phase-04, or revise the M8 README Exit criteria.
+
+**phase-03 done** (2026-06-02): closed `bug-executor-1` — the agent loop's
+`ParseResult::NoToolCall` branch now distinguishes a think-block-only completion
+(routed to the parse-failure feedback loop) from a genuine prose clean exit. Two new
+tests. Verdict: approved_after_1 (first dispatch hard-failed `RunawayOutput` on a
+140 KB whole-file read; refined re-dispatch with code pre-injected verbatim succeeded
+on Qwen/Qwen3.6-27B-FP8).
 
 **phase-02 done** (2026-06-02): split phase-01's single dashboard pane into a
 btop-style three-panel layout (Session · Heartbeat · Files) via

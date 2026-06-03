@@ -1,7 +1,7 @@
 # Phase 03: fix think-only completion treated as clean exit
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review (refined re-dispatch after RunawayOutput hard_fail — see Update Log)
+**Status:** done
 **Depends on:** none (executor-crate fix; M8 phases 01–02 are independent)
 **Estimated diff:** ~80 lines (`executor/src/agent/mod.rs` branch + new tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -520,3 +520,27 @@ detail, use `search` with a narrow pattern — never a full-file read.
 **Rationale:** the hard_fail was a spec gap (the Pre-flight told the executor to
 read a 140 KB file that trips `RunawayOutput`), not a model failure — fixed by
 pre-injecting the needed code verbatim and forbidding the whole-file read.
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 — but an *escalation* cycle, not a review bug bounce: the first
+  dispatch hard-failed with `RunawayOutput` (whole-file read of the 140 KB
+  `agent/mod.rs`); refined re-dispatch with the code pre-injected verbatim
+  succeeded, and the result passed review on the first review pass with no bug filed.
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8). The earlier
+  Qwen3.6-35B-A3B-FP8 (reasoning variant) is the model whose think-only no-ops
+  motivated this very fix; the 27B non-reasoning variant implemented it cleanly.
+- **Scope deviations:** none. Edit confined to the authorized `agent/mod.rs`; the
+  duplicated budget-exceeded block mirrors `ParseResult::Failed` per the spec's
+  explicit no-refactor authorization; `parser/mod.rs` untouched as predicted.
+- **Calibration:** none folded yet, but **one data point worth tracking**: the
+  `RunawayOutput` hard_fail came from a phase doc instructing the executor to read
+  a file too large for the output limit. If a second phase trips the same way,
+  consider a WORKFLOW fold ("don't instruct full reads of large files; pre-inject
+  excerpts or steer to `search`/`patch`"). One occurrence = data; hold for recurrence.
+
+**Re-review confirmation:** independent fmt/build/clippy/test all green (559 executor
++ 163 mcp, 0 failures); both new tests present and real (each fails if the think-only
+guard is removed); commit scope limited to `agent/mod.rs` + docs; no forbidden
+patterns; `bug-executor-1` now closeable.

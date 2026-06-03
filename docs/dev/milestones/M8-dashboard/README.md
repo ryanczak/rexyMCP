@@ -8,7 +8,11 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01 done; phase-02 done; phase-03 (executor bugfix) review.
+**Status:** in progress — phase-01/02/03 all done. Remaining for milestone close:
+the Exit-criteria parse/verifier-signal and budget panels are **not yet built**
+(deferred from phase-02 because that data isn't in `StatusSummary`); a phase-04
+data-enrichment + panel slice is needed before M8 meets its Exit criteria. Awaiting
+architect decision on whether to draft phase-04 or rescope M8's exit criteria.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -43,7 +47,7 @@ sibling built on the same `summarize()` core.
 |-----|-------------------------------------------------------------------------------------|--------|
 | 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | done |
 | 02  | paned layout — Session · Heartbeat · Files ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) | done |
-| 03  | executor bugfix — think-only completion treated as clean exit ([phase-03-think-only-fix.md](phase-03-think-only-fix.md)) | review |
+| 03  | executor bugfix — think-only completion treated as clean exit ([phase-03-think-only-fix.md](phase-03-think-only-fix.md)) | done |
 
 ## Design decisions
 

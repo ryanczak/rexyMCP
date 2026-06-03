@@ -1,7 +1,7 @@
 # Executor bug 1: think-only completion treated as clean exit
 
 **Severity:** major
-**Status:** open
+**Status:** verified (fixed by [phase-03](../phase-03-think-only-fix.md), approved 2026-06-02)
 **Filed:** 2026-06-02
 **Observed during:** M8 phase-02 dispatch (Qwen/Qwen3.6-35B-A3B-FP8)
 
