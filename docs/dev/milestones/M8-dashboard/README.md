@@ -8,7 +8,7 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01 review.
+**Status:** in progress — phase-01 done; phase-02 (paned layout) not yet drafted.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -41,7 +41,7 @@ sibling built on the same `summarize()` core.
 
 | #   | Phase                                                                               | Status |
 |-----|-------------------------------------------------------------------------------------|--------|
-| 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | review |
+| 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | done |
 | 02  | paned layout — turn/stage · parse/verify · files · budget ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) *(not yet drafted)* | planned |
 
 ## Design decisions

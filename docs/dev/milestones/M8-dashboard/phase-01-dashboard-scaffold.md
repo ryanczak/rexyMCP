@@ -1,7 +1,7 @@
 # Phase 01: `rexymcp dashboard` scaffold — event loop + single summary pane
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** M7 (done) — specifically `mcp/src/status.rs` (`load_status`,
 `summarize`, `find_latest_session_log`, `sessions_dir`), whose data pipeline this
 phase wraps in a live TUI.
@@ -385,3 +385,25 @@ architect applied the one-line fix directly as a takeover to unblock.
 - `cargo clippy --all-targets --all-features -- -D warnings` — clean
 - `cargo test` — 557 (executor) + 158 (rexymcp) passed, 0 failed
 - `grep -A2 'name = "crossterm"' Cargo.lock` — single entry, `0.29.0`
+
+### Review verdict — 2026-06-02
+
+- **Verdict:** escalated (bounced once → architect takeover fix)
+- **Bounces:** 1 (bug: [bug-01-1](bugs/bug-01-1.md) — major, fixed)
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6 family) for the implementation;
+  bug-01-1 fixed by Claude Code (architect direct) after a backend-glitched
+  no-op re-dispatch
+- **Scope deviations:** none
+- **Calibration:** none. The bounce root cause was an architect spec error (an
+  authorized `crossterm 0.28` pin that can't unify with the authorized
+  `ratatui 0.30`'s `crossterm 0.29`), not an executor miss — single occurrence,
+  no fold. Watch for a repeat of "two authorized deps with conflicting transitive
+  version requirements" before folding a lesson.
+
+**Re-review confirmation:** independent re-run of fmt/build/clippy/test all green;
+`Cargo.lock` holds a single crossterm `0.29.0`; `cargo tree` shows the direct dep
+at `0.29.0` (event loop and ratatui backend now share one crossterm);
+`rexymcp dashboard --help` lists `--repo`/`--session`. Data-layer tests
+(`load_data_*`) and CLI-parse test confirmed real in the first review pass; no
+production source changed in the fix (only the `Cargo.toml` pin), so those
+findings stand.
