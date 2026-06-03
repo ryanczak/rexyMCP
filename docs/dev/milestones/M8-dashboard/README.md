@@ -56,7 +56,7 @@ sibling built on the same `summarize()` core.
 | 06a | metrics event — executor emits per-turn `SessionEvent::Metrics` (tokens + context %) ([phase-06a-metrics-event.md](phase-06a-metrics-event.md)) | done |
 | 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | done |
 | 07  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
-| 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | review |
+| 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | done |
 
 ## Design decisions
 

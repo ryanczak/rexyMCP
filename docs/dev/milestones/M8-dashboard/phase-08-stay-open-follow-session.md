@@ -1,7 +1,7 @@
 # Phase 08: Dashboard stays open and follows a newly-started session
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done) — this fixes phase-01's auto-exit behavior and
 builds on its event loop and `load_status` path-resolution.
 **Estimated diff:** ~90 lines (`mcp/src/dashboard.rs` loop edit + `mcp/src/status.rs`
@@ -361,3 +361,18 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 175 filtered out
 **Notes for review:** With the early-exit branch removed, `run_loop` only exits on the quit key (`q`/`Esc`), and each poll re-resolves the session log via `resolve_session_log` — so the dashboard stays open and auto-follows a newly-started session when unpinned, or stays pinned when `--session` is given.
 
 **Commit:** `fix: dashboard stays open and follows newly-started session`
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — all three spec tasks implemented exactly; the
+  optional "attached to" cue was correctly left out of scope.
+- **Calibration:** none. (Cosmetic: the executor's Update Log is date-stamped
+  `2025-07-18` from model clock drift; real date 2026-06-03. Not a defect — a
+  recurring local-LLM clock quirk, not worth a fold.)
+- **Independent re-run:** fmt clean, build clean, clippy clean, `cargo test -p
+  rexymcp` 180 passed. Auto-exit grep empty; single `break` in the `q`/`Esc`
+  arm. `resolve_session_log` extraction is behavior-preserving (identical logic
+  + error strings); the pinned-ignores-newer test is a genuine negative case.
