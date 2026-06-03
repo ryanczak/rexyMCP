@@ -144,7 +144,7 @@ pub fn format_status(summary: &StatusSummary, now_ms: u64) -> String {
 }
 
 /// Compact "5s" / "3m12s" / "1h04m" age string from a millisecond span.
-fn humanize_age(age_ms: u64) -> String {
+pub(crate) fn humanize_age(age_ms: u64) -> String {
     let secs = age_ms / 1000;
     if secs < 60 {
         format!("{secs}s")

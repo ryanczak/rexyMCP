@@ -42,7 +42,7 @@ sibling built on the same `summarize()` core.
 | #   | Phase                                                                               | Status |
 |-----|-------------------------------------------------------------------------------------|--------|
 | 01  | `ratatui` scaffold — event loop + single summary pane ([phase-01-dashboard-scaffold.md](phase-01-dashboard-scaffold.md)) | done |
-| 02  | paned layout — Session · Heartbeat · Files ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) | todo |
+| 02  | paned layout — Session · Heartbeat · Files ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) | review |
 
 ## Design decisions
 

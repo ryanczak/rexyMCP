@@ -1,17 +1,20 @@
-//! Live dashboard — polls session logs and renders a TUI summary pane.
+//! Live dashboard — polls session logs and renders a paned TUI summary.
 //!
-//! Wraps `status::load_status` in a continuously-refreshed `ratatui` terminal.
+//! Wraps `status::load_status` in a continuously-refreshed `ratatui` terminal
+//! split into three panels: Session (identity/state), Heartbeat (liveness),
+//! and Files (per-file diff numstat).
 
 use std::path::Path;
 
-use crate::status::{self, StatusSummary};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+
+use crate::status::{self, StatusSummary};
 
 /// Snapshot of the latest session data or an error loading it.
 pub struct DashboardData {
@@ -33,24 +36,10 @@ pub fn load_data(repo: &Path, session: Option<&str>) -> DashboardData {
     }
 }
 
-/// Render the dashboard summary into a single bordered pane.
-fn render_summary(frame: &mut Frame, area: Rect, data: &DashboardData) {
-    let lines = if let Some(ref err) = data.error {
-        vec![Line::from(Span::styled(
-            format!("Error: {err}"),
-            Style::new().fg(Color::Red),
-        ))]
-    } else {
-        format_summary_lines(&data.summary)
-    };
+// --- Per-panel content formatters (pure, testable) ---
 
-    let paragraph =
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Dashboard "));
-    frame.render_widget(paragraph, area);
-}
-
-/// Format the summary into TUI lines. Mirrors `status::format_status`.
-fn format_summary_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+/// Session panel: phase / session id / model / state.
+fn session_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     let phase = summary.phase.as_deref().unwrap_or("<unknown>");
@@ -62,7 +51,7 @@ fn format_summary_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     }
 
     let state = match &summary.ended {
-        Some(status) => format!("ended ({status})"),
+        Some(s) => format!("ended ({s})"),
         None => "running".to_string(),
     };
     lines.push(Line::from(Span::styled(
@@ -76,6 +65,14 @@ fn format_summary_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
             }),
     )));
 
+    lines
+}
+
+/// Heartbeat panel: turn / stage / latest message / freshness age.
+/// `now_ms` is injected (unix millis) so the age line is testable.
+fn heartbeat_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
     let stage = summary.latest_stage.as_deref().unwrap_or("<none>");
     lines.push(Line::from(format!(
         "turn {}, stage {stage}",
@@ -86,20 +83,73 @@ fn format_summary_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         lines.push(Line::from(msg.clone()));
     }
 
-    if !summary.files_changed.is_empty() {
-        lines.push(Line::from(""));
-        for f in &summary.files_changed {
-            lines.push(Line::from(format!(
-                "  {} +{} -{}",
-                f.path, f.added, f.removed
-            )));
-        }
+    if let Some(ts) = summary.last_ts {
+        let age_ms = now_ms.saturating_sub(ts);
+        lines.push(Line::from(format!(
+            "last update: {} ago",
+            status::humanize_age(age_ms)
+        )));
     }
 
     lines
 }
 
-/// Run the dashboard event loop. This is the main entry point called by `main.rs`.
+/// Files panel: one line per changed file, or a placeholder when none.
+fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+    if summary.files_changed.is_empty() {
+        return vec![Line::from("(no files changed yet)")];
+    }
+    summary
+        .files_changed
+        .iter()
+        .map(|f| Line::from(format!("  {} +{} -{}", f.path, f.added, f.removed)))
+        .collect()
+}
+
+// --- Panel helpers ---
+
+/// Wrap lines in a bordered `Block` with the given title.
+fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
+    Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title))
+}
+
+// --- Renderer ---
+
+/// Render the dashboard into a three-panel paned layout (or a single error
+/// pane when `data.error` is set).
+fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64) {
+    if let Some(ref err) = data.error {
+        let error_pane = panel(
+            " Dashboard ",
+            vec![Line::from(Span::styled(
+                format!("Error: {err}"),
+                Style::new().fg(Color::Red),
+            ))],
+        );
+        frame.render_widget(error_pane, area);
+        return;
+    }
+
+    // Outer split: fixed-height top row + filling bottom region (Files).
+    let [top, bottom] =
+        Layout::vertical([Constraint::Length(8), Constraint::Min(0)]).areas::<2>(area);
+
+    // Top row: Session (left) | Heartbeat (right).
+    let [left, right] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .areas::<2>(top);
+
+    frame.render_widget(panel(" Session ", session_lines(&data.summary)), left);
+    frame.render_widget(
+        panel(" Heartbeat ", heartbeat_lines(&data.summary, now_ms)),
+        right,
+    );
+    frame.render_widget(panel(" Files ", files_lines(&data.summary)), bottom);
+}
+
+// --- Entry points ---
+
+/// Run the dashboard event loop. Called by `main.rs`.
 pub fn run_dashboard(repo: &Path, session: Option<&str>) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     let result = run_loop(&mut terminal, repo, session);
@@ -116,8 +166,13 @@ fn run_loop(
     use std::time::Duration;
 
     loop {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         let data = load_data(repo, session);
-        terminal.draw(|frame| render_summary(frame, frame.area(), &data))?;
+        terminal.draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms))?;
 
         if event::poll(Duration::from_millis(500))?
             && let Event::Key(key) = event::read()?
@@ -130,7 +185,11 @@ fn run_loop(
         }
 
         if data.summary.ended.is_some() {
-            terminal.draw(|frame| render_summary(frame, frame.area(), &data))?;
+            let now_ms2 = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            terminal.draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms2))?;
             std::thread::sleep(Duration::from_secs(2));
             break;
         }
@@ -143,7 +202,7 @@ fn run_loop(
 mod tests {
     use super::*;
     use crate::status::sessions_dir;
-    use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
+    use rexymcp_executor::store::sessions::event::{FileNumstat, SessionEvent, SessionRecord};
     use tempfile::TempDir;
 
     fn rec(ts: u64, turn: usize, event: SessionEvent) -> SessionRecord {
@@ -166,6 +225,8 @@ mod tests {
             message: format!("turn={turn} stage={stage} +0/-0 files=0"),
         }
     }
+
+    // --- load_data tests (carried over from phase-01) ---
 
     #[test]
     fn load_data_returns_error_when_no_sessions_dir() {
@@ -194,12 +255,98 @@ mod tests {
         assert_eq!(data.summary.phase.as_deref(), Some("phase-01"));
     }
 
+    // --- session_lines tests ---
+
     #[test]
-    fn format_summary_lines_shows_error_style() {
+    fn session_lines_shows_phase_and_running_state() {
+        let summary = StatusSummary {
+            phase: Some("phase-02".into()),
+            session_id: Some("abc".into()),
+            ended: None,
+            ..StatusSummary::default()
+        };
+        let lines = session_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("phase: phase-02")));
+        assert!(text.iter().any(|s| s.contains("running")));
+    }
+
+    #[test]
+    fn session_lines_shows_ended_state() {
+        let summary = StatusSummary {
+            phase: Some("phase-02".into()),
+            ended: Some("complete".into()),
+            ..StatusSummary::default()
+        };
+        let lines = session_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("ended (complete)")));
+    }
+
+    // --- heartbeat_lines tests ---
+
+    #[test]
+    fn heartbeat_lines_shows_turn_and_age() {
+        let summary = StatusSummary {
+            latest_turn: 5,
+            latest_stage: Some("verify".into()),
+            last_ts: Some(1000),
+            ..StatusSummary::default()
+        };
+        let lines = heartbeat_lines(&summary, 4000);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("turn 5")));
+        assert!(text.iter().any(|s| s.contains("verify")));
+        assert!(text.iter().any(|s| s.contains("3s ago")));
+    }
+
+    #[test]
+    fn heartbeat_lines_omits_age_when_no_ts() {
+        let summary = StatusSummary {
+            last_ts: None,
+            ..StatusSummary::default()
+        };
+        let lines = heartbeat_lines(&summary, 9999);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(!text.iter().any(|s| s.contains("last update")));
+    }
+
+    // --- files_lines tests ---
+
+    #[test]
+    fn files_lines_lists_each_numstat() {
+        let summary = StatusSummary {
+            files_changed: vec![
+                FileNumstat {
+                    path: "src/a.rs".into(),
+                    added: 10,
+                    removed: 2,
+                },
+                FileNumstat {
+                    path: "src/b.rs".into(),
+                    added: 0,
+                    removed: 3,
+                },
+            ],
+            ..StatusSummary::default()
+        };
+        let lines = files_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text.iter()
+                .any(|s| s.contains("src/a.rs") && s.contains("+10") && s.contains("-2"))
+        );
+        assert!(
+            text.iter()
+                .any(|s| s.contains("src/b.rs") && s.contains("+0") && s.contains("-3"))
+        );
+    }
+
+    #[test]
+    fn files_lines_empty_placeholder() {
         let summary = StatusSummary::default();
-        let lines = format_summary_lines(&summary);
-        assert!(!lines.is_empty());
-        let first = &lines[0];
-        assert!(format!("{first}").contains("phase: <unknown>"));
+        let lines = files_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("no files changed")));
     }
 }
