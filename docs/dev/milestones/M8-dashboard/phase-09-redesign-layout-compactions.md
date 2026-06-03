@@ -1,7 +1,7 @@
 # Phase 09: Dashboard redesign — header band, Compactions panel, Files trim
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-07 (done — `SessionEvent::Compaction` is now in the JSONL, the
 data this phase's Compactions panel renders) and phase-08 (done — the loop the new
 layout renders in).
@@ -317,3 +317,66 @@ edit. mcp-crate only.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-15 19:32 (progress)
+
+**Executor:** Claude (direct)
+
+Implementing phase-09: added `compaction_count`, `compaction_tokens_before`, `compaction_tokens_after` to `StatusSummary`, folded `SessionEvent::Compaction` in `summarize`, added `compactions_lines` panel, restructured `render_dashboard` layout to four-panel header band + body, and left-trimmed file paths in `files_lines`.
+
+### Update — 2025-07-15 19:35 (complete)
+
+**Summary:** Implemented the dashboard redesign: (1) added three compaction fields to `StatusSummary` and folded `SessionEvent::Compaction` in `summarize`; (2) added `compactions_lines` panel with events/freed/ratio display and divide-by-zero guard; (3) restructured `render_dashboard` into a four-panel header band (Session · Budget · Compactions · Heartbeat) above a body (Activity wide-left · Files right); (4) left-trimmed file paths in `files_lines` with `trim_path_left` helper. All changes are mcp-crate only, no new dependencies.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+<clean>
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.55s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s
+
+cargo test -p rexymcp 2>&1 | tail -30
+test result: ok. 186 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.01s
+```
+
+**End-to-end verification:**
+
+Layout verified by inspection: `render_dashboard` now splits into `[header, body]` vertically, header has four horizontal panels (Session/Budget/Compactions/Heartbeat), body has two (Activity/Files). Doc comment updated to describe the new layout. Unit tests cover all data-backed panel logic: `compactions_lines_empty_placeholder`, `compactions_lines_shows_events_and_ratio`, `compactions_lines_omits_ratio_when_after_zero`, `files_lines_trims_long_path_left`, `files_lines_keeps_short_path_untrimmed`, `summarize_folds_compaction_counts_and_tokens` — all green.
+
+**Grep for spec-pinned literals:**
+```
+grep -rn 'compaction_count' mcp/src/status.rs mcp/src/dashboard.rs
+```
+Confirmed: `compaction_count` appears in `StatusSummary` struct, `summarize` fold, and `compactions_lines`.
+```
+grep -rn 'FILE_PATH_MAX' mcp/src/dashboard.rs
+```
+Confirmed: `FILE_PATH_MAX` const defined and used in `trim_path_left` and `files_lines`.
+
+**Files changed:**
+- `mcp/src/status.rs` — added 3 compaction fields to `StatusSummary`, folded `Compaction` in `summarize`, added `compaction` test helper + `summarize_folds_compaction_counts_and_tokens` test
+- `mcp/src/dashboard.rs` — added `compactions_lines` panel, `trim_path_left` helper + `FILE_PATH_MAX` const, updated `files_lines` to use trim, restructured `render_dashboard` layout, added 5 new tests
+- `docs/dev/milestones/M8-dashboard/phase-09-redesign-layout-compactions.md` — status flip to `review`, Update Log entries
+- `docs/dev/milestones/M8-dashboard/README.md` — phase 09 status flip to `review`
+
+**New tests:**
+- `summarize_folds_compaction_counts_and_tokens` in `mcp/src/status.rs`
+- `compactions_lines_empty_placeholder` in `mcp/src/dashboard.rs`
+- `compactions_lines_shows_events_and_ratio` in `mcp/src/dashboard.rs`
+- `compactions_lines_omits_ratio_when_after_zero` in `mcp/src/dashboard.rs`
+- `files_lines_trims_long_path_left` in `mcp/src/dashboard.rs`
+- `files_lines_keeps_short_path_untrimmed` in `mcp/src/dashboard.rs`
+
+**Commits:**
+- (pending) — `feat: redesign dashboard layout with Compactions panel and file path trimming`
+
+**Notes for review:** None — implementation matches spec exactly.

@@ -46,6 +46,12 @@ pub struct StatusSummary {
     /// `None` = no metrics yet. A value of 0.0 means the run had no real
     /// ceiling (unmeasured sentinel).
     pub last_context_pct: Option<f64>,
+    /// Number of `Compaction` records seen so far.
+    pub compaction_count: usize,
+    /// Sum of `tokens_before` across all `Compaction` records.
+    pub compaction_tokens_before: usize,
+    /// Sum of `tokens_after` across all `Compaction` records.
+    pub compaction_tokens_after: usize,
 }
 
 /// Fold a session log's records into the latest-state summary. Pure: the
@@ -109,6 +115,15 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 summary.last_input_tokens = Some(*input_tokens);
                 summary.last_output_tokens = Some(*output_tokens);
                 summary.last_context_pct = Some(*context_pct);
+            }
+            SessionEvent::Compaction {
+                tokens_before,
+                tokens_after,
+                ..
+            } => {
+                summary.compaction_count += 1;
+                summary.compaction_tokens_before += *tokens_before;
+                summary.compaction_tokens_after += *tokens_after;
             }
             _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
@@ -301,6 +316,15 @@ mod tests {
             input_tokens,
             output_tokens,
             context_pct,
+        }
+    }
+
+    fn compaction(tokens_before: usize, tokens_after: usize) -> SessionEvent {
+        SessionEvent::Compaction {
+            tokens_before,
+            tokens_after,
+            messages_signaturized: 0,
+            messages_evicted: 0,
         }
     }
 
@@ -518,6 +542,19 @@ mod tests {
         assert_eq!(s.last_input_tokens, None);
         assert_eq!(s.last_output_tokens, None);
         assert_eq!(s.last_context_pct, None);
+    }
+
+    #[test]
+    fn summarize_folds_compaction_counts_and_tokens() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, compaction(1000, 600)),
+            rec(300, 2, compaction(800, 500)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.compaction_count, 2);
+        assert_eq!(s.compaction_tokens_before, 1800);
+        assert_eq!(s.compaction_tokens_after, 1100);
     }
 
     fn write_log_with_mtime(

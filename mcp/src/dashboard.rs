@@ -94,6 +94,24 @@ fn heartbeat_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
     lines
 }
 
+/// Compactions panel: count, freed tokens, compression ratio.
+fn compactions_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+    if summary.compaction_count == 0 {
+        return vec![Line::from("(no compactions)")];
+    }
+    let before = summary.compaction_tokens_before;
+    let after = summary.compaction_tokens_after;
+    let mut lines = vec![
+        Line::from(format!("events: {}", summary.compaction_count)),
+        Line::from(format!("freed: {} tokens", before.saturating_sub(after))),
+    ];
+    if after != 0 {
+        let ratio = before as f64 / after as f64;
+        lines.push(Line::from(format!("ratio: {ratio:.1}x")));
+    }
+    lines
+}
+
 /// Files panel: one line per changed file, or a placeholder when none.
 fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.files_changed.is_empty() {
@@ -102,8 +120,34 @@ fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     summary
         .files_changed
         .iter()
-        .map(|f| Line::from(format!("  {} +{} -{}", f.path, f.added, f.removed)))
+        .map(|f| {
+            Line::from(format!(
+                "  {} +{} -{}",
+                trim_path_left(&f.path, FILE_PATH_MAX),
+                f.added,
+                f.removed
+            ))
+        })
         .collect()
+}
+
+/// Max display width for a file path in the Files panel. Longer paths are
+/// left-trimmed so the filename (the meaningful tail) stays visible.
+const FILE_PATH_MAX: usize = 40;
+
+fn trim_path_left(path: &str, max: usize) -> String {
+    if path.chars().count() <= max {
+        return path.to_string();
+    }
+    let tail: String = path
+        .chars()
+        .rev()
+        .take(max.saturating_sub(1))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("…{tail}")
 }
 
 /// Activity panel: tool / verify / parse / hard-fail signals.
@@ -204,8 +248,9 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 
 // --- Renderer ---
 
-/// Render the dashboard into a 2×2 grid with a full-width Budget row (or a
-/// single error pane when `data.error` is set).
+/// Render the dashboard into a four-panel header band (Session · Budget ·
+/// Compactions · Heartbeat) above a body (Activity wide-left · Files right),
+/// or a single error pane when `data.error` is set.
 fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
@@ -219,38 +264,43 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
         return;
     }
 
-    // Outer split: fixed-height top row + filling middle region + fixed-height budget row.
-    let [top, middle, budget_area] = Layout::vertical([
-        Constraint::Length(8),
-        Constraint::Min(0),
-        Constraint::Length(4),
+    // Outer split: fixed-height header band + filling body.
+    let [header, body] =
+        Layout::vertical([Constraint::Length(7), Constraint::Min(0)]).areas::<2>(area);
+
+    // Header band: Session · Budget · Compactions · Heartbeat.
+    let [session_area, budget_area, compactions_area, heartbeat_area] = Layout::horizontal([
+        Constraint::Percentage(26),
+        Constraint::Percentage(20),
+        Constraint::Percentage(28),
+        Constraint::Percentage(26),
     ])
-    .areas::<3>(area);
+    .areas::<4>(header);
 
-    // Top row: Session (left) | Heartbeat (right).
-    let [left, right] =
-        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .areas::<2>(top);
-
-    frame.render_widget(panel(" Session ", session_lines(&data.summary)), left);
+    frame.render_widget(
+        panel(" Session ", session_lines(&data.summary)),
+        session_area,
+    );
+    frame.render_widget(panel(" Budget ", budget_lines(&data.summary)), budget_area);
+    frame.render_widget(
+        panel(" Compactions ", compactions_lines(&data.summary)),
+        compactions_area,
+    );
     frame.render_widget(
         panel(" Heartbeat ", heartbeat_lines(&data.summary, now_ms)),
-        right,
+        heartbeat_area,
     );
 
-    // Middle row: Files (left) | Activity (right).
-    let [files_area, activity_area] =
-        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .areas::<2>(middle);
+    // Body: Activity (wide-left) · Files (right).
+    let [activity_area, files_area] =
+        Layout::horizontal([Constraint::Percentage(72), Constraint::Percentage(28)])
+            .areas::<2>(body);
 
-    frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
     frame.render_widget(
         panel(" Activity ", activity_lines(&data.summary)),
         activity_area,
     );
-
-    // Bottom row: Budget (full-width).
-    frame.render_widget(panel(" Budget ", budget_lines(&data.summary)), budget_area);
+    frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
 }
 
 // --- Entry points ---
@@ -507,5 +557,117 @@ mod tests {
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no metrics")));
+    }
+
+    // --- compactions_lines tests ---
+
+    #[test]
+    fn compactions_lines_empty_placeholder() {
+        let summary = StatusSummary::default();
+        let lines = compactions_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("no compactions")));
+    }
+
+    #[test]
+    fn compactions_lines_shows_events_and_ratio() {
+        let summary = StatusSummary {
+            compaction_count: 2,
+            compaction_tokens_before: 1000,
+            compaction_tokens_after: 600,
+            ..StatusSummary::default()
+        };
+        let lines = compactions_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("events: 2")));
+        assert!(text.iter().any(|s| s.contains("freed: 400")));
+        assert!(text.iter().any(|s| s.contains("1.7x")));
+    }
+
+    #[test]
+    fn compactions_lines_omits_ratio_when_after_zero() {
+        let summary = StatusSummary {
+            compaction_count: 1,
+            compaction_tokens_before: 500,
+            compaction_tokens_after: 0,
+            ..StatusSummary::default()
+        };
+        let lines = compactions_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("events: 1")));
+        assert!(text.iter().any(|s| s.contains("freed: 500")));
+        assert!(!text.iter().any(|s| s.contains("x")));
+    }
+
+    // --- files_lines trim tests ---
+
+    #[test]
+    fn files_lines_trims_long_path_left() {
+        let long_path = "a/very/deeply/nested/path/that/is/definitely/longer/forty/chars.rs";
+        assert!(long_path.chars().count() > FILE_PATH_MAX);
+        let summary = StatusSummary {
+            files_changed: vec![FileNumstat {
+                path: long_path.into(),
+                added: 5,
+                removed: 1,
+            }],
+            ..StatusSummary::default()
+        };
+        let lines = files_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert_eq!(text.len(), 1);
+        let line = &text[0];
+        assert!(
+            line.starts_with("  …"),
+            "trimmed path should start with ellipsis: {line}"
+        );
+        assert!(
+            line.ends_with(" +5 -1"),
+            "line should end with numstat suffix: {line}"
+        );
+        // The path portion (between "  " and " +5 -1") should be exactly FILE_PATH_MAX chars
+        let path_part: String = line
+            .strip_prefix("  ")
+            .unwrap()
+            .strip_suffix(" +5 -1")
+            .unwrap()
+            .chars()
+            .collect();
+        assert_eq!(
+            path_part.chars().count(),
+            FILE_PATH_MAX,
+            "trimmed path should be exactly FILE_PATH_MAX chars: {path_part}"
+        );
+        // The tail should match the end of the original path
+        let tail_len = FILE_PATH_MAX.saturating_sub(1); // minus the ellipsis char
+        let original_tail: String = long_path
+            .chars()
+            .skip(long_path.chars().count() - tail_len)
+            .collect();
+        assert!(
+            path_part.ends_with(&original_tail),
+            "trimmed path should end with original path tail: {path_part} vs {original_tail}"
+        );
+    }
+
+    #[test]
+    fn files_lines_keeps_short_path_untrimmed() {
+        let summary = StatusSummary {
+            files_changed: vec![FileNumstat {
+                path: "src/a.rs".into(),
+                added: 3,
+                removed: 0,
+            }],
+            ..StatusSummary::default()
+        };
+        let lines = files_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert_eq!(text.len(), 1);
+        assert!(
+            !text[0].contains('…'),
+            "short path should not contain ellipsis: {}",
+            text[0]
+        );
+        assert!(text[0].contains("src/a.rs"));
     }
 }
