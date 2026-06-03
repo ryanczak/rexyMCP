@@ -8,14 +8,16 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01–06b done. Both original Exit criteria are met
+**Status:** in progress — phase-01–08 done. Both original Exit criteria are met
 ("parse/verifier signal" via phase-04's Activity panel; "budget consumed" via 06b's
-Budget panel). **Reopened from the milestone-close gate (2026-06-03, user decision)**
-to fix a dashboard usability bug: phase-08 makes the dashboard stay open until the
-user quits and auto-follow a newly-started session (phase-01's auto-exit-on-`ended`
-caused it to flash up and exit when no phase is running). The optional **phase-07**
-(compaction events) remains undrafted; the close-gate decision is deferred until
-phase-08 lands.
+Budget panel); phase-08 fixed the auto-exit usability bug (dashboard now stays open
+and auto-follows a newly-started session); phase-07 closed the last measurement gap
+(Gap C — `SessionEvent::Compaction` emitted from the silent `compact()` firing).
+**M8 is being kept open (2026-06-03, user decision) for a dashboard redesign
+(phase-09+)** — the user is producing UI wireframes before those phases are drafted.
+The milestone-close decision is deferred until the redesign work is scoped. The
+measurement roadmap below (Gaps A/B/C) is now fully landed; the compaction *render*
+half is intentionally deferred to the redesign.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -55,7 +57,7 @@ sibling built on the same `summarize()` core.
 | 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | done |
 | 06a | metrics event — executor emits per-turn `SessionEvent::Metrics` (tokens + context %) ([phase-06a-metrics-event.md](phase-06a-metrics-event.md)) | done |
 | 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | done |
-| 07  | Compaction events — emit `SessionEvent::Compaction` from `compact()` ([phase-07-compaction-event.md](phase-07-compaction-event.md)) | review |
+| 07  | Compaction events — emit `SessionEvent::Compaction` from `compact()` ([phase-07-compaction-event.md](phase-07-compaction-event.md)) | done |
 | 08  | Dashboard stays open + follows a newly-started session ([phase-08-stay-open-follow-session.md](phase-08-stay-open-follow-session.md)) | done |
 
 ## Design decisions

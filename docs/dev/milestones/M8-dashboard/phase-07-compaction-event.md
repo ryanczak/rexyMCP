@@ -1,7 +1,7 @@
 # Phase 07: Compaction events — emit `SessionEvent::Compaction`
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (done) — established the "executor flushes a per-turn
 metric record to the JSONL" pattern this phase mirrors for compaction.
 **Estimated diff:** ~60 lines (`event.rs` variant + `agent/mod.rs` emit + 2 match
@@ -342,3 +342,21 @@ cargo test — 565 passed, 0 failed, 2 ignored
 **Notes for review:** No adaptations needed — spec matched the codebase exactly. The `compact()` call site was at the expected location, `CompactionReport` fields matched, and only the two expected exhaustive matches needed new arms.
 
 **Commit:** `feat: emit SessionEvent::Compaction from compact() call site`
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — all 4 spec sites implemented exactly (variant,
+  emit, `event_type_str` arm, `event_kind` arm). Out-of-scope respected: no
+  `summarize` arm, no dashboard/`StatusSummary` change, no `PhaseRun` field, no
+  `tokens_freed` field.
+- **Calibration:** none. (Cosmetic: executor Update Log date-stamped `2025-07-18`,
+  model clock drift — same recurring quirk as phase-08; real date 2026-06-03.)
+- **Independent re-run:** fmt clean, build clean (both crates, zero warnings),
+  clippy clean (all targets), `cargo test` 565 passed. New test
+  `logs_compaction_event_when_budget_overflows` is a real test (drives the loop with
+  `Budget::new(10)`, reads back the on-disk JSONL, asserts a `Compaction` record with
+  `tokens_before > 0 >= tokens_after`) — would fail if the emit were removed. No new
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]` in production paths.

@@ -4,19 +4,31 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-07](milestones/M8-dashboard/phase-07-compaction-event.md)
-— emit `SessionEvent::Compaction` from the silent `compact()` firing (Gap C, the last
-measurement-roadmap item). `compact()` already returns a `CompactionReport`; the call
-site (`agent/mod.rs:182`) discards it. phase-07 captures it and logs a new
-`Compaction` variant (tokens before/after + messages signaturized/evicted). **Emit
-only** — rendering is deferred to the M8 dashboard redesign (phase-09+). Additive new
-variant; 4 edit sites (enum + emit + 2 exhaustive match arms, one cross-crate in
-`mcp/src/log_query.rs`); executor + mcp crates; no new deps. Dispatch with
-`/rexymcp:dispatch phase-07`.
+**Active phase:** none — **M8 is staying open for a dashboard redesign (phase-09+),
+pending UI wireframes from the user.** Do not draft phase-09 until the wireframes
+land and the redesign scope is agreed.
 
-**M8 stays open after phase-07.** The milestone is being extended for a dashboard
-redesign (phase-09+); the user is producing UI wireframes before those phases are
-drafted. The milestone-close decision is deferred until the redesign work is scoped.
+phase-07 is `done` (approved_first_try 2026-06-03): `SessionEvent::Compaction` is now
+emitted from the previously-silent `compact()` firing (Gap C). With 06a/06b (Gap B),
+phase-04 (Gap A), and 07 (Gap C) all landed, the **measurement roadmap is fully
+flushed to the live JSONL** — the compaction *render* in the dashboard is the one
+deferred piece, folded into the upcoming redesign.
+
+**Next steps (user-driven):**
+1. Confirm the phase-08 dashboard improvements work on a live session (watch the
+   auto-attach when the next executor session starts).
+2. User produces UI wireframes for the dashboard redesign.
+3. Then `/rexymcp:architect next` to draft phase-09+ against those wireframes.
+
+**phase-07 done** (2026-06-03): captured the `CompactionReport` at the `compact()`
+call site (`agent/mod.rs:182`) and logged a new `Compaction` variant (tokens
+before/after + messages signaturized/evicted). Emit-only; 4 additive sites (enum +
+emit + `event_type_str`/`event_kind` arms), executor + mcp crates, no new deps.
+Implemented by Qwen/Qwen3.6-27B-FP8.
+
+**phase-08 done** (2026-06-03): dashboard stays open until user-quit and auto-follows
+a newly-started session; removed phase-01's auto-exit-on-`ended` and extracted a
+testable `resolve_session_log`. Implemented by Qwen/Qwen3.6-27B-FP8.
 
 **phase-08 done** (2026-06-03): fixed phase-01's auto-exit-on-`ended` that made
 `rexymcp dashboard` flash up and exit when no phase was running. Removed the auto-exit
