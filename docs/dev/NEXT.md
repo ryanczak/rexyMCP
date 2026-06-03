@@ -5,8 +5,8 @@ engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
 **Active phase:** [M8 / phase-02 — dashboard paned layout: Session · Heartbeat ·
-Files](milestones/M8-dashboard/phase-02-dashboard-panels.md) (`todo` — drafted
-2026-06-02, ready to dispatch).
+Files](milestones/M8-dashboard/phase-02-dashboard-panels.md) (`review` — architect
+takeover complete 2026-06-02; pending `/rexymcp:review phase-02`).
 
 **phase-02 in one line:** split phase-01's single dashboard pane into a btop-style
 three-panel layout via `ratatui::layout::Layout` — a top row split into **Session**
@@ -15,6 +15,16 @@ with a **Files** numstat panel filling below. Same data (`StatusSummary`), same
 event loop and `q`/`Esc` exit; only rendering changes. Reuses `status::humanize_age`
 (bumped to `pub(crate)` — the only `status.rs` change). Parse/verify + budget panels
 are **deferred** (that data isn't in `StatusSummary` yet). No new dependencies.
+
+**Queued next:** [M8 / phase-03 — executor bugfix: think-only completion treated as
+clean exit](milestones/M8-dashboard/phase-03-think-only-fix.md) (`todo` — drafted
+2026-06-02). Closes `bug-executor-1`: in `executor/src/agent/mod.rs` the
+`ParseResult::NoToolCall` branch doesn't distinguish "think-block-only, nothing
+emitted" from "genuine prose clean exit", causing reasoning models (Qwen3,
+DeepSeek-R1) to false-`complete` with zero work. Fix: check
+`strip_think_blocks(&completion).trim().is_empty() && completion.contains("</think>")`
+before the clean-exit path; route think-only responses through the existing
+parse-failure feedback loop instead.
 
 **phase-01 done** (2026-06-02): `rexymcp dashboard --repo <path>` scaffold —
 `ratatui` live TUI, 500 ms poll of the latest session JSONL, single bordered
