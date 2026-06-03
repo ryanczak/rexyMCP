@@ -4,17 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-04 — Activity panel: surface parse/verify/tool/hard-fail
-signals](milestones/M8-dashboard/phase-04-activity-signals.md) (`todo` — drafted
-2026-06-02, ready to dispatch).
+**Active phase:** none. M8 phase-01/02/03/04 are all `done`. The next phase
+(**phase-05**, Budget panel) is **not yet drafted** — run `/rexymcp:architect next`
+to draft it (a human gate).
 
-**phase-04 in one line:** the loop already logs `ParseFailed` / `Verify` /
-`ToolResult` / `HardFail` records, but `status::summarize` drops them (`_ => {}`).
-Fold them into `StatusSummary` (parse-failure count + last feedback, last verify
-diagnostic count, last tool + ok, hard-fail reason) and render a fourth **Activity**
-panel. mcp-crate only, no executor change — closes the "parse/verifier signal" half
-of M8's Exit criteria. `format_status` human text unchanged (new fields are additive
-in `status --json`).
+**phase-04 done** (2026-06-02): the Activity panel — `summarize` now folds the
+`ParseFailed` / `Verify` / `ToolResult` / `HardFail` records it previously dropped
+(`_ => {}`), `StatusSummary` carries six new activity fields, and the dashboard shows
+a fourth Activity panel (2×2 grid). Closes the "parse/verifier signal" Exit criterion.
+Verdict: approved_first_try, **implemented cleanly by Qwen/Qwen3.6-27B-FP8** (a
+positive scorecard data point — ~205-line multi-file feature, no bounce); architect
+closed out the commit after a transient backend drop (`error decoding response body`)
+aborted the run at the e2e step, post-gates. mcp-crate only; `format_status` unchanged.
+
+**phase-05 (next to draft):** the Budget panel — closes the "budget consumed" Exit
+criterion. This is **Gap B** from the measurement roadmap: token usage and
+context-window % are computed in `RunMetrics` but only land in the end-of-run
+`PhaseRun`, never per-turn in the JSONL. Requires the **executor** to emit a new
+per-turn `SessionEvent::Metrics { input_tokens, output_tokens, context_pct, … }`,
+then `summarize` folds it and the dashboard renders a Budget panel. Crosses the
+executor boundary (unlike 04). Highest-value metric it unlocks: live context-window
+utilization ("68% full, +4%/turn") — the overflow/compaction early-warning gauge.
 
 **Measurement roadmap (designed 2026-06-02 — see [M8 README Notes](milestones/M8-dashboard/README.md#notes)).**
 The system measures rich metrics at run-end (`PhaseRun`, the scorecard substrate) but
