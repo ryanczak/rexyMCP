@@ -1,7 +1,7 @@
 # Phase 05: executor stream-retry resilience — survive mid-stream connection drops
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** in-progress (bounced — see [bugs/bug-05-1.md](bugs/bug-05-1.md): non-hermetic test)
 **Depends on:** none (executor-crate resilience fix; independent of the dashboard
 phases). Closes `bug-executor-2`.
 **Estimated diff:** ~190 lines (`executor/src/ai/backends/openai.rs` buffering +
@@ -273,3 +273,24 @@ No CLI surface change; the fix is internal to the AI backend. Verify:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-02 (review bounce)
+
+**Executor:** Qwen/Qwen3.6-27B-FP8 (implementation); architect committed the work
+the run left uncommitted (`136713c`) and reviewed.
+
+**Outcome:** bounced — [bug-05-1](bugs/bug-05-1.md) (major). The production code
+(Tasks 1 & 2: buffer-then-flush, `is_retriable_transport`, `stream_retry_backoff`,
+the retry branch) is **correct and complete** — independent fmt/clippy/test all
+green, the buffering preserves text + tool-call ordering and "first tool call wins,"
+the classifier and bounded backoff are right. The single defect is test hygiene:
+`is_retriable_transport_true_for_reqwest_error` makes a **real network call**
+(`reqwest::get("http://10.255.255.1:1")`), violating STANDARDS §3.3/§4 (hermetic,
+no real network) and inflating the executor suite to ~30 s wall-clock (0.67 s CPU)
+on a connection timeout. Fix is pre-injected in bug-05-1: construct the
+`reqwest::Error` synchronously from an unparseable URL (`.get("not-a-url").build()`),
+drop `#[tokio::test]`. On re-dispatch, also flip status → `review`, fill the
+completion Update Log, and commit (the run skipped its closeout).
+
+**Re-dispatch note:** the implementation is done — **only fix the one test**; do not
+re-do the production logic.

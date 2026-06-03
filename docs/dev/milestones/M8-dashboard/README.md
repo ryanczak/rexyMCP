@@ -52,7 +52,7 @@ sibling built on the same `summarize()` core.
 | 02  | paned layout — Session · Heartbeat · Files ([phase-02-dashboard-panels.md](phase-02-dashboard-panels.md)) | done |
 | 03  | executor bugfix — think-only completion treated as clean exit ([phase-03-think-only-fix.md](phase-03-think-only-fix.md)) | done |
 | 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | done |
-| 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | todo |
+| 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | in-progress |
 | 06  | Budget panel — capture + show live token / context-window usage *(not yet drafted)* | planned |
 | 07  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
 
