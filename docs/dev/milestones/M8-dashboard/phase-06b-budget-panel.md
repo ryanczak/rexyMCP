@@ -1,7 +1,7 @@
 # Phase 06b: Budget panel — render live token / context-window usage
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a (done) — the executor now emits `SessionEvent::Metrics`
 per turn; this phase folds it into `StatusSummary` and renders it. Mirrors phase-04
 (the Activity panel) almost exactly.
@@ -257,3 +257,52 @@ phases 01–04). Verify against the built binary and quote in the Update Log:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-19 (started)
+
+**Executor:** rexyMCP headless executor
+
+Implementing phase-06b: extend `StatusSummary` with metrics fields, fold
+`SessionEvent::Metrics` in `summarize`, add `budget_lines` formatter, and
+re-split the dashboard layout to include a full-width Budget panel.
+
+### Update — 2025-07-19 (complete)
+
+**Executor:** rexyMCP headless executor
+
+**Summary:** Extended `StatusSummary` with `last_input_tokens`, `last_output_tokens`,
+`last_context_pct`; added `SessionEvent::Metrics` arm to `summarize`; implemented
+`budget_lines` formatter with colored context-window gauge; re-split dashboard
+layout to 2×2 grid + full-width Budget row.
+
+**Files changed:**
+- `mcp/src/status.rs` — added 3 fields to `StatusSummary`, `Metrics` arm in
+  `summarize`, `metrics()` test helper, 2 new tests
+- `mcp/src/dashboard.rs` — added `budget_lines()` formatter, re-split
+  `render_dashboard` layout (2→3 vertical areas), 3 new tests
+- `docs/dev/milestones/M8-dashboard/phase-06b-budget-panel.md` — status → review,
+  update log entries
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row → review
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed
+- `cargo build` — zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo test` — 564 passed (executor) + 175 passed (mcp), 0 failed
+
+**End-to-end verification:**
+- `cargo run -p rexymcp -- dashboard --help` — lists `--repo` and `--session`
+- `cargo run -p rexymcp -- status --repo <tmpdir> --json` — JSON output includes
+  `"last_input_tokens": 1200, "last_output_tokens": 340, "last_context_pct": 0.62`
+- `cargo run -p rexymcp -- status --repo <tmpdir>` — human output unchanged from
+  before this phase (no new fields in `format_status`)
+
+**Grep check for spec-pinned literals:**
+```
+$ grep -r "no metrics yet" mcp/src/dashboard.rs
+→ "(no metrics yet)"
+$ grep -r "unmeasured" mcp/src/dashboard.rs
+→ "context: — (unmeasured)"
+```
+
+**Notes for review:** None — implementation matches spec exactly.

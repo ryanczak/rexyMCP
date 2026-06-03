@@ -38,6 +38,14 @@ pub struct StatusSummary {
     pub last_tool_ok: Option<bool>,
     /// Reason from a `HardFail` record, if one was logged.
     pub hard_fail_reason: Option<String>,
+    /// Cumulative input tokens from the most recent `Metrics` record.
+    pub last_input_tokens: Option<u32>,
+    /// Cumulative output tokens from the most recent `Metrics` record.
+    pub last_output_tokens: Option<u32>,
+    /// Context-window fraction (0.0..=1.0+) from the most recent `Metrics`;
+    /// `None` = no metrics yet. A value of 0.0 means the run had no real
+    /// ceiling (unmeasured sentinel).
+    pub last_context_pct: Option<f64>,
 }
 
 /// Fold a session log's records into the latest-state summary. Pure: the
@@ -92,6 +100,15 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
             }
             SessionEvent::HardFail { reason } => {
                 summary.hard_fail_reason = Some(reason.clone());
+            }
+            SessionEvent::Metrics {
+                input_tokens,
+                output_tokens,
+                context_pct,
+            } => {
+                summary.last_input_tokens = Some(*input_tokens);
+                summary.last_output_tokens = Some(*output_tokens);
+                summary.last_context_pct = Some(*context_pct);
             }
             _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
@@ -268,6 +285,14 @@ mod tests {
     fn hard_fail(reason: &str) -> SessionEvent {
         SessionEvent::HardFail {
             reason: reason.into(),
+        }
+    }
+
+    fn metrics(input_tokens: u32, output_tokens: u32, context_pct: f64) -> SessionEvent {
+        SessionEvent::Metrics {
+            input_tokens,
+            output_tokens,
+            context_pct,
         }
     }
 
@@ -463,5 +488,27 @@ mod tests {
         assert_eq!(s.last_tool, None);
         assert_eq!(s.last_tool_ok, None);
         assert_eq!(s.hard_fail_reason, None);
+    }
+
+    #[test]
+    fn summarize_records_latest_metrics() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, metrics(500, 100, 0.30)),
+            rec(300, 2, metrics(1200, 340, 0.62)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.last_input_tokens, Some(1200));
+        assert_eq!(s.last_output_tokens, Some(340));
+        assert_eq!(s.last_context_pct, Some(0.62));
+    }
+
+    #[test]
+    fn summarize_clean_run_has_no_metrics() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, progress(1, "turn_start"))];
+        let s = summarize(&recs);
+        assert_eq!(s.last_input_tokens, None);
+        assert_eq!(s.last_output_tokens, None);
+        assert_eq!(s.last_context_pct, None);
     }
 }

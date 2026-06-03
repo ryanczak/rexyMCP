@@ -51,7 +51,7 @@ sibling built on the same `summarize()` core.
 | 04  | Activity panel — surface parse/verify/tool/hard-fail signals ([phase-04-activity-signals.md](phase-04-activity-signals.md)) | done |
 | 05  | executor resilience — retry on mid-stream connection drop ([phase-05-stream-retry-resilience.md](phase-05-stream-retry-resilience.md)) | done |
 | 06a | metrics event — executor emits per-turn `SessionEvent::Metrics` (tokens + context %) ([phase-06a-metrics-event.md](phase-06a-metrics-event.md)) | done |
-| 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | todo |
+| 06b | Budget panel — render the live token / context-window metrics ([phase-06b-budget-panel.md](phase-06b-budget-panel.md)) | review |
 | 07  | Compaction events — record `compact()` firings as a `SessionEvent` *(not yet drafted)* | planned |
 
 ## Design decisions

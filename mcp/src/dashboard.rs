@@ -163,6 +163,38 @@ fn activity_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
+/// Budget panel: token counts and context-window gauge.
+fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+    if summary.last_input_tokens.is_none() {
+        return vec![Line::from("(no metrics yet)")];
+    }
+
+    let in_toks = summary.last_input_tokens.unwrap_or(0);
+    let out_toks = summary.last_output_tokens.unwrap_or(0);
+    let mut lines = vec![Line::from(format!("tokens: {in_toks} in / {out_toks} out"))];
+
+    if let Some(pct) = summary.last_context_pct {
+        if pct == 0.0 {
+            lines.push(Line::from("context: — (unmeasured)"));
+        } else {
+            let pct_int = (pct * 100.0).round() as u32;
+            let color = if pct_int < 50 {
+                Color::Green
+            } else if pct_int < 80 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+            lines.push(Line::from(Span::styled(
+                format!("context: {pct_int}%"),
+                Style::new().fg(color),
+            )));
+        }
+    }
+
+    lines
+}
+
 // --- Panel helpers ---
 
 /// Wrap lines in a bordered `Block` with the given title.
@@ -172,8 +204,8 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 
 // --- Renderer ---
 
-/// Render the dashboard into a four-panel 2×2 grid (or a single error
-/// pane when `data.error` is set).
+/// Render the dashboard into a 2×2 grid with a full-width Budget row (or a
+/// single error pane when `data.error` is set).
 fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms: u64) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
@@ -187,9 +219,13 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
         return;
     }
 
-    // Outer split: fixed-height top row + filling bottom region.
-    let [top, bottom] =
-        Layout::vertical([Constraint::Length(8), Constraint::Min(0)]).areas::<2>(area);
+    // Outer split: fixed-height top row + filling middle region + fixed-height budget row.
+    let [top, middle, budget_area] = Layout::vertical([
+        Constraint::Length(8),
+        Constraint::Min(0),
+        Constraint::Length(4),
+    ])
+    .areas::<3>(area);
 
     // Top row: Session (left) | Heartbeat (right).
     let [left, right] =
@@ -202,16 +238,19 @@ fn render_dashboard(frame: &mut Frame, area: Rect, data: &DashboardData, now_ms:
         right,
     );
 
-    // Bottom row: Files (left) | Activity (right).
+    // Middle row: Files (left) | Activity (right).
     let [files_area, activity_area] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .areas::<2>(bottom);
+            .areas::<2>(middle);
 
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
     frame.render_widget(
         panel(" Activity ", activity_lines(&data.summary)),
         activity_area,
     );
+
+    // Bottom row: Budget (full-width).
+    frame.render_widget(panel(" Budget ", budget_lines(&data.summary)), budget_area);
 }
 
 // --- Entry points ---
@@ -439,5 +478,44 @@ mod tests {
         let lines = activity_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no activity")));
+    }
+
+    // --- budget_lines tests ---
+
+    #[test]
+    fn budget_lines_shows_tokens_and_context() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1200),
+            last_output_tokens: Some(340),
+            last_context_pct: Some(0.62),
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("1200")));
+        assert!(text.iter().any(|s| s.contains("340")));
+        assert!(text.iter().any(|s| s.contains("62%")));
+    }
+
+    #[test]
+    fn budget_lines_unmeasured_when_zero_pct() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(10),
+            last_output_tokens: Some(5),
+            last_context_pct: Some(0.0),
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("unmeasured")));
+        assert!(!text.iter().any(|s| s.contains("0%")));
+    }
+
+    #[test]
+    fn budget_lines_empty_placeholder() {
+        let summary = StatusSummary::default();
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("no metrics")));
     }
 }
