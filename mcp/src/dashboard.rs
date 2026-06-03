@@ -1,8 +1,7 @@
 //! Live dashboard — polls session logs and renders a paned TUI summary.
 //!
-//! Wraps `status::load_status` in a continuously-refreshed `ratatui` terminal
-//! split into three panels: Session (identity/state), Heartbeat (liveness),
-//! and Files (per-file diff numstat).
+//! Continuously refreshes a `ratatui` terminal with a header band (Session ·
+//! Budget · Compactions) above a body (Activity · Files).
 
 use std::path::Path;
 
