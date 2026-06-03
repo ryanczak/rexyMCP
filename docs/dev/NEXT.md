@@ -7,11 +7,12 @@ engineer (architect) maintains this file. The executor reads it first
 **Active phase:** none — phase-10b is `done` (escalated/architect-takeover, 2026-06-03).
 The Activity transcript redesign is complete: per-event-type color, multi-line
 Completion/ToolResult expansion (cap 20), and auto-follow-tail (`visible_offset`).
-**The only remaining redesign piece is phase-11** (Budget Tokens/Sec + "$ saved"), which
-is **blocked on the $-saved pricing-baseline decision** — do not draft it until the user
-answers (saved vs. which cloud model's $/token? configurable rate? a specific model?).
-Run `/rexymcp:architect next` only after that decision; otherwise M8's redesign work is
-effectively done and the milestone can head toward its close gate.
+**The only remaining redesign piece is phase-11** (Budget Tokens/Sec + "$ saved").
+**Pricing decision locked (2026-06-03):** "$ saved" uses a **configurable $/Mtok rate**
+(model-agnostic; e.g. `[dashboard] saved_input_per_mtok` / `saved_output_per_mtok` in
+`rexymcp.toml`), *not* a hardcoded named-model preset. Tokens/Sec derives from `Metrics`
+record `ts` deltas. **User chose to run the dashboard live before drafting phase-11** —
+draft it via `/rexymcp:architect next` after the live check (it may surface tweaks).
 
 **phase-10b done** (2026-06-03, **escalated**): executor (Qwen/Qwen3.6-27B-FP8) wrote all
 production code (record_lines multi-line + color, body_lines, visible_offset tail-follow,
