@@ -4,9 +4,16 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — phase-11a is `done` (approved_first_try 2026-06-03). The Budget
-panel now shows a live `tok/s:` throughput line. **Next drafting target is phase-11b
-("$ saved")** — the last redesign piece. Run `/rexymcp:architect next` to draft it.
+**Active phase:** [M8 / phase-11b](milestones/M8-dashboard/phase-11b-budget-dollars-saved.md)
+— Budget panel **"$ saved"**, the **last redesign piece**. Adds a `[dashboard]` config
+section (`saved_input_per_mtok` / `saved_output_per_mtok`, **configurable $/Mtok**,
+default 0.0 → "—"), loads config in the `dashboard` CLI command (new `--config` arg),
+threads `BudgetRates` through `run_dashboard → run_loop → render_dashboard`, and
+**appends** the `$ saved` line in `render_dashboard` (additive — `budget_lines` and its
+5 tests are left untouched to dodge the multi-edit churn that stalled 10b). Cross-crate
+(executor config + mcp), no new deps. Dispatch with `/rexymcp:dispatch phase-11b`.
+
+After 11b lands, the wireframe redesign is **complete** → M8 heads to its close gate.
 
 **phase-11a done** (2026-06-03): `summarize` tracks the prev+latest `Metrics` snapshot;
 pure `tokens_per_sec(prev_ts, prev_out, last_ts, last_out)` yields `Δoutput/Δsec`;
