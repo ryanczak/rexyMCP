@@ -4,6 +4,7 @@
 //! Budget · Compactions) above a body (Activity · Files).
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use ratatui::{
     Frame,
@@ -12,10 +13,24 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
+use syntect::easy::HighlightLines;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 
 use crate::status::{self, StatusSummary};
+
+static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
+static THEME_SET: OnceLock<ThemeSet> = OnceLock::new();
+
+fn syntax_set() -> &'static SyntaxSet {
+    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
+}
+
+fn theme_set() -> &'static ThemeSet {
+    THEME_SET.get_or_init(ThemeSet::load_defaults)
+}
 
 /// Snapshot of the latest session data or an error loading it.
 pub struct DashboardData {
@@ -52,6 +67,114 @@ const TRANSCRIPT_CONTENT_MAX_LINES: usize = 20;
 // types (Prompt, Completion, ToolCall, Verify, …). Deferred: requires a modal
 // overlay / input handling that doesn't exist yet.
 
+/// Detect a syntax definition from content alone (no filename available).
+/// Returns `None` when no language can be confidently identified, which
+/// causes the caller to fall back to unstyled DarkGray text.
+fn detect_syntax<'a>(content: &str, ss: &'a SyntaxSet) -> Option<&'a SyntaxReference> {
+    let trimmed = content.trim();
+
+    // Shebangs and other first-line markers (e.g. `#!/usr/bin/env python`).
+    if let Some(s) = ss.find_syntax_by_first_line(content) {
+        return Some(s);
+    }
+
+    // Unified diff: git diff header or classic --- / +++ opener.
+    if (trimmed.starts_with("diff --git") || trimmed.starts_with("---"))
+        && let Some(s) = ss.find_syntax_by_extension("diff")
+    {
+        return Some(s);
+    }
+
+    // JSON: curly-brace or array open.
+    if (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && let Some(s) = ss.find_syntax_by_extension("json")
+    {
+        return Some(s);
+    }
+
+    // TOML: at least one `[section]` line (check before Rust to avoid false positives).
+    let has_toml_section = content.lines().any(|l| {
+        let l = l.trim();
+        l.starts_with('[') && l.ends_with(']') && l.len() > 2
+    });
+    if has_toml_section && let Some(s) = ss.find_syntax_by_extension("toml") {
+        return Some(s);
+    }
+
+    // Rust: 2+ keyword markers present.
+    let rust_score = [
+        "fn ", "pub ", "use ", "impl ", "struct ", "enum ", "let mut ", "match ",
+    ]
+    .iter()
+    .filter(|&&m| content.contains(m))
+    .count();
+    if rust_score >= 2
+        && let Some(s) = ss.find_syntax_by_extension("rs")
+    {
+        return Some(s);
+    }
+
+    None
+}
+
+/// Render `content` as indented, syntax-highlighted lines.
+/// Falls back to DarkGray when no language is detected.
+fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
+    let ss = syntax_set();
+
+    let Some(syntax) = detect_syntax(content, ss) else {
+        return body_lines(content)
+            .into_iter()
+            .map(|l| Line::from(Span::styled(l, Style::new().fg(Color::DarkGray))))
+            .collect();
+    };
+
+    let theme = &theme_set().themes["base16-ocean.dark"];
+    let mut h = HighlightLines::new(syntax, theme);
+
+    let all: Vec<&str> = content.lines().collect();
+    let capped = all.len().min(TRANSCRIPT_CONTENT_MAX_LINES);
+    let overflow = all.len().saturating_sub(TRANSCRIPT_CONTENT_MAX_LINES);
+
+    let mut result: Vec<Line<'static>> = Vec::new();
+    for &line in &all[..capped] {
+        let line_nl = format!("{line}\n");
+        let ranges = h.highlight_line(&line_nl, ss).unwrap_or_default();
+        let mut spans = vec![Span::raw("    ")];
+        for (style, text) in ranges {
+            let text = text.trim_end_matches('\n').to_string();
+            if text.is_empty() {
+                continue;
+            }
+            spans.push(Span::styled(
+                text,
+                Style::new().fg(Color::Rgb(
+                    style.foreground.r,
+                    style.foreground.g,
+                    style.foreground.b,
+                )),
+            ));
+        }
+        result.push(Line::from(spans));
+    }
+    if overflow > 0 {
+        result.push(Line::from(Span::styled(
+            format!("    … ({overflow} more lines)"),
+            Style::new().fg(Color::DarkGray),
+        )));
+    }
+
+    result
+}
+
+/// Render `content` as indented lines, all in the same `color`.
+fn plain_body_lines(content: &str, color: Color) -> Vec<Line<'static>> {
+    body_lines(content)
+        .into_iter()
+        .map(|l| Line::from(Span::styled(l, Style::new().fg(color))))
+        .collect()
+}
+
 /// Build all transcript lines for the given records, in chronological order.
 /// Returns a placeholder when there are no records.
 fn transcript_lines(records: &[SessionRecord]) -> Vec<Line<'static>> {
@@ -85,8 +208,8 @@ fn body_lines(body: &str) -> Vec<String> {
 /// styled by event type. Completion and ToolResult expand their content across
 /// multiple lines; all other events are a single styled header line.
 fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
-    // (header_summary, header_color, bold, optional (body_text, body_color))
-    let (summary, color, bold, body): (String, Color, bool, Option<(String, Color)>) =
+    // (header_summary, header_color, bold, body_lines)
+    let (summary, color, bold, body): (String, Color, bool, Option<Vec<Line<'static>>>) =
         match &rec.event {
             SessionEvent::SessionStart { model, phase, .. } => (
                 format!("session start — phase {phase}, model {model}"),
@@ -105,7 +228,7 @@ fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 "completion:".to_string(),
                 Color::Reset,
                 false,
-                Some((raw.clone(), Color::Rgb(180, 180, 180))),
+                Some(plain_body_lines(raw, Color::Rgb(180, 180, 180))),
             ),
             SessionEvent::Parsed { tool_call } => (
                 format!("→ call {}", tool_call.name),
@@ -130,7 +253,7 @@ fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                     format!("tool {name} [{status}]"),
                     color,
                     false,
-                    Some((output_preview.clone(), Color::DarkGray)),
+                    Some(highlighted_body_lines(output_preview)),
                 )
             }
             SessionEvent::Verify { diagnostics } => {
@@ -186,11 +309,8 @@ fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
         style = style.add_modifier(Modifier::BOLD);
     }
     let mut lines = vec![Line::from(Span::styled(header_text, style))];
-
-    if let Some((body_text, body_color)) = body {
-        for bl in body_lines(&body_text) {
-            lines.push(Line::from(Span::styled(bl, Style::new().fg(body_color))));
-        }
+    if let Some(body) = body {
+        lines.extend(body);
     }
 
     lines
@@ -1332,6 +1452,59 @@ mod tests {
         ];
         let lines = transcript_lines(&records);
         assert_eq!(lines.len(), 5);
+    }
+
+    // --- detect_syntax / highlighted_body_lines tests ---
+
+    #[test]
+    fn detect_syntax_identifies_json() {
+        let ss = syntax_set();
+        let json = r#"{"key": "value", "n": 42}"#;
+        let syntax = detect_syntax(json, ss);
+        assert!(syntax.is_some(), "should detect JSON");
+        assert!(
+            syntax.unwrap().name.to_lowercase().contains("json"),
+            "detected: {}",
+            syntax.unwrap().name
+        );
+    }
+
+    #[test]
+    fn detect_syntax_identifies_rust() {
+        let ss = syntax_set();
+        let rust = "pub fn main() {\n    let x = 1;\n    match x {\n        _ => {}\n    }\n}";
+        let syntax = detect_syntax(rust, ss);
+        assert!(syntax.is_some(), "should detect Rust");
+        assert!(
+            syntax.unwrap().name.to_lowercase().contains("rust"),
+            "detected: {}",
+            syntax.unwrap().name
+        );
+    }
+
+    #[test]
+    fn detect_syntax_returns_none_for_plain_text() {
+        let ss = syntax_set();
+        assert!(detect_syntax("just some plain text output", ss).is_none());
+    }
+
+    #[test]
+    fn highlighted_body_lines_preserves_content() {
+        // Content is preserved regardless of whether highlighting is applied.
+        let json = "{\n  \"status\": \"ok\"\n}";
+        let lines = highlighted_body_lines(json);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text.iter().any(|s| s.contains("status")),
+            "json key must appear in output"
+        );
+    }
+
+    #[test]
+    fn highlighted_body_lines_falls_back_for_plain_text() {
+        let lines = highlighted_body_lines("boring plain output");
+        assert_eq!(lines.len(), 1, "one line for plain text");
+        assert!(format!("{}", lines[0]).contains("boring plain output"));
     }
 
     // --- visible_offset tests ---

@@ -18,6 +18,7 @@ rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
 schemars = "1"
 ratatui = "0.30"
 crossterm = "0.29"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }
 
 [dev-dependencies]
 async-trait.workspace = true
