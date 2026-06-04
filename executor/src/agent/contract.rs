@@ -73,9 +73,12 @@ mod tests {
         let output = assemble_executor_contract(&commands);
 
         let unconfigured_count = output.matches(UNCONFIGURED).count();
+        // {FORMAT_COMMAND} appears 3× in the template (description, step 8 body,
+        // checklist item); {LINT_COMMAND} and {TEST_COMMAND} appear 1× each.
+        // 3 None fields (format + lint + test) → 3 + 1 + 1 = 5 sentinels.
         assert_eq!(
-            unconfigured_count, 3,
-            "expected 3 UNCONFIGURED sentinels for 3 None fields, got {}",
+            unconfigured_count, 5,
+            "expected 5 UNCONFIGURED sentinels for 3 None fields (format×3 + lint×1 + test×1), got {}",
             unconfigured_count
         );
         assert!(output.contains("cargo build"));

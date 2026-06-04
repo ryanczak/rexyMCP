@@ -665,6 +665,25 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             record_mtime(&mut working_set, &path);
         }
 
+        // Post-write format hook (M9/phase-01). Runs the configured format
+        // command after every successful edit-class turn, before the verifier,
+        // so the on-disk file is always formatted when verify reads it.
+        if succeeded && edit_path.is_some() && deps.commands.format.is_some() {
+            {
+                let emit = EmitCtx {
+                    progress: deps.progress,
+                    log_handle: &log_handle,
+                    redactor: &redactor,
+                    clock: deps.clock,
+                    pre_edit_content: &pre_edit_content,
+                    project_root: deps.project_root,
+                    turn: turns,
+                };
+                emit_progress(&emit, "format".to_string());
+            }
+            run_format_hook(deps.runner, deps.commands, deps.project_root).await;
+        }
+
         // Step 6 — post-edit verify + retry feedback. Only for a successful
         // edit-class call (verifying after a failed edit is noise).
         if succeeded && let Some(path) = &edit_path {
@@ -1191,6 +1210,12 @@ async fn run_command_set(
             test: test_ok,
         },
     )
+}
+
+async fn run_format_hook(runner: &dyn CommandRunner, commands: &CommandConfig, cwd: &Path) {
+    if let Some(cmd) = commands.format.as_deref() {
+        let _ = runner.run(cmd, cwd).await;
+    }
 }
 
 async fn run_one(
@@ -4114,5 +4139,248 @@ mod tests {
         let runs = read_runs(&telem);
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].context_window, Some(262_144));
+    }
+
+    // ── M9/phase-01: post-write format hook ─────────────────────────────
+
+    #[tokio::test]
+    async fn format_hook_runs_after_successful_edit() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(
+            runner.ran().iter().any(|c| c == "echo fmt"),
+            "expected format hook to fire after write_file, got: {:?}",
+            runner.ran()
+        );
+    }
+
+    #[tokio::test]
+    async fn format_hook_runs_before_verify() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        // Verifier that returns Checked with no diagnostics so a "verify" event is emitted.
+        let verifier = MockFileVerifier::new(vec![VerifierResult::Checked {
+            diagnostics: vec![],
+        }]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+        let capture = CaptureCallback::new();
+        let scope = Scope::new(dir.path()).unwrap();
+        let registry = registry_over(scope);
+        let budget = Budget::new(1_000_000);
+        let d = DepsBuilder::new(&client, &registry, &budget, 8, dir.path(), &capture)
+            .verifier(&verifier)
+            .commands(&commands)
+            .runner(&runner)
+            .build();
+
+        let result = execute_phase(&input(), d).await.unwrap();
+        assert_eq!(result.status, PhaseStatus::Complete);
+
+        let events = capture.events();
+        let stages: Vec<&str> = events.iter().map(|e| e.stage.as_str()).collect();
+
+        // Find the first "format" and the first "verify".
+        let format_pos = stages.iter().position(|&s| s == "format");
+        let verify_pos = stages.iter().position(|&s| s == "verify");
+        assert!(
+            format_pos.is_some(),
+            "expected a format progress event, got: {:?}",
+            stages
+        );
+        assert!(
+            verify_pos.is_some(),
+            "expected a verify progress event, got: {:?}",
+            stages
+        );
+        assert!(
+            format_pos.unwrap() < verify_pos.unwrap(),
+            "format must come before verify, stages: {:?}",
+            stages
+        );
+    }
+
+    #[tokio::test]
+    async fn format_hook_skipped_when_no_format_configured() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+
+        let result = run_full(&dir, &client, &verifier, &runner, &EMPTY_COMMANDS, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(
+            runner.ran().is_empty(),
+            "expected no commands when format is None, got: {:?}",
+            runner.ran()
+        );
+    }
+
+    #[tokio::test]
+    async fn format_hook_skipped_after_non_edit_call() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "existing").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        // Final command set runs format once at completion; no hook invocation during read.
+        assert_eq!(
+            runner.ran().len(),
+            1,
+            "expected exactly 1 format run (final command set), got: {:?}",
+            runner.ran()
+        );
+    }
+
+    #[tokio::test]
+    async fn format_hook_skipped_after_failed_edit() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        std::fs::write(&file, "original\n").unwrap();
+        let path = file.to_string_lossy().to_string();
+        // Script a patch without a prior read_file — the read-before-edit gate
+        // refuses it (succeeded == false), so the hook should not fire.
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "edited" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        // Final command set runs format once at completion; no hook invocation for the
+        // failed patch turn.
+        assert_eq!(
+            runner.ran().len(),
+            1,
+            "expected exactly 1 format run (final command set), got: {:?}",
+            runner.ran()
+        );
+    }
+
+    #[tokio::test]
+    async fn format_hook_failure_does_not_halt_turn() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok").failing("bad-fmt");
+        let commands = CommandConfig {
+            format: Some("bad-fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(
+            result.briefing.is_none(),
+            "expected no briefing (no hard_fail) on format hook failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn format_hook_runs_on_every_edit_turn() {
+        let dir = TempDir::new().unwrap();
+        let file1 = dir.path().join("a.txt");
+        let file2 = dir.path().join("b.txt");
+        let path1 = file1.to_string_lossy().to_string();
+        let path2 = file2.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path1, "content": "one\n" }),
+            )],
+            vec![native(
+                "write_file",
+                json!({ "path": path2, "content": "two\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        let count = runner.ran().iter().filter(|c| *c == "echo fmt").count();
+        assert_eq!(
+            count,
+            3,
+            "expected 3 format runs (2 hooks + 1 final command set), got {}: {:?}",
+            count,
+            runner.ran()
+        );
     }
 }

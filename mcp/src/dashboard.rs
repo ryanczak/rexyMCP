@@ -1056,7 +1056,10 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let ctx_line = text.iter().find(|s| s.contains("context:")).unwrap();
         assert!(ctx_line.contains("50%"), "pct in: {ctx_line}");
-        assert!(!ctx_line.contains('/'), "no fraction when window=0: {ctx_line}");
+        assert!(
+            !ctx_line.contains('/'),
+            "no fraction when window=0: {ctx_line}"
+        );
     }
 
     #[test]
