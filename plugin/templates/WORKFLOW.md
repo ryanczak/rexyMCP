@@ -568,3 +568,37 @@ executor changes the definition and runs out of runway.
 *(Folded from M7/phase-05b: two hard_fails of the same class — breaking a
 multi-site type change — on two separate phases, Qwen3.6-27B-FP8. Additive
 restructure resolved both.)*
+
+### Post-write formatting is a runtime concern, not a spec concern
+
+When a formatter (`ruff format`, `gofmt`, `rustfmt`, etc.) is part of the
+project's command set, a recurring class of verifier hard-fail arises: the
+executor runs the formatter during its turn loop, then issues a subsequent
+`write_file` that overwrites the formatted file with unformatted content.
+The verifier fires on the unformatted file, produces 3 consecutive failures,
+and halts with a hard_fail.
+
+**Root cause:** The executor's tool-call loop is not atomic with respect to
+formatting. Any `write_file` issued *after* the format step undoes it.
+The executor is not buggy — it formatted correctly; it simply continued
+working and overwrote the result.
+
+**What does not work:** Spec-level "Completion checklist" instructions to
+run the formatter before `git add`. M1/phase-03 of mp3-player pre-injected
+this instruction explicitly; the executor ran it, then issued another
+`write_file` afterward. A spec instruction cannot prevent a later write.
+
+**The fix is runtime-level:** The rexyMCP runtime should run the project's
+`format` command (and optionally `lint --fix`) as a **post-write,
+pre-verifier hook** after each turn where files were written to disk. This
+makes formatting unconditional and turn-ordering-independent. Filed as a
+runtime feature request against rexyMCP.
+
+**For the architect:** Do not add "run the formatter" steps to completion
+checklists in phase specs — proven ineffective for this failure class.
+Apply the formatting fix manually on close-out until the runtime hook lands.
+
+*(Folded from M1/mp3-player: four phases (01×2, 02, 03) on
+google/gemma-4-12b hit the same ruff formatting verifier halt. Spec
+instruction pre-injected in phase-03 — still failed, confirming the fix
+must be runtime-side.)*
