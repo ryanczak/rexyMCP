@@ -1,7 +1,7 @@
 # Phase 11a: Budget panel — Tokens/Sec throughput
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a/06b (done — `SessionEvent::Metrics` and the Budget panel
 this extends).
 **Estimated diff:** ~110 lines (`mcp/src/status.rs` summarize + `mcp/src/dashboard.rs`
@@ -243,3 +243,35 @@ edit. No executor-crate or config change (that's 11b).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-18 (started)
+
+**Executor:** rexyMCP agent
+
+Implementing Tokens/Sec throughput in the Budget panel: three new `StatusSummary` fields, `tokens_per_sec` helper, `budget_lines` integration, and 8 tests.
+
+### Update — 2025-07-18 (complete)
+
+**Executor:** rexyMCP agent
+
+**Summary:** Added `tok/s` throughput line to the Budget panel.
+
+**Files changed:**
+- `mcp/src/status.rs` — added `last_metrics_ts`, `prev_metrics_ts`, `prev_output_tokens` to `StatusSummary`; extended `Metrics` fold arm to shift latest→prev; added 2 tests (`summarize_tracks_prev_and_last_metrics`, `summarize_one_metric_has_no_prev`).
+- `mcp/src/dashboard.rs` — added `tokens_per_sec` pure helper; inserted `tok/s` line in `budget_lines` after `tokens out:` and before context; added 6 tests (`tokens_per_sec_computes_recent_rate`, `tokens_per_sec_none_without_two_samples`, `tokens_per_sec_none_on_zero_interval`, `tokens_per_sec_zero_when_no_new_output`, `budget_lines_shows_tokens_per_sec`, `budget_lines_tokens_per_sec_dash_with_one_sample`).
+
+**Verification commands:**
+```
+cargo fmt --all --check → clean
+cargo build → clean
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test -p rexymcp → 207 passed; 0 failed; 0 ignored
+```
+
+**Verification summary:** fmt clean, build clean, clippy clean, all 207 tests pass (including 8 new).
+
+**Grep for spec-pinned literal:** `grep -rn 'tok/s:' mcp/src/dashboard.rs` → 5 matches (2 in `budget_lines`, 3 in tests) — literal landed correctly.
+
+**End-to-end verification:** Unit tests exercise the real `summarize` fold and `budget_lines` with both one-sample and two-sample summaries. The `tok/s: —` placeholder and `tok/s: {rate:.1}` numeric output are both verified. Live TTY render not tested in CI (no TTY available).
+
+**Notes for review:** None. Implementation matches spec exactly.

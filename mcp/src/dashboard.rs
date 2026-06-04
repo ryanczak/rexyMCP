@@ -350,6 +350,23 @@ fn trim_path_left(path: &str, max: usize) -> String {
     format!("…{tail}")
 }
 
+/// Recent generation throughput: cumulative output tokens gained over the most
+/// recent `Metrics` interval, divided by that interval's wall-clock seconds.
+/// `None` until two `Metrics` records exist, or if the interval is zero-length.
+fn tokens_per_sec(
+    prev_ts: Option<u64>,
+    prev_out: Option<u32>,
+    last_ts: Option<u64>,
+    last_out: Option<u32>,
+) -> Option<f64> {
+    let dt_ms = last_ts?.checked_sub(prev_ts?)?;
+    if dt_ms == 0 {
+        return None;
+    }
+    let d_out = last_out?.saturating_sub(prev_out?);
+    Some(d_out as f64 / (dt_ms as f64 / 1000.0))
+}
+
 /// Budget panel: token counts and context-window gauge.
 fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.last_input_tokens.is_none() {
@@ -362,6 +379,16 @@ fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         Line::from(format!("tokens in:  {in_toks}")),
         Line::from(format!("tokens out: {out_toks}")),
     ];
+
+    match tokens_per_sec(
+        summary.prev_metrics_ts,
+        summary.prev_output_tokens,
+        summary.last_metrics_ts,
+        summary.last_output_tokens,
+    ) {
+        Some(rate) => lines.push(Line::from(format!("tok/s: {rate:.1}"))),
+        None => lines.push(Line::from("tok/s: —")),
+    }
 
     if let Some(pct) = summary.last_context_pct {
         if pct == 0.0 {
@@ -756,6 +783,73 @@ mod tests {
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no metrics")));
+    }
+
+    #[test]
+    fn tokens_per_sec_computes_recent_rate() {
+        // 200 tokens over 2.0s = 100.0 tok/s
+        assert_eq!(
+            tokens_per_sec(Some(1000), Some(100), Some(3000), Some(300)),
+            Some(100.0)
+        );
+    }
+
+    #[test]
+    fn tokens_per_sec_none_without_two_samples() {
+        assert_eq!(tokens_per_sec(None, None, Some(3000), Some(300)), None);
+    }
+
+    #[test]
+    fn tokens_per_sec_none_on_zero_interval() {
+        // Zero-length interval → None, not NaN or panic
+        assert_eq!(
+            tokens_per_sec(Some(1000), Some(100), Some(1000), Some(300)),
+            None
+        );
+    }
+
+    #[test]
+    fn tokens_per_sec_zero_when_no_new_output() {
+        assert_eq!(
+            tokens_per_sec(Some(1000), Some(300), Some(3000), Some(300)),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn budget_lines_shows_tokens_per_sec() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1200),
+            last_output_tokens: Some(300),
+            last_metrics_ts: Some(3000),
+            prev_metrics_ts: Some(1000),
+            prev_output_tokens: Some(100),
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("tok/s: 100.0")));
+    }
+
+    #[test]
+    fn budget_lines_tokens_per_sec_dash_with_one_sample() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(500),
+            last_output_tokens: Some(100),
+            last_metrics_ts: Some(2000),
+            prev_metrics_ts: None,
+            prev_output_tokens: None,
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s == "tok/s: —"));
+        // Must not show a numeric rate
+        assert!(
+            !text
+                .iter()
+                .any(|s| s.starts_with("tok/s:") && s.contains('.'))
+        );
     }
 
     // --- compactions_lines tests ---

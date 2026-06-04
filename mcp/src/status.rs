@@ -46,6 +46,12 @@ pub struct StatusSummary {
     /// `None` = no metrics yet. A value of 0.0 means the run had no real
     /// ceiling (unmeasured sentinel).
     pub last_context_pct: Option<f64>,
+    /// Unix-millis timestamp of the most recent `Metrics` record.
+    pub last_metrics_ts: Option<u64>,
+    /// Timestamp of the *second*-most-recent `Metrics` record.
+    pub prev_metrics_ts: Option<u64>,
+    /// Cumulative output tokens at the second-most-recent `Metrics` record.
+    pub prev_output_tokens: Option<u32>,
     /// Number of `Compaction` records seen so far.
     pub compaction_count: usize,
     /// Sum of `tokens_before` across all `Compaction` records.
@@ -112,6 +118,10 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 output_tokens,
                 context_pct,
             } => {
+                // Shift the prior latest snapshot into "prev" for throughput.
+                summary.prev_metrics_ts = summary.last_metrics_ts;
+                summary.prev_output_tokens = summary.last_output_tokens;
+                summary.last_metrics_ts = Some(rec.ts);
                 summary.last_input_tokens = Some(*input_tokens);
                 summary.last_output_tokens = Some(*output_tokens);
                 summary.last_context_pct = Some(*context_pct);
@@ -565,6 +575,30 @@ mod tests {
         assert_eq!(s.last_input_tokens, Some(1200));
         assert_eq!(s.last_output_tokens, Some(340));
         assert_eq!(s.last_context_pct, Some(0.62));
+    }
+
+    #[test]
+    fn summarize_tracks_prev_and_last_metrics() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(1000, 1, metrics(500, 100, 0.30)),
+            rec(3000, 2, metrics(1200, 300, 0.62)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.prev_metrics_ts, Some(1000));
+        assert_eq!(s.prev_output_tokens, Some(100));
+        assert_eq!(s.last_metrics_ts, Some(3000));
+        assert_eq!(s.last_output_tokens, Some(300));
+    }
+
+    #[test]
+    fn summarize_one_metric_has_no_prev() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, metrics(500, 100, 0.30))];
+        let s = summarize(&recs);
+        assert_eq!(s.prev_metrics_ts, None);
+        assert_eq!(s.prev_output_tokens, None);
+        assert_eq!(s.last_metrics_ts, Some(200));
+        assert_eq!(s.last_output_tokens, Some(100));
     }
 
     #[test]
