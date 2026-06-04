@@ -1,11 +1,12 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M8 are implemented (`executor/` + `mcp/`);
-> M8 (live session dashboard) is open for testing and bug fixes — the wireframe
-> redesign shipped, milestone close is pending live-session confirmation. This
-> document is the source of truth for the *intended* design; the code under
-> `executor/` and `mcp/` is the source of truth for what actually runs. Milestones
-> are listed in the **Status** section at the bottom — that list is the project plan.
+> **Status:** Living design doc. M1–M7 and M9 are fully implemented and closed;
+> M8 (live session dashboard) is implemented but open — the wireframe redesign
+> shipped (2026-06-03) and M8 remains open for live-session confirmation and bug
+> fixes before its milestone close. This document is the source of truth for the
+> *intended* design; the code under `executor/` and `mcp/` is the source of truth
+> for what actually runs. Milestones are listed in the **Status** section at the
+> bottom — that list is the project plan.
 
 ## What rexyMCP is
 
@@ -90,7 +91,7 @@ It is built by lifting and adapting Rexy modules. The lift/drop map:
 | Message / event / tool types | `rexy/src/ai/types.rs` | **Lift** the subset the loop needs (`Message`, `AiEvent`, `ToolSchema`, `ToolResult`). |
 | `MockAiClient` for hermetic tests | `rexy/src/ai/testing.rs` | **Lift.** |
 | Forgiving tool-call parser (6-stage pipeline) | `rexy/src/agent/parser/` | **Lift.** |
-| Tools: `read_file`, `write_file`, `patch`, `bash`, `search`, `find_files`, `symbols` | `rexy/src/tools/` | **Lift**; every path scoped to the target-repo root. |
+| Tools: `read_file` (500-line cap + truncation notice; `start_line`/`end_line` for ranges), `write_file`, `patch`, `bash`, `search`, `find_files`, `symbols` | `rexy/src/tools/` | **Lift**; every path scoped to the target-repo root. |
 | Tool registry + 2-stage router | `rexy/src/tools/registry.rs`, `router.rs` | **Lift.** |
 | Governor: scorer, verifier, hard-fail detector | `rexy/src/governor/` | **Lift.** |
 | Context budget + compactor | `rexy/src/context/` | **Lift.** |
@@ -119,6 +120,13 @@ hits a budget cap:
    `ParseFailure` that is fed back to the model as repair guidance.
 5. Dispatch the tool through the governor → registry; all filesystem/bash access
    is scoped to the target-repo root.
+5a. **Post-write hook.** After every successful edit-class tool call (`write_file`,
+   `patch`), run the project's configured `lint_fix` command (if set) then the
+   `format` command (if set), both best-effort (failures discarded, never a
+   hard-fail). This ensures the on-disk file is always in the formatter's expected
+   state before the verifier reads it, regardless of turn ordering — a spec
+   instruction to "run the formatter" cannot achieve this because a later write
+   undoes it.
 6. After edit-class tools, run the verifier (the project's typecheck/build). On
    failure, feed the diagnostics back for a retry.
 7. The hard-fail detector watches for repetition loops, repeated verifier
@@ -478,7 +486,9 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
 - the OpenAI-compatible **endpoint** + **model** (executor),
 - the **target-repo root** (the scope boundary for all file/bash tools),
 - the **command set** that resolves the `{…_COMMAND}` placeholders
-  (`format`/`build`/`lint`/`test`),
+  (`format`/`build`/`lint`/`test`), plus an optional `lint_fix` autofixing
+  command run by the post-write hook (step 5a above) — not advertised to the
+  executor model, not a gate command,
 - budget knobs (context %, max turns, escalation slots).
 
 ## Non-goals
@@ -579,6 +589,18 @@ The project plan. Each entry becomes a milestone with its own
    individual phases are not controlled experiments and small models are
    high-variance. Depends on having data, so it lands after the loop (M4) and
    server (M5) have been producing records.
+9. **M9 — Executor runtime hardening** *(done, 2026-06-04)*. Three fixes that
+   close hard-fail classes a phase-spec instruction cannot close:
+   - **Post-write hook** (phase-01/02): after every successful edit-class call,
+     run `lint_fix` then `format` (both best-effort, failures discarded). Closes
+     the formatting-overwrite race: an executor that runs the formatter mid-loop
+     and then issues another `write_file` no longer leaves the file unformatted
+     for the final `fmt --check`. `lint_fix: Option<String>` is a new optional
+     field in `CommandConfig`; the hook is step 5a in the turn cycle above.
+   - **`read_file` output cap** (phase-03): `read_file` returns at most 500 lines
+     and appends a truncation notice with the file's total line count and shown
+     range. Prevents `RunawayOutput` hard-fails when an executor reads a large
+     source file whole.
 8. **M8 — Live session dashboard** *(wireframe complete, 2026-06-03; open for
    testing / bug fixes)*. **Why it matters:** `execute_phase` is opaque *and*
    blocking — the MCP client sends no `progressToken`, so progress notifications
