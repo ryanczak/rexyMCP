@@ -4,7 +4,7 @@
 phase-spec instruction provably cannot, starting with the post-write formatting
 race folded from M1/mp3-player.
 
-**Status:** in-progress (phase-03 added 2026-06-04)
+**Status:** done (all three phases approved 2026-06-04)
 
 **Depends on:** M4 (the agent loop: dispatch → verify → final command set)
 
@@ -29,7 +29,7 @@ race folded from M1/mp3-player.
 |----|--------------------------------------------------------------------------------|--------|
 | 01 | post-write format hook ([phase-01-post-write-format-hook.md](phase-01-post-write-format-hook.md)) | done   |
 | 02 | lint-fix in the post-write hook ([phase-02-lint-fix-hook.md](phase-02-lint-fix-hook.md))          | done   |
-| 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | review   |
+| 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | done   |
 
 ## Notes
 
@@ -65,12 +65,19 @@ infra SSE stall, not the executor.) Pre-injecting **exact `old_str`/`new_str` pa
 targets** (not just "here's what the code looks like") resolved phase-02 cleanly:
 the executor patched without ever reading the big file.
 
-**Calibration → folds (pending user sign-off):**
-1. **Large-file edits:** two occurrences = trend. Candidate WORKFLOW fold — when a
-   phase edits a file too large to read whole, pre-inject exact patch targets and
-   forbid a whole-file `read_file`. (Architect spec-writing discipline.)
-2. **Runtime fix queued separately:** `read_file` should truncate at a threshold and
-   gain `offset`/`limit` line params so a large read can't trip the hard-fail
-   detector — drafted as the next M9 phase (phase-03), not a doc fold.
-3. **Commit hygiene (phase-01):** re-dispatching against a dirty tree let the executor
-   sweep unrelated changes into its commit. One occurrence — data only.
+**phase-03** (read_file output cap, approved_first_try): `read_file` now caps output
+at 500 lines and appends a truncation notice with the file's total line count and
+shown range. Single-file change, 6 new tests, clean `feat:` commit. The executor
+that struggled to read `mod.rs` in phases 01 and 02 will now receive the first 500
+lines with a clear pointer to re-read with `start_line`/`end_line` — no more
+`RunawayOutput` on large files.
+
+**Calibration:**
+1. **Large-file edits (closed by phase-03):** two occurrences across phases 01/02
+   traced to the executor reading `mod.rs` (~150–165 KB) whole. The runtime fix
+   (phase-03 line cap) is now in place. The architect spec discipline (pre-inject
+   exact patch targets) remains sound but is now a belt-and-suspenders measure
+   rather than the only defense. **No WORKFLOW fold needed** — the user decided the
+   runtime fix supersedes the spec-writing fold.
+2. **Commit hygiene (phase-01):** re-dispatching against a dirty tree let the
+   executor sweep unrelated changes into one commit. One occurrence — data only.

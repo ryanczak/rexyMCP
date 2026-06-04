@@ -4,15 +4,12 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M9 / phase-03 — read_file output
-cap](milestones/M9-runtime-hardening/phase-03-read-file-line-cap.md). Cap
-`read_file` at 500 lines; append a truncation notice with total-line-count and
-range so the model can re-read with `start_line`/`end_line`. Closes the root cause
-of every M9 hard-fail bounce (whole-file reads of large source files tripping
-`RunawayOutput`). Single-file change (`read_file.rs`), no new deps.
-
-**M9/phase-01** and **M9/phase-02** are `done` (2026-06-04). Retrospective in the
-[M9 README](milestones/M9-runtime-hardening/README.md#retrospective-2026-06-04).
+**Active phase:** none — **M9 (executor runtime hardening) is complete.** All three
+phases done (2026-06-04): post-write format hook (approved_after_2), lint_fix in the
+hook (approved_after_1), read_file output cap (approved_first_try). Retrospective in
+the [M9 README](milestones/M9-runtime-hardening/README.md#retrospective-2026-06-04).
+M8's redesign also remains at its close gate, still human-gated. The user kicks off
+the next milestone explicitly.
 
 **phase-01 done** (2026-06-04, approved_after_2): runtime fix for the recurring
 formatting hard-fail folded in WORKFLOW.md — a `run_format_hook` helper runs the

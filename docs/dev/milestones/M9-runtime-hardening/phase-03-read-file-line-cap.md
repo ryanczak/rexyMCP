@@ -1,7 +1,7 @@
 # Phase 03: read_file output cap
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** review
+**Status:** done
 **Depends on:** M2 (the `read_file` tool exists at `executor/src/tools/read_file.rs`).
 **Estimated diff:** ~80 lines (cap logic + notice + updated description + tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -233,3 +233,21 @@ $ grep -c 'read_file: truncated' executor/src/tools/read_file.rs
 (1 in source format string, 2 in test assertions — literal landed correctly.)
 
 **Notes for review:** None. Implementation matches spec exactly.
+
+### Review verdict — 2026-06-04
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. Single-file change (`read_file.rs`); all 3 spec
+  tasks implemented exactly (constant, cap+notice, description). No other file
+  touched. Executor committed cleanly as `feat:` (`f76f44d`) with a correct body.
+  Independently re-ran all four gates: fmt/build/clippy clean, 585 tests pass (6
+  new + all 9 original read_file tests intact). Spot-checked
+  `truncates_whole_file_read_at_max_lines` and `small_file_not_truncated` — both
+  discriminating (the positive asserts truncation at 500 and `truncated: true`; the
+  negative asserts no `[read_file:` notice and no `truncated` key for a 499-line
+  file). The `unwrap_or_else` in the production path is pre-existing
+  (`canonicalize().unwrap_or_else(|_| path.clone())`) — not new.
+- **Calibration:** none new. Phase-03 approved first try with a clean single-file
+  spec — the split from the hook phases paid off. M9 is now fully done.
