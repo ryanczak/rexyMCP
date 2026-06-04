@@ -694,10 +694,13 @@ fn render_dashboard(
         Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).areas::<2>(area);
 
     // Header band: Session (phase/session/model/state/turn/stage/age) · Budget · Compactions.
+    // Budget uses Min(42) so the tok/s stats line "(AVG: X.X, MAX: XX.X, MIN: X.X)"
+    // (≈37 chars + borders) is never clipped; Compactions fills the remainder.
+    // Session stays at 50% and is unaffected by Budget's minimum.
     let [session_area, budget_area, compactions_area] = Layout::horizontal([
         Constraint::Percentage(50),
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
+        Constraint::Min(42),
+        Constraint::Fill(1),
     ])
     .areas::<3>(header);
 
@@ -1588,7 +1591,9 @@ mod tests {
 
     #[test]
     fn is_diff_content_detects_git_diff_header() {
-        assert!(is_diff_content("diff --git a/foo.rs b/foo.rs\n--- a/foo.rs\n+++ b/foo.rs"));
+        assert!(is_diff_content(
+            "diff --git a/foo.rs b/foo.rs\n--- a/foo.rs\n+++ b/foo.rs"
+        ));
     }
 
     #[test]
@@ -1605,11 +1610,20 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
 
         // Added line is present.
-        assert!(text.iter().any(|s| s.contains("+    new()")), "missing added line");
+        assert!(
+            text.iter().any(|s| s.contains("+    new()")),
+            "missing added line"
+        );
         // Removed line is present.
-        assert!(text.iter().any(|s| s.contains("-    old()")), "missing removed line");
+        assert!(
+            text.iter().any(|s| s.contains("-    old()")),
+            "missing removed line"
+        );
         // Hunk header is present.
-        assert!(text.iter().any(|s| s.contains("@@ -1,3 +1,3 @@")), "missing hunk header");
+        assert!(
+            text.iter().any(|s| s.contains("@@ -1,3 +1,3 @@")),
+            "missing hunk header"
+        );
     }
 
     #[test]
@@ -1618,14 +1632,21 @@ mod tests {
         let diff = "--- a/foo.rs\n+++ b/foo.rs\n@@ -1 +1 @@\n-old\n+new";
         let lines = diff_body_lines(diff);
         // First line starts with "---" → header, must contain "---" text.
-        assert!(format!("{}", lines[0]).contains("---"), "header line must be rendered");
+        assert!(
+            format!("{}", lines[0]).contains("---"),
+            "header line must be rendered"
+        );
         // Second line "+++ b/foo.rs" must also be present as header, not green-bg.
-        assert!(format!("{}", lines[1]).contains("+++"), "header line must be rendered");
+        assert!(
+            format!("{}", lines[1]).contains("+++"),
+            "header line must be rendered"
+        );
     }
 
     #[test]
     fn highlighted_body_lines_routes_diff_to_diff_renderer() {
-        let patch_output = "✓ patched foo.rs (1 hunk)\n\n--- foo.rs\n+++ foo.rs\n@@ -1 +1 @@\n-old\n+new";
+        let patch_output =
+            "✓ patched foo.rs (1 hunk)\n\n--- foo.rs\n+++ foo.rs\n@@ -1 +1 @@\n-old\n+new";
         let lines = highlighted_body_lines(patch_output);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("+new")));
