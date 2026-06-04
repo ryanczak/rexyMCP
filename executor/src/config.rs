@@ -3,6 +3,26 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
+/// Live-dashboard settings. The "$ saved" baseline: cloud $/million-tokens the
+/// local run is priced against. Default 0.0 → the dashboard shows "—" (unset).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DashboardConfig {
+    /// USD per million **input** tokens for the cloud baseline.
+    pub saved_input_per_mtok: f64,
+    /// USD per million **output** tokens for the cloud baseline.
+    pub saved_output_per_mtok: f64,
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self {
+            saved_input_per_mtok: 0.0,
+            saved_output_per_mtok: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -10,6 +30,7 @@ pub struct Config {
     pub commands: CommandConfig,
     pub budget: BudgetConfig,
     pub telemetry: TelemetryConfig,
+    pub dashboard: DashboardConfig,
 }
 
 /// Cross-project telemetry store. `None` disables telemetry emission.
@@ -435,5 +456,43 @@ escalation_slots = 1
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.executor.temperature, None);
         assert_eq!(cfg.executor.seed, None);
+    }
+
+    #[test]
+    fn dashboard_config_defaults_to_zero() {
+        let cfg = Config::default();
+        assert_eq!(cfg.dashboard.saved_input_per_mtok, 0.0);
+        assert_eq!(cfg.dashboard.saved_output_per_mtok, 0.0);
+    }
+
+    #[test]
+    fn config_loads_dashboard_rates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[dashboard]
+saved_input_per_mtok = 3.0
+saved_output_per_mtok = 15.0
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.dashboard.saved_input_per_mtok, 3.0);
+        assert_eq!(cfg.dashboard.saved_output_per_mtok, 15.0);
     }
 }

@@ -1,7 +1,7 @@
 # Phase 11b: Budget panel — "$ saved" (configurable $/Mtok)
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Depends on:** phase-11a (done — the Budget panel and `last_input_tokens` /
 `last_output_tokens` this reads).
 **Estimated diff:** ~150 lines (`executor/src/config.rs` new section + `mcp/src/main.rs`
@@ -275,3 +275,65 @@ No new dependency. No `docs/architecture.md` / `STANDARDS.md` / `WORKFLOW.md` ed
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-09 14:32 (complete)
+
+**Summary:** Implemented the "$ saved" Budget panel line with configurable $/Mtok rates.
+The `[dashboard]` config section, `BudgetRates` carrier, `dollars_saved` helper,
+`dollars_saved_line` builder, and config-loading in the `Dashboard` CLI command
+were all pre-injected into the source files. This phase wired up the CLI config
+loading (`--config` arg on `Dashboard`, `Config::load_with_env` call, rates
+construction) in `mcp/src/main.rs`, updated the existing CLI parse test, and added
+the 4 unit tests for `dollars_saved` / `dollars_saved_line` in `mcp/src/dashboard.rs`.
+No deviations from the spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.49s
+
+cargo test 2>&1 | tail -30
+test result: ok. 567 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+
+Unit tests covering all new behavior:
+- `dashboard_config_defaults_to_zero` (executor/config.rs) — defaults to 0.0
+- `config_loads_dashboard_rates` (executor/config.rs) — parses `[dashboard]` section
+- `dollars_saved_computes_cost` (mcp/dashboard.rs) — 1M in + 500k out @ $3/$15 = $10.50
+- `dollars_saved_line_none_without_metrics` — returns None when no metrics
+- `dollars_saved_line_dash_when_rates_unset` — returns "$ saved: —" with 0.0 rates
+- `dollars_saved_line_shows_dollars` — returns "$ saved: $10.50" with configured rates
+- `cli_parse_dashboard_collects_args` — updated for new `--config` field
+
+Grep proving the pinned literal landed: `grep '\$ saved' mcp/src/dashboard.rs` → 6 matches across doc comments, the line builder, and test assertions.
+
+**Files changed:**
+- `mcp/src/main.rs` — added `--config` arg to Dashboard CLI, config loading, rates construction, updated CLI parse test
+- `mcp/src/dashboard.rs` — added 4 unit tests for `dollars_saved` / `dollars_saved_line`
+- `docs/dev/milestones/M8-dashboard/phase-11b-budget-dollars-saved.md` — status flip to review + Update Log
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row updated to review
+
+**New tests:**
+- `dollars_saved_computes_cost` in `mcp/src/dashboard.rs`
+- `dollars_saved_line_none_without_metrics` in `mcp/src/dashboard.rs`
+- `dollars_saved_line_dash_when_rates_unset` in `mcp/src/dashboard.rs`
+- `dollars_saved_line_shows_dollars` in `mcp/src/dashboard.rs`
+
+**Commits:**
+- (pending)
+
+**Notes for review:** The `DashboardConfig` struct, `BudgetRates` carrier, `dollars_saved`, `dollars_saved_line`, and the `rates` threading through `render_dashboard`/`run_loop`/`run_dashboard` were pre-injected into the source files. This phase's executor work was the CLI config plumbing in `main.rs` and the test suite. The live TUI render is review-by-inspection (requires a terminal).

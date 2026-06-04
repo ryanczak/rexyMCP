@@ -133,6 +133,10 @@ enum Commands {
         /// Session id to watch; omit to auto-select the most-recently-modified log
         #[arg(long)]
         session: Option<String>,
+
+        /// Path to the config file
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
 }
 
@@ -330,8 +334,18 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Commands::Dashboard { repo, session } => {
-            dashboard::run_dashboard(&repo, session.as_deref()).unwrap_or_else(|e| {
+        Commands::Dashboard {
+            repo,
+            session,
+            config,
+        } => {
+            let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
+            let cfg = Config::load_with_env(&config_path)?;
+            let rates = dashboard::BudgetRates {
+                input_per_mtok: cfg.dashboard.saved_input_per_mtok,
+                output_per_mtok: cfg.dashboard.saved_output_per_mtok,
+            };
+            dashboard::run_dashboard(&repo, session.as_deref(), rates).unwrap_or_else(|e| {
                 eprintln!("dashboard error: {e}");
                 std::process::exit(1);
             });
@@ -558,7 +572,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Some(Commands::Dashboard { repo, session }) => {
+            Some(Commands::Dashboard { repo, session, .. }) => {
                 assert_eq!(repo, PathBuf::from("/some/path"));
                 assert_eq!(session.as_deref(), Some("sess-123"));
             }
@@ -567,8 +581,11 @@ mod tests {
 
         let cli2 = Cli::try_parse_from(["rexymcp", "dashboard", "--repo", "/p"]).unwrap();
         match cli2.command {
-            Some(Commands::Dashboard { session, .. }) => {
+            Some(Commands::Dashboard {
+                session, config, ..
+            }) => {
                 assert_eq!(session, None);
+                assert_eq!(config, None);
             }
             _ => panic!("expected Dashboard"),
         }

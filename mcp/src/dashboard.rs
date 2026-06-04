@@ -412,6 +412,37 @@ fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
+/// Cloud-baseline $/Mtok rates for the Budget panel's "$ saved" line.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BudgetRates {
+    pub input_per_mtok: f64,
+    pub output_per_mtok: f64,
+}
+
+/// Dollar cost the given cumulative token usage would incur at the cloud baseline.
+fn dollars_saved(
+    input_tokens: u32,
+    output_tokens: u32,
+    in_per_mtok: f64,
+    out_per_mtok: f64,
+) -> f64 {
+    (input_tokens as f64 / 1_000_000.0) * in_per_mtok
+        + (output_tokens as f64 / 1_000_000.0) * out_per_mtok
+}
+
+/// "$ saved" line for the Budget panel.
+/// Returns `None` when there are no metrics yet, `"$ saved: —"` when rates are
+/// unconfigured (both 0.0), and `"$ saved: $X.XX"` otherwise.
+fn dollars_saved_line(summary: &StatusSummary, rates: BudgetRates) -> Option<Line<'static>> {
+    let in_tok = summary.last_input_tokens?;
+    let out_tok = summary.last_output_tokens.unwrap_or(0);
+    if rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0 {
+        return Some(Line::from("$ saved: —"));
+    }
+    let saved = dollars_saved(in_tok, out_tok, rates.input_per_mtok, rates.output_per_mtok);
+    Some(Line::from(format!("$ saved: ${saved:.2}")))
+}
+
 // --- Panel helpers ---
 
 /// Wrap lines in a bordered `Block` with the given title.
@@ -432,6 +463,7 @@ fn render_dashboard(
     now_ms: u64,
     offset: u16,
     follow: bool,
+    rates: BudgetRates,
 ) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
@@ -461,7 +493,11 @@ fn render_dashboard(
         panel(" Session ", session_lines(&data.summary, now_ms)),
         session_area,
     );
-    frame.render_widget(panel(" Budget ", budget_lines(&data.summary)), budget_area);
+    let mut budget = budget_lines(&data.summary);
+    if let Some(line) = dollars_saved_line(&data.summary, rates) {
+        budget.push(line);
+    }
+    frame.render_widget(panel(" Budget ", budget), budget_area);
     frame.render_widget(
         panel(" Compactions ", compactions_lines(&data.summary)),
         compactions_area,
@@ -500,9 +536,13 @@ fn render_dashboard(
 // --- Entry points ---
 
 /// Run the dashboard event loop. Called by `main.rs`.
-pub fn run_dashboard(repo: &Path, session: Option<&str>) -> std::io::Result<()> {
+pub fn run_dashboard(
+    repo: &Path,
+    session: Option<&str>,
+    rates: BudgetRates,
+) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
-    let result = run_loop(&mut terminal, repo, session);
+    let result = run_loop(&mut terminal, repo, session, rates);
     ratatui::restore();
     result
 }
@@ -511,6 +551,7 @@ fn run_loop(
     terminal: &mut ratatui::DefaultTerminal,
     repo: &Path,
     session: Option<&str>,
+    rates: BudgetRates,
 ) -> std::io::Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use std::time::Duration;
@@ -526,8 +567,9 @@ fn run_loop(
 
         let data = load_data(repo, session);
         offset = clamp_scroll(offset, transcript_lines(&data.records).len());
-        terminal
-            .draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, offset, follow))?;
+        terminal.draw(|frame| {
+            render_dashboard(frame, frame.area(), &data, now_ms, offset, follow, rates)
+        })?;
 
         if event::poll(Duration::from_millis(500))?
             && let Event::Key(key) = event::read()?
@@ -1225,5 +1267,52 @@ mod tests {
         assert_eq!(clamp_scroll(0, 0), 0);
         assert_eq!(clamp_scroll(10, 100), 10);
         assert_eq!(clamp_scroll(0, 1), 0);
+    }
+
+    // --- dollars_saved tests ---
+
+    #[test]
+    fn dollars_saved_computes_cost() {
+        // 1M input @ $3/Mtok + 500k output @ $15/Mtok = $3.00 + $7.50 = $10.50
+        assert_eq!(dollars_saved(1_000_000, 500_000, 3.0, 15.0), 10.5);
+    }
+
+    #[test]
+    fn dollars_saved_line_none_without_metrics() {
+        let summary = StatusSummary::default();
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+        };
+        assert!(dollars_saved_line(&summary, rates).is_none());
+    }
+
+    #[test]
+    fn dollars_saved_line_dash_when_rates_unset() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(500),
+            last_output_tokens: Some(100),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates::default();
+        let line = dollars_saved_line(&summary, rates);
+        assert!(line.is_some());
+        assert_eq!(format!("{}", line.unwrap()), "$ saved: —");
+    }
+
+    #[test]
+    fn dollars_saved_line_shows_dollars() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+        };
+        let line = dollars_saved_line(&summary, rates);
+        assert!(line.is_some());
+        assert_eq!(format!("{}", line.unwrap()), "$ saved: $10.50");
     }
 }
