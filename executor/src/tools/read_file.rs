@@ -12,6 +12,11 @@ use crate::security::scope::Scope;
 
 use super::registry::{Tool, ToolResult};
 
+/// Maximum lines returned in a single read_file call. Callers needing more must
+/// use start_line/end_line to read in slices. Keeps output well below the
+/// governor's RUNAWAY_OUTPUT_BYTES (100 KB) threshold for typical source files.
+const MAX_OUTPUT_LINES: usize = 500;
+
 #[derive(Deserialize)]
 struct ReadFileArgs {
     path: String,
@@ -30,7 +35,8 @@ impl Tool for ReadFile {
     }
 
     fn description(&self) -> &str {
-        "Read a file's contents, optionally a line range."
+        "Read a file's contents. Returns at most 500 lines; use start_line/end_line to \
+         read specific ranges of larger files."
     }
 
     fn schema(&self) -> Value {
@@ -149,17 +155,40 @@ impl Tool for ReadFile {
 
         let end_clamped = end.min(total_lines);
         let slice: Vec<&str> = lines[(start - 1)..end_clamped].to_vec();
-        let output = slice.join("\n");
-        let lines_read = slice.len();
+
+        let (output, lines_read, truncated) = if slice.len() > MAX_OUTPUT_LINES {
+            let trimmed = &slice[..MAX_OUTPUT_LINES];
+            let shown_end = start + MAX_OUTPUT_LINES - 1;
+            let output = format!(
+                "{}\n[read_file: truncated — file has {} lines; showing lines {}–{}. Re-read with start_line/end_line for other ranges.]",
+                trimmed.join("\n"),
+                total_lines,
+                start,
+                shown_end
+            );
+            (output, MAX_OUTPUT_LINES, true)
+        } else {
+            (slice.join("\n"), slice.len(), false)
+        };
 
         let abs_path = path.canonicalize().unwrap_or_else(|_| path.clone());
 
-        let metadata = json!({
-            "path": abs_path.to_string_lossy(),
-            "bytes": output.len(),
-            "lines": total_lines,
-            "lines_read": lines_read,
-        });
+        let metadata = if truncated {
+            json!({
+                "path": abs_path.to_string_lossy(),
+                "bytes": output.len(),
+                "lines": total_lines,
+                "lines_read": lines_read,
+                "truncated": true,
+            })
+        } else {
+            json!({
+                "path": abs_path.to_string_lossy(),
+                "bytes": output.len(),
+                "lines": total_lines,
+                "lines_read": lines_read,
+            })
+        };
 
         Ok(ToolResult {
             output,
@@ -360,5 +389,155 @@ mod tests {
         assert!(meta.get("bytes").is_some());
         assert!(meta.get("lines").is_some());
         assert!(meta.get("lines_read").is_some());
+    }
+
+    #[tokio::test]
+    async fn truncates_whole_file_read_at_max_lines() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("large.txt");
+        let content = (1..=600)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, &content).unwrap();
+
+        let tool = read_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({ "path": path.to_string_lossy() }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("line1"));
+        assert!(!result.output.contains("line501"));
+        assert!(result.output.contains("[read_file: truncated"));
+        assert!(result.output.contains("600"));
+        assert!(result.output.contains("500"));
+        let meta = result.metadata.unwrap();
+        assert_eq!(meta["lines_read"], 500);
+        assert_eq!(meta["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn truncation_notice_shows_correct_range() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("large.txt");
+        let content = (1..=600)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, &content).unwrap();
+
+        let tool = read_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({ "path": path.to_string_lossy() }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let output = result.output;
+        // The notice should contain "1–500" (en-dash) or "1-500" (hyphen)
+        assert!(
+            output.contains("1–500") || output.contains("1-500"),
+            "truncation notice should show range 1–500, got: {}",
+            output
+        );
+    }
+
+    #[tokio::test]
+    async fn small_file_not_truncated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("small.txt");
+        let content = (1..=499)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, &content).unwrap();
+
+        let tool = read_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({ "path": path.to_string_lossy() }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(!result.output.contains("[read_file:"));
+        let meta = result.metadata.unwrap();
+        assert_eq!(meta["lines_read"], 499);
+        assert!(meta.get("truncated").is_none());
+    }
+
+    #[tokio::test]
+    async fn explicit_range_within_cap_not_truncated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("large.txt");
+        let content = (1..=600)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, &content).unwrap();
+
+        let tool = read_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "path": path.to_string_lossy(),
+                "start_line": 501,
+                "end_line": 600
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("line501"));
+        assert!(result.output.contains("line600"));
+        assert!(!result.output.contains("[read_file:"));
+        let meta = result.metadata.unwrap();
+        assert_eq!(meta["lines_read"], 100);
+        assert!(meta.get("truncated").is_none());
+    }
+
+    #[tokio::test]
+    async fn explicit_range_exceeding_cap_is_capped() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("large.txt");
+        let content = (1..=600)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, &content).unwrap();
+
+        let tool = read_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "path": path.to_string_lossy(),
+                "start_line": 1,
+                "end_line": 600
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("line1"));
+        assert!(!result.output.contains("line501"));
+        assert!(result.output.contains("[read_file: truncated"));
+        // Notice should show "1–500" not "1–600"
+        assert!(
+            result.output.contains("1–500") || result.output.contains("1-500"),
+            "truncation notice should show 1–500, not 1–600"
+        );
+        let meta = result.metadata.unwrap();
+        assert_eq!(meta["lines_read"], 500);
+        assert_eq!(meta["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn description_mentions_line_cap() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = read_file(make_scope(&dir));
+        assert!(
+            tool.description().contains("500 lines"),
+            "description should mention '500 lines', got: {}",
+            tool.description()
+        );
     }
 }

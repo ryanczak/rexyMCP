@@ -4,7 +4,7 @@
 phase-spec instruction provably cannot, starting with the post-write formatting
 race folded from M1/mp3-player.
 
-**Status:** done (both in-scope phases approved 2026-06-04; at close gate)
+**Status:** in-progress (phase-03 added 2026-06-04)
 
 **Depends on:** M4 (the agent loop: dispatch → verify → final command set)
 
@@ -29,6 +29,7 @@ race folded from M1/mp3-player.
 |----|--------------------------------------------------------------------------------|--------|
 | 01 | post-write format hook ([phase-01-post-write-format-hook.md](phase-01-post-write-format-hook.md)) | done   |
 | 02 | lint-fix in the post-write hook ([phase-02-lint-fix-hook.md](phase-02-lint-fix-hook.md))          | done   |
+| 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | review   |
 
 ## Notes
 
