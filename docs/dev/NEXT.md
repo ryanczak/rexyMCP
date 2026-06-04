@@ -4,10 +4,24 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M8's last in-scope redesign phase (11b) is **done**. The
-wireframe redesign is **complete**; M8 is now at its **close gate** (retrospective +
-milestone close), a human-gated step. The user kicks off the close / next milestone
-explicitly.
+**Active phase:** none — M9/phase-01 (post-write format hook) is **done**
+(approved_after_2, 2026-06-04). M9/phase-02 (`lint --fix` in the same hook) is
+drafted and `todo` but **not active**; the user advances explicitly via
+`/rexymcp:architect next` or a direct dispatch. M8's redesign also remains at its
+**close gate** (retrospective + milestone close), still human-gated.
+
+**phase-01 done** (2026-06-04, approved_after_2): runtime fix for the recurring
+formatting hard-fail folded in WORKFLOW.md — a `run_format_hook` helper runs the
+project's configured `format` command after every successful edit-class turn, before
+the verifier (`mod.rs:671` call site + `mod.rs:1215` helper), so a later `write_file`
+can't strand an unformatted file for the final `fmt --check`. Best-effort (failures
+discarded), no config change, agent-loop only, +7 hermetic tests (574 total pass).
+Qwen/Qwen3.6-27B-FP8. Two non-code bounces: dispatch-1 `RunawayOutput` on a 149 KB
+whole-file read of `mod.rs` (architect spec gap — fixed by pre-injecting excerpts);
+dispatch-2 SSE stall (infra) after the hook had already landed. **Calibration data
+point (hold for recurrence):** re-dispatching against a dirty working tree let the
+executor sweep unrelated changes into its commit — stash/commit ambient changes before
+re-dispatch.
 
 **phase-11b done** (2026-06-03, approved_first_try): Budget panel **"$ saved"** — added
 a `[dashboard]` config section (`saved_input_per_mtok` / `saved_output_per_mtok`,

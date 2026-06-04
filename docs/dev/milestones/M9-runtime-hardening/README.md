@@ -27,7 +27,7 @@ race folded from M1/mp3-player.
 
 | #  | Phase                                                                          | Status |
 |----|--------------------------------------------------------------------------------|--------|
-| 01 | post-write format hook ([phase-01-post-write-format-hook.md](phase-01-post-write-format-hook.md)) | review   |
+| 01 | post-write format hook ([phase-01-post-write-format-hook.md](phase-01-post-write-format-hook.md)) | done   |
 | 02 | lint-fix in the post-write hook ([phase-02-lint-fix-hook.md](phase-02-lint-fix-hook.md))          | todo   |
 
 ## Notes

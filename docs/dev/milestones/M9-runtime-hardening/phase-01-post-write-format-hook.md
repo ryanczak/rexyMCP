@@ -1,7 +1,7 @@
 # Phase 01: post-write format hook
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** review
+**Status:** done
 **Depends on:** M4/phase-07c (the `dispatch → verify` site + `FileVerifier` seam),
 M4/phase-07e (the final command set: `CommandRunner`, `CommandConfig`,
 `run_command_set`/`run_one`). Both done.
@@ -578,3 +578,27 @@ do not re-declare.
 
 After adding the tests, run `cargo test format_hook` to confirm all 7 pass, then
 run all four gate commands and paste output in the completion Update Log.
+
+### Review verdict — 2026-06-04
+
+- **Verdict:** approved_after_2
+- **Bounces:** 2 (no bugs filed; no code-quality bounce). Dispatch-1 hard_fail =
+  `RunawayOutput` on a 149 KB whole-file read of `mod.rs` — an **architect spec gap**
+  (Pre-flight said "read this surface" without bounding it); fixed by pre-injecting
+  code excerpts. Dispatch-2 hard_fail = SSE stream stall at turn 104 — **infrastructure**,
+  not the executor; the production hook had already landed. Dispatch-3 clean.
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. The hook (call site `mod.rs:671`, helper `mod.rs:1215`)
+  matches the spec exactly; the 7 tests match the 7 specced names + assertions.
+  Independently re-ran all four gates: fmt clean, build clean, clippy clean, 574 tests
+  pass (7 new). Spot-checked the regression test (`format_hook_runs_on_every_edit_turn`
+  asserts 3 = 2 hooks + 1 final set — discriminating) and the ordering test
+  (`format_hook_runs_before_verify` asserts `format` progress event precedes `verify`).
+- **Calibration:** commit hygiene — the executor's contract ("commit everything")
+  swept the dirty working tree into one `test:`-labelled commit (`d758504`): the
+  production hook (`feat:`), the 7 tests, an unrelated `contract.rs` ambient-test fix,
+  a `dashboard.rs` reformat, and pre-existing `Cargo.lock` churn. Root cause: the phase
+  was re-dispatched against a **non-clean working tree** (Pre-flight step 4 was not
+  honored by the architect). One occurrence = data, not yet a fold; if it recurs, the
+  fix is architect-side (commit/stash ambient changes before re-dispatch), not a
+  contract change. Phase substance is unaffected.
