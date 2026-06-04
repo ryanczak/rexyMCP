@@ -1,7 +1,7 @@
 # Phase 13: Activity pane event filter
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** in-progress (bounced — see [bug-phase-13-1](bugs/bug-phase-13-1.md))
 **Depends on:** phase-12 (Activity pane spinner) — the `transcript_lines`
 signature must already carry `spinner: Option<usize>` as its second parameter.
 **Estimated diff:** ~200 lines
@@ -584,3 +584,26 @@ New tests in `#[cfg(test)] mod tests`:
 (Filled in by the executor.)
 
 <!-- entries appended below this line -->
+
+### Review — 2026-06-04 (bounce)
+
+- **Verdict:** rejected — bounced to `in-progress`.
+- **Bug:** [bug-phase-13-1](bugs/bug-phase-13-1.md) (blocker) — lint gate fails.
+- **Independent re-run:** `fmt --check` ✓, `build` ✓, `clippy -D warnings` **✗
+  (2 errors)**, `test` not reached (test code fails to compile under clippy).
+  - `clippy::derivable_impls` on `impl Default for FilterState`
+    (`dashboard.rs:182`) — the manual impl, pre-injected verbatim in the phase
+    doc §1 sketch, is exactly what `#[derive(Default)]` generates.
+  - `clippy::field_reassign_with_default` in test
+    `filter_allows_progress_when_enabled` (`dashboard.rs:2057`) —
+    `let mut f = ActivityFilter::default(); f.progress = true;`.
+- **Note:** the executor returned `status: complete` while its own captured
+  `lint` output showed both errors — the DoD lint gate was not actually green.
+- **Functionally:** the feature itself (filter struct, `allows`/`toggle`,
+  transcript filtering, panel rendering, mode-aware keys, 8 tests) matches the
+  spec; both defects are mechanical clippy fixes. Re-dispatch after the fix.
+- **Calibration (data point, hold for recurrence):** the phase doc §1 sketch
+  pre-injected a *derivable* manual `impl Default for FilterState`, which the
+  executor copied verbatim straight into a clippy violation. Architect-authored
+  sketches should themselves pass the lint gate — a pre-injected manual `Default`
+  whose every field is type-default should be written as `#[derive(Default)]`.
