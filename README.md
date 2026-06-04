@@ -73,7 +73,8 @@ see exactly which models and settings are earning their keep on your codebase.
 **Live progress during a run:**
 
 ```bash
-rexymcp status --repo /path/to/your/repo   # pull-based; works while execute_phase is running
+rexymcp dashboard --repo /path/to/your/repo   # live TUI — stays open, auto-follows sessions
+rexymcp status   --repo /path/to/your/repo    # one-shot summary; scriptable with --json
 ```
 
 ## Project docs — what each file is for
@@ -190,9 +191,12 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
 - `rexymcp run-phase` — run a single phase from the command line (returns the
   `PhaseResult` as JSON), no MCP client required.
 - `rexymcp serve` — start the MCP stdio server.
-- `rexymcp status` — read a session log and report the latest phase progress
-  (human summary or `--json`). The pull-based liveness path while a phase is
-  mid-flight.
+- `rexymcp dashboard` — live full-screen TUI over the session JSONL: Session,
+  Budget (tokens · context % · tok/s · $ saved), Compactions, Activity transcript
+  (scrollable full replay), and Files panels. Stays open and auto-follows new
+  sessions. `--config` loads `[dashboard]` rates for the `$ saved` line.
+- `rexymcp status` — one-shot session summary (human or `--json`). Scriptable;
+  the lightweight alternative to `dashboard` for CI / piping.
 - `rexymcp runs` — list individual `PhaseRun` records with per-run stats (model,
   settings, gates, reliability, provenance, verdict). Filterable by `--model` /
   `--tag`; `--json` for scripting.
@@ -310,6 +314,10 @@ escalation_slots = 1      # briefings returned to the architect per phase
 
 # [telemetry]
 # dir = "~/.rexymcp/telemetry"   # enables cross-project scorecard records
+
+# [dashboard]
+# saved_input_per_mtok  = 3.0    # USD/Mtok for cloud input  — shown as "$ saved" in the TUI
+# saved_output_per_mtok = 15.0   # USD/Mtok for cloud output   (0.0 = omit, show "—")
 ```
 
 All values have defaults; a missing config falls back to a local LM Studio

@@ -1,10 +1,11 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 are implemented (`executor/` + `mcp/`);
-> M8 (live session dashboard) is in progress. This document is the source of truth for
-> the *intended* design; the code under `executor/` and `mcp/` is the source of
-> truth for what actually runs. Milestones are listed in the **Status** section at
-> the bottom — that list is the project plan.
+> **Status:** Living design doc. M1–M8 are implemented (`executor/` + `mcp/`);
+> M8 (live session dashboard) is open for testing and bug fixes — the wireframe
+> redesign shipped, milestone close is pending live-session confirmation. This
+> document is the source of truth for the *intended* design; the code under
+> `executor/` and `mcp/` is the source of truth for what actually runs. Milestones
+> are listed in the **Status** section at the bottom — that list is the project plan.
 
 ## What rexyMCP is
 
@@ -578,35 +579,29 @@ The project plan. Each entry becomes a milestone with its own
    individual phases are not controlled experiments and small models are
    high-variance. Depends on having data, so it lands after the loop (M4) and
    server (M5) have been producing records.
-8. **M8 — Live session dashboard.** **Why it matters (usability):** an
-   `execute_phase` call is opaque *and* blocking — Claude Code's MCP interface
-   surfaces nothing about what the executor is doing inside the call, and it
-   *cannot*, because the client sends no `progressToken`, so MCP progress
-   notifications never fire (see Layer 2 § "Liveness"). For minutes at a time the
-   user is blind to a running phase through the Claude UI. The dashboard is the
-   cure: a `rexymcp dashboard` CLI command — a real-time, full-screen **read-only
-   TUI** that gives deep insight into an in-flight MCP session by tailing the
-   per-record-flushed session JSONL under `<repo>/.rexymcp/sessions/`: turn /
-   stage, current tool, verifier pass/fail, files changed, token usage, the
-   `awaiting_model` heartbeat, and terminal status, across concurrent sessions.
-   It is the richer sibling of `rexymcp status` — the same data source, but live
-   and continuously refreshed instead of one-shot. **Data sources — the dashboard
-   is data-rich without new plumbing.** The session JSONL already carries the live
-   feed: turn events, tool calls, the `ParseFailure`/repair history, verifier
-   outcomes, hard-fail signals, token usage, and per-file numstat of the target
-   repo's evolving diff (the `Progress` records `status` already reads). It is also
-   an *extensible store* — whatever additional session state the dashboard wants
-   can be persisted as new `SessionEvent` records and read back, since the log is
-   already the single source the loop flushes per record. Layered on that, metrics
-   derived directly from the **target repository** rexyMCP is working on (git
-   status / diff, the final command outputs) give a second stream. Between the log
-   and the repo there is ample signal; M8's hard part is *selection and layout*,
-   not data acquisition. A monitoring view, not an interactive agent surface (see
-   Non-goals). **Open decision (resolve at M8 design): keep `rexymcp status` as a
-   separate one-shot command, or fold it into `dashboard`.** Both share the same
-   read/summarize core (`status.rs`'s `load_status` / `summarize`), so it is a
-   surface question, not an implementation one — but a live TUI is not pipeable,
-   whereas `status --json` serves scripting / CI, so folding only works if
-   `dashboard` keeps a non-interactive `--json` / `--once` mode (which is `status`
-   by another name). A scriptable one-shot path should survive in some form.
-   Lands after M7.
+8. **M8 — Live session dashboard** *(wireframe complete, 2026-06-03; open for
+   testing / bug fixes)*. **Why it matters:** `execute_phase` is opaque *and*
+   blocking — the MCP client sends no `progressToken`, so progress notifications
+   never fire (see Layer 2 § "Liveness"), leaving the user blind for minutes at a
+   time. `rexymcp status` gives a one-shot read; `rexymcp dashboard` is the live,
+   continuously-refreshed view over the same JSONL feed. A monitoring view, not an
+   interactive agent surface (see Non-goals). `rexymcp status` stays as a separate
+   one-shot / scriptable command — both are kept. Ships:
+   - `rexymcp dashboard --repo <path> [--session <id>] [--config <path>]` — a
+     `ratatui` full-screen TUI, 500 ms poll, stays open until `q`/`Esc`/`Ctrl-C`,
+     auto-follows a newly-started session when unpinned.
+   - **Session panel** — phase, session id, model, state, turn count, stage, age.
+   - **Budget panel** — tokens in/out, context % (color-coded gauge: green <50 /
+     yellow 50–80 / red ≥80), tok/s (derived from `Metrics` record timestamps),
+     and `$ saved` (configurable cloud-baseline $/Mtok via `[dashboard]` in
+     `rexymcp.toml`; shows `—` when unset).
+   - **Compactions panel** — compaction event count, tokens freed, compression
+     ratio.
+   - **Activity transcript** — full scrollable replay of all session events
+     (`Prompt`, `Completion`, `ToolCall`/`ToolResult`, `Verify`, `ParseFailed`,
+     `HardFail`, `Compaction`, `Progress`, `Metrics`, `SessionStart`/`SessionEnd`),
+     color-formatted per type, with multi-line tool output and tail-follow.
+   - **Files panel** — per-file `+N -N` numstat, left-trimmed paths.
+   - **`[dashboard]` config section** — `saved_input_per_mtok` /
+     `saved_output_per_mtok` (f64, default 0.0 → show `—`). A missing section
+     falls back to defaults (purely additive; no required config to run).
