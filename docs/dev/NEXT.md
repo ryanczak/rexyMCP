@@ -4,20 +4,23 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-11a](milestones/M8-dashboard/phase-11a-budget-tokens-per-sec.md)
-— Budget panel **Tokens/Sec**. Pure JSONL-derived: `summarize` tracks the prev+latest
-`Metrics` snapshot (ts + cumulative output tokens); a pure `tokens_per_sec` helper yields
-`Δoutput/Δsec` for the recent interval; `budget_lines` adds a `tok/s:` line (`—` until a
-2nd metric arrives). mcp-only, no config, no executor change, no new deps. Dispatch with
-`/rexymcp:dispatch phase-11a`.
+**Active phase:** none — phase-11a is `done` (approved_first_try 2026-06-03). The Budget
+panel now shows a live `tok/s:` throughput line. **Next drafting target is phase-11b
+("$ saved")** — the last redesign piece. Run `/rexymcp:architect next` to draft it.
+
+**phase-11a done** (2026-06-03): `summarize` tracks the prev+latest `Metrics` snapshot;
+pure `tokens_per_sec(prev_ts, prev_out, last_ts, last_out)` yields `Δoutput/Δsec`;
+`budget_lines` shows `tok/s:` (`—` until a 2nd metric). mcp-only, no deps. Clean
+first-try in 32 turns — a counter-point to the phase-10b stall, consistent with keeping
+executor phases single-concern. Qwen/Qwen3.6-27B-FP8.
 
 **phase-11 was split into 11a/11b** (2026-06-03), because Tokens/Sec is JSONL-derived
 while "$ saved" needs config plumbing the dashboard doesn't have (the `dashboard` CLI
 command doesn't load `rexymcp.toml` today). The split also follows the phase-10b
 calibration data point (keep executor phases single-concern).
 
-- **11a (active):** Tokens/Sec — mcp-only, no config.
-- **11b (next):** "$ saved" — add a `[dashboard]` config section
+- **11a (done):** Tokens/Sec — mcp-only, no config.
+- **11b (next to draft):** "$ saved" — add a `[dashboard]` config section
   (`saved_input_per_mtok` / `saved_output_per_mtok` in `rexymcp.toml`, **configurable
   $/Mtok rate** per the locked 2026-06-03 decision — *not* a hardcoded model preset),
   load config in the `dashboard` CLI command (`executor/src/config.rs` is the `Config`

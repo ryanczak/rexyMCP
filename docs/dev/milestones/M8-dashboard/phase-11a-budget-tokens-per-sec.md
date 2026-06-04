@@ -1,7 +1,7 @@
 # Phase 11a: Budget panel — Tokens/Sec throughput
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a/06b (done — `SessionEvent::Metrics` and the Budget panel
 this extends).
 **Estimated diff:** ~110 lines (`mcp/src/status.rs` summarize + `mcp/src/dashboard.rs`
@@ -275,3 +275,20 @@ cargo test -p rexymcp → 207 passed; 0 failed; 0 ignored
 **End-to-end verification:** Unit tests exercise the real `summarize` fold and `budget_lines` with both one-sample and two-sample summaries. The `tok/s: —` placeholder and `tok/s: {rate:.1}` numeric output are both verified. Live TTY render not tested in CI (no TTY available).
 
 **Notes for review:** None. Implementation matches spec exactly.
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. All 3 spec tasks implemented exactly; out-of-scope held
+  (no "$ saved", no config, no smoothing, no executor change, other panels untouched).
+- **Calibration:** none. (Cosmetic: executor Update Log date-stamped `2025-07-18`,
+  the recurring local-model clock drift; real date 2026-06-03.) Counter-point to the
+  phase-10b stall note: this single-concern phase ran clean first-try in 32 turns —
+  consistent with the "keep executor phases single-concern" data point.
+- **Independent re-run:** fmt clean, build clean, clippy `-D warnings` clean (all
+  targets), `cargo test -p rexymcp` 207 passed (8 new). No `unwrap`/`expect`/`panic`/
+  `unsafe`/`#[allow]` in production paths. Tests are real and cover the pinned negative
+  cases: missing sample → `None`, zero-length interval → `None` (no divide-by-zero),
+  `Δoutput == 0` → `Some(0.0)`, and the `tok/s: —` vs numeric panel distinction.
