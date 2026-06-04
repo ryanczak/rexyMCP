@@ -52,6 +52,10 @@ pub struct StatusSummary {
     pub prev_metrics_ts: Option<u64>,
     /// Cumulative output tokens at the second-most-recent `Metrics` record.
     pub prev_output_tokens: Option<u32>,
+    /// Tokens currently occupying the context window (0 = unmeasured).
+    pub last_context_used: Option<u32>,
+    /// Budget ceiling in tokens (0 = no real ceiling configured).
+    pub last_context_window: Option<u32>,
     /// Number of `Compaction` records seen so far.
     pub compaction_count: usize,
     /// Sum of `tokens_before` across all `Compaction` records.
@@ -134,6 +138,8 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 input_tokens,
                 output_tokens,
                 context_pct,
+                context_used,
+                context_window,
             } => {
                 metrics_snapshots.push((rec.ts, *output_tokens));
                 // Shift the prior latest snapshot into "prev" for throughput.
@@ -143,6 +149,8 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 summary.last_input_tokens = Some(*input_tokens);
                 summary.last_output_tokens = Some(*output_tokens);
                 summary.last_context_pct = Some(*context_pct);
+                summary.last_context_used = Some(*context_used);
+                summary.last_context_window = Some(*context_window);
             }
             SessionEvent::Compaction {
                 tokens_before,
@@ -373,6 +381,8 @@ mod tests {
             input_tokens,
             output_tokens,
             context_pct,
+            context_used: 0,
+            context_window: 0,
         }
     }
 

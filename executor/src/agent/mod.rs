@@ -423,6 +423,15 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 input_tokens: metrics.tokens.input_tokens,
                 output_tokens: metrics.tokens.output_tokens,
                 context_pct: deps.budget.fraction_used(&system, &messages),
+                context_used: deps
+                    .budget
+                    .estimate(&system, &messages)
+                    .min(u32::MAX as usize) as u32,
+                context_window: if deps.budget.ceiling == usize::MAX {
+                    0
+                } else {
+                    deps.budget.ceiling.min(u32::MAX as usize) as u32
+                },
             },
         );
 
@@ -3361,6 +3370,7 @@ mod tests {
                     input_tokens,
                     output_tokens,
                     context_pct,
+                    ..
                 } = &r.event
                 {
                     Some((*input_tokens, *output_tokens, *context_pct))

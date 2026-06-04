@@ -62,10 +62,16 @@ pub enum SessionEvent {
     /// Per-turn resource snapshot: cumulative token usage and the fraction of
     /// the context-window budget consumed going into this turn. `context_pct`
     /// is 0.0 when the ceiling is the "unmeasured" sentinel (`usize::MAX`).
+    /// `context_used` / `context_window` are the raw token counts that make up
+    /// `context_pct`; both are 0 when the budget is the unmeasured sentinel.
     Metrics {
         input_tokens: u32,
         output_tokens: u32,
         context_pct: f64,
+        /// Estimated tokens currently occupying the context window.
+        context_used: u32,
+        /// Budget ceiling in tokens (0 = unmeasured / no real ceiling configured).
+        context_window: u32,
     },
     /// Emitted each time the context compactor runs (on budget overflow at the
     /// top of a turn). Mirrors `CompactionReport`: token totals before/after and

@@ -614,10 +614,13 @@ fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
             } else {
                 Color::Red
             };
-            lines.push(Line::from(Span::styled(
-                format!("context: {pct_int}%"),
-                Style::new().fg(color),
-            )));
+            let label = match (summary.last_context_used, summary.last_context_window) {
+                (Some(used), Some(window)) if window > 0 => {
+                    format!("context: {pct_int}% ({used}/{window})")
+                }
+                _ => format!("context: {pct_int}%"),
+            };
+            lines.push(Line::from(Span::styled(label, Style::new().fg(color))));
         }
     }
 
@@ -1021,6 +1024,42 @@ mod tests {
     }
 
     #[test]
+    fn budget_lines_shows_context_used_and_window() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1200),
+            last_output_tokens: Some(340),
+            last_context_pct: Some(0.68),
+            last_context_used: Some(31195),
+            last_context_window: Some(45875),
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let ctx_line = text.iter().find(|s| s.contains("context:")).unwrap();
+        assert!(ctx_line.contains("68%"), "pct in: {ctx_line}");
+        assert!(ctx_line.contains("31195"), "used in: {ctx_line}");
+        assert!(ctx_line.contains("45875"), "window in: {ctx_line}");
+    }
+
+    #[test]
+    fn budget_lines_context_omits_fraction_when_window_zero() {
+        // window == 0 means unmeasured/sentinel — no (N/N) suffix.
+        let summary = StatusSummary {
+            last_input_tokens: Some(500),
+            last_output_tokens: Some(100),
+            last_context_pct: Some(0.50),
+            last_context_used: Some(0),
+            last_context_window: Some(0),
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let ctx_line = text.iter().find(|s| s.contains("context:")).unwrap();
+        assert!(ctx_line.contains("50%"), "pct in: {ctx_line}");
+        assert!(!ctx_line.contains('/'), "no fraction when window=0: {ctx_line}");
+    }
+
+    #[test]
     fn budget_lines_unmeasured_when_zero_pct() {
         let summary = StatusSummary {
             last_input_tokens: Some(10),
@@ -1413,6 +1452,8 @@ mod tests {
             input_tokens: 500,
             output_tokens: 100,
             context_pct: 0.3,
+            context_used: 0,
+            context_window: 0,
         };
         let t = record_text(&rec(900, 1, metrics));
         assert!(t.contains("[t1]") && t.contains("metrics: 500 in / 100 out"));
