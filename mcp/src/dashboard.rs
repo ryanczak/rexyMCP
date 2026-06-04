@@ -117,9 +117,75 @@ fn detect_syntax<'a>(content: &str, ss: &'a SyntaxSet) -> Option<&'a SyntaxRefer
     None
 }
 
+/// True when `content` looks like unified diff output (git, classic, or patch tool).
+fn is_diff_content(content: &str) -> bool {
+    let lines: Vec<&str> = content.lines().collect();
+    // Unified diff hunk marker is the most unambiguous signal.
+    if lines.iter().any(|l| l.starts_with("@@")) {
+        return true;
+    }
+    // Git diff header.
+    if content.trim().starts_with("diff --git") {
+        return true;
+    }
+    // Classic unified diff: --- header AND +++ header present.
+    lines.iter().any(|l| l.starts_with("--- ")) && lines.iter().any(|l| l.starts_with("+++ "))
+}
+
+/// Render unified diff content with line-level background colors:
+/// `+` lines → dark green bg, `-` lines → dark red bg, `@@` → cyan,
+/// headers / context → dim gray. Matches the Claude Code diff aesthetic.
+fn diff_body_lines(content: &str) -> Vec<Line<'static>> {
+    let all: Vec<&str> = content.lines().collect();
+    let capped = all.len().min(TRANSCRIPT_CONTENT_MAX_LINES);
+    let overflow = all.len().saturating_sub(TRANSCRIPT_CONTENT_MAX_LINES);
+
+    let mut result: Vec<Line<'static>> = Vec::new();
+    for &line in &all[..capped] {
+        let rendered = if line.starts_with('+') && !line.starts_with("+++") {
+            Line::from(Span::styled(
+                format!("    {line}"),
+                Style::new()
+                    .fg(Color::Rgb(180, 242, 180))
+                    .bg(Color::Rgb(0, 48, 0)),
+            ))
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            Line::from(Span::styled(
+                format!("    {line}"),
+                Style::new()
+                    .fg(Color::Rgb(242, 180, 180))
+                    .bg(Color::Rgb(64, 0, 0)),
+            ))
+        } else if line.starts_with("@@") {
+            Line::from(Span::styled(
+                format!("    {line}"),
+                Style::new().fg(Color::Cyan),
+            ))
+        } else {
+            Line::from(Span::styled(
+                format!("    {line}"),
+                Style::new().fg(Color::DarkGray),
+            ))
+        };
+        result.push(rendered);
+    }
+    if overflow > 0 {
+        result.push(Line::from(Span::styled(
+            format!("    … ({overflow} more lines)"),
+            Style::new().fg(Color::DarkGray),
+        )));
+    }
+    result
+}
+
 /// Render `content` as indented, syntax-highlighted lines.
 /// Falls back to DarkGray when no language is detected.
 fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
+    // Diff output is handled specially with background-color line highlighting.
+    if is_diff_content(content) {
+        return diff_body_lines(content);
+    }
+
     let ss = syntax_set();
 
     let Some(syntax) = detect_syntax(content, ss) else {
@@ -1505,6 +1571,65 @@ mod tests {
         let lines = highlighted_body_lines("boring plain output");
         assert_eq!(lines.len(), 1, "one line for plain text");
         assert!(format!("{}", lines[0]).contains("boring plain output"));
+    }
+
+    // --- diff highlighting tests ---
+
+    #[test]
+    fn is_diff_content_detects_hunk_marker() {
+        assert!(is_diff_content("@@ -1,3 +1,4 @@\n fn foo() {}"));
+    }
+
+    #[test]
+    fn is_diff_content_detects_classic_unified() {
+        let diff = "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new";
+        assert!(is_diff_content(diff));
+    }
+
+    #[test]
+    fn is_diff_content_detects_git_diff_header() {
+        assert!(is_diff_content("diff --git a/foo.rs b/foo.rs\n--- a/foo.rs\n+++ b/foo.rs"));
+    }
+
+    #[test]
+    fn is_diff_content_rejects_plain_text() {
+        assert!(!is_diff_content("just some output\nno diff markers here"));
+    }
+
+    #[test]
+    fn diff_body_lines_renders_patch_tool_output() {
+        // Matches the format produced by the patch tool:
+        // "✓ patched file\n\n--- file\n+++ file\n@@ ... @@\n context\n+added\n-removed"
+        let output = "✓ patched src/main.rs (1 hunk)\n\n--- src/main.rs\n+++ src/main.rs\n@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }";
+        let lines = diff_body_lines(output);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+
+        // Added line is present.
+        assert!(text.iter().any(|s| s.contains("+    new()")), "missing added line");
+        // Removed line is present.
+        assert!(text.iter().any(|s| s.contains("-    old()")), "missing removed line");
+        // Hunk header is present.
+        assert!(text.iter().any(|s| s.contains("@@ -1,3 +1,3 @@")), "missing hunk header");
+    }
+
+    #[test]
+    fn diff_body_lines_does_not_highlight_triple_plus_minus_as_change() {
+        // --- / +++ file headers must NOT get add/remove background.
+        let diff = "--- a/foo.rs\n+++ b/foo.rs\n@@ -1 +1 @@\n-old\n+new";
+        let lines = diff_body_lines(diff);
+        // First line starts with "---" → header, must contain "---" text.
+        assert!(format!("{}", lines[0]).contains("---"), "header line must be rendered");
+        // Second line "+++ b/foo.rs" must also be present as header, not green-bg.
+        assert!(format!("{}", lines[1]).contains("+++"), "header line must be rendered");
+    }
+
+    #[test]
+    fn highlighted_body_lines_routes_diff_to_diff_renderer() {
+        let patch_output = "✓ patched foo.rs (1 hunk)\n\n--- foo.rs\n+++ foo.rs\n@@ -1 +1 @@\n-old\n+new";
+        let lines = highlighted_body_lines(patch_output);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("+new")));
+        assert!(text.iter().any(|s| s.contains("-old")));
     }
 
     // --- visible_offset tests ---
