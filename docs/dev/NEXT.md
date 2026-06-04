@@ -4,15 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — phase-10b is `done` (escalated/architect-takeover, 2026-06-03).
-The Activity transcript redesign is complete: per-event-type color, multi-line
-Completion/ToolResult expansion (cap 20), and auto-follow-tail (`visible_offset`).
-**The only remaining redesign piece is phase-11** (Budget Tokens/Sec + "$ saved").
-**Pricing decision locked (2026-06-03):** "$ saved" uses a **configurable $/Mtok rate**
-(model-agnostic; e.g. `[dashboard] saved_input_per_mtok` / `saved_output_per_mtok` in
-`rexymcp.toml`), *not* a hardcoded named-model preset. Tokens/Sec derives from `Metrics`
-record `ts` deltas. **User chose to run the dashboard live before drafting phase-11** —
-draft it via `/rexymcp:architect next` after the live check (it may surface tweaks).
+**Active phase:** [M8 / phase-11a](milestones/M8-dashboard/phase-11a-budget-tokens-per-sec.md)
+— Budget panel **Tokens/Sec**. Pure JSONL-derived: `summarize` tracks the prev+latest
+`Metrics` snapshot (ts + cumulative output tokens); a pure `tokens_per_sec` helper yields
+`Δoutput/Δsec` for the recent interval; `budget_lines` adds a `tok/s:` line (`—` until a
+2nd metric arrives). mcp-only, no config, no executor change, no new deps. Dispatch with
+`/rexymcp:dispatch phase-11a`.
+
+**phase-11 was split into 11a/11b** (2026-06-03), because Tokens/Sec is JSONL-derived
+while "$ saved" needs config plumbing the dashboard doesn't have (the `dashboard` CLI
+command doesn't load `rexymcp.toml` today). The split also follows the phase-10b
+calibration data point (keep executor phases single-concern).
+
+- **11a (active):** Tokens/Sec — mcp-only, no config.
+- **11b (next):** "$ saved" — add a `[dashboard]` config section
+  (`saved_input_per_mtok` / `saved_output_per_mtok` in `rexymcp.toml`, **configurable
+  $/Mtok rate** per the locked 2026-06-03 decision — *not* a hardcoded model preset),
+  load config in the `dashboard` CLI command (`executor/src/config.rs` is the `Config`
+  struct; `Config::load_with_env`), thread the rates through `run_dashboard` →
+  `render_dashboard` → `budget_lines`, add the "$ saved" line. Touches the executor
+  crate (config schema) + mcp.
 
 **phase-10b done** (2026-06-03, **escalated**): executor (Qwen/Qwen3.6-27B-FP8) wrote all
 production code (record_lines multi-line + color, body_lines, visible_offset tail-follow,

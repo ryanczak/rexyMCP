@@ -62,6 +62,7 @@ sibling built on the same `summarize()` core.
 | 09  | Redesign: header band + Compactions panel + Files left-trim ([phase-09-redesign-layout-compactions.md](phase-09-redesign-layout-compactions.md)) | done |
 | 10a | Activity transcript: raw-record reader + scroll mechanics + plain text ([phase-10a-activity-transcript-scroll.md](phase-10a-activity-transcript-scroll.md)) | done |
 | 10b | Activity transcript: color + multi-line + tool output + tail-follow ([phase-10b-transcript-rich-render.md](phase-10b-transcript-rich-render.md)) | done |
+| 11a | Budget panel: Tokens/Sec throughput (JSONL-derived) ([phase-11a-budget-tokens-per-sec.md](phase-11a-budget-tokens-per-sec.md)) | todo |
 
 ## Design decisions
 
