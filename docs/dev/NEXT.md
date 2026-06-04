@@ -4,11 +4,15 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M9/phase-01 (post-write format hook) is **done**
-(approved_after_2, 2026-06-04). M9/phase-02 (`lint --fix` in the same hook) is
-drafted and `todo` but **not active**; the user advances explicitly via
-`/rexymcp:architect next` or a direct dispatch. M8's redesign also remains at its
-**close gate** (retrospective + milestone close), still human-gated.
+**Active phase:** none — **M9 (executor runtime hardening) is complete**: both
+in-scope phases `done` (phase-01 post-write format hook, approved_after_2; phase-02
+lint_fix in the hook, approved_after_1; 2026-06-04). M9 is now at its **close gate**
+(retrospective written in the [M9 README](milestones/M9-runtime-hardening/README.md#retrospective-2026-06-04);
+one WORKFLOW fold proposed pending user sign-off — large-file edits should pre-inject
+exact patch targets). A runtime `read_file` truncation + `offset`/`limit` improvement
+is queued as a candidate M9/phase-03 (raised by the user, not yet drafted). M8's
+redesign also remains at its close gate, still human-gated. The user kicks off the
+next milestone / phase-03 / the proposed fold explicitly.
 
 **phase-01 done** (2026-06-04, approved_after_2): runtime fix for the recurring
 formatting hard-fail folded in WORKFLOW.md — a `run_format_hook` helper runs the
