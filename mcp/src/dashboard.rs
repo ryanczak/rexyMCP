@@ -65,9 +65,119 @@ const TRANSCRIPT_CONTENT_MAX_LINES: usize = 20;
 
 const SPINNER_FRAMES: &[&str] = &["🐾", "🐾🐾", "🐾🐾🐾", "🐾🐾🐾🐾", "🐾🐾🐾", "🐾🐾", "🐾"];
 
-// TODO: activity filter — a key binding opens a config dialog to show/hide event
-// types (Prompt, Completion, ToolCall, Verify, …). Deferred: requires a modal
-// overlay / input handling that doesn't exist yet.
+const FILTER_ITEM_COUNT: usize = 11;
+
+/// Per-event-type visibility toggles for the Activity pane.
+/// All enabled by default except `progress` (too noisy).
+#[derive(Clone, Debug, PartialEq)]
+struct ActivityFilter {
+    session: bool,
+    prompt: bool,
+    completion: bool,
+    tool_call: bool,
+    parse_failed: bool,
+    tool_result: bool,
+    verify: bool,
+    hard_fail: bool,
+    progress: bool,
+    metrics: bool,
+    compaction: bool,
+}
+
+impl Default for ActivityFilter {
+    fn default() -> Self {
+        Self {
+            session: true,
+            prompt: true,
+            completion: true,
+            tool_call: true,
+            parse_failed: true,
+            tool_result: true,
+            verify: true,
+            hard_fail: true,
+            progress: false,
+            metrics: true,
+            compaction: true,
+        }
+    }
+}
+
+impl ActivityFilter {
+    fn allows(&self, event: &SessionEvent) -> bool {
+        match event {
+            SessionEvent::SessionStart { .. } | SessionEvent::SessionEnd { .. } => self.session,
+            SessionEvent::Prompt { .. } => self.prompt,
+            SessionEvent::Completion { .. } => self.completion,
+            SessionEvent::Parsed { .. } => self.tool_call,
+            SessionEvent::ParseFailed { .. } => self.parse_failed,
+            SessionEvent::ToolResult { .. } => self.tool_result,
+            SessionEvent::Verify { .. } => self.verify,
+            SessionEvent::HardFail { .. } => self.hard_fail,
+            SessionEvent::Progress { .. } => self.progress,
+            SessionEvent::Metrics { .. } => self.metrics,
+            SessionEvent::Compaction { .. } => self.compaction,
+        }
+    }
+
+    fn toggle(&mut self, index: usize) {
+        match index {
+            0 => self.session = !self.session,
+            1 => self.prompt = !self.prompt,
+            2 => self.completion = !self.completion,
+            3 => self.tool_call = !self.tool_call,
+            4 => self.parse_failed = !self.parse_failed,
+            5 => self.tool_result = !self.tool_result,
+            6 => self.verify = !self.verify,
+            7 => self.hard_fail = !self.hard_fail,
+            8 => self.progress = !self.progress,
+            9 => self.metrics = !self.metrics,
+            10 => self.compaction = !self.compaction,
+            _ => {}
+        }
+    }
+
+    fn is_enabled(&self, index: usize) -> bool {
+        match index {
+            0 => self.session,
+            1 => self.prompt,
+            2 => self.completion,
+            3 => self.tool_call,
+            4 => self.parse_failed,
+            5 => self.tool_result,
+            6 => self.verify,
+            7 => self.hard_fail,
+            8 => self.progress,
+            9 => self.metrics,
+            10 => self.compaction,
+            _ => false,
+        }
+    }
+
+    fn item_label(index: usize) -> &'static str {
+        match index {
+            0 => "session start/end",
+            1 => "prompt",
+            2 => "completion",
+            3 => "tool call",
+            4 => "parse fail",
+            5 => "tool result",
+            6 => "verify",
+            7 => "hard fail",
+            8 => "progress",
+            9 => "metrics",
+            10 => "compaction",
+            _ => "?",
+        }
+    }
+}
+
+/// Filter panel UI state — open/closed, cursor position, current settings.
+#[derive(Clone, Debug, Default)]
+struct FilterState {
+    open: bool,
+    cursor: usize,
+    filter: ActivityFilter,
+}
 
 /// Detect a syntax definition from content alone (no filename available).
 /// Returns `None` when no language can be confidently identified, which
@@ -244,13 +354,20 @@ fn plain_body_lines(content: &str, color: Color) -> Vec<Line<'static>> {
 }
 
 /// Build all transcript lines for the given records, in chronological order.
-/// Appends a spinner frame when `spinner` is `Some`.
-/// Returns a placeholder when there are no records.
-fn transcript_lines(records: &[SessionRecord], spinner: Option<usize>) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line<'static>> = if records.is_empty() {
-        vec![Line::from("(no activity yet)")]
-    } else {
-        records.iter().flat_map(record_lines).collect()
+/// Filters records through `filter`, appends a spinner frame when `spinner` is
+/// `Some`. Returns a placeholder when all records are filtered out.
+fn transcript_lines(
+    records: &[SessionRecord],
+    filter: &ActivityFilter,
+    spinner: Option<usize>,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = {
+        let visible: Vec<_> = records.iter().filter(|r| filter.allows(&r.event)).collect();
+        if visible.is_empty() {
+            vec![Line::from("(no activity yet)")]
+        } else {
+            visible.iter().flat_map(|r| record_lines(r)).collect()
+        }
     };
     if let Some(frame) = spinner {
         let glyph = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
@@ -681,6 +798,7 @@ struct ViewState {
     offset: u16,
     follow: bool,
     spinner: Option<usize>,
+    filter: FilterState,
 }
 
 /// Render the dashboard into a three-panel header band (Session · Budget ·
@@ -741,28 +859,70 @@ fn render_dashboard(
         Layout::horizontal([Constraint::Percentage(72), Constraint::Percentage(28)])
             .areas::<2>(body);
 
-    let transcript = transcript_lines(&data.records, state.spinner);
-    let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
-    // Word-wrap is enabled for the Activity panel. Paragraph::scroll counts
-    // *visual* rows (post-wrap), not logical lines, so scroll-to-bottom is
-    // unsolvable without measuring actual rendered heights. When tail-following,
-    // we instead truncate to the last (viewport * 2) logical lines and skip
-    // scrolling — the newest content naturally lands at the bottom. When the user
-    // scrolls manually we keep all lines and apply the offset (which is a logical-
-    // line approximation, fine for navigation but not pixel-perfect with wrapping).
-    let n = transcript.len();
-    let (display_lines, scroll_rows) = if state.follow {
-        let keep = (viewport as usize * 2).min(n);
-        (transcript[n.saturating_sub(keep)..].to_vec(), 0u16)
+    let filter_state = &state.filter;
+    if filter_state.open {
+        // Filter panel replaces the transcript while open.
+        let mut filter_lines: Vec<Line<'static>> = (0..FILTER_ITEM_COUNT)
+            .map(|i| {
+                let check = if filter_state.filter.is_enabled(i) {
+                    "✓"
+                } else {
+                    "✗"
+                };
+                let label = ActivityFilter::item_label(i);
+                let text = format!(" {check}  {label}");
+                if i == filter_state.cursor {
+                    Line::from(Span::styled(
+                        text,
+                        Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ))
+                } else {
+                    Line::from(text)
+                }
+            })
+            .collect();
+        filter_lines.push(Line::from(Span::styled(
+            " ↑↓/jk move · space toggle · f/Esc close",
+            Style::new().fg(Color::DarkGray),
+        )));
+        frame.render_widget(
+            Paragraph::new(filter_lines).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Activity [filter] "),
+            ),
+            activity_area,
+        );
     } else {
-        let display = visible_offset(false, state.offset, n, viewport);
-        (transcript, display)
-    };
-    let activity = Paragraph::new(display_lines)
-        .wrap(Wrap { trim: false })
-        .scroll((scroll_rows, 0))
-        .block(Block::default().borders(Borders::ALL).title(" Activity "));
-    frame.render_widget(activity, activity_area);
+        let transcript = transcript_lines(&data.records, &filter_state.filter, state.spinner);
+        let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
+        // Word-wrap is enabled for the Activity panel. Paragraph::scroll counts
+        // *visual* rows (post-wrap), not logical lines, so scroll-to-bottom is
+        // unsolvable without measuring actual rendered heights. When tail-following,
+        // we instead truncate to the last (viewport * 2) logical lines and skip
+        // scrolling — the newest content naturally lands at the bottom. When the user
+        // scrolls manually we keep all lines and apply the offset (which is a logical-
+        // line approximation, fine for navigation but not pixel-perfect with wrapping).
+        let n = transcript.len();
+        let (display_lines, scroll_rows) = if state.follow {
+            let keep = (viewport as usize * 2).min(n);
+            (transcript[n.saturating_sub(keep)..].to_vec(), 0u16)
+        } else {
+            let display = visible_offset(false, state.offset, n, viewport);
+            (transcript, display)
+        };
+        frame.render_widget(
+            Paragraph::new(display_lines)
+                .wrap(Wrap { trim: false })
+                .scroll((scroll_rows, 0))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Activity [f=filter] "),
+                ),
+            activity_area,
+        );
+    }
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
 }
 
@@ -792,6 +952,7 @@ fn run_loop(
     let mut offset: u16 = 0;
     let mut follow = true;
     let mut spinner_tick: usize = 0;
+    let mut filter_state = FilterState::default();
 
     loop {
         spinner_tick = spinner_tick.wrapping_add(1);
@@ -812,41 +973,66 @@ fn run_loop(
             offset,
             follow,
             spinner,
+            filter: filter_state.clone(),
         };
         terminal
             .draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, &state, rates))?;
-        offset = clamp_scroll(offset, transcript_lines(&data.records, None).len());
+        offset = clamp_scroll(
+            offset,
+            transcript_lines(&data.records, &filter_state.filter, None).len(),
+        );
 
         if event::poll(Duration::from_millis(500))?
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
         {
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => break,
-                KeyCode::Up => {
-                    follow = false;
-                    offset = offset.saturating_sub(1);
+            if filter_state.open {
+                match key.code {
+                    KeyCode::Char('f') | KeyCode::Esc => filter_state.open = false,
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        filter_state.cursor = (filter_state.cursor + 1) % FILTER_ITEM_COUNT;
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        filter_state.cursor =
+                            (filter_state.cursor + FILTER_ITEM_COUNT - 1) % FILTER_ITEM_COUNT;
+                    }
+                    KeyCode::Char(' ') | KeyCode::Enter => {
+                        filter_state.filter.toggle(filter_state.cursor);
+                    }
+                    _ => {}
                 }
-                KeyCode::Down => {
-                    follow = false;
-                    offset = offset.saturating_add(1);
+            } else {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('f') => {
+                        filter_state.open = true;
+                        filter_state.cursor = 0;
+                    }
+                    KeyCode::Up => {
+                        follow = false;
+                        offset = offset.saturating_sub(1);
+                    }
+                    KeyCode::Down => {
+                        follow = false;
+                        offset = offset.saturating_add(1);
+                    }
+                    KeyCode::PageUp => {
+                        follow = false;
+                        offset = offset.saturating_sub(10);
+                    }
+                    KeyCode::PageDown => {
+                        follow = false;
+                        offset = offset.saturating_add(10);
+                    }
+                    KeyCode::Home => {
+                        follow = false;
+                        offset = 0;
+                    }
+                    KeyCode::End => {
+                        follow = true;
+                    }
+                    _ => {}
                 }
-                KeyCode::PageUp => {
-                    follow = false;
-                    offset = offset.saturating_sub(10);
-                }
-                KeyCode::PageDown => {
-                    follow = false;
-                    offset = offset.saturating_add(10);
-                }
-                KeyCode::Home => {
-                    follow = false;
-                    offset = 0;
-                }
-                KeyCode::End => {
-                    follow = true;
-                }
-                _ => {}
             }
         }
     }
@@ -1391,7 +1577,7 @@ mod tests {
 
     #[test]
     fn transcript_lines_empty_placeholder() {
-        let lines = transcript_lines(&[], None);
+        let lines = transcript_lines(&[], &ActivityFilter::default(), None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no activity")));
     }
@@ -1591,14 +1777,14 @@ mod tests {
                 },
             ),
         ];
-        let lines = transcript_lines(&records, None);
+        let lines = transcript_lines(&records, &ActivityFilter::default(), None);
         assert_eq!(lines.len(), 5);
     }
 
     #[test]
     fn spinner_appended_when_active() {
         let records = vec![rec(100, 0, start_event())];
-        let lines = transcript_lines(&records, Some(0));
+        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(0));
         let last = format!("{}", lines.last().unwrap());
         assert_eq!(last, "🐾");
     }
@@ -1607,12 +1793,12 @@ mod tests {
     fn spinner_frame_cycles_through_all_frames() {
         let records = vec![rec(100, 0, start_event())];
         for (i, expected) in SPINNER_FRAMES.iter().enumerate() {
-            let lines = transcript_lines(&records, Some(i));
+            let lines = transcript_lines(&records, &ActivityFilter::default(), Some(i));
             let last = format!("{}", lines.last().unwrap());
             assert_eq!(last, *expected, "frame {i} mismatch");
         }
         // Index 7 wraps to frame 0
-        let lines = transcript_lines(&records, Some(7));
+        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(7));
         let last = format!("{}", lines.last().unwrap());
         assert_eq!(last, SPINNER_FRAMES[0], "frame 7 should wrap to 0");
     }
@@ -1620,14 +1806,14 @@ mod tests {
     #[test]
     fn spinner_absent_when_none() {
         let records = vec![rec(100, 0, start_event())];
-        let lines = transcript_lines(&records, None);
+        let lines = transcript_lines(&records, &ActivityFilter::default(), None);
         let last = format!("{}", lines.last().unwrap());
         assert!(!last.contains("🐾"), "spinner should not appear: {last}");
     }
 
     #[test]
     fn spinner_appended_to_empty_records() {
-        let lines = transcript_lines(&[], Some(3));
+        let lines = transcript_lines(&[], &ActivityFilter::default(), Some(3));
         assert_eq!(lines.len(), 2);
         assert_eq!(format!("{}", lines[0]), "(no activity yet)");
         assert_eq!(format!("{}", lines[1]), "🐾🐾🐾🐾");
@@ -1836,5 +2022,96 @@ mod tests {
         let line = dollars_saved_line(&summary, rates);
         assert!(line.is_some());
         assert_eq!(format!("{}", line.unwrap()), "$ saved: $10.50");
+    }
+
+    // --- Activity filter tests ---
+
+    #[test]
+    fn filter_default_disables_progress() {
+        let f = ActivityFilter::default();
+        assert!(!f.progress, "progress should be disabled by default");
+        assert!(f.session);
+        assert!(f.prompt);
+        assert!(f.completion);
+        assert!(f.tool_call);
+        assert!(f.parse_failed);
+        assert!(f.tool_result);
+        assert!(f.verify);
+        assert!(f.hard_fail);
+        assert!(f.metrics);
+        assert!(f.compaction);
+    }
+
+    #[test]
+    fn filter_allows_progress_when_enabled() {
+        let f = ActivityFilter {
+            progress: true,
+            ..Default::default()
+        };
+        let progress_rec = rec(100, 4, progress_event(4, "verify"));
+        assert!(f.allows(&progress_rec.event));
+    }
+
+    #[test]
+    fn filter_blocks_progress_by_default() {
+        let f = ActivityFilter::default();
+        let progress_rec = rec(100, 4, progress_event(4, "verify"));
+        assert!(!f.allows(&progress_rec.event));
+    }
+
+    #[test]
+    fn filter_toggle_flips_field() {
+        let mut f = ActivityFilter::default();
+        assert!(!f.progress);
+        f.toggle(8);
+        assert!(f.progress);
+        f.toggle(8);
+        assert!(!f.progress);
+    }
+
+    #[test]
+    fn transcript_lines_excludes_filtered_events() {
+        let records = vec![
+            rec(100, 0, start_event()),
+            rec(200, 1, progress_event(1, "thinking")),
+        ];
+        let lines = transcript_lines(&records, &ActivityFilter::default(), None);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let joined = text.join("\n");
+        assert!(
+            joined.contains("session start"),
+            "should contain session start"
+        );
+        assert!(
+            !joined.contains("progress:"),
+            "should not contain progress event"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_all_filtered_shows_placeholder() {
+        let records = vec![rec(100, 1, progress_event(1, "thinking"))];
+        let lines = transcript_lines(&records, &ActivityFilter::default(), None);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text.iter().any(|s| s.contains("no activity yet")),
+            "should show placeholder when all events filtered"
+        );
+    }
+
+    #[test]
+    fn filter_cursor_wraps_forward() {
+        let mut fs = FilterState::default();
+        fs.cursor = FILTER_ITEM_COUNT - 1;
+        fs.cursor = (fs.cursor + 1) % FILTER_ITEM_COUNT;
+        assert_eq!(fs.cursor, 0);
+    }
+
+    #[test]
+    fn filter_cursor_wraps_backward() {
+        let mut fs = FilterState::default();
+        fs.cursor = 0;
+        fs.cursor = (fs.cursor + FILTER_ITEM_COUNT - 1) % FILTER_ITEM_COUNT;
+        assert_eq!(fs.cursor, FILTER_ITEM_COUNT - 1);
     }
 }

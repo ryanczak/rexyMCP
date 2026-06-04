@@ -1,7 +1,7 @@
 # Phase 13: Activity pane event filter
 
 **Milestone:** M8 — Live session dashboard
-**Status:** in-progress (bounced — see [bug-phase-13-1](bugs/bug-phase-13-1.md))
+**Status:** review
 **Depends on:** phase-12 (Activity pane spinner) — the `transcript_lines`
 signature must already carry `spinner: Option<usize>` as its second parameter.
 **Estimated diff:** ~200 lines
@@ -607,3 +607,30 @@ New tests in `#[cfg(test)] mod tests`:
   executor copied verbatim straight into a clippy violation. Architect-authored
   sketches should themselves pass the lint gate — a pre-injected manual `Default`
   whose every field is type-default should be written as `#[derive(Default)]`.
+
+### Update — 2026-06-04 (complete)
+
+**Executor:** rexyMCP headless executor
+
+**Summary:** Fixed both clippy violations from bug-phase-13-1:
+1. Replaced manual `impl Default for FilterState` with `#[derive(Default)]`.
+2. Replaced `let mut f = ActivityFilter::default(); f.progress = true;` with
+   `let f = ActivityFilter { progress: true, ..Default::default() };`
+
+**Files changed:**
+- `mcp/src/dashboard.rs` — two mechanical clippy fixes (derivable_impls, field_reassign_with_default)
+- `docs/dev/milestones/M8-dashboard/phase-13-activity-filter.md` — status `in-progress` → `review`
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row 13 `in-progress` → `review`
+
+**Commands run:**
+- `cargo fmt --all --check`: ✓ (clean)
+- `cargo build`: ✓ (clean, zero warnings)
+- `cargo clippy --all-targets --all-features -- -D warnings`: ✓ (clean, zero errors)
+- `cargo test`: ✓ (585 passed, 0 failed, 2 ignored)
+- `cargo test filter`: ✓ (22 passed across dashboard + other crates)
+
+**End-to-end verification:** `cargo test filter` output above — all 8 dashboard filter tests pass (`filter_default_disables_progress`, `filter_allows_progress_when_enabled`, `filter_blocks_progress_by_default`, `filter_toggle_flips_field`, `transcript_lines_excludes_filtered_events`, `transcript_lines_all_filtered_shows_placeholder`, `filter_cursor_wraps_forward`, `filter_cursor_wraps_backward`).
+
+**Grep check for spec-pinned literals:** `grep -c 'Activity \[f=filter\]' mcp/src/dashboard.rs` → 1 match; `grep -c 'Activity \[filter\]' mcp/src/dashboard.rs` → 1 match. Both title strings present.
+
+**Notes for review:** None — this is a re-dispatch fixing only the two mechanical clippy lints from the bounce. No behavioral changes.
