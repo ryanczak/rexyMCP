@@ -1,7 +1,7 @@
 # Phase 11b: Budget panel — "$ saved" (configurable $/Mtok)
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-11a (done — the Budget panel and `last_input_tokens` /
 `last_output_tokens` this reads).
 **Estimated diff:** ~150 lines (`executor/src/config.rs` new section + `mcp/src/main.rs`
@@ -337,3 +337,21 @@ Grep proving the pinned literal landed: `grep '\$ saved' mcp/src/dashboard.rs` �
 - (pending)
 
 **Notes for review:** The `DashboardConfig` struct, `BudgetRates` carrier, `dollars_saved`, `dollars_saved_line`, and the `rates` threading through `render_dashboard`/`run_loop`/`run_dashboard` were pre-injected into the source files. This phase's executor work was the CLI config plumbing in `main.rs` and the test suite. The live TUI render is review-by-inspection (requires a terminal).
+
+### Review verdict — 2026-06-03
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — `budget_lines`'s signature left untouched (the `$ saved`
+  line is appended in `render_dashboard` per Spec task 4); no named-model price preset;
+  config loaded only in the `dashboard` CLI command.
+- **Calibration:** none. Independent re-run green: `cargo fmt --all --check` clean,
+  `cargo build` zero warnings, `cargo clippy --all-targets --all-features -- -D warnings`
+  clean, `cargo test` 567 passed / 0 failed / 2 ignored. All four new `dollars_saved*`
+  tests + `config_loads_dashboard_rates` + `dashboard_config_defaults_to_zero` pass and
+  assert real behavior (the `Line` Display checks would fail on a wrong literal; the
+  dash case guards against a stray dollar figure). `dashboard --help` shows `--config`,
+  confirming the CLI wiring end-to-end. No `unwrap`/`expect`/`panic!` in new production
+  paths. Update Log lists commits as "(pending)" but the work landed in `d8dd46a` — a
+  cosmetic doc lag, not a defect.

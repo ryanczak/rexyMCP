@@ -63,7 +63,7 @@ sibling built on the same `summarize()` core.
 | 10a | Activity transcript: raw-record reader + scroll mechanics + plain text ([phase-10a-activity-transcript-scroll.md](phase-10a-activity-transcript-scroll.md)) | done |
 | 10b | Activity transcript: color + multi-line + tool output + tail-follow ([phase-10b-transcript-rich-render.md](phase-10b-transcript-rich-render.md)) | done |
 | 11a | Budget panel: Tokens/Sec throughput (JSONL-derived) ([phase-11a-budget-tokens-per-sec.md](phase-11a-budget-tokens-per-sec.md)) | done |
-| 11b | Budget panel: "$ saved" (configurable $/Mtok rate, config plumbing) ([phase-11b-budget-dollars-saved.md](phase-11b-budget-dollars-saved.md)) | review |
+| 11b | Budget panel: "$ saved" (configurable $/Mtok rate, config plumbing) ([phase-11b-budget-dollars-saved.md](phase-11b-budget-dollars-saved.md)) | done |
 
 ## Design decisions
 
