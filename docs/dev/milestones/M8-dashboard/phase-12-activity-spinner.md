@@ -1,7 +1,7 @@
 # Phase 12: Activity pane spinner
 
 **Milestone:** M8 — Live session dashboard
-**Status:** todo
+**Status:** review
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=feature, size=s
 
@@ -324,3 +324,48 @@ New tests in `#[cfg(test)] mod tests`:
 (Filled in by the executor.)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-18 (started)
+
+**Executor:** rexyMCP headless executor
+
+Implementing activity pane spinner per spec: `SPINNER_FRAMES` constant, `transcript_lines` signature change with `spinner: Option<usize>`, threading spinner through `render_dashboard` and `run_loop`, plus 4 new tests.
+
+### Update — 2025-07-18 (complete)
+
+**Executor:** rexyMCP headless executor
+
+**Tasks completed:**
+1. Added `SPINNER_FRAMES` constant (7 paw-print frames) after `TRANSCRIPT_CONTENT_MAX_LINES`.
+2. Changed `transcript_lines` to accept `spinner: Option<usize>`, appending spinner frame when present.
+3. Added `spinner: Option<usize>` parameter to `render_dashboard` (with `#[allow(clippy::too_many_arguments)]` — spec-mandated param pushes to 8).
+4. Threaded `spinner_tick` through `run_loop`, computing active spinner from `data.summary.ended.is_none() && data.error.is_none()`.
+5. Updated all 4 call sites: 2 production (render_dashboard gets real spinner, scroll clamp gets None), 2 tests (both get None).
+6. Added 4 new tests: `spinner_appended_when_active`, `spinner_frame_cycles_through_all_frames`, `spinner_absent_when_none`, `spinner_appended_to_empty_records`.
+
+**Verification commands:**
+- `cargo fmt --all` — clean
+- `cargo build` — clean, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 585 passed, 0 failed, 2 ignored
+- `cargo test spinner` — 4 passed, 0 failed
+
+**End-to-end verification:** `cargo test spinner` output:
+```
+running 4 tests
+test dashboard::tests::spinner_appended_to_empty_records ... ok
+test dashboard::tests::spinner_frame_cycles_through_all_frames ... ok
+test dashboard::tests::spinner_appended_when_active ... ok
+test dashboard::tests::spinner_absent_when_none ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out
+```
+
+**Grep proof for `🐾` literal:** 4 matches in `mcp/src/dashboard.rs` (constant definition at line 66, test assertions at lines 1604, 1626, 1634).
+
+**Files changed:**
+- `mcp/src/dashboard.rs` — constant, function signatures, run_loop state, 4 new tests
+- `docs/dev/milestones/M8-dashboard/phase-12-activity-spinner.md` — status flip + update log
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row status flip
+
+**Notes for review:**
+- `#[allow(clippy::too_many_arguments)]` added to `render_dashboard` because the new `spinner` param pushes the count to 8, exceeding clippy's limit of 7. This is the cleanest option — wrapping params in a struct would be over-engineering for a single extra param on an existing function.

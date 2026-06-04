@@ -64,7 +64,7 @@ sibling built on the same `summarize()` core.
 | 10b | Activity transcript: color + multi-line + tool output + tail-follow ([phase-10b-transcript-rich-render.md](phase-10b-transcript-rich-render.md)) | done |
 | 11a | Budget panel: Tokens/Sec throughput (JSONL-derived) ([phase-11a-budget-tokens-per-sec.md](phase-11a-budget-tokens-per-sec.md)) | done |
 | 11b | Budget panel: "$ saved" (configurable $/Mtok rate, config plumbing) ([phase-11b-budget-dollars-saved.md](phase-11b-budget-dollars-saved.md)) | done |
-| 12  | Activity pane spinner (🐾 throbber while model is running + auto-scroll anchor) ([phase-12-activity-spinner.md](phase-12-activity-spinner.md)) | todo |
+| 12  | Activity pane spinner (🐾 throbber while model is running + auto-scroll anchor) ([phase-12-activity-spinner.md](phase-12-activity-spinner.md)) | review |
 | 13  | Activity pane event filter (per-type toggle, progress off by default) ([phase-13-activity-filter.md](phase-13-activity-filter.md)) | todo |
 
 ## Design decisions

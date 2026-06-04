@@ -63,6 +63,8 @@ const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 /// "… (N more lines)" marker. Keeps one large tool output from flooding the panel.
 const TRANSCRIPT_CONTENT_MAX_LINES: usize = 20;
 
+const SPINNER_FRAMES: &[&str] = &["🐾", "🐾🐾", "🐾🐾🐾", "🐾🐾🐾🐾", "🐾🐾🐾", "🐾🐾", "🐾"];
+
 // TODO: activity filter — a key binding opens a config dialog to show/hide event
 // types (Prompt, Completion, ToolCall, Verify, …). Deferred: requires a modal
 // overlay / input handling that doesn't exist yet.
@@ -242,12 +244,19 @@ fn plain_body_lines(content: &str, color: Color) -> Vec<Line<'static>> {
 }
 
 /// Build all transcript lines for the given records, in chronological order.
+/// Appends a spinner frame when `spinner` is `Some`.
 /// Returns a placeholder when there are no records.
-fn transcript_lines(records: &[SessionRecord]) -> Vec<Line<'static>> {
-    if records.is_empty() {
-        return vec![Line::from("(no activity yet)")];
+fn transcript_lines(records: &[SessionRecord], spinner: Option<usize>) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = if records.is_empty() {
+        vec![Line::from("(no activity yet)")]
+    } else {
+        records.iter().flat_map(record_lines).collect()
+    };
+    if let Some(frame) = spinner {
+        let glyph = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
+        lines.push(Line::from(glyph.to_string()));
     }
-    records.iter().flat_map(record_lines).collect()
+    lines
 }
 
 /// Split `body` on newlines into indented display lines, capped at
@@ -671,6 +680,7 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 /// Compactions) above a body (Activity wide-left · Files right), or a
 /// single error pane when `data.error` is set.
 /// Transcript is newest-first when `follow` is true (tail-pinned).
+#[allow(clippy::too_many_arguments)] // spec-mandated spinner param pushes to 8
 fn render_dashboard(
     frame: &mut Frame,
     area: Rect,
@@ -679,6 +689,7 @@ fn render_dashboard(
     offset: u16,
     follow: bool,
     rates: BudgetRates,
+    spinner: Option<usize>,
 ) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
@@ -726,7 +737,7 @@ fn render_dashboard(
         Layout::horizontal([Constraint::Percentage(72), Constraint::Percentage(28)])
             .areas::<2>(body);
 
-    let transcript = transcript_lines(&data.records);
+    let transcript = transcript_lines(&data.records, spinner);
     let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
     // Word-wrap is enabled for the Activity panel. Paragraph::scroll counts
     // *visual* rows (post-wrap), not logical lines, so scroll-to-bottom is
@@ -776,18 +787,36 @@ fn run_loop(
 
     let mut offset: u16 = 0;
     let mut follow = true;
+    let mut spinner_tick: usize = 0;
 
     loop {
+        spinner_tick = spinner_tick.wrapping_add(1);
+
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
         let data = load_data(repo, session);
-        offset = clamp_scroll(offset, transcript_lines(&data.records).len());
+        let spinner_active = data.summary.ended.is_none() && data.error.is_none();
+        let spinner = if spinner_active {
+            Some(spinner_tick % SPINNER_FRAMES.len())
+        } else {
+            None
+        };
         terminal.draw(|frame| {
-            render_dashboard(frame, frame.area(), &data, now_ms, offset, follow, rates)
+            render_dashboard(
+                frame,
+                frame.area(),
+                &data,
+                now_ms,
+                offset,
+                follow,
+                rates,
+                spinner,
+            )
         })?;
+        offset = clamp_scroll(offset, transcript_lines(&data.records, None).len());
 
         if event::poll(Duration::from_millis(500))?
             && let Event::Key(key) = event::read()?
@@ -1363,7 +1392,7 @@ mod tests {
 
     #[test]
     fn transcript_lines_empty_placeholder() {
-        let lines = transcript_lines(&[]);
+        let lines = transcript_lines(&[], None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no activity")));
     }
@@ -1563,8 +1592,46 @@ mod tests {
                 },
             ),
         ];
-        let lines = transcript_lines(&records);
+        let lines = transcript_lines(&records, None);
         assert_eq!(lines.len(), 5);
+    }
+
+    #[test]
+    fn spinner_appended_when_active() {
+        let records = vec![rec(100, 0, start_event())];
+        let lines = transcript_lines(&records, Some(0));
+        let last = format!("{}", lines.last().unwrap());
+        assert_eq!(last, "🐾");
+    }
+
+    #[test]
+    fn spinner_frame_cycles_through_all_frames() {
+        let records = vec![rec(100, 0, start_event())];
+        for (i, expected) in SPINNER_FRAMES.iter().enumerate() {
+            let lines = transcript_lines(&records, Some(i));
+            let last = format!("{}", lines.last().unwrap());
+            assert_eq!(last, *expected, "frame {i} mismatch");
+        }
+        // Index 7 wraps to frame 0
+        let lines = transcript_lines(&records, Some(7));
+        let last = format!("{}", lines.last().unwrap());
+        assert_eq!(last, SPINNER_FRAMES[0], "frame 7 should wrap to 0");
+    }
+
+    #[test]
+    fn spinner_absent_when_none() {
+        let records = vec![rec(100, 0, start_event())];
+        let lines = transcript_lines(&records, None);
+        let last = format!("{}", lines.last().unwrap());
+        assert!(!last.contains("🐾"), "spinner should not appear: {last}");
+    }
+
+    #[test]
+    fn spinner_appended_to_empty_records() {
+        let lines = transcript_lines(&[], Some(3));
+        assert_eq!(lines.len(), 2);
+        assert_eq!(format!("{}", lines[0]), "(no activity yet)");
+        assert_eq!(format!("{}", lines[1]), "🐾🐾🐾🐾");
     }
 
     // --- detect_syntax / highlighted_body_lines tests ---
