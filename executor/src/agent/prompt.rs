@@ -34,6 +34,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: Some("cargo clippy".to_string()),
             test: Some("cargo test".to_string()),
+            lint_fix: None,
         };
         let prompt = assemble_system_prompt(&commands, "STANDARDS_BODY", "PHASE_BODY");
 
@@ -58,6 +59,7 @@ mod tests {
             build: Some("npm run build".to_string()),
             lint: Some("npm run lint".to_string()),
             test: Some("npm test".to_string()),
+            lint_fix: None,
         };
         let prompt = assemble_system_prompt(&commands, "MY_STANDARDS", "MY_PHASE");
 

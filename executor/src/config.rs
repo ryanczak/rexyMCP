@@ -96,6 +96,7 @@ pub struct CommandConfig {
     pub build: Option<String>,
     pub lint: Option<String>,
     pub test: Option<String>,
+    pub lint_fix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -494,5 +495,31 @@ saved_output_per_mtok = 15.0
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.dashboard.saved_input_per_mtok, 3.0);
         assert_eq!(cfg.dashboard.saved_output_per_mtok, 15.0);
+    }
+
+    #[test]
+    fn lint_fix_field_defaults_to_none_when_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("rexymcp.toml");
+        std::fs::write(
+            &path,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+format = "cargo fmt"
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(
+            cfg.commands.lint_fix, None,
+            "lint_fix must default to None when absent from [commands]"
+        );
+        assert_eq!(cfg.commands.format.as_deref(), Some("cargo fmt"));
     }
 }

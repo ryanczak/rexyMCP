@@ -668,7 +668,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // Post-write format hook (M9/phase-01). Runs the configured format
         // command after every successful edit-class turn, before the verifier,
         // so the on-disk file is always formatted when verify reads it.
-        if succeeded && edit_path.is_some() && deps.commands.format.is_some() {
+        if succeeded
+            && edit_path.is_some()
+            && (deps.commands.format.is_some() || deps.commands.lint_fix.is_some())
+        {
             {
                 let emit = EmitCtx {
                     progress: deps.progress,
@@ -681,7 +684,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 };
                 emit_progress(&emit, "format".to_string());
             }
-            run_format_hook(deps.runner, deps.commands, deps.project_root).await;
+            run_post_write_hooks(deps.runner, deps.commands, deps.project_root).await;
         }
 
         // Step 6 — post-edit verify + retry feedback. Only for a successful
@@ -1212,7 +1215,10 @@ async fn run_command_set(
     )
 }
 
-async fn run_format_hook(runner: &dyn CommandRunner, commands: &CommandConfig, cwd: &Path) {
+async fn run_post_write_hooks(runner: &dyn CommandRunner, commands: &CommandConfig, cwd: &Path) {
+    if let Some(cmd) = commands.lint_fix.as_deref() {
+        let _ = runner.run(cmd, cwd).await;
+    }
     if let Some(cmd) = commands.format.as_deref() {
         let _ = runner.run(cmd, cwd).await;
     }
@@ -1426,6 +1432,7 @@ mod tests {
         build: None,
         lint: None,
         test: None,
+        lint_fix: None,
     };
 
     fn deps<'a>(
@@ -2939,6 +2946,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: None,
             test: Some("cargo test".to_string()),
+            lint_fix: None,
         };
 
         let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
@@ -2967,6 +2975,7 @@ mod tests {
             build: Some("b".to_string()),
             lint: None,
             test: None,
+            lint_fix: None,
         };
 
         let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
@@ -2995,6 +3004,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: None,
             test: None,
+            lint_fix: None,
         };
 
         let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 10).await;
@@ -3161,6 +3171,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: None,
             test: Some("cargo test".to_string()),
+            lint_fix: None,
         };
 
         run_full(
@@ -3196,6 +3207,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: None,
             test: None,
+            lint_fix: None,
         };
 
         run_full(
@@ -3743,6 +3755,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: None,
             test: Some("cargo test".to_string()),
+            lint_fix: None,
         };
         let budget = Budget::new(1_000_000);
 
@@ -4381,6 +4394,114 @@ mod tests {
             "expected 3 format runs (2 hooks + 1 final command set), got {}: {:?}",
             count,
             runner.ran()
+        );
+    }
+
+    #[tokio::test]
+    async fn hook_runs_lint_fix_before_format() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            lint_fix: Some("echo fix".into()),
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        let ran = runner.ran();
+        // Hook fires lint_fix then format; final command set fires format again.
+        // Assert the first two invocations are in order: fix before fmt.
+        assert!(
+            ran.len() >= 2,
+            "expected at least 2 runner invocations, got: {:?}",
+            ran
+        );
+        assert_eq!(
+            ran[0], "echo fix",
+            "lint_fix must run before format, got: {:?}",
+            ran
+        );
+        assert_eq!(
+            ran[1], "echo fmt",
+            "format must run after lint_fix, got: {:?}",
+            ran
+        );
+    }
+
+    #[tokio::test]
+    async fn hook_skips_lint_fix_when_unconfigured() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok");
+        let commands = CommandConfig {
+            lint_fix: None,
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        let ran = runner.ran();
+        assert!(
+            !ran.iter().any(|c| c == "echo fix"),
+            "lint_fix must not run when unconfigured, got: {:?}",
+            ran
+        );
+        assert!(
+            ran.iter().any(|c| c == "echo fmt"),
+            "format must still run when lint_fix is None, got: {:?}",
+            ran
+        );
+    }
+
+    #[tokio::test]
+    async fn lint_fix_failure_does_not_halt_turn() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("t.txt");
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "hello\n" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+        let runner = MockCommandRunner::new("ok").failing("bad-fix");
+        let commands = CommandConfig {
+            lint_fix: Some("bad-fix".into()),
+            format: Some("echo fmt".into()),
+            ..EMPTY_COMMANDS
+        };
+
+        let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+        assert!(
+            result.briefing.is_none(),
+            "expected no hard_fail on lint_fix failure"
         );
     }
 }

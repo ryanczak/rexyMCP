@@ -48,6 +48,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: Some("cargo clippy".to_string()),
             test: Some("cargo test".to_string()),
+            lint_fix: None,
         };
         let output = assemble_executor_contract(&commands);
 
@@ -69,6 +70,7 @@ mod tests {
             build: Some("cargo build".to_string()),
             lint: None,
             test: None,
+            lint_fix: None,
         };
         let output = assemble_executor_contract(&commands);
 
@@ -134,6 +136,22 @@ mod tests {
         assert!(
             !has_other_placeholder,
             "template contains placeholders other than the four authorized ones"
+        );
+    }
+
+    #[test]
+    fn contract_omits_lint_fix() {
+        let commands = CommandConfig {
+            format: Some("cargo fmt".to_string()),
+            build: Some("cargo build".to_string()),
+            lint: Some("cargo clippy".to_string()),
+            test: Some("cargo test".to_string()),
+            lint_fix: Some("cargo clippy --fix".to_string()),
+        };
+        let output = assemble_executor_contract(&commands);
+        assert!(
+            !output.contains("cargo clippy --fix"),
+            "lint_fix value must not appear in the assembled contract"
         );
     }
 }
