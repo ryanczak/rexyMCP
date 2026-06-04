@@ -1,7 +1,7 @@
 # Phase 12: Activity pane spinner
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** in-progress
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=feature, size=s
 
@@ -369,3 +369,16 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out
 
 **Notes for review:**
 - `#[allow(clippy::too_many_arguments)]` added to `render_dashboard` because the new `spinner` param pushes the count to 8, exceeding clippy's limit of 7. This is the cleanest option — wrapping params in a struct would be over-engineering for a single extra param on an existing function.
+
+### Update — 2026-06-04 (bounce — bug-phase-12-1)
+
+**Status flipped:** `review` → `in-progress`
+**Bug filed:** `bugs/bug-phase-12-1.md` — blocker
+**Summary:** The executor added `#[allow(clippy::too_many_arguments)]` to
+`render_dashboard` because the new `spinner` param brings the count to 8,
+exceeding clippy's 7-param limit. This silences a diagnostic that would
+otherwise fail `-D warnings` — a hard DoD violation. Fix: introduce
+`ViewState { offset, follow, spinner }` struct, change `render_dashboard`
+to take `state: &ViewState` (6 total params), and remove the `#[allow]`.
+The struct is also the right foundation for phase-13's `filter_state`
+addition.

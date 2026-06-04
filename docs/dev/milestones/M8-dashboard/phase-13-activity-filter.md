@@ -63,7 +63,18 @@ Call sites (post phase-12):
 - **Test `transcript_lines_flatmaps_records`:**
   `let lines = transcript_lines(&records, None);`
 
-### `render_dashboard` signature (post phase-12)
+### `ViewState` struct (introduced in phase-12 bug fix)
+
+```rust
+/// Run-loop state threaded into each render call.
+struct ViewState {
+    offset: u16,
+    follow: bool,
+    spinner: Option<usize>,
+}
+```
+
+### `render_dashboard` signature (post phase-12 — uses `ViewState`)
 
 ```rust
 fn render_dashboard(
@@ -71,23 +82,21 @@ fn render_dashboard(
     area: Rect,
     data: &DashboardData,
     now_ms: u64,
-    offset: u16,
-    follow: bool,
     rates: BudgetRates,
-    spinner: Option<usize>,
+    state: &ViewState,
 ) {
 ```
 
 Activity area rendering (post phase-12, lines ~729–750):
 ```rust
-    let transcript = transcript_lines(&data.records, spinner);
+    let transcript = transcript_lines(&data.records, state.spinner);
     let viewport = activity_area.height.saturating_sub(2);
     let n = transcript.len();
-    let (display_lines, scroll_rows) = if follow {
+    let (display_lines, scroll_rows) = if state.follow {
         let keep = (viewport as usize * 2).min(n);
         (transcript[n.saturating_sub(keep)..].to_vec(), 0u16)
     } else {
-        let display = visible_offset(false, offset, n, viewport);
+        let display = visible_offset(false, state.offset, n, viewport);
         (transcript, display)
     };
     let activity = Paragraph::new(display_lines)
@@ -144,8 +153,9 @@ And the `terminal.draw` + scroll-clamp block (post phase-12):
         } else {
             None
         };
+        let view = ViewState { offset, follow, spinner };
         terminal.draw(|frame| {
-            render_dashboard(frame, frame.area(), &data, now_ms, offset, follow, rates, spinner)
+            render_dashboard(frame, frame.area(), &data, now_ms, rates, &view)
         })?;
         offset = clamp_scroll(offset, transcript_lines(&data.records, None).len());
 ```
@@ -324,23 +334,40 @@ Update **all 4 call sites** to pass the filter as the second argument:
 - Test `transcript_lines_empty_placeholder`: `transcript_lines(&[], &ActivityFilter::default(), None)`
 - Test `transcript_lines_flatmaps_records`: `transcript_lines(&records, &ActivityFilter::default(), None)`
 
-### 3. Add `filter_state: &FilterState` to `render_dashboard`
+### 3. Extend `ViewState` with `FilterState`; update `render_dashboard`
 
-New signature (after `spinner`):
+Phase-12 introduced `ViewState { offset, follow, spinner }`. Phase-13 adds
+`filter` to it:
 
 ```rust
-fn render_dashboard(
-    frame: &mut Frame,
-    area: Rect,
-    data: &DashboardData,
-    now_ms: u64,
+/// Run-loop state threaded into each render call.
+struct ViewState {
     offset: u16,
     follow: bool,
-    rates: BudgetRates,
     spinner: Option<usize>,
-    filter_state: &FilterState,
-) {
+    filter: FilterState,
+}
 ```
+
+`render_dashboard` already takes `state: &ViewState` — no signature change
+needed. The body gains access to `state.filter.open`, `state.filter.cursor`,
+and `state.filter.filter`.
+
+Update `ViewState` construction in `run_loop`:
+
+```rust
+        let view = ViewState { offset, follow, spinner, filter: filter_state };
+```
+
+where `filter_state: FilterState` is a new `let mut` local (see §4).
+
+**`filter_state` is a `FilterState` value stored in `run_loop` as a local.**
+Build a fresh `ViewState` each tick; move the `FilterState` into it and
+reconstruct from `view` after the draw call if you need to mutate. Or: keep
+`filter_state` as a `let mut` local, clone it into `ViewState { ..., filter:
+filter_state.clone() }`, and mutate the original in the key handler. Cloning
+`FilterState` is cheap (11 bools + 2 usizes). The choice is the executor's —
+either pattern is acceptable.
 
 In the Activity pane section, branch on `filter_state.open`:
 
