@@ -1,7 +1,7 @@
 # Phase 12: Activity pane spinner
 
 **Milestone:** M8 — Live session dashboard
-**Status:** in-progress
+**Status:** review
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=feature, size=s
 
@@ -382,3 +382,42 @@ otherwise fail `-D warnings` — a hard DoD violation. Fix: introduce
 to take `state: &ViewState` (6 total params), and remove the `#[allow]`.
 The struct is also the right foundation for phase-13's `filter_state`
 addition.
+
+### Update — 2026-06-04 (complete — bug fix)
+
+**Executor:** rexyMCP headless executor
+
+**Tasks completed:**
+1. Introduced `ViewState { offset, follow, spinner }` struct before `render_dashboard`.
+2. Changed `render_dashboard` signature to accept `state: &ViewState` instead of separate `offset`, `follow`, `spinner` params — reducing total params from 8 to 6.
+3. Removed `#[allow(clippy::too_many_arguments)]` from `render_dashboard`.
+4. Updated `render_dashboard` body to reference `state.spinner`, `state.follow`, `state.offset`.
+5. Updated `run_loop` call site to construct `ViewState { offset, follow, spinner }` and pass `&state`.
+
+**Verification commands:**
+- `cargo fmt --all --check` — clean
+- `cargo build` — clean, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 585 passed, 0 failed, 2 ignored
+- `cargo test spinner` — 4 passed, 0 failed
+
+**End-to-end verification:** `cargo test spinner` output:
+```
+running 4 tests
+test dashboard::tests::spinner_appended_to_empty_records ... ok
+test dashboard::tests::spinner_appended_when_active ... ok
+test dashboard::tests::spinner_frame_cycles_through_all_frames ... ok
+test dashboard::tests::spinner_absent_when_none ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out
+```
+
+**Grep proof for `🐾` literal:** 4 matches in `mcp/src/dashboard.rs` (constant at line 66, test assertions at lines 1603, 1625, 1633).
+
+**Files changed:**
+- `mcp/src/dashboard.rs` — `ViewState` struct, `render_dashboard` signature/body, `run_loop` call site
+- `docs/dev/milestones/M8-dashboard/phase-12-activity-spinner.md` — status flip to `review` + completion update log
+- `docs/dev/milestones/M8-dashboard/README.md` — phase table row status flip to `review`
+
+**Notes for review:**
+- `ViewState` struct is private (not `pub`) — internal rendering concern only. It groups the three activity-pane view parameters (`offset`, `follow`, `spinner`) and is the natural home for phase-13's `filter_state` field when it arrives.
+- No `#[allow]` directives remain; clippy passes cleanly with `-D warnings`.

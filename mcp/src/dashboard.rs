@@ -676,20 +676,24 @@ fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
 
 // --- Renderer ---
 
+/// View-state for the dashboard activity pane.
+struct ViewState {
+    offset: u16,
+    follow: bool,
+    spinner: Option<usize>,
+}
+
 /// Render the dashboard into a three-panel header band (Session · Budget ·
 /// Compactions) above a body (Activity wide-left · Files right), or a
 /// single error pane when `data.error` is set.
 /// Transcript is newest-first when `follow` is true (tail-pinned).
-#[allow(clippy::too_many_arguments)] // spec-mandated spinner param pushes to 8
 fn render_dashboard(
     frame: &mut Frame,
     area: Rect,
     data: &DashboardData,
     now_ms: u64,
-    offset: u16,
-    follow: bool,
+    state: &ViewState,
     rates: BudgetRates,
-    spinner: Option<usize>,
 ) {
     if let Some(ref err) = data.error {
         let error_pane = panel(
@@ -737,7 +741,7 @@ fn render_dashboard(
         Layout::horizontal([Constraint::Percentage(72), Constraint::Percentage(28)])
             .areas::<2>(body);
 
-    let transcript = transcript_lines(&data.records, spinner);
+    let transcript = transcript_lines(&data.records, state.spinner);
     let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
     // Word-wrap is enabled for the Activity panel. Paragraph::scroll counts
     // *visual* rows (post-wrap), not logical lines, so scroll-to-bottom is
@@ -747,11 +751,11 @@ fn render_dashboard(
     // scrolls manually we keep all lines and apply the offset (which is a logical-
     // line approximation, fine for navigation but not pixel-perfect with wrapping).
     let n = transcript.len();
-    let (display_lines, scroll_rows) = if follow {
+    let (display_lines, scroll_rows) = if state.follow {
         let keep = (viewport as usize * 2).min(n);
         (transcript[n.saturating_sub(keep)..].to_vec(), 0u16)
     } else {
-        let display = visible_offset(false, offset, n, viewport);
+        let display = visible_offset(false, state.offset, n, viewport);
         (transcript, display)
     };
     let activity = Paragraph::new(display_lines)
@@ -804,18 +808,13 @@ fn run_loop(
         } else {
             None
         };
-        terminal.draw(|frame| {
-            render_dashboard(
-                frame,
-                frame.area(),
-                &data,
-                now_ms,
-                offset,
-                follow,
-                rates,
-                spinner,
-            )
-        })?;
+        let state = ViewState {
+            offset,
+            follow,
+            spinner,
+        };
+        terminal
+            .draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, &state, rates))?;
         offset = clamp_scroll(offset, transcript_lines(&data.records, None).len());
 
         if event::poll(Duration::from_millis(500))?
