@@ -58,6 +58,15 @@ pub struct StatusSummary {
     pub compaction_tokens_before: usize,
     /// Sum of `tokens_after` across all `Compaction` records.
     pub compaction_tokens_after: usize,
+    /// Min/avg/max interval (ms) between consecutive records. Present when ≥2 intervals exist.
+    pub update_interval_min_ms: Option<u64>,
+    pub update_interval_avg_ms: Option<u64>,
+    pub update_interval_max_ms: Option<u64>,
+    /// Min/avg/max generation throughput (tok/s) across all Metrics intervals.
+    /// Present when ≥2 intervals exist (i.e. ≥3 Metrics records).
+    pub tok_per_sec_min: Option<f64>,
+    pub tok_per_sec_avg: Option<f64>,
+    pub tok_per_sec_max: Option<f64>,
 }
 
 /// Fold a session log's records into the latest-state summary. Pure: the
@@ -65,8 +74,16 @@ pub struct StatusSummary {
 /// to the caller (it owns the clock).
 pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
     let mut summary = StatusSummary::default();
+    let mut prev_rec_ts: Option<u64> = None;
+    let mut update_intervals: Vec<u64> = Vec::new();
+    let mut metrics_snapshots: Vec<(u64, u32)> = Vec::new();
 
     for rec in records {
+        if prev_rec_ts.is_some_and(|prev| rec.ts > prev) {
+            update_intervals.push(rec.ts - prev_rec_ts.unwrap());
+        }
+        prev_rec_ts = Some(rec.ts);
+
         summary.last_ts = Some(match summary.last_ts {
             Some(prev) => prev.max(rec.ts),
             None => rec.ts,
@@ -118,6 +135,7 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 output_tokens,
                 context_pct,
             } => {
+                metrics_snapshots.push((rec.ts, *output_tokens));
                 // Shift the prior latest snapshot into "prev" for throughput.
                 summary.prev_metrics_ts = summary.last_metrics_ts;
                 summary.prev_output_tokens = summary.last_output_tokens;
@@ -137,6 +155,32 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
             }
             _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
+    }
+
+    // Update-interval stats: show when ≥2 intervals give a meaningful spread.
+    if update_intervals.len() >= 2 {
+        summary.update_interval_min_ms = update_intervals.iter().copied().min();
+        summary.update_interval_max_ms = update_intervals.iter().copied().max();
+        summary.update_interval_avg_ms =
+            Some(update_intervals.iter().sum::<u64>() / update_intervals.len() as u64);
+    }
+
+    // Tok/s stats across all Metrics intervals: show when ≥2 rates give a spread.
+    let tok_rates: Vec<f64> = metrics_snapshots
+        .windows(2)
+        .filter_map(|w| {
+            let dt_ms = w[1].0.checked_sub(w[0].0)?;
+            if dt_ms == 0 {
+                return None;
+            }
+            let d_out = w[1].1.saturating_sub(w[0].1);
+            Some(d_out as f64 / (dt_ms as f64 / 1000.0))
+        })
+        .collect();
+    if tok_rates.len() >= 2 {
+        summary.tok_per_sec_min = tok_rates.iter().cloned().reduce(f64::min);
+        summary.tok_per_sec_max = tok_rates.iter().cloned().reduce(f64::max);
+        summary.tok_per_sec_avg = Some(tok_rates.iter().sum::<f64>() / tok_rates.len() as f64);
     }
 
     summary
@@ -621,6 +665,62 @@ mod tests {
         assert_eq!(s.compaction_count, 2);
         assert_eq!(s.compaction_tokens_before, 1800);
         assert_eq!(s.compaction_tokens_after, 1100);
+    }
+
+    #[test]
+    fn summarize_computes_update_interval_stats() {
+        // Intervals: 100ms, 200ms, 300ms — avg=200, min=100, max=300.
+        let recs = vec![
+            rec(0, 0, start()),
+            rec(100, 1, progress(1, "a")),
+            rec(300, 2, progress(2, "b")),
+            rec(600, 3, progress(3, "c")),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.update_interval_min_ms, Some(100));
+        assert_eq!(s.update_interval_max_ms, Some(300));
+        assert_eq!(s.update_interval_avg_ms, Some(200));
+    }
+
+    #[test]
+    fn summarize_no_interval_stats_with_fewer_than_two_intervals() {
+        // One interval — not enough to show a meaningful spread.
+        let recs = vec![rec(0, 0, start()), rec(500, 1, progress(1, "a"))];
+        let s = summarize(&recs);
+        assert_eq!(s.update_interval_min_ms, None);
+        assert_eq!(s.update_interval_avg_ms, None);
+        assert_eq!(s.update_interval_max_ms, None);
+    }
+
+    #[test]
+    fn summarize_computes_tok_per_sec_stats() {
+        // Three Metrics snapshots → two intervals:
+        //   ts 0→1000ms, d_out=100 → 100.0 tok/s
+        //   ts 1000→3000ms, d_out=200 → 100.0 tok/s  (same rate, so avg=min=max=100.0)
+        let recs = vec![
+            rec(0, 0, start()),
+            rec(0, 0, metrics(500, 0, 0.10)),
+            rec(1000, 1, metrics(600, 100, 0.20)),
+            rec(3000, 2, metrics(800, 300, 0.40)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.tok_per_sec_avg, Some(100.0));
+        assert_eq!(s.tok_per_sec_min, Some(100.0));
+        assert_eq!(s.tok_per_sec_max, Some(100.0));
+    }
+
+    #[test]
+    fn summarize_no_tok_per_sec_stats_with_fewer_than_two_intervals() {
+        // Two Metrics records → one interval, not enough for a spread.
+        let recs = vec![
+            rec(0, 0, start()),
+            rec(0, 0, metrics(500, 0, 0.10)),
+            rec(1000, 1, metrics(600, 100, 0.20)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.tok_per_sec_min, None);
+        assert_eq!(s.tok_per_sec_avg, None);
+        assert_eq!(s.tok_per_sec_max, None);
     }
 
     fn write_log_with_mtime(

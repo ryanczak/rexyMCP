@@ -48,6 +48,10 @@ const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 /// "… (N more lines)" marker. Keeps one large tool output from flooding the panel.
 const TRANSCRIPT_CONTENT_MAX_LINES: usize = 20;
 
+// TODO: activity filter — a key binding opens a config dialog to show/hide event
+// types (Prompt, Completion, ToolCall, Verify, …). Deferred: requires a modal
+// overlay / input handling that doesn't exist yet.
+
 /// Build all transcript lines for the given records, in chronological order.
 /// Returns a placeholder when there are no records.
 fn transcript_lines(records: &[SessionRecord]) -> Vec<Line<'static>> {
@@ -81,97 +85,100 @@ fn body_lines(body: &str) -> Vec<String> {
 /// styled by event type. Completion and ToolResult expand their content across
 /// multiple lines; all other events are a single styled header line.
 fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
-    let (summary, color, bold, body) = match &rec.event {
-        SessionEvent::SessionStart { model, phase, .. } => (
-            format!("session start — phase {phase}, model {model}"),
-            Color::Cyan,
-            false,
-            None,
-        ),
-        SessionEvent::Prompt { rendered } => (
-            format!("prompt ({} chars)", rendered.chars().count()),
-            Color::DarkGray,
-            false,
-            None,
-        ),
-        SessionEvent::Completion { raw } => (
-            "completion:".to_string(),
-            Color::Reset,
-            false,
-            Some(raw.clone()),
-        ),
-        SessionEvent::Parsed { tool_call } => (
-            format!("→ call {}", tool_call.name),
-            Color::Blue,
-            false,
-            None,
-        ),
-        SessionEvent::ParseFailed { failure } => (
-            format!("parse failed: {}", preview(&failure.feedback)),
-            Color::Red,
-            false,
-            None,
-        ),
-        SessionEvent::ToolResult {
-            name,
-            succeeded,
-            output_preview,
-        } => {
-            let status = if *succeeded { "ok" } else { "FAIL" };
-            let color = if *succeeded { Color::Green } else { Color::Red };
-            (
-                format!("tool {name} [{status}]"),
-                color,
-                false,
-                Some(output_preview.clone()),
-            )
-        }
-        SessionEvent::Verify { diagnostics } => {
-            let color = if diagnostics.is_empty() {
-                Color::Green
-            } else {
-                Color::Red
-            };
-            (
-                format!("verify: {} diagnostic(s)", diagnostics.len()),
-                color,
+    // (header_summary, header_color, bold, optional (body_text, body_color))
+    let (summary, color, bold, body): (String, Color, bool, Option<(String, Color)>) =
+        match &rec.event {
+            SessionEvent::SessionStart { model, phase, .. } => (
+                format!("session start — phase {phase}, model {model}"),
+                Color::Cyan,
                 false,
                 None,
-            )
-        }
-        SessionEvent::HardFail { reason } => {
-            (format!("HARD FAIL: {reason}"), Color::Red, true, None)
-        }
-        SessionEvent::Progress { stage, .. } => {
-            (format!("progress: {stage}"), Color::DarkGray, false, None)
-        }
-        SessionEvent::SessionEnd { status, turns } => (
-            format!("session end — {status} ({turns} turns)"),
-            Color::Cyan,
-            false,
-            None,
-        ),
-        SessionEvent::Metrics {
-            input_tokens,
-            output_tokens,
-            ..
-        } => (
-            format!("metrics: {input_tokens} in / {output_tokens} out"),
-            Color::DarkGray,
-            false,
-            None,
-        ),
-        SessionEvent::Compaction {
-            tokens_before,
-            tokens_after,
-            ..
-        } => (
-            format!("compaction: {tokens_before} → {tokens_after} tokens"),
-            Color::Magenta,
-            false,
-            None,
-        ),
-    };
+            ),
+            SessionEvent::Prompt { rendered } => (
+                format!("prompt ({} chars)", rendered.chars().count()),
+                Color::DarkGray,
+                false,
+                None,
+            ),
+            // LLM completions: soft white so the model's words read easily.
+            SessionEvent::Completion { raw } => (
+                "completion:".to_string(),
+                Color::Reset,
+                false,
+                Some((raw.clone(), Color::Rgb(180, 180, 180))),
+            ),
+            SessionEvent::Parsed { tool_call } => (
+                format!("→ call {}", tool_call.name),
+                Color::Blue,
+                false,
+                None,
+            ),
+            SessionEvent::ParseFailed { failure } => (
+                format!("parse failed: {}", preview(&failure.feedback)),
+                Color::Red,
+                false,
+                None,
+            ),
+            SessionEvent::ToolResult {
+                name,
+                succeeded,
+                output_preview,
+            } => {
+                let status = if *succeeded { "ok" } else { "FAIL" };
+                let color = if *succeeded { Color::Green } else { Color::Red };
+                (
+                    format!("tool {name} [{status}]"),
+                    color,
+                    false,
+                    Some((output_preview.clone(), Color::DarkGray)),
+                )
+            }
+            SessionEvent::Verify { diagnostics } => {
+                let color = if diagnostics.is_empty() {
+                    Color::Green
+                } else {
+                    Color::Red
+                };
+                (
+                    format!("verify: {} diagnostic(s)", diagnostics.len()),
+                    color,
+                    false,
+                    None,
+                )
+            }
+            SessionEvent::HardFail { reason } => {
+                (format!("HARD FAIL: {reason}"), Color::Red, true, None)
+            }
+            SessionEvent::Progress { stage, .. } => {
+                (format!("progress: {stage}"), Color::DarkGray, false, None)
+            }
+            SessionEvent::SessionEnd { status, turns } => (
+                format!("session end — {status} ({turns} turns)"),
+                Color::Cyan,
+                false,
+                None,
+            ),
+            SessionEvent::Metrics {
+                input_tokens,
+                output_tokens,
+                ..
+            } => (
+                format!("metrics: {input_tokens} in / {output_tokens} out"),
+                Color::DarkGray,
+                false,
+                None,
+            ),
+            SessionEvent::Compaction {
+                tokens_before,
+                tokens_after,
+                ..
+            } => (
+                format!("compaction: {tokens_before} → {tokens_after} tokens"),
+                Color::Magenta,
+                false,
+                None,
+            ),
+        };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);
     let mut style = Style::new().fg(color);
@@ -180,12 +187,9 @@ fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
     }
     let mut lines = vec![Line::from(Span::styled(header_text, style))];
 
-    if let Some(body) = body {
-        for bl in body_lines(&body) {
-            lines.push(Line::from(Span::styled(
-                bl,
-                Style::new().fg(Color::DarkGray),
-            )));
+    if let Some((body_text, body_color)) = body {
+        for bl in body_lines(&body_text) {
+            lines.push(Line::from(Span::styled(bl, Style::new().fg(body_color))));
         }
     }
 
@@ -266,10 +270,21 @@ fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
 
     if let Some(ts) = summary.last_ts {
         let age_ms = now_ms.saturating_sub(ts);
-        lines.push(Line::from(format!(
-            "last update: {} ago",
-            status::humanize_age(age_ms)
-        )));
+        let age_str = status::humanize_age(age_ms);
+        let line = match (
+            summary.update_interval_avg_ms,
+            summary.update_interval_max_ms,
+            summary.update_interval_min_ms,
+        ) {
+            (Some(avg), Some(max), Some(min)) => format!(
+                "last update: {age_str} ago (AVG: {}, MAX: {}, MIN: {})",
+                status::humanize_age(avg),
+                status::humanize_age(max),
+                status::humanize_age(min),
+            ),
+            _ => format!("last update: {age_str} ago"),
+        };
+        lines.push(Line::from(line));
     }
 
     lines
@@ -386,7 +401,18 @@ fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         summary.last_metrics_ts,
         summary.last_output_tokens,
     ) {
-        Some(rate) => lines.push(Line::from(format!("tok/s: {rate:.1}"))),
+        Some(rate) => {
+            lines.push(Line::from(format!("tok/s: {rate:.1}")));
+            if let (Some(avg), Some(max), Some(min)) = (
+                summary.tok_per_sec_avg,
+                summary.tok_per_sec_max,
+                summary.tok_per_sec_min,
+            ) {
+                lines.push(Line::from(format!(
+                    "  (AVG: {avg:.1}, MAX: {max:.1}, MIN: {min:.1})"
+                )));
+            }
+        }
         None => lines.push(Line::from("tok/s: —")),
     }
 
@@ -892,6 +918,73 @@ mod tests {
                 .iter()
                 .any(|s| s.starts_with("tok/s:") && s.contains('.'))
         );
+    }
+
+    #[test]
+    fn session_lines_shows_update_interval_stats() {
+        let summary = StatusSummary {
+            last_ts: Some(5000),
+            update_interval_avg_ms: Some(2000),
+            update_interval_max_ms: Some(3000),
+            update_interval_min_ms: Some(1000),
+            ..StatusSummary::default()
+        };
+        let lines = session_lines(&summary, 5000);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
+        assert!(age_line.contains("AVG:"), "expected AVG in: {age_line}");
+        assert!(age_line.contains("MAX:"), "expected MAX in: {age_line}");
+        assert!(age_line.contains("MIN:"), "expected MIN in: {age_line}");
+    }
+
+    #[test]
+    fn session_lines_omits_interval_stats_without_enough_data() {
+        let summary = StatusSummary {
+            last_ts: Some(5000),
+            update_interval_avg_ms: None,
+            ..StatusSummary::default()
+        };
+        let lines = session_lines(&summary, 5000);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
+        assert!(!age_line.contains("AVG:"), "unexpected AVG in: {age_line}");
+    }
+
+    #[test]
+    fn budget_lines_shows_tok_per_sec_stats() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1000),
+            last_output_tokens: Some(300),
+            last_metrics_ts: Some(3000),
+            prev_metrics_ts: Some(1000),
+            prev_output_tokens: Some(100),
+            tok_per_sec_avg: Some(80.0),
+            tok_per_sec_max: Some(120.0),
+            tok_per_sec_min: Some(60.0),
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let stats_line = text.iter().find(|s| s.contains("AVG:")).unwrap();
+        assert!(stats_line.contains("AVG: 80.0"), "got: {stats_line}");
+        assert!(stats_line.contains("MAX: 120.0"), "got: {stats_line}");
+        assert!(stats_line.contains("MIN: 60.0"), "got: {stats_line}");
+    }
+
+    #[test]
+    fn budget_lines_omits_tok_per_sec_stats_without_enough_data() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1000),
+            last_output_tokens: Some(300),
+            last_metrics_ts: Some(3000),
+            prev_metrics_ts: Some(1000),
+            prev_output_tokens: Some(100),
+            tok_per_sec_avg: None,
+            ..StatusSummary::default()
+        };
+        let lines = budget_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(!text.iter().any(|s| s.contains("AVG:")));
     }
 
     // --- compactions_lines tests ---
