@@ -73,11 +73,14 @@ You keep phase status accurate. The reviewer evaluates based on what status says
 6. **Complete:** append the completion entry with command output, files changed,
    commits, notes for review.
 7. **Flip status:** `in-progress` → `review`. Update the README phase table.
-8. **`git commit` everything.** Stage all changes — source, tests, the phase
+8. **Run `{FORMAT_COMMAND}` before staging.** Your write tool does not guarantee
+   formatted output. Running the formatter now prevents a lint/format gate failure
+   that would otherwise require a re-dispatch just to fix whitespace or import order.
+9. **`git commit` everything.** Stage all changes — source, tests, the phase
    doc's status flip + Update Log additions, the README status flip — and commit
    with a conventional-commit message. **Then run `git status` and confirm the
    working tree is clean.** A dirty tree at "completion" is not complete.
-9. **Stop.** Do not start the next phase. Do not "while you're at it" anything.
+10. **Stop.** Do not start the next phase. Do not "while you're at it" anything.
 
 The Update Log is **append-only**. Never edit prior entries.
 
@@ -87,6 +90,7 @@ The Update Log is **append-only**. Never edit prior entries.
 [ ] Phase doc's Status: line says `review`.
 [ ] Milestone README's phase table row says `review`.
 [ ] Update Log has a "(complete)" entry with all required fields filled in.
+[ ] `{FORMAT_COMMAND}` was run immediately before `git add` (not just checked — actually run).
 [ ] All verification commands ran clean; output pasted in the Update Log.
 [ ] Complete entry includes a one-line verification summary naming each gate.
 [ ] End-to-end verification section filled in (per phase doc) OR declared N/A with reason.
