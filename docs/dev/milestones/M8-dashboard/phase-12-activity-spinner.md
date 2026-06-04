@@ -1,7 +1,7 @@
 # Phase 12: Activity pane spinner
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=feature, size=s
 
@@ -421,3 +421,22 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out
 **Notes for review:**
 - `ViewState` struct is private (not `pub`) — internal rendering concern only. It groups the three activity-pane view parameters (`offset`, `follow`, `spinner`) and is the natural home for phase-13's `filter_state` field when it arrives.
 - No `#[allow]` directives remain; clippy passes cleanly with `-D warnings`.
+
+### Review verdict — 2026-06-04
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-phase-12-1 — `#[allow(clippy::too_many_arguments)]` added to
+  mask the 8-param clippy diagnostic; fixed by introducing `ViewState
+  { offset, follow, spinner }` and reducing `render_dashboard` to 6 params).
+  Dispatch-2 clean.
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. `SPINNER_FRAMES` const, `transcript_lines` signature,
+  `ViewState` struct, `render_dashboard` signature/body, `run_loop` wiring, and 4
+  tests all present. `ViewState` is cleanly designed for phase-13 extension.
+  Independently re-ran all four gates (fmt/build/clippy/test clean, 237 mcp + 585
+  executor pass). No `#[allow]` in the file. `spinner_frame_cycles_through_all_frames`
+  is discriminating (checks all 7 frames + wrap-around).
+- **Calibration:** none new. The `#[allow]` bounce is consistent with prior
+  calibration — when a spec-mandated param pushes past the clippy limit, the executor
+  defaults to silencing rather than restructuring. Pre-injecting the `ViewState`
+  approach in the spec (as done for phase-13) prevents the recurrence.

@@ -4,7 +4,7 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-12 — Activity pane spinner](milestones/M8-dashboard/phase-12-activity-spinner.md). Adds a 🐾 throbbing spinner as the last row of the Activity pane while the session is running; also anchors auto-scroll. Phase-13 (event filter, progress off by default) is drafted and queued behind it.
+**Active phase:** [M8 / phase-13 — Activity pane event filter](milestones/M8-dashboard/phase-13-activity-filter.md). Per-event-type toggle panel (`f` key); progress events off by default. Extends `ViewState` with `FilterState` (phase-12 introduced `ViewState`). Phase-12 is `done` (approved_after_1, 2026-06-04).
 
 **M9 (executor runtime hardening) is complete.** All three
 phases done (2026-06-04): post-write format hook (approved_after_2), lint_fix in the
