@@ -1,7 +1,7 @@
 # Phase 06: update dashboard spinner animation
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** todo
+**Status:** review
 **Depends on:** phase-05b
 **Estimated diff:** ~15 lines changed in one file
 **Tags:** language=rust, kind=chore, size=xs
@@ -145,3 +145,26 @@ None. No new dependencies. No `docs/architecture.md` changes.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-05 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Replaced paw-print spinner with dog-chasing-brain animation in `mcp/src/dashboard/transcript.rs`. Applied 4 patches: new `SPINNER_FRAMES` constant (9 frames), updated `spinner_appended_when_active` assertion, updated wrap test (index 9 → frame 0), updated `spinner_absent_when_none` and `spinner_appended_to_empty_records` assertions.
+
+**Files changed:**
+- `mcp/src/dashboard/transcript.rs` — SPINNER_FRAMES constant + 4 test assertions
+
+**Verification commands:**
+```
+cargo build → ok (0 new warnings)
+cargo clippy --all-targets --all-features -- -D warnings → ok
+cargo fmt --all --check → ok
+cargo test → 585 passed; 0 failed; 2 ignored (matches pre-flight count)
+```
+
+**Grep check:** `grep -n '🐾' mcp/src/dashboard/transcript.rs` → 0 matches (exit 1), confirming no paw prints remain.
+
+**End-to-end verification:** N/A — this phase changes only a display constant and its test assertions; no new runtime behavior, CLI output, or config artifacts.
+
+**Notes for review:** None. Straightforward constant + assertion update.

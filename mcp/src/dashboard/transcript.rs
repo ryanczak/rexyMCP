@@ -11,8 +11,17 @@ use super::highlight::{highlighted_body_lines, plain_body_lines};
 /// to full multi-line). Keeps one record = one line.
 pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 
-pub(crate) const SPINNER_FRAMES: &[&str] =
-    &["🐾", "🐾🐾", "🐾🐾🐾", "🐾🐾🐾🐾", "🐾🐾🐾", "🐾🐾", "🐾"];
+pub(crate) const SPINNER_FRAMES: &[&str] = &[
+    "🐕       🧠",
+    " 🐕     🧠",
+    "  🐕   🧠   ",
+    "   🐕 🧠  ",
+    "    🐕🧠 ",
+    "  🧠🐕💨",
+    " 🧠🐕",
+    "🧠🐕",
+    "🐕",
+];
 
 /// Build all transcript lines for the given records, in chronological order.
 /// Filters records through `filter`, appends a spinner frame when `spinner` is
@@ -407,7 +416,7 @@ mod tests {
         let records = vec![rec(100, 0, start_event())];
         let lines = transcript_lines(&records, &ActivityFilter::default(), Some(0));
         let last = format!("{}", lines.last().unwrap());
-        assert_eq!(last, "🐾");
+        assert_eq!(last, "🐕       🧠");
     }
 
     #[test]
@@ -418,10 +427,10 @@ mod tests {
             let last = format!("{}", lines.last().unwrap());
             assert_eq!(last, *expected, "frame {i} mismatch");
         }
-        // Index 7 wraps to frame 0
-        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(7));
+        // Index 9 wraps to frame 0 (9 frames total, 9 % 9 == 0)
+        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(9));
         let last = format!("{}", lines.last().unwrap());
-        assert_eq!(last, SPINNER_FRAMES[0], "frame 7 should wrap to 0");
+        assert_eq!(last, SPINNER_FRAMES[0], "frame 9 should wrap to 0");
     }
 
     #[test]
@@ -429,7 +438,7 @@ mod tests {
         let records = vec![rec(100, 0, start_event())];
         let lines = transcript_lines(&records, &ActivityFilter::default(), None);
         let last = format!("{}", lines.last().unwrap());
-        assert!(!last.contains("🐾"), "spinner should not appear: {last}");
+        assert!(!last.contains("🐕"), "spinner should not appear: {last}");
     }
 
     #[test]
@@ -437,6 +446,6 @@ mod tests {
         let lines = transcript_lines(&[], &ActivityFilter::default(), Some(3));
         assert_eq!(lines.len(), 2);
         assert_eq!(format!("{}", lines[0]), "(no activity yet)");
-        assert_eq!(format!("{}", lines[1]), "🐾🐾🐾🐾");
+        assert_eq!(format!("{}", lines[1]), "   🐕 🧠  ");
     }
 }
