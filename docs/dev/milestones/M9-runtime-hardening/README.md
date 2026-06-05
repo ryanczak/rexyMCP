@@ -32,7 +32,7 @@ race folded from M1/mp3-player.
 | 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | done   |
 | 04 | split agent/mod.rs into focused submodules ([phase-04-agent-mod-split.md](phase-04-agent-mod-split.md)) | done   |
 | 05a | split dashboard: extract filter, highlight, transcript ([phase-05a-dashboard-split-filter-highlight-transcript.md](phase-05a-dashboard-split-filter-highlight-transcript.md)) | todo   |
-| 05b | split dashboard: extract panels, render, event_loop ([phase-05b-dashboard-split-panels-render-loop.md](phase-05b-dashboard-split-panels-render-loop.md)) | todo   |
+| 05b | split dashboard: extract panels, render, event_loop ([phase-05b-dashboard-split-panels-render-loop.md](phase-05b-dashboard-split-panels-render-loop.md)) | in-progress   |
 
 ## Notes
 

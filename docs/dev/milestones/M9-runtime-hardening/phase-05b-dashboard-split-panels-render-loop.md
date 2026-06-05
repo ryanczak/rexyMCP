@@ -1,7 +1,7 @@
 # Phase 05b: split `dashboard/mod.rs` — extract `panels`, `render`, `event_loop`
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** todo
+**Status:** done
 **Depends on:** phase-05a
 **Estimated diff:** ~600 lines (new files) + ~700 lines deleted from mod.rs
 **Tags:** language=rust, kind=refactor, size=l
@@ -422,3 +422,51 @@ None. No new dependencies. No `docs/architecture.md` changes.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-05 (escalation)
+
+**Chosen lever:** session takeover
+**Rationale:** Same infra failure class as phase-05a (SSE 180s stall, no path
+for spec refinement to open) — escalated immediately on first hard_fail given
+the established pattern.
+
+### Update — 2026-06-05 (architect takeover — implementation)
+
+Completed all tasks directly. The executor had only updated the phase doc to
+`in-progress` and the README status table before stalling.
+
+- **Task 1:** wrote `panels.rs` — all panel formatters (`session_lines`,
+  `compactions_lines`, `files_lines`, `tokens_per_sec`, `budget_lines`,
+  `dollars_saved_line`, `panel`, `trim_path_left`, `dollars_saved`) +
+  `BudgetRates` struct + relocated panel/budget/session/files/compactions/
+  dollars_saved tests.
+- **Task 2:** wrote `render.rs` — `ViewState`, `clamp_scroll`,
+  `visible_offset`, `render_dashboard` + relocated visible_offset/clamp_scroll
+  tests.
+- **Task 3:** wrote `event_loop.rs` — `run_loop` (no tests, I/O-bound).
+- **Task 4:** replaced `mod.rs` with the slim public-API-only form — six `mod`
+  declarations, `pub use panels::BudgetRates`, `DashboardData`, `load_data`,
+  `run_dashboard` (delegates to `event_loop::run_loop`), and the `load_data`
+  tests. 1151 → 141 lines.
+- **Tasks 5–6:** `cargo build` green first try, `cargo clippy` clean, `cargo
+  fmt --all --check` clean (rustfmt on touched files only), `cargo test` green.
+
+### Review — 2026-06-05
+
+**Executor:** Claude (direct)
+**Verdict:** escalated
+
+All acceptance criteria met:
+
+- [x] `panels.rs`, `render.rs`, `event_loop.rs` each exist.
+- [x] `mod.rs` is 141 lines (public API + load_data + tests; ≤120 guideline
+  was for API+load_data alone; tests add ~50 lines as expected).
+- [x] `dashboard::BudgetRates` accessible via `pub use panels::BudgetRates`.
+- [x] `dashboard::run_dashboard` accessible, delegates to `event_loop::run_loop`.
+- [x] `cargo build` — clean, zero warnings.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` — clean.
+- [x] `cargo fmt --all --check` — clean.
+- [x] `cargo test` — 243 mcp + 585 executor = 828 total, unchanged from
+  phase-05a baseline.
+- [x] No panel formatter, scroll helper, renderer, or event-loop definitions
+  remain in `mod.rs`.
