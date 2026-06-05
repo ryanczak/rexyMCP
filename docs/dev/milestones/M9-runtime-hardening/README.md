@@ -4,7 +4,7 @@
 phase-spec instruction provably cannot, starting with the post-write formatting
 race folded from M1/mp3-player.
 
-**Status:** in-progress (phase-04 added 2026-06-04)
+**Status:** done (2026-06-04)
 
 **Depends on:** M4 (the agent loop: dispatch → verify → final command set)
 
@@ -30,7 +30,7 @@ race folded from M1/mp3-player.
 | 01 | post-write format hook ([phase-01-post-write-format-hook.md](phase-01-post-write-format-hook.md)) | done   |
 | 02 | lint-fix in the post-write hook ([phase-02-lint-fix-hook.md](phase-02-lint-fix-hook.md))          | done   |
 | 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | done   |
-| 04 | split agent/mod.rs into focused submodules ([phase-04-agent-mod-split.md](phase-04-agent-mod-split.md)) | todo   |
+| 04 | split agent/mod.rs into focused submodules ([phase-04-agent-mod-split.md](phase-04-agent-mod-split.md)) | done   |
 
 ## Notes
 
@@ -82,3 +82,44 @@ lines with a clear pointer to re-read with `start_line`/`end_line` — no more
    runtime fix supersedes the spec-writing fold.
 2. **Commit hygiene (phase-01):** re-dispatching against a dirty tree let the
    executor sweep unrelated changes into one commit. One occurrence — data only.
+
+### phase-04 addendum (2026-06-04) — structural refactor, escalated
+
+**phase-04** (split `agent/mod.rs` into focused submodules, **escalated**): a
+pure move-only refactor extracting ~550 lines of private helpers from the
+4 507-line `mod.rs` into 4 new private modules (`log`, `tools`, `outcome`,
+`metrics`) and extending 2 public ones (`progress`, `command`). 585 tests pass
+unchanged. Shipped via **architect session takeover** after two executor
+hard-fails.
+
+**What broke — two bounces, two distinct causes:**
+1. **dispatch-1 (architect spec gap):** the original ordering constraint claimed
+   "Phase A keeps the build green because new files aren't linked until Task 7."
+   False — `progress.rs`/`command.rs` are already-compiled `pub mod`s, so
+   extending them with `use super::log::…` *before* declaring `mod log;` made the
+   build red and the verifier hard-failed at 3 consecutive red turns. Also: the
+   `command.rs` import block omitted `CommandOutputs`/`Gates` (the moved
+   `run_command_set`'s return types). Both fixed in the spec → refined re-dispatch.
+2. **dispatch-2 (executor stall):** the executor applied Task 7a cleanly
+   (module decls + `use` re-exports) but then looped on identical `read_file`
+   calls instead of patching out the original function bodies (Task 7b),
+   tripping `IdenticalToolCallRepetition`. Session takeover finished the
+   mechanical deletion (560 lines) + fixed the test-module imports that were no
+   longer in `super::*` scope after extraction.
+
+**Calibration:**
+3. **Mechanical-deletion churn → `IdenticalToolCallRepetition` (second
+   occurrence).** phase-10b stalled the same way on multi-edit *test-update*
+   churn; phase-04 stalled on multi-deletion churn in a large file. Two
+   occurrences of the same class = a trend, not yet a fix. If it recurs, fold a
+   WORKFLOW rule: split a large mechanical-deletion/edit task from its companion
+   step, or pre-inject exact `old_str` anchors per group. Confirmed with the user
+   that **raising `IDENTICAL_CALL_THRESHOLD` is not the lever** — the stall was
+   identical *reads* (the executor stuck, not making progress), so a higher
+   threshold buys more stuck turns, not success, and weakens the shared
+   verifier-persistence governor.
+4. **Spec ordering for cross-module refactors (new, one occurrence).** When a
+   refactor adds cross-module references (`use super::X`) into already-compiled
+   modules, the `mod X;` declaration must land *before or with* the reference,
+   not in a later task. Verify intermediate build states are actually reachable
+   when sequencing a multi-step move. Data point.

@@ -1,7 +1,7 @@
 # Phase 04: Split executor/src/agent/mod.rs into focused submodules
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** review
+**Status:** done
 **Depends on:** M9/phase-03 (read_file cap — done)
 **Estimated diff:** ~0 net lines (moves ~550 lines out of mod.rs into 6 sibling files)
 **Tags:** language=rust, kind=refactor, size=m
@@ -479,3 +479,25 @@ looped reading mod.rs instead of patching out the original function bodies (Task
 
 **Executor:** Claude (direct)
 **Verdict:** escalated
+
+### Review verdict — 2026-06-04
+
+- **Verdict:** escalated
+- **Bounces:** 2 (dispatch-1: architect spec gap — broken Phase-A ordering +
+  incomplete `command.rs` imports; dispatch-2: `IdenticalToolCallRepetition` on
+  `read_file` during Task 7b deletion churn)
+- **Executor:** Claude Code (direct) — session takeover after dispatch-2
+- **Scope deviations:** none (move-only refactor as specified; no logic changes)
+- **Gates (independent re-run):** `cargo fmt --all --check` ✓ · `cargo build`
+  0 warnings ✓ · `cargo clippy --all-targets --all-features -- -D warnings` ✓ ·
+  `cargo test` 585 executor + 245 mcp passed, 0 failed, 2 ignored ✓
+- **Acceptance:** all boxes verified — extracted fns absent from `mod.rs`
+  (grep = 0), 4 new files present, `progress.rs` has `EmitCtx`/`emit_progress`,
+  `command.rs` has `run_command_set`
+- **Calibration:** Task 7b's "delete N≥5 function bodies from a large file by
+  content" churn is the second `IdenticalToolCallRepetition` stall of this class
+  (first: phase-10b test-update churn). Data point, not yet a fold. If it recurs,
+  consider either (a) splitting a large mechanical-deletion task from the
+  header-swap step, or (b) pre-injecting exact `old_str` anchors per group. The
+  governor threshold (`IDENTICAL_CALL_THRESHOLD = 3`) is **not** the lever — the
+  stall was identical *reads*, not progress needing more turns.

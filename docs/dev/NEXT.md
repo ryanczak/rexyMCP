@@ -4,7 +4,19 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M9 / phase-04 — Split agent/mod.rs](milestones/M9-runtime-hardening/phase-04-agent-mod-split.md). Pure structural refactor: extract ~550 lines of private helpers from the 4 507-line `mod.rs` into 4 new sibling modules (`log`, `tools`, `outcome`, `metrics`) and extend 2 existing ones (`progress`, `command`). No logic changes. M8 is complete (all 16 phases done, 2026-06-04).
+**Active phase:** none. The user kicks off the next milestone explicitly.
+
+**phase-04 done** (2026-06-04, escalated — architect session takeover): pure
+structural refactor extracting ~550 lines of private helpers from the 4 507-line
+`mod.rs` into 4 new sibling modules (`log`, `tools`, `outcome`, `metrics`) and
+extending 2 existing ones (`progress`, `command`). No logic changes; 585 tests
+pass unchanged. Two bounces before takeover: dispatch-1 an architect spec gap
+(broken Phase-A ordering — already-compiled `pub mod`s referenced new private
+modules before they were declared — plus an incomplete `command.rs` import list);
+dispatch-2 an executor `IdenticalToolCallRepetition` stall on Task 7b's mechanical
+deletion churn (second occurrence of this class after phase-10b). M9 is now fully
+complete (4/4 phases). See the [M9 README phase-04 addendum](milestones/M9-runtime-hardening/README.md#phase-04-addendum-2026-06-04--structural-refactor-escalated).
+M8 is complete (all 16 phases done, 2026-06-04).
 
 **M9 (executor runtime hardening) is complete.** All three
 phases done (2026-06-04): post-write format hook (approved_after_2), lint_fix in the
