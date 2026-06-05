@@ -1,7 +1,7 @@
 # Phase 05a: split `dashboard/mod.rs` — extract `filter`, `highlight`, `transcript`
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** in-progress
+**Status:** done
 **Depends on:** phase-04
 **Estimated diff:** ~650 lines (new files created) + ~600 lines deleted from mod.rs
 **Tags:** language=rust, kind=refactor, size=l
@@ -712,3 +712,73 @@ None. No new dependencies. No `docs/architecture.md` changes.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-05 (escalation)
+
+**Chosen lever:** session takeover
+**Rationale:** Three consecutive same-class infra failures (SSE stream stalled
+— no data for 180s, backend dropped the connection) with no path a spec
+refinement could open; dispatch-1 landed Tasks 1–3 (rename + `filter.rs` +
+`highlight.rs`) but dispatches 2 and 3 burned all turns re-reading the
+2 098-line `mod.rs` and stalled before writing `transcript.rs`. The remaining
+work (extract `transcript.rs`, then seven multi-edit deletions against a large
+file) is the exact mechanical-churn failure mode already recorded for this
+executor (phase-10b `IdenticalToolCallRepetition`, phase-04 dispatch-2), and the
+phase ships no runtime artifact with exact line-range specs — low-risk to finish
+directly.
+
+### Update — 2026-06-05 (architect takeover — implementation)
+
+Completed Tasks 4–8 directly. The executor had already written `filter.rs`
+(verbatim from the pre-injected spec) and `highlight.rs` (function bodies
+verified line-for-line against the original `mod.rs`); both were correct and
+left as-is.
+
+- **Task 4:** wrote `mcp/src/dashboard/transcript.rs` — `transcript_lines`,
+  `record_lines`, `preview` (bodies copied verbatim from the original
+  `mod.rs`) plus the relocated `transcript_lines_*` / `record_lines_*` /
+  `spinner_*` tests. **Spec deviation (correctness fix):** `record_lines` does
+  **not** reference `TRANSCRIPT_CONTENT_MAX_LINES` (the cap logic lives in
+  `highlight.rs`), so importing that const at module scope would be an unused
+  import under `-D warnings`. Imported it inside the test module only
+  (`use crate::dashboard::highlight::TRANSCRIPT_CONTENT_MAX_LINES;`), where the
+  cap test needs it. Dropped the skeleton's `crate::status::sessions_dir` /
+  `tempfile::TempDir` test imports — unused by these tests.
+- **Task 5:** patched the `mod.rs` header — dropped `std::sync::OnceLock`, the
+  syntect imports, the `SYNTAX_SET`/`THEME_SET` statics + `syntax_set`/
+  `theme_set` accessors, and the now-unused `SessionEvent` import; added the
+  three `mod` declarations and the `filter` / `transcript` cross-module `use`s.
+- **Task 6:** deleted the three extracted regions from `mod.rs` (constants +
+  `ActivityFilter`/`FilterState` + `detect_syntax`…`preview`, and the relocated
+  test blocks), preserving the `visible_offset` / `clamp_scroll` /
+  `dollars_saved` tests that stay.
+- **Tasks 7–8:** `cargo build` green (first try), `cargo clippy
+  --all-targets --all-features -- -D warnings` clean, `cargo fmt --all --check`
+  clean (ran `rustfmt` on the four touched files only), `cargo test` green.
+
+`mod.rs` 2 098 → 1 151 lines. No behavior change; main.rs unchanged.
+
+### Review — 2026-06-05
+
+**Executor:** Claude (direct)
+**Verdict:** escalated
+
+All acceptance criteria met:
+
+- [x] `mcp/src/dashboard.rs` gone; `mcp/src/dashboard/mod.rs` exists.
+- [x] `filter.rs`, `highlight.rs`, `transcript.rs` each exist.
+- [x] `cargo build` succeeds, zero new warnings.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` passes.
+- [x] `cargo fmt --all --check` passes.
+- [x] `cargo test` passes — 243 mcp + 585 executor (unchanged from pre-flight;
+  tests relocated, none added or deleted).
+- [x] No `ActivityFilter` / `FilterState` / `detect_syntax` / `transcript_lines`
+  / `record_lines` definitions remain in `mod.rs`.
+- [x] `main.rs` unchanged.
+
+**Calibration data point (hold for recurrence):** third standalone occurrence
+of an SSE 180s stall on this backend (after phase-01 dispatch-2 and phase-05);
+when it strands a read-heavy refactor against a large file mid-run, the
+executor cannot recover across re-dispatch (it re-reads the same large file each
+time and re-stalls). Takeover was the correct lever once the same infra class
+recurred three times.
