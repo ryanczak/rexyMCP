@@ -13,11 +13,14 @@ pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 
 pub(crate) const SPINNER_FRAMES: &[&str] = &[
     "🐕       🧠",
-    " 🐕     🧠",
-    "  🐕   🧠   ",
-    "   🐕 🧠  ",
-    "    🐕🧠 ",
-    "  🧠🐕💨",
+    " 🐕      🧠",
+    "  🐕     🧠",
+    "   🐕    🧠",
+    "    🐕   🧠",
+    "     🐕  🧠",
+    "     🧠🐕💨",
+    "   🧠🐕",
+    "  🧠🐕",
     " 🧠🐕",
     "🧠🐕",
     "🐕",
@@ -427,10 +430,10 @@ mod tests {
             let last = format!("{}", lines.last().unwrap());
             assert_eq!(last, *expected, "frame {i} mismatch");
         }
-        // Index 9 wraps to frame 0 (9 frames total, 9 % 9 == 0)
-        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(9));
+        // Index 12 wraps to frame 0 (12 frames total, 12 % 12 == 0)
+        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(12));
         let last = format!("{}", lines.last().unwrap());
-        assert_eq!(last, SPINNER_FRAMES[0], "frame 9 should wrap to 0");
+        assert_eq!(last, SPINNER_FRAMES[0], "frame 12 should wrap to 0");
     }
 
     #[test]
@@ -446,6 +449,6 @@ mod tests {
         let lines = transcript_lines(&[], &ActivityFilter::default(), Some(3));
         assert_eq!(lines.len(), 2);
         assert_eq!(format!("{}", lines[0]), "(no activity yet)");
-        assert_eq!(format!("{}", lines[1]), "   🐕 🧠  ");
+        assert_eq!(format!("{}", lines[1]), "   🐕   🧠");
     }
 }
