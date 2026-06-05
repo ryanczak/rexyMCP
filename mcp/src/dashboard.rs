@@ -303,7 +303,7 @@ fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
     let Some(syntax) = detect_syntax(content, ss) else {
         return body_lines(content)
             .into_iter()
-            .map(|l| Line::from(Span::styled(l, Style::new().fg(Color::DarkGray))))
+            .map(|l| Line::from(Span::styled(l, Style::new().fg(Color::Rgb(200, 200, 200)))))
             .collect();
     };
 
@@ -420,7 +420,7 @@ fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 "completion:".to_string(),
                 Color::Reset,
                 false,
-                Some(plain_body_lines(raw, Color::Rgb(180, 180, 180))),
+                Some(plain_body_lines(raw, Color::Rgb(200, 200, 200))),
             ),
             SessionEvent::Parsed { tool_call } => (
                 format!("→ call {}", tool_call.name),
@@ -583,18 +583,12 @@ fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
     if let Some(ts) = summary.last_ts {
         let age_ms = now_ms.saturating_sub(ts);
         let age_str = status::humanize_age(age_ms);
-        let line = match (
-            summary.update_interval_avg_ms,
-            summary.update_interval_max_ms,
-            summary.update_interval_min_ms,
-        ) {
-            (Some(avg), Some(max), Some(min)) => format!(
-                "last update: {age_str} ago (AVG: {}, MAX: {}, MIN: {})",
+        let line = match summary.update_interval_avg_ms {
+            Some(avg) => format!(
+                "last update: {age_str} ago (avg: {})",
                 status::humanize_age(avg),
-                status::humanize_age(max),
-                status::humanize_age(min),
             ),
-            _ => format!("last update: {age_str} ago"),
+            None => format!("last update: {age_str} ago"),
         };
         lines.push(Line::from(line));
     }
@@ -636,15 +630,18 @@ fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         .files_changed
         .iter()
         .map(|f| {
-            let numstat = format!("+{} -{}", f.added, f.removed);
+            let added_str = format!("+{}", f.added);
+            let removed_str = format!("-{}", f.removed);
+            let numstat_width = added_str.len() + 1 + removed_str.len();
             // Path budget = total line max − indent(2) − separator(1) − numstat.
             // This guarantees the numstat is always visible regardless of its width.
-            let path_max = FILE_LINE_MAX.saturating_sub(1 + numstat.chars().count());
-            Line::from(format!(
-                "  {} {}",
-                trim_path_left(&f.path, path_max),
-                numstat
-            ))
+            let path_max = FILE_LINE_MAX.saturating_sub(1 + numstat_width);
+            Line::from(vec![
+                Span::raw(format!("  {} ", trim_path_left(&f.path, path_max))),
+                Span::styled(added_str, Style::new().fg(Color::Green)),
+                Span::raw(" "),
+                Span::styled(removed_str, Style::new().fg(Color::Red)),
+            ])
         })
         .collect()
 }
@@ -714,16 +711,17 @@ fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         summary.last_output_tokens,
     ) {
         Some(rate) => {
-            lines.push(Line::from(format!("tok/s: {rate:.1}")));
-            if let (Some(avg), Some(max), Some(min)) = (
+            let stats = match (
                 summary.tok_per_sec_avg,
                 summary.tok_per_sec_max,
                 summary.tok_per_sec_min,
             ) {
-                lines.push(Line::from(format!(
-                    "  (AVG: {avg:.1}, MAX: {max:.1}, MIN: {min:.1})"
-                )));
-            }
+                (Some(avg), Some(max), Some(min)) => {
+                    format!("  (avg: {avg:.1}, max: {max:.1}, min: {min:.1})")
+                }
+                _ => String::new(),
+            };
+            lines.push(Line::from(format!("tok/s: {rate:.1}{stats}")));
         }
         None => lines.push(Line::from("tok/s: —")),
     }
@@ -829,13 +827,14 @@ fn render_dashboard(
     let [header, body] =
         Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).areas::<2>(area);
 
-    // Header band: Session (phase/session/model/state/turn/stage/age) · Budget · Compactions.
-    // Budget uses Min(42) so the tok/s stats line "(AVG: X.X, MAX: XX.X, MIN: X.X)"
-    // (≈37 chars + borders) is never clipped; Compactions fills the remainder.
-    // Session stays at 50% and is unaffected by Budget's minimum.
+    // Header band: Session · Budget · Compactions.
+    // Budget uses Min(56) so the combined tok/s line
+    // "tok/s: X.X  (avg: X.X, max: X.X, min: X.X)" fits without wrapping.
+    // Session uses Fill(1) so it yields width to Budget when the terminal is
+    // narrow; Compactions takes whatever remains.
     let [session_area, budget_area, compactions_area] = Layout::horizontal([
-        Constraint::Percentage(50),
-        Constraint::Min(42),
+        Constraint::Fill(1),
+        Constraint::Min(56),
         Constraint::Fill(1),
     ])
     .areas::<3>(header);
@@ -896,17 +895,13 @@ fn render_dashboard(
     } else {
         let transcript = transcript_lines(&data.records, &filter_state.filter, state.spinner);
         let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
-        // Word-wrap is enabled for the Activity panel. Paragraph::scroll counts
-        // *visual* rows (post-wrap), not logical lines, so scroll-to-bottom is
-        // unsolvable without measuring actual rendered heights. When tail-following,
-        // we instead truncate to the last (viewport * 2) logical lines and skip
-        // scrolling — the newest content naturally lands at the bottom. When the user
-        // scrolls manually we keep all lines and apply the offset (which is a logical-
-        // line approximation, fine for navigation but not pixel-perfect with wrapping).
+        // When tail-following, pass all lines and scroll to u16::MAX — ratatui clamps
+        // to the actual content height, always showing the bottom (including the
+        // spinner). When scrolling manually, use visible_offset as a logical-line
+        // approximation (not pixel-perfect with word-wrap, but fine for navigation).
         let n = transcript.len();
         let (display_lines, scroll_rows) = if state.follow {
-            let keep = (viewport as usize * 2).min(n);
-            (transcript[n.saturating_sub(keep)..].to_vec(), 0u16)
+            (transcript, u16::MAX)
         } else {
             let display = visible_offset(false, state.offset, n, viewport);
             (transcript, display)
@@ -979,7 +974,7 @@ fn run_loop(
             .draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, &state, rates))?;
         offset = clamp_scroll(
             offset,
-            transcript_lines(&data.records, &filter_state.filter, None).len(),
+            transcript_lines(&data.records, &filter_state.filter, spinner).len(),
         );
 
         if event::poll(Duration::from_millis(500))?
@@ -1377,9 +1372,7 @@ mod tests {
         let lines = session_lines(&summary, 5000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
-        assert!(age_line.contains("AVG:"), "expected AVG in: {age_line}");
-        assert!(age_line.contains("MAX:"), "expected MAX in: {age_line}");
-        assert!(age_line.contains("MIN:"), "expected MIN in: {age_line}");
+        assert!(age_line.contains("avg:"), "expected avg in: {age_line}");
     }
 
     #[test]
@@ -1392,7 +1385,7 @@ mod tests {
         let lines = session_lines(&summary, 5000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
-        assert!(!age_line.contains("AVG:"), "unexpected AVG in: {age_line}");
+        assert!(!age_line.contains("avg:"), "unexpected avg in: {age_line}");
     }
 
     #[test]
@@ -1410,10 +1403,10 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let stats_line = text.iter().find(|s| s.contains("AVG:")).unwrap();
-        assert!(stats_line.contains("AVG: 80.0"), "got: {stats_line}");
-        assert!(stats_line.contains("MAX: 120.0"), "got: {stats_line}");
-        assert!(stats_line.contains("MIN: 60.0"), "got: {stats_line}");
+        let stats_line = text.iter().find(|s| s.contains("tok/s:")).unwrap();
+        assert!(stats_line.contains("avg: 80.0"), "got: {stats_line}");
+        assert!(stats_line.contains("max: 120.0"), "got: {stats_line}");
+        assert!(stats_line.contains("min: 60.0"), "got: {stats_line}");
     }
 
     #[test]
@@ -1429,7 +1422,7 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(!text.iter().any(|s| s.contains("AVG:")));
+        assert!(!text.iter().any(|s| s.contains("avg:")));
     }
 
     // --- compactions_lines tests ---
