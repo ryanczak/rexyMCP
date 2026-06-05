@@ -1,7 +1,7 @@
 # Phase 06: update dashboard spinner animation
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** review
+**Status:** done
 **Depends on:** phase-05b
 **Estimated diff:** ~15 lines changed in one file
 **Tags:** language=rust, kind=chore, size=xs
@@ -168,3 +168,17 @@ cargo test → 585 passed; 0 failed; 2 ignored (matches pre-flight count)
 **End-to-end verification:** N/A — this phase changes only a display constant and its test assertions; no new runtime behavior, CLI output, or config artifacts.
 
 **Notes for review:** None. Straightforward constant + assertion update.
+
+### Review verdict — 2026-06-05
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** Pre-injecting all four patches verbatim (exact
+  `old_str`/`new_str`, no file read required) produced a clean first-try on a
+  file the executor had previously stalled re-reading in 05a/05b — consistent
+  with the standing "pre-inject exact patch targets" discipline. Independent
+  re-run: fmt ✓, build ✓ (0 warnings), clippy ✓, test 243 mcp + 585 executor ✓
+  (unchanged). Spot-checked `spinner_appended_when_active` — fails as expected
+  when frame[0] is corrupted, confirming a real assertion. Zero `🐾` remain.
