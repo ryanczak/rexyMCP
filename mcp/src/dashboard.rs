@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
 };
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
@@ -895,21 +895,11 @@ fn render_dashboard(
     } else {
         let transcript = transcript_lines(&data.records, &filter_state.filter, state.spinner);
         let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
-        // When tail-following, pass all lines and scroll to u16::MAX — ratatui clamps
-        // to the actual content height, always showing the bottom (including the
-        // spinner). When scrolling manually, use visible_offset as a logical-line
-        // approximation (not pixel-perfect with word-wrap, but fine for navigation).
         let n = transcript.len();
-        let (display_lines, scroll_rows) = if state.follow {
-            (transcript, u16::MAX)
-        } else {
-            let display = visible_offset(false, state.offset, n, viewport);
-            (transcript, display)
-        };
+        let scroll = visible_offset(state.follow, state.offset, n, viewport);
         frame.render_widget(
-            Paragraph::new(display_lines)
-                .wrap(Wrap { trim: false })
-                .scroll((scroll_rows, 0))
+            Paragraph::new(transcript)
+                .scroll((scroll, 0))
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
