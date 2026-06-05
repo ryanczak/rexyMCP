@@ -898,13 +898,11 @@ fn render_dashboard(
         let n = transcript.len();
         let scroll = visible_offset(state.follow, state.offset, n, viewport);
         frame.render_widget(
-            Paragraph::new(transcript)
-                .scroll((scroll, 0))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Activity [f=filter] "),
-                ),
+            Paragraph::new(transcript).scroll((scroll, 0)).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Activity [f=filter] "),
+            ),
             activity_area,
         );
     }
