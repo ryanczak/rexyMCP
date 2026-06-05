@@ -69,11 +69,12 @@ pub(crate) fn render_dashboard(
     // Budget uses Min(56) so the combined tok/s line
     // "tok/s: X.X  (avg: X.X, max: X.X, min: X.X)" fits without wrapping.
     // Session uses Fill(1) so it yields width to Budget when the terminal is
-    // narrow; Compactions takes whatever remains.
+    // narrow; Compactions uses Percentage(28) to mirror the Files panel below,
+    // aligning the Budget/Compactions border with the Activity/Files border.
     let [session_area, budget_area, compactions_area] = Layout::horizontal([
         Constraint::Fill(1),
         Constraint::Min(56),
-        Constraint::Fill(1),
+        Constraint::Percentage(28),
     ])
     .areas::<3>(header);
 
