@@ -4,7 +4,7 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. The user kicks off the next milestone explicitly.
+**Active phase:** [M9 / phase-05a — split dashboard: filter, highlight, transcript](milestones/M9-runtime-hardening/phase-05a-dashboard-split-filter-highlight-transcript.md)
 
 **phase-04 done** (2026-06-04, escalated — architect session takeover): pure
 structural refactor extracting ~550 lines of private helpers from the 4 507-line

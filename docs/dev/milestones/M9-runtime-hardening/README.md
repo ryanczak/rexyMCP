@@ -4,7 +4,7 @@
 phase-spec instruction provably cannot, starting with the post-write formatting
 race folded from M1/mp3-player.
 
-**Status:** done (2026-06-04)
+**Status:** in-progress (phase-05a/05b added 2026-06-05)
 
 **Depends on:** M4 (the agent loop: dispatch → verify → final command set)
 
@@ -31,6 +31,8 @@ race folded from M1/mp3-player.
 | 02 | lint-fix in the post-write hook ([phase-02-lint-fix-hook.md](phase-02-lint-fix-hook.md))          | done   |
 | 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | done   |
 | 04 | split agent/mod.rs into focused submodules ([phase-04-agent-mod-split.md](phase-04-agent-mod-split.md)) | done   |
+| 05a | split dashboard: extract filter, highlight, transcript ([phase-05a-dashboard-split-filter-highlight-transcript.md](phase-05a-dashboard-split-filter-highlight-transcript.md)) | todo   |
+| 05b | split dashboard: extract panels, render, event_loop ([phase-05b-dashboard-split-panels-render-loop.md](phase-05b-dashboard-split-panels-render-loop.md)) | todo   |
 
 ## Notes
 
