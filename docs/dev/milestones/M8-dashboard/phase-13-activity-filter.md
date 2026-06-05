@@ -1,7 +1,7 @@
 # Phase 13: Activity pane event filter
 
 **Milestone:** M8 — Live session dashboard
-**Status:** review
+**Status:** done
 **Depends on:** phase-12 (Activity pane spinner) — the `transcript_lines`
 signature must already carry `spinner: Option<usize>` as its second parameter.
 **Estimated diff:** ~200 lines
@@ -634,3 +634,11 @@ New tests in `#[cfg(test)] mod tests`:
 **Grep check for spec-pinned literals:** `grep -c 'Activity \[f=filter\]' mcp/src/dashboard.rs` → 1 match; `grep -c 'Activity \[filter\]' mcp/src/dashboard.rs` → 1 match. Both title strings present.
 
 **Notes for review:** None — this is a re-dispatch fixing only the two mechanical clippy lints from the bounce. No behavioral changes.
+
+### Review verdict — 2026-06-04
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bugs: bug-phase-13-1 — blocker)
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** data point — pre-injected manual `Default` for `FilterState` was exactly derivable; architect sketch violated clippy before executor touched it. Architect-authored code snippets in phase doc §1 should themselves be clippy-clean (hold for recurrence).

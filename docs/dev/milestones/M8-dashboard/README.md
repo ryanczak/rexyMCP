@@ -65,7 +65,7 @@ sibling built on the same `summarize()` core.
 | 11a | Budget panel: Tokens/Sec throughput (JSONL-derived) ([phase-11a-budget-tokens-per-sec.md](phase-11a-budget-tokens-per-sec.md)) | done |
 | 11b | Budget panel: "$ saved" (configurable $/Mtok rate, config plumbing) ([phase-11b-budget-dollars-saved.md](phase-11b-budget-dollars-saved.md)) | done |
 | 12  | Activity pane spinner (🐾 throbber while model is running + auto-scroll anchor) ([phase-12-activity-spinner.md](phase-12-activity-spinner.md)) | done |
-| 13  | Activity pane event filter (per-type toggle, progress off by default) ([phase-13-activity-filter.md](phase-13-activity-filter.md)) | review |
+| 13  | Activity pane event filter (per-type toggle, progress off by default) ([phase-13-activity-filter.md](phase-13-activity-filter.md)) | done |
 
 ## Design decisions
 
