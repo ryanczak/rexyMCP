@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 
 use similar::{ChangeTag, TextDiff};
 
-use crate::store::sessions::event::FileNumstat;
+use crate::security::redact::Redactor;
+use crate::store::sessions::event::{FileNumstat, SessionEvent};
+use crate::store::sessions::jsonl::SessionLogHandle;
+
+use super::log::log_event;
 
 /// The callback the loop invokes at each emission point. `Send + Sync` so it
 /// can cross await points and be shared across the rmcp request task (05b).
@@ -111,6 +115,49 @@ pub fn format_message(turn: usize, stage: &str, files_changed: &[FileNumstat]) -
     }
 
     parts.join(" ")
+}
+
+pub(super) struct EmitCtx<'a> {
+    pub(super) progress: Option<&'a dyn ProgressCallback>,
+    pub(super) log_handle: &'a Option<SessionLogHandle>,
+    pub(super) redactor: &'a Redactor,
+    pub(super) clock: &'a (dyn Fn() -> u64 + Send + Sync),
+    pub(super) pre_edit_content: &'a HashMap<PathBuf, Option<String>>,
+    pub(super) project_root: &'a Path,
+    pub(super) turn: usize,
+}
+
+/// Emit a progress event. The two consumers are independent: the
+/// `SessionEvent::Progress` record is always logged (so `rexymcp status` and
+/// Claude's post-return log queries can see liveness even when no live watcher
+/// is attached), while the live callback fires only when one is present. The
+/// log write self-gates on the session-log handle, so this is a no-op only
+/// when there is neither a handle nor a callback.
+pub(super) fn emit_progress(ctx: &EmitCtx<'_>, stage: String) {
+    let numstat = numstat_from_pre_edit(ctx.pre_edit_content, ctx.project_root);
+    let message = format_message(ctx.turn, &stage, &numstat);
+
+    if let Some(cb) = ctx.progress {
+        cb.on_progress(&ProgressEvent {
+            turn: ctx.turn,
+            stage: stage.clone(),
+            files_changed: numstat.clone(),
+            message: message.clone(),
+        });
+    }
+
+    log_event(
+        ctx.log_handle,
+        ctx.redactor,
+        ctx.clock,
+        ctx.turn,
+        SessionEvent::Progress {
+            turn: ctx.turn,
+            stage,
+            files_changed: numstat,
+            message,
+        },
+    );
 }
 
 #[cfg(test)]

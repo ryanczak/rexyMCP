@@ -1,7 +1,7 @@
 # Phase 04: Split executor/src/agent/mod.rs into focused submodules
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** todo
+**Status:** review
 **Depends on:** M9/phase-03 (read_file cap — done)
 **Estimated diff:** ~0 net lines (moves ~550 lines out of mod.rs into 6 sibling files)
 **Tags:** language=rust, kind=refactor, size=m
@@ -70,15 +70,52 @@ All edits are in `executor/src/agent/`. No other directory.
 
 ### Ordering constraint
 
-**Phase A (Tasks 1–6):** Create / extend the new files. Do not modify `mod.rs`
-yet. The build continues to pass with the old `mod.rs` because the new files
-are not linked in until Task 7.
+> **Why this matters:** the executor's verifier hard-fails after **3 consecutive
+> turns with build errors**. A naïve order leaves the build red across several
+> edit turns and trips that governor. Follow the sequence below exactly — it keeps
+> the build green (or only E0255-red for one tight burst) at every checkpoint.
 
-**Phase B (Task 7):** Update `mod.rs`. This is the only step that breaks the
-build temporarily: patching the header adds `use` re-exports alongside the
-original function definitions, producing E0255 ("name defined multiple times").
-Immediately remove the original function bodies to clear every E0255. The build
-is green again when all removals are done.
+**Phase A0 (Tasks 1–4): create the new orphan files.** Write `log.rs`,
+`tools.rs`, `outcome.rs`, `metrics.rs`. They are not yet declared in `mod.rs`, so
+they are not compiled and the build stays **green**.
+
+**Phase A1 (new — link the modules BEFORE extending compiled modules).** Add the
+four declarations to `mod.rs`'s header, immediately after the existing
+`pub mod verify;` line:
+
+```rust
+mod log;
+mod metrics;
+mod outcome;
+mod tools;
+```
+
+Do **not** add any `use` re-exports yet, and do **not** remove any original
+function bodies yet. This compiles the four new modules (their `pub(super)` items
+namespaced under `log::`, `tools::`, etc. — no collision with the originals that
+still live in `mod.rs`). The build stays **green** (you may see transient
+unused-import warnings inside the new modules; those clear in Phase B).
+
+**Critical:** this step must precede Phase A2. `progress.rs` and `command.rs` are
+already-compiled `pub mod`s. The moment you extend them with `use super::log::…`
+(Task 5) or the `(CommandOutputs, Gates)` return (Task 6), those references need
+`mod log;`/`mod metrics;` to already exist. If you extend the compiled modules
+first, the build goes red with `unresolved import super::log` and stays red.
+
+**Phase A2 (Tasks 5–6): extend the already-compiled modules.** Append to
+`progress.rs` and `command.rs` as specified. Because Phase A1 declared the new
+modules, `super::log::log_event` and the `CommandOutputs`/`Gates` types resolve.
+The build stays **green**.
+
+**Phase B (Task 7): wire `mod.rs` and delete the originals.** Apply Task 7a's
+header replacement as written — it is the final desired header and already
+contains the four `mod` lines you added in Phase A1 (re-applying them is
+idempotent). The new content 7a adds on top of A1 is the block of `use`
+re-exports. Adding a `use` re-export alongside an original
+definition produces E0255 ("name defined multiple times"). Immediately remove the
+original function bodies to clear every E0255. To minimize consecutive red turns,
+**add the re-exports and delete the originals in as few turns as possible** — do
+not pause on a red build. The build is green again when all removals are done.
 
 ---
 
@@ -220,10 +257,13 @@ Read mod.rs lines 1180–1248.
 is a private `const`.
 
 `run_command_set` takes `ctx: &EmitCtx<'_>` — `EmitCtx` is in `progress.rs`.
-New imports to add at the top of `command.rs`:
+It also **returns `(CommandOutputs, Gates)`** and constructs both in its body, so
+those types must be imported too. New imports to add at the top of `command.rs`:
 
 ```rust
 use crate::config::CommandConfig;
+use crate::phase::CommandOutputs;
+use crate::store::telemetry::Gates;
 
 use super::progress::{EmitCtx, emit_progress};
 ```
@@ -369,3 +409,73 @@ purely structural: same behavior, different file locations.
 (Filled in by the executor.)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-04
+
+The first dispatch hard-failed at turn 26 (verifier flagged build errors on 3
+consecutive turns). The diagnosis was a **spec gap, not an executor mistake** —
+you faithfully created all four new files and extended `progress.rs`/`command.rs`,
+but the old ordering constraint guaranteed a red build:
+
+1. **Ordering bug (now fixed in "Ordering constraint" above).** `progress.rs` and
+   `command.rs` are already-compiled `pub mod`s. Extending them with
+   `use super::log::log_event` and the `(CommandOutputs, Gates)` return *before*
+   declaring `mod log; mod metrics; mod outcome; mod tools;` in `mod.rs` produced
+   `unresolved import super::log` and kept the build red. The spec now adds a
+   **Phase A1** that declares the four modules immediately after `pub mod verify;`
+   and *before* you extend the compiled modules. Follow Phase A0 → A1 → A2 → B in
+   order.
+
+2. **Missing imports in `command.rs` (now fixed in Task 6).** `run_command_set`
+   returns `(CommandOutputs, Gates)`; the import block omitted both types. Task 6
+   now lists `use crate::phase::CommandOutputs;` and
+   `use crate::store::telemetry::Gates;`.
+
+**Your partial work from the first run is on disk and is correct — keep it.** The
+four new files (`log.rs`, `metrics.rs`, `outcome.rs`, `tools.rs`) and the
+`progress.rs`/`command.rs` extensions already exist. Re-dispatch resumes against
+this tree. Concretely, what remains is: add the two missing imports to
+`command.rs`, run **Phase A1** (declare the four `mod`s in `mod.rs`), confirm the
+build is green, then do **Phase B / Task 7** (add the `use` re-exports and delete
+the original function bodies). A throwaway verification confirmed that A1 + the
+two imports alone takes the build from 5 errors to **zero errors**.
+
+The verifier hard-fails after **3 consecutive red turns** — keep the Phase B
+re-export-add + original-deletion tight and don't stall on an intermediate E0255
+build.
+
+### Update — 2026-06-04 18:30 (escalation, dispatch-1)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** First-dispatch hard_fail traced to two architect spec gaps (an
+impossible Phase-A ordering that broke the build before Task 7, and an incomplete
+`command.rs` import list); both are fixed in the spec, so a tightened re-dispatch
+against the intact partial work is the cheap, telemetry-preserving fix — not a
+takeover.
+
+### Update — 2026-06-04 19:15 (escalation → session takeover, dispatch-2)
+
+**Chosen lever:** session takeover (architect direct)
+**Rationale:** Second dispatch (after refined re-dispatch) failed with
+`IdenticalToolCallRepetition` on `read_file` — the executor applied Task 7a
+correctly (module declarations + `use` re-exports + header replacement) but then
+looped reading mod.rs instead of patching out the original function bodies (Task
+7b). Same mechanical-churn stall pattern as phase-10b; second consecutive failure
+→ session takeover trigger.
+
+**Session takeover — architect implementation:**
+- Removed original function bodies (lines 803–1362 post-7a) from mod.rs in one
+  Python splice (560 lines removed).
+- Fixed 5 unused-import warnings surfaced by the stripped header: dropped
+  `LoopDeps` from `outcome.rs`, `GenerationParams` from `metrics.rs`, `Severity`
+  / `Blocker` / `CommandResult` from mod.rs outer scope.
+- Fixed 14 `cfg(test)` reference failures: `CommandResult`, `Blocker`,
+  `MAX_COMMAND_TAIL_CHARS`, `PhaseRun` used in the test module were no longer in
+  `super::*` scope after extraction. Added imports inside `mod tests {}`;
+  promoted `MAX_COMMAND_TAIL_CHARS` to `pub(super)` in `command.rs`.
+- Ran `rustfmt` on 4 touched files to fix line-length formatting.
+- **Gates:** `cargo build` ✓, `cargo clippy -D warnings` ✓, `cargo fmt --check`
+  ✓, `cargo test` — 585 passed / 0 failed / 2 ignored.
+
+**Executor:** Claude (direct)
+**Verdict:** escalated

@@ -55,3 +55,86 @@ impl CommandRunner for RealCommandRunner {
         }
     }
 }
+
+use crate::config::CommandConfig;
+use crate::phase::CommandOutputs;
+use crate::store::telemetry::Gates;
+
+use super::progress::{EmitCtx, emit_progress};
+
+/// Tail cap on each captured final-command-set output.
+pub(super) const MAX_COMMAND_TAIL_CHARS: usize = 4_000;
+
+pub(super) async fn run_command_set(
+    runner: &dyn CommandRunner,
+    commands: &CommandConfig,
+    cwd: &Path,
+    ctx: &EmitCtx<'_>,
+) -> (CommandOutputs, Gates) {
+    if commands.format.is_some() {
+        emit_progress(ctx, "command:fmt".to_string());
+    }
+    let (format, fmt_ok) = run_one(runner, commands.format.as_deref(), cwd).await;
+    if commands.build.is_some() {
+        emit_progress(ctx, "command:build".to_string());
+    }
+    let (build, build_ok) = run_one(runner, commands.build.as_deref(), cwd).await;
+    if commands.lint.is_some() {
+        emit_progress(ctx, "command:lint".to_string());
+    }
+    let (lint, lint_ok) = run_one(runner, commands.lint.as_deref(), cwd).await;
+    if commands.test.is_some() {
+        emit_progress(ctx, "command:test".to_string());
+    }
+    let (test, test_ok) = run_one(runner, commands.test.as_deref(), cwd).await;
+    (
+        CommandOutputs {
+            format,
+            build,
+            lint,
+            test,
+        },
+        Gates {
+            fmt: fmt_ok,
+            build: build_ok,
+            lint: lint_ok,
+            test: test_ok,
+        },
+    )
+}
+
+pub(super) async fn run_post_write_hooks(
+    runner: &dyn CommandRunner,
+    commands: &CommandConfig,
+    cwd: &Path,
+) {
+    if let Some(cmd) = commands.lint_fix.as_deref() {
+        let _ = runner.run(cmd, cwd).await;
+    }
+    if let Some(cmd) = commands.format.as_deref() {
+        let _ = runner.run(cmd, cwd).await;
+    }
+}
+
+async fn run_one(
+    runner: &dyn CommandRunner,
+    command: Option<&str>,
+    cwd: &Path,
+) -> (Option<String>, Option<bool>) {
+    match command {
+        Some(cmd) => {
+            let CommandResult { output, success } = runner.run(cmd, cwd).await;
+            (Some(tail(&output, MAX_COMMAND_TAIL_CHARS)), Some(success))
+        }
+        None => (None, None),
+    }
+}
+
+fn tail(s: &str, max_chars: usize) -> String {
+    let count = s.chars().count();
+    if count > max_chars {
+        s.chars().skip(count - max_chars).collect()
+    } else {
+        s.to_string()
+    }
+}
