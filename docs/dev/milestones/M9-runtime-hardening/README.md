@@ -31,8 +31,9 @@ race folded from M1/mp3-player.
 | 02 | lint-fix in the post-write hook ([phase-02-lint-fix-hook.md](phase-02-lint-fix-hook.md))          | done   |
 | 03 | read_file output cap ([phase-03-read-file-line-cap.md](phase-03-read-file-line-cap.md))           | done   |
 | 04 | split agent/mod.rs into focused submodules ([phase-04-agent-mod-split.md](phase-04-agent-mod-split.md)) | done   |
-| 05a | split dashboard: extract filter, highlight, transcript ([phase-05a-dashboard-split-filter-highlight-transcript.md](phase-05a-dashboard-split-filter-highlight-transcript.md)) | todo   |
-| 05b | split dashboard: extract panels, render, event_loop ([phase-05b-dashboard-split-panels-render-loop.md](phase-05b-dashboard-split-panels-render-loop.md)) | in-progress   |
+| 05a | split dashboard: extract filter, highlight, transcript ([phase-05a-dashboard-split-filter-highlight-transcript.md](phase-05a-dashboard-split-filter-highlight-transcript.md)) | done   |
+| 05b | split dashboard: extract panels, render, event_loop ([phase-05b-dashboard-split-panels-render-loop.md](phase-05b-dashboard-split-panels-render-loop.md)) | done   |
+| 06  | update dashboard spinner animation ([phase-06-spinner-update.md](phase-06-spinner-update.md)) | todo   |
 
 ## Notes
 

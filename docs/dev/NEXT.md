@@ -4,7 +4,9 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M9 / phase-05b — split dashboard: panels, render, event_loop](milestones/M9-runtime-hardening/phase-05b-dashboard-split-panels-render-loop.md)
+**Active phase:** [M9 / phase-06 — update dashboard spinner animation](milestones/M9-runtime-hardening/phase-06-spinner-update.md)
+
+**phase-05b done** (2026-06-05, escalated — architect session takeover after SSE-stall hard_fail): extracted `panels.rs`, `render.rs`, `event_loop.rs`; `mod.rs` shrinks to 141 lines; 828 tests pass unchanged.
 
 **phase-05a done** (2026-06-05, escalated — architect session takeover after three SSE-stall hard_fails): extracted `filter.rs`, `highlight.rs`, `transcript.rs` from the 2098-line `dashboard.rs`; mod.rs shrinks to 1151 lines; 828 tests pass unchanged.
 
