@@ -34,7 +34,7 @@ race folded from M1/mp3-player.
 | 05a | split dashboard: extract filter, highlight, transcript ([phase-05a-dashboard-split-filter-highlight-transcript.md](phase-05a-dashboard-split-filter-highlight-transcript.md)) | done   |
 | 05b | split dashboard: extract panels, render, event_loop ([phase-05b-dashboard-split-panels-render-loop.md](phase-05b-dashboard-split-panels-render-loop.md)) | done   |
 | 06  | update dashboard spinner animation ([phase-06-spinner-update.md](phase-06-spinner-update.md)) | done   |
-| 07  | align header panel borders with body panel borders ([phase-07-dashboard-border-alignment.md](phase-07-dashboard-border-alignment.md)) | review   |
+| 07  | align header panel borders with body panel borders ([phase-07-dashboard-border-alignment.md](phase-07-dashboard-border-alignment.md)) | done   |
 
 ## Notes
 

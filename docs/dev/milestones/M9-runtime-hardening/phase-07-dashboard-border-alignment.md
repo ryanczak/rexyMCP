@@ -1,7 +1,7 @@
 # Phase 07: align header panel borders with body panel borders
 
 **Milestone:** M9 — Executor runtime hardening
-**Status:** review
+**Status:** done
 **Depends on:** phase-06
 **Estimated diff:** ~3 lines changed in one file
 **Tags:** language=rust, kind=fix, size=xs
@@ -142,3 +142,12 @@ Both the header Compactions (line 77) and body Files (line 97) now use `Percenta
 **Commit:** `fix: align header Compactions border with body Files border at 28%`
 
 **End-to-end verification:** N/A — this is a pure layout constraint change with no testable logic; correct behaviour is verified visually in a live terminal.
+
+### Review verdict — 2026-06-05
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-labels "Claude Sonnet 4.5"; the served/configured model is Qwen — same mislabel seen in prior phases)
+- **Scope deviations:** none — only the Compactions constraint changed (`Fill(1)` → `Percentage(28)`) plus its comment; the body split, Session `Fill(1)`, and Budget `Min(56)` are untouched; no other file changed.
+- **Re-run:** `cargo fmt --all --check`, `cargo build`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` all pass independently; 585 tests (matches pre-flight).
+- **Calibration:** none
