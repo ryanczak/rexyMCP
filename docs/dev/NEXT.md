@@ -4,7 +4,7 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M8 / phase-13 — Activity pane event filter](milestones/M8-dashboard/phase-13-activity-filter.md). Per-event-type toggle panel (`f` key); progress events off by default. Extends `ViewState` with `FilterState` (phase-12 introduced `ViewState`). Phase-12 is `done` (approved_after_1, 2026-06-04).
+**Active phase:** [M9 / phase-04 — Split agent/mod.rs](milestones/M9-runtime-hardening/phase-04-agent-mod-split.md). Pure structural refactor: extract ~550 lines of private helpers from the 4 507-line `mod.rs` into 4 new sibling modules (`log`, `tools`, `outcome`, `metrics`) and extend 2 existing ones (`progress`, `command`). No logic changes. M8 is complete (all 16 phases done, 2026-06-04).
 
 **M9 (executor runtime hardening) is complete.** All three
 phases done (2026-06-04): post-write format hook (approved_after_2), lint_fix in the
