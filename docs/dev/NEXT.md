@@ -4,7 +4,7 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** [M9 phase-07 — dashboard border alignment](milestones/M9-runtime-hardening/phase-07-dashboard-border-alignment.md)
+**Active phase:** none — M8 closed (2026-06-07); M9 phase-07 done and approved. Milestone boundary: human gate before M10.
 
 **phase-06 done** (2026-06-05, approved_first_try): replaced the paw-print spinner with a dog-chasing-brain animation (9 frames) in `transcript.rs`; 4 test assertions updated. Clean first-try via fully pre-injected verbatim patches — the executor never read the file. Qwen/Qwen3.6-27B-FP8.
 

@@ -4,7 +4,7 @@
 phase-spec instruction provably cannot, starting with the post-write formatting
 race folded from M1/mp3-player.
 
-**Status:** in-progress (phase-07 added 2026-06-05)
+**Status:** done — all 8 phases complete (2026-06-07)
 
 **Depends on:** M4 (the agent loop: dispatch → verify → final command set)
 
@@ -127,3 +127,31 @@ hard-fails.
    modules, the `mod X;` declaration must land *before or with* the reference,
    not in a later task. Verify intermediate build states are actually reachable
    when sequencing a multi-step move. Data point.
+
+### Phases 05a–07 addendum (2026-06-05 to 2026-06-07)
+
+**Phase-05a** (split `dashboard.rs`: extract `filter.rs`, `highlight.rs`,
+`transcript.rs` — escalated, architect session takeover after three SSE-stall
+hard_fails): structural move-only, the 2098-line `dashboard.rs` shrinks to 1151
+lines, 828 tests pass unchanged. SSE stalls were infra, not executor.
+
+**Phase-05b** (split dashboard: extract `panels.rs`, `render.rs`, `event_loop.rs`
+— escalated, architect session takeover after SSE-stall hard_fail): `mod.rs` shrinks
+to 141 lines, 828 tests pass unchanged. Again infra stalls, not executor error.
+
+**Phase-06** (replace paw-print spinner with dog-chasing-brain animation — 
+approved_first_try): 9 frames in `transcript.rs`, 4 test assertions updated.
+Clean first-try via fully pre-injected verbatim patches; the executor never read
+the file. Qwen/Qwen3.6-27B-FP8.
+
+**Phase-07** (align header Compactions border with body Files border —
+approved_first_try): `Constraint::Fill(1)` → `Constraint::Percentage(28)` in
+`render.rs`, comment updated; ~3 lines changed. 585 tests pass. Pure layout
+constraint change; verified visually. Qwen/Qwen3.6-27B-FP8.
+
+**M9 milestone close (2026-06-07):** All 8 phases done. The original exit criteria
+(post-write format hook, lint-fix hook, read_file cap) were met by phase-03.
+Phases 04–07 were expansions: a structural refactor of the agent loop's `mod.rs`
+(phase-04), a dashboard module split (05a/b), and two UI polish phases (06, 07).
+The SSE stalls in 05a/b are infra — no executor error, no spec gap; the two
+escalations are clean architect takeovers. No new WORKFLOW folds from 05a–07.

@@ -8,16 +8,8 @@ continuously-refreshed read-only TUI that tails the per-record-flushed session J
 and shows turn/stage/tool, parse and verifier signals, files changed, and budget
 consumption in a `btop`-style paned layout.
 
-**Status:** in progress — phase-01–08 done. Both original Exit criteria are met
-("parse/verifier signal" via phase-04's Activity panel; "budget consumed" via 06b's
-Budget panel); phase-08 fixed the auto-exit usability bug (dashboard now stays open
-and auto-follows a newly-started session); phase-07 closed the last measurement gap
-(Gap C — `SessionEvent::Compaction` emitted from the silent `compact()` firing).
-**M8 is being kept open (2026-06-03, user decision) for a dashboard redesign
-(phase-09+)** — the user is producing UI wireframes before those phases are drafted.
-The milestone-close decision is deferred until the redesign work is scoped. The
-measurement roadmap below (Gaps A/B/C) is now fully landed; the compaction *render*
-half is intentionally deferred to the redesign.
+**Status:** done — all 16 phases complete (2026-06-07). Both original Exit criteria
+met; full redesign through phase-13 shipped. Retrospective below.
 
 **Depends on:** M7 (done) — the session JSONL and `status.rs` are the data source.
 `rexymcp status` is the one-shot predecessor; the dashboard is its live, paned
@@ -134,4 +126,59 @@ per-record). Closing M8's Exit criteria means narrowing that gap. Three classes:
 decision that (1) gives the live dashboard parity with the scorecard and (2)
 retroactively enriches the JSONL as a forensic replay record.
 
-*(milestone retrospective written at milestone close)*
+### Retrospective (2026-06-07)
+
+**16 phases** across two distinct arcs: the original measurement roadmap (01–08), and
+a full UI redesign triggered by user wireframes (09–13).
+
+**What shipped:**
+- **Phase-01:** `rexymcp dashboard` scaffold — `ratatui` event loop, single pane,
+  `q`/`Esc`/`Ctrl-C` exit, 500 ms poll of the live session JSONL.
+- **Phase-02:** btop-style three-panel layout (Session · Heartbeat · Files).
+- **Phase-03:** executor bugfix — think-block-only completions distinguished from clean
+  prose exits (`ParseResult::NoToolCall` branch); closed bug-executor-1.
+- **Phase-04:** Activity panel — `summarize` folds `ParseFailed`/`Verify`/`ToolResult`/
+  `HardFail` (previously dropped as `_ => {}`); four-panel 2×2 grid.
+- **Phase-05:** stream-retry resilience — mid-stream connection drops retry up to 3×
+  (250 ms / 500 ms / 1 s backoff); closed bug-executor-2.
+- **Phase-06a/b:** per-turn `SessionEvent::Metrics` (executor emit) + Budget panel
+  (live token counts, colored context-window gauge).
+- **Phase-07:** `SessionEvent::Compaction` emitted from `compact()` — closed Gap C.
+- **Phase-08:** dashboard stays open after session end, auto-follows a newly-started
+  session; extracted testable `resolve_session_log`.
+- **Phase-09:** redesign — four-panel header band (Session · Budget · Compactions ·
+  _merged_), Compactions panel, Files left-trim (`trim_path_left`, `FILE_PATH_MAX=40`).
+- **Phase-10a/b:** fully scrollable transcript — raw-record reader, scroll-key
+  handling (Up/Down/PgUp/PgDn/Home/End), plain-text then color + multi-line + tool
+  output + tail-follow anchor.
+- **Phase-11a/b:** Budget panel gains Tokens/Sec (JSONL-derived Δoutput/Δsec) and
+  "$ saved" (configurable `saved_input_per_mtok`/`saved_output_per_mtok` in
+  `rexymcp.toml`, config plumbing through the `dashboard` CLI command).
+- **Phase-12:** activity pane spinner — 9-frame dog-chasing-brain throbber while the
+  model is running, auto-scroll anchor.
+- **Phase-13:** event-type filter — per-type toggle, `Progress` off by default.
+
+**Executor (Qwen/Qwen3.6-27B-FP8) quality:** clean first-try on all single-concern
+phases — 06a, 06b, 07, 08, 09, 10a, 11a, 11b, 12, 13. Escalations limited to three
+cases:
+
+1. **Phase-01 (architect spec gap):** `crossterm 0.28` pin couldn't unify with
+   `ratatui 0.30`'s `crossterm 0.29`; architect fixed and took over after a
+   backend-glitched no-op re-dispatch.
+2. **Phase-02 (executor bug):** Qwen3.6-35B-A3B-FP8 produced three false-`complete`
+   no-ops — root cause was bug-executor-1 (think-only completion mistreated as clean
+   exit), fixed in phase-03.
+3. **Phase-10b (executor stall):** executor wrote all production code correctly but
+   looped on `IdenticalToolCallRepetition` during mechanical test-update churn
+   (multi-edit patch repetition). Architect takeover finished the test updates.
+
+**Calibration folds from M8:**
+- bug-executor-1 (think-only → false clean exit) → phase-03 runtime fix. No
+  WORKFLOW fold; the fix is in the runtime.
+- Phase-10b stall: mechanical test-update churn → `IdenticalToolCallRepetition`.
+  Second occurrence after M8/phase-10b was later seen in M9/phase-04 (deletion
+  churn). Two occurrences = trend; if a third fires, fold a WORKFLOW rule: split
+  mechanical-deletion/edit from companion steps.
+- Stash ambient changes before re-dispatch: a dirty working tree let the executor
+  sweep unrelated changes into a commit. One occurrence (phase-01 area). Data point
+  carried to NEXT.md; a second occurrence in M9/phase-01 confirmed the fold.
