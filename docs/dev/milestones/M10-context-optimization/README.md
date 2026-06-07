@@ -170,8 +170,8 @@ filter, then the novel semantic levers, then measurement.
 
 | #  | Phase | Arc | Status |
 |----|-------|-----|--------|
-| 01 | **Output-filter scaffold + generic compactor.** An `OutputFilter` trait + registry, a recovery-file ("tee") primitive under `.rexymcp/`, and a **language-agnostic** filter (ANSI strip, repeated-line dedupe-with-counts, smart tail-with-recovery) wired into the tool/command output path. Establishes the diagnostic-preservation contract + hermetic test pattern. Applies to *all* bash/command output. | A | todo |
-| 02 | **Structured cargo filter (test/build/clippy).** Keyed on detecting the configured command's program: failures + diagnostics + summary only, block aggregation, preserve every `error[Exxx]` span, cap the list with recovery-file overflow. The high-value filter for the project's own (Rust) toolchain and the most-tested path. | A | todo |
+| 01 | **Recoverable output filter for bash output** ([phase-01-recoverable-output-filter.md](phase-01-recoverable-output-filter.md)). New `context/output_filter` module: ANSI strip + consecutive-dup collapse + truncate-with-**recovery file** under `.rexymcp/output/` (rotated), wired into the `bash` tool's existing truncation, gated by a `[context] output_filter` kill-switch (default on). Turns bash's current lossy "full output not retained" truncation into a recoverable one. Establishes the diagnostic-preservation contract + recovery-file primitive that phase-02 reuses. | A | todo |
+| 02 | **Structured cargo filter (test/build/clippy).** Keyed on detecting `cargo` in the command: failures + diagnostics + summary only, block aggregation, preserve every `error[Exxx]` span, cap the list with recovery-file overflow (reuses phase-01's module). Introduces the per-command filter-selection abstraction (deferred from phase-01 — built once a second filter justifies it). The high-value filter for the project's own Rust toolchain. | A | todo |
 | 03 | **Superseded-read eviction.** On edit, mark prior `read_file` results for that path stale (via the working set); compaction evicts them first with a re-read breadcrumb. | B | todo |
 | 04 | **Redundant-read dedupe.** Re-reading an unchanged file (working-set mtime match) returns a compact "unchanged since turn N" reference instead of re-injecting content; forced re-read still available. | B | todo |
 | 05 | **Content-aware compaction priority.** Replace oldest-first eviction with a value rank (superseded reads → noisy/dup output → old reasoning; protect diagnostics, phase doc, last K turns). Enrich `CompactionReport`. | B | todo |
@@ -233,19 +233,17 @@ over already-captured, already-redacted output.
 - Resume / `continue_phase` (still an uncommitted candidate, architecture.md
   § Escalation).
 
-## Open questions for the user (resolve before/while drafting phase-01)
+## Resolved decisions (2026-06-07, with the user)
 
-1. **Filter activation default** — on by default for all dispatches, or opt-in via
-   a `rexymcp.toml` `[context]` flag at first? (Recommendation: on by default with
-   a kill-switch, since losslessness is the contract and the recovery file backs
-   it.)
-2. **Recovery-file location/retention** — `<repo>/.rexymcp/output/` with the JSONL
-   sessions, rotated like RTK (keep last N)? Git-ignored (it already is under
-   `.rexymcp/`).
-3. **Phase-02 first toolchain** — Rust (`cargo`) is the obvious first structured
-   filter since rexyMCP is itself Rust and it's the most-exercised dogfood path.
-   Confirm that's the right first target vs. a more general "any test runner with
-   `--format json`" approach.
+1. **Filter activation:** **on by default with a kill-switch** — `[context]
+   output_filter` in `rexymcp.toml`, default `true`. Losslessness is the contract
+   and the recovery file backs it; the kill-switch restores raw truncation.
+2. **Recovery files:** `<repo>/.rexymcp/output/`, **rotated** (keep last 20),
+   git-ignored (already covered by `/.rexymcp`). The model can re-read them with
+   `read_file` (the path is scope-confined).
+3. **Phase-02 first toolchain:** **cargo first** — rexyMCP is itself Rust and it's
+   the most-exercised dogfood path. A more general "any `--format json` runner"
+   filter is a later phase if a target project needs it.
 
 ## Notes
 
