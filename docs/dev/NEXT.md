@@ -4,7 +4,9 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M8 closed (2026-06-07); M9 phase-07 done and approved. Milestone boundary: human gate before M10.
+**Active phase:** none — M8 + M9 closed (2026-06-07). **M10 (context optimization) design + README drafted** (`milestones/M10-context-optimization/README.md`), scoped into a 6-phase roadmap, but **no phase doc authored or dispatched yet** — milestone start is human-gated. Run `/rexymcp:architect next` to draft M10 phase-01 (generic output-filter scaffold).
+
+**M10 thesis (2026-06-07):** the executor's context window is the scarce resource (local-LLM tokens are free; context isn't). Two arcs: **A** — filter tool/command output at the boundary, RTK-inspired but native + diagnostic-preserving (learn from `~/src/rtk`, do not shell out to it); **B** — novel semantic context lifecycle RTK structurally can't do (evict superseded file reads, dedupe re-reads, value-ranked compaction) built on the M4 read-before-edit working set. Everything scorecard-measurable. Three open questions for the user before phase-01: filter activation default, recovery-file location/retention, phase-02 first toolchain (cargo). **architecture.md § Status still needs an M10 entry** — a human-gated edit, add at formal kickoff with sign-off.
 
 **phase-06 done** (2026-06-05, approved_first_try): replaced the paw-print spinner with a dog-chasing-brain animation (9 frames) in `transcript.rs`; 4 test assertions updated. Clean first-try via fully pre-injected verbatim patches — the executor never read the file. Qwen/Qwen3.6-27B-FP8.
 
