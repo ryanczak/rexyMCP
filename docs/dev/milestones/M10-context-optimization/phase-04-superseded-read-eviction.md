@@ -31,8 +31,9 @@ Read before starting:
 - `executor/src/agent/tools.rs` — the working-set helpers
   (`read_before_edit_refusal`, `record_mtime`, `resolve_path`, `edit_target`,
   `append_tool_exchange`). The new function lives in this file alongside them.
-- `executor/src/agent/mod.rs` lines 651–660 — the call site, right after the
-  tool exchange is appended and the working set is recorded.
+- `executor/src/agent/mod.rs` lines 651–684 — the call site, right after the
+  tool exchange is appended, the phase-03 `OutputFiltered` block, and the
+  working-set record.
 - `docs/dev/milestones/M10-context-optimization/README.md` §"What is novel to
   rexyMCP (Arc B)" item 1 (superseded-read eviction) — the design intent.
 
@@ -96,11 +97,16 @@ pub(super) fn resolve_path(tool_call: &ToolCall, project_root: &Path) -> Option<
 The new function parses the path from the *stored JSON string* (not a `ToolCall`),
 so it re-implements this join inline (`PathBuf::is_absolute` / `project_root.join`).
 
-**The call site** (`executor/src/agent/mod.rs:651-660`), where the exchange is
-appended and the working set is recorded:
+**The call site** (`executor/src/agent/mod.rs`). After phase-03, the order is:
+`append_tool_exchange` (line 651) → the phase-03 `OutputFiltered` emit block
+(lines 653–675) → the working-set record block (lines 677–684). The eviction call
+goes **after** the working-set record block (after line 684), before the post-write
+format hook that follows it:
 
 ```rust
         append_tool_exchange(&mut messages, &tool_call, &content, turns);
+
+        // … phase-03 OutputFiltered emit block (lines 653–675) …
 
         // Record the working set: a read makes a file patch-eligible; a successful
         // patch refreshes its mtime so a follow-up patch needs no re-read.
@@ -110,6 +116,7 @@ appended and the working set is recorded:
         {
             record_mtime(&mut working_set, &path);
         }
+        // ← Task 3's eviction block goes here (line 685), before the format hook.
 ```
 
 `edit_path: Option<PathBuf>` is already in scope here (`mod.rs:587`,
@@ -119,19 +126,28 @@ appended and the working set is recorded:
 
 **Observability.** Two channels: (1) the breadcrumb is visible in the next model
 call's messages — the agent-loop tests inspect `client.calls()[N].messages` (see
-`patch_after_reading_is_allowed`, `mod.rs:2112`), and eviction mutates the
+`patch_after_reading_is_allowed`, `mod.rs:2138`), and eviction mutates the
 in-memory `messages` sent on the *next* turn; (2) a `SessionEvent::ReadEvicted`
 event is logged (consumed by the dashboard transcript + log-query tools now;
 aggregated onto `PhaseRun` in phase-07).
 
-**The per-lever event pattern is established by phase-03** (`OutputFiltered`):
-adding a `SessionEvent` variant requires a new arm at exactly **four** exhaustive
-match sites — `executor/src/agent/mod.rs` `event_type_str`, `mcp/src/log_query.rs`
-`event_kind`, `mcp/src/dashboard/filter.rs` (`ActivityFilter` struct field +
-`Default` + `allows` arm), and `mcp/src/dashboard/transcript.rs` `record_lines`.
+**The per-lever event pattern is established by phase-03** (`OutputFiltered`), and
+phase-03's review pinned the exact blast radius (its first dispatch hard-failed by
+under-listing it — see Task 4 for the full enumeration). Adding a `SessionEvent`
+variant touches:
+
+- `mcp/src/log_query.rs` `event_type_str` — the **production** kind-string fn.
+- `mcp/src/dashboard/filter.rs` — **seven** sites: `FILTER_ITEM_COUNT`, the
+  `ActivityFilter` field, its `Default`, and the `allows` / `toggle` / `is_enabled`
+  / `item_label` matches (+ the `filter_default_disables_progress` test assertion).
+- `mcp/src/dashboard/transcript.rs` `record_lines` — the transcript render arm.
+- `executor/src/agent/mod.rs` test-helper `event_kind` (inside `mod tests`) — an
+  exhaustive match, so the test crate won't compile without it.
+
 The `status.rs` `_ => {}`, `cap.rs` catch-all, and the generic-serde sites
 (`agent/log.rs`, `store/sessions/jsonl.rs`) need **no** change. Phase-03's
-`OutputFiltered` arms are the worked example to mirror for `ReadEvicted`.
+`OutputFiltered` arms (already on the tree) are the worked example to mirror for
+`ReadEvicted` at every site above.
 
 ## Spec
 
@@ -227,8 +243,9 @@ phase-03 variant), mirroring its shape:
 
 ### 3. Call it at the edit site + emit `ReadEvicted` in `executor/src/agent/mod.rs`
 
-Immediately **after** the working-set record block (`mod.rs:660`, the closing `}`
-of the `if succeeded && (… read_file … patch …)` block), add:
+Immediately **after** the working-set record block (`mod.rs:684`, the closing `}`
+of the `if succeeded && (… read_file … patch …)` block — and before the post-write
+format hook that begins at line ~686), add:
 
 ```rust
         // Superseded-read eviction (M10 Arc B): a successful edit makes every
@@ -262,33 +279,87 @@ same way the call site already references `append_tool_exchange`, `record_mtime`
 `resolve_path` — add it to the existing `use tools::{ … }` import block at the top
 of `mod.rs` (lines 48–51, which already bring in `record_mtime`).
 
-### 4. Add the four required `ReadEvicted` match arms
+### 4. Add the required `ReadEvicted` match arms
 
-Exactly as phase-03 did for `OutputFiltered` — mirror the existing `OutputFiltered`
-arm in each (it is the immediate worked example, added in the prior phase):
+Mirror the existing `OutputFiltered` arm in each site — it is the immediate worked
+example, added in phase-03, and every line below has an `OutputFiltered` neighbour
+you can copy. **Heed phase-03's calibration:** its first dispatch hard-failed
+because the spec under-listed `filter.rs`'s per-event-kind sites — `filter.rs`
+carries **seven** sites (a const, a struct field, a `Default` field, and four
+per-event matches), not three. List below is exhaustive; do all of it.
 
-- `executor/src/agent/mod.rs` `event_type_str`:
-  `SessionEvent::ReadEvicted { .. } => "read_evicted",`
-- `mcp/src/log_query.rs` `event_kind`:
-  `SessionEvent::ReadEvicted { .. } => "read_evicted",`
-- `mcp/src/dashboard/filter.rs` — add `pub(crate) read_evicted: bool` to
-  `ActivityFilter`, default it `true`, and add the `allows` arm
-  `SessionEvent::ReadEvicted { .. } => self.read_evicted,`
-- `mcp/src/dashboard/transcript.rs` `record_lines` — a render arm mirroring the
-  `OutputFiltered` one, e.g.:
+**(a)** `executor/src/agent/mod.rs` — the **test-helper** `event_kind` match
+(inside `#[cfg(test)] mod tests`, ~line 1696, the arm
+`SessionEvent::OutputFiltered { .. } => "output_filtered"`). Add after it:
 
-  ```rust
-              SessionEvent::ReadEvicted {
-                  reads_evicted,
-                  tokens_reclaimed,
-                  ..
-              } => (
-                  format!("evicted {reads_evicted} stale read(s): -{tokens_reclaimed} tokens"),
-                  Color::Cyan,
-                  false,
-                  None,
-              ),
-  ```
+```rust
+            SessionEvent::ReadEvicted { .. } => "read_evicted",
+```
+
+(This is a test helper, not production — but its match is exhaustive, so the test
+crate won't compile without the arm.)
+
+**(b)** `mcp/src/log_query.rs` — the **production** `event_type_str` fn (line 14,
+arm at line 28 `SessionEvent::OutputFiltered { .. } => "output_filtered"`):
+
+```rust
+        SessionEvent::ReadEvicted { .. } => "read_evicted",
+```
+
+(The fixture-based `event_type_str_round_trips_all_variants` test at line ~227 does
+**not** enumerate every variant — it walks `fixture_records()`, which has no
+`ReadEvicted` record — so it needs **no** change. Leave it alone.)
+
+**(c)** `mcp/src/dashboard/filter.rs` — `read_evicted` is the **13th** event kind
+(index `12`); it currently has 12 (`output_filtered` is index `11`). **All seven**
+of these edits are required — the first four to compile (`E0063` missing `Default`
+field, `E0004` non-exhaustive `allows`), the last three to keep the filter panel in
+sync (they compile via `_ =>` but silently desync the 13th toggle/label otherwise):
+
+```rust
+    // 1. the count const (line 3): bump 12 → 13
+    pub(crate) const FILTER_ITEM_COUNT: usize = 13;
+
+    // 2. struct field (ActivityFilter), after `output_filtered: bool,`:
+    pub(crate) read_evicted: bool,
+
+    // 3. Default impl, after `output_filtered: true,`:
+    read_evicted: true,
+
+    // 4. allows() match, after the OutputFiltered arm:
+    SessionEvent::ReadEvicted { .. } => self.read_evicted,
+
+    // 5. toggle() match, after `11 => self.output_filtered = !self.output_filtered,`:
+    12 => self.read_evicted = !self.read_evicted,
+
+    // 6. is_enabled() match, after `11 => self.output_filtered,`:
+    12 => self.read_evicted,
+
+    // 7. item_label() match, after `11 => "output filtered",`:
+    12 => "read evicted",
+```
+
+Also extend the `filter_default_disables_progress` test (after
+`assert!(f.output_filtered);`) with `assert!(f.read_evicted);` to mirror the other
+kinds.
+
+**(d)** `mcp/src/dashboard/transcript.rs` `record_lines` — a render arm mirroring
+the `OutputFiltered` one (right after it, ~line 149). `Color` is already imported
+(`OutputFiltered` uses `Color::Cyan`); the tuple shape is `(summary, color, bold,
+body)`:
+
+```rust
+            SessionEvent::ReadEvicted {
+                reads_evicted,
+                tokens_reclaimed,
+                ..
+            } => (
+                format!("evicted {reads_evicted} stale read(s): -{tokens_reclaimed} tokens"),
+                Color::Cyan,
+                false,
+                None,
+            ),
+```
 
 Do **not** add a `status.rs` summarize arm (the `_ => {}` catch-all is correct;
 the `StatusSummary` fold + scorecard aggregation is phase-07).
@@ -362,7 +433,10 @@ no filesystem), so these tests need **no** `TempDir`.
   contains `"turn 7"` and `"read_file"`.
 
 Agent-loop integration test in `executor/src/agent/mod.rs`'s existing
-`#[cfg(test)] mod tests` (mirror `patch_after_reading_is_allowed`, `mod.rs:2112`):
+`#[cfg(test)] mod tests` (mirror `patch_after_reading_is_allowed`, `mod.rs:2138`,
+which uses `MockFileVerifier::new(vec![])` + `run_with_verifier(&dir, &client,
+&verifier, 8)`; the log-read helper is `records(dir.path())`, the same one
+phase-03's `loop_emits_output_filtered_event_for_filtered_bash` uses):
 
 - `loop_evicts_prior_read_after_patch` — script the model to (turn 1)
   `read_file(foo)`, (turn 2) `patch(foo, …)`, (turn 3) `token("done")`. After the
