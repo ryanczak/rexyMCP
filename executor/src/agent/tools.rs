@@ -150,6 +150,119 @@ pub(super) fn evict_superseded_reads(
     (evicted, tokens_reclaimed)
 }
 
+/// Stable marker prefix for a redundant-read dedupe reference. Used to build the
+/// reference and to detect an already-deduped result so a second re-read points
+/// at the original live read, never at another reference.
+const REDUNDANT_READ_PREFIX: &str = "[already-read:";
+
+/// Find the most recent **live whole-file** `read_file` result for `path` in
+/// `messages`. "Live" = the result content is still real — not a phase-04
+/// `[superseded:` eviction breadcrumb and not an `[already-read:` reference from a
+/// prior dedupe. "Whole-file" = the read call carried no `start_line`/`end_line`
+/// (a ranged prior read does not cover the whole file, so it can't stand in for a
+/// whole-file re-read). Returns `(turn, content_tokens)` of that prior read —
+/// `turn` for the breadcrumb, `content_tokens` (chars/4 estimate, same heuristic
+/// as the budget) for the `tokens_saved` calculation — or `None` if no such read
+/// is still in context.
+///
+/// Pure over the slice (no filesystem); the mtime/on-disk check is the caller's
+/// (`redundant_read_reference`). Scanning the live `messages` vec *is* the
+/// "still in context" test: a read the compactor evicted is removed from
+/// `messages`, so it won't be found here.
+pub(super) fn last_live_read(
+    messages: &[Message],
+    path: &Path,
+    project_root: &Path,
+) -> Option<(usize, usize)> {
+    let mut found: Option<(usize, usize)> = None;
+    for i in 0..messages.len() {
+        // messages[i] must be an assistant whole-file `read_file` call for `path`.
+        let args = messages[i]
+            .tool_calls
+            .as_ref()
+            .and_then(|tcs| tcs.first())
+            .filter(|tc| tc.name == "read_file")
+            .and_then(|tc| serde_json::from_str::<serde_json::Value>(&tc.arguments).ok());
+        let Some(args) = args else { continue };
+        if args.get("start_line").is_some() || args.get("end_line").is_some() {
+            continue; // ranged prior read — does not cover the whole file
+        }
+        let matches_path = args
+            .get("path")
+            .and_then(|p| p.as_str())
+            .map(|p| {
+                let pb = std::path::PathBuf::from(p);
+                let resolved = if pb.is_absolute() {
+                    pb
+                } else {
+                    project_root.join(pb)
+                };
+                resolved == path
+            })
+            .unwrap_or(false);
+        if !matches_path {
+            continue;
+        }
+        // The result is on the next (tool) message; it must still be real content.
+        if let Some(next) = messages.get(i + 1)
+            && let Some(results) = next.tool_results.as_ref()
+            && let Some(r) = results.first()
+            && r.tool_name == "read_file"
+            && !r.content.starts_with(SUPERSEDED_PREFIX)
+            && !r.content.starts_with(REDUNDANT_READ_PREFIX)
+        {
+            let turn = messages[i].turn.unwrap_or(0);
+            found = Some((turn, crate::context::tokens::count(&r.content)));
+        }
+    }
+    found
+}
+
+/// Decide whether a `read_file` call is a redundant re-read of an unchanged file
+/// the model already has in context. Returns `(reference, tokens_saved,
+/// prior_turn)` when so — the caller feeds `reference` back as the tool result and
+/// emits a `ReadDeduped` event — or `None` to perform the real read.
+///
+/// Declines (real read) when: the call is ranged (`start_line`/`end_line`) or
+/// `force: true` (the model's escape hatches); the file is not in the working set
+/// (never read this session); the on-disk mtime no longer matches the recorded
+/// one (changed since — incl. untracked `bash` edits); or no live whole-file prior
+/// read survives in `messages`. Does its own mtime stat, mirroring
+/// `read_before_edit_refusal`, so it is exercised by the loop integration tests.
+pub(super) fn redundant_read_reference(
+    tool_call: &ToolCall,
+    messages: &[Message],
+    working_set: &HashMap<PathBuf, SystemTime>,
+    project_root: &Path,
+) -> Option<(String, usize, usize)> {
+    if tool_call.name != "read_file" {
+        return None;
+    }
+    let args = &tool_call.arguments;
+    if args.get("start_line").is_some()
+        || args.get("end_line").is_some()
+        || args.get("force").and_then(|v| v.as_bool()) == Some(true)
+    {
+        return None;
+    }
+    let path = resolve_path(tool_call, project_root)?;
+    let recorded = working_set.get(&path)?;
+    let current = std::fs::metadata(&path)
+        .ok()
+        .and_then(|m| m.modified().ok())?;
+    if current != *recorded {
+        return None;
+    }
+    let (prior_turn, prior_tokens) = last_live_read(messages, &path, project_root)?;
+    let reference = format!(
+        "{REDUNDANT_READ_PREFIX} unchanged since your read at turn {prior_turn}; that content \
+         is still above in this conversation — re-read with start_line/end_line or force:true \
+         only if you need it again]"
+    );
+    let tokens_saved = prior_tokens.saturating_sub(crate::context::tokens::count(&reference));
+    Some((reference, tokens_saved, prior_turn))
+}
+
 /// Render author diagnostics into a retry message the model can act on.
 pub(super) fn render_diagnostics(diagnostics: &[Diagnostic]) -> String {
     let mut out =

@@ -99,4 +99,13 @@ pub enum SessionEvent {
         reads_evicted: usize,
         tokens_reclaimed: usize,
     },
+    /// Emitted when a `read_file` of an unchanged file was deduped to a compact
+    /// reference instead of re-injecting its content (M10 Arc B). `tokens_saved`
+    /// is the chars/4 estimate of context avoided; `prior_turn` is the turn whose
+    /// read the reference points back at.
+    ReadDeduped {
+        path: String,
+        tokens_saved: usize,
+        prior_turn: usize,
+    },
 }

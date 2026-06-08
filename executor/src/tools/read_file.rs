@@ -56,6 +56,10 @@ impl Tool for ReadFile {
                     "type": "integer",
                     "minimum": 1,
                     "description": "1-indexed inclusive end line."
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Set true to force a full re-read even if the file is unchanged since your last read this session (bypasses redundant-read dedupe)."
                 }
             },
             "required": ["path"]

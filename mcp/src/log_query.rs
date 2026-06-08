@@ -27,6 +27,7 @@ pub fn event_type_str(event: &SessionEvent) -> &'static str {
         SessionEvent::Compaction { .. } => "compaction",
         SessionEvent::OutputFiltered { .. } => "output_filtered",
         SessionEvent::ReadEvicted { .. } => "read_evicted",
+        SessionEvent::ReadDeduped { .. } => "read_deduped",
     }
 }
 

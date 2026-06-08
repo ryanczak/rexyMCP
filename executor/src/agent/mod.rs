@@ -47,8 +47,8 @@ use outcome::{budget_exceeded_result, build_artifacts, hard_fail_result, turns_l
 use progress::{EmitCtx, ProgressCallback, emit_progress};
 use tools::{
     append_tool_exchange, assistant_text, dispatch, edit_target, evict_superseded_reads,
-    output_preview, read_before_edit_refusal, record_mtime, render_diagnostics, resolve_path,
-    user_text,
+    output_preview, read_before_edit_refusal, record_mtime, redundant_read_reference,
+    render_diagnostics, resolve_path, user_text,
 };
 use verify::FileVerifier;
 
@@ -590,7 +590,18 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // Step 4.5 — read-before-edit gate (07d). A refusal short-circuits the
         // edit: no baseline, no dispatch, no verify — but it is still a
         // model-visible failure that feeds back and counts toward hard-fail.
-        let (succeeded, content, tool_meta) =
+        // Redundant-read dedupe (M10 Arc B): a `read_file` of an unchanged file
+        // whose content is still live in context returns a compact reference
+        // instead of re-injecting it — reclaims context and attacks the
+        // IdenticalToolCallRepetition stall. Safe: declines unless the mtime
+        // matches AND a live prior whole-file read survives; ranged / force:true
+        // reads always fall through to a real read.
+        let dedupe =
+            redundant_read_reference(&tool_call, &messages, &working_set, deps.project_root);
+
+        let (succeeded, content, tool_meta) = if let Some((reference, _, _)) = &dedupe {
+            (true, reference.clone(), None)
+        } else {
             match read_before_edit_refusal(&tool_call, &working_set, deps.project_root) {
                 Some(refusal) => (false, refusal, None),
                 None => {
@@ -627,7 +638,8 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     }
                     dispatch(deps.registry, &tool_call).await
                 }
-            };
+            }
+        };
         log_event(
             &log_handle,
             &redactor,
@@ -704,6 +716,23 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     },
                 );
             }
+        }
+
+        // Per-lever reclaim event (M10 Arc B): record the deduped re-read.
+        if let Some((_, tokens_saved, prior_turn)) = dedupe
+            && let Some(path) = resolve_path(&tool_call, deps.project_root)
+        {
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::ReadDeduped {
+                    path: path.display().to_string(),
+                    tokens_saved,
+                    prior_turn,
+                },
+            );
         }
 
         // Post-write format hook (M9/phase-01). Runs the configured format
@@ -1727,6 +1756,7 @@ mod tests {
             SessionEvent::Compaction { .. } => "compaction",
             SessionEvent::OutputFiltered { .. } => "output_filtered",
             SessionEvent::ReadEvicted { .. } => "read_evicted",
+            SessionEvent::ReadDeduped { .. } => "read_deduped",
         }
     }
 

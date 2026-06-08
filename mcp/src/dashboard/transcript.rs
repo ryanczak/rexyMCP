@@ -166,6 +166,16 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 false,
                 None,
             ),
+            SessionEvent::ReadDeduped {
+                tokens_saved,
+                prior_turn,
+                ..
+            } => (
+                format!("deduped re-read (already read turn {prior_turn}): -{tokens_saved} tokens"),
+                Color::Cyan,
+                false,
+                None,
+            ),
         };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);
