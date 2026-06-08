@@ -1,7 +1,7 @@
 # Phase 06: redundant-read dedupe
 
 **Milestone:** M10 — Context optimization
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-04 (the superseded-read eviction this phase composes with — a deduped reference must never point at an already-evicted read) and phase-03 (the per-lever reclaim-event pattern this phase mirrors for `ReadDeduped`). Arc A (phase-01/02) complete. Second Arc B *behavior* lever.
 **Estimated diff:** ~260 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -606,6 +606,37 @@ None. No new dependency (`serde_json` is already used throughout `tools.rs`). No
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-08 (progress, executor-dispatch-2)
+
+**Tests-only re-dispatch (executor, Qwen/Qwen3.6-27B-FP8):** implementing the ~13 unit tests in `tools.rs` and 3 agent-loop integration tests in `mod.rs` per the Test plan. Production code is already committed and compiles clean.
+
+### Update — 2026-06-08 (complete)
+
+**Executor:** Qwen/Qwen3.6-27B-FP8
+
+**Tests added:** 13 unit tests in `executor/src/agent/tools.rs` (7 `last_live_read_*` pure tests + 6 `redundant_read_reference_*` TempDir tests) and 3 agent-loop integration tests in `executor/src/agent/mod.rs` (`loop_dedupes_unchanged_reread`, `loop_logs_read_deduped_event`, `loop_does_not_dedupe_after_edit`).
+
+**Verification commands:**
+- `cargo fmt --all --check` — clean
+- `cargo build` — clean
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 644 passed, 0 failed, 2 ignored (pre-existing 628 executor + 243 mcp = 871 total; new count is 644 executor + 243 mcp = 887, so 16 new tests landed)
+- `cargo test loop_dedupes_unchanged_reread -- --nocapture` — passed; `[already-read:` reference observed in `client.calls()[2].messages`
+
+**End-to-end verification:** `loop_dedupes_unchanged_reread` runs the real `run_loop` over `MockAiClient` + a real `TempDir` file, reads it twice, and asserts the `[already-read:` reference appears in the second-turn tool result. Passed.
+
+**Grep verification:**
+```
+$ grep -n 'pub(super) fn last_live_read' executor/src/agent/tools.rs
+525:pub(super) fn last_live_read(
+$ grep -n 'pub(super) fn redundant_read_reference' executor/src/agent/tools.rs
+572:pub(super) fn redundant_read_reference(
+```
+
+**Files changed:** `executor/src/agent/tools.rs` (13 new unit tests), `executor/src/agent/mod.rs` (3 new integration tests), `docs/dev/milestones/M10-context-optimization/phase-06-redundant-read-dedupe.md` (status flip + Update Log), `docs/dev/milestones/M10-context-optimization/README.md` (phase table status flip).
+
+**Notes for review:** None — all tests pass, all gates clean.
 
 ### Update — 2026-06-08 (progress, architect)
 

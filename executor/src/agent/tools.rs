@@ -585,4 +585,312 @@ mod tests {
         assert!(result.contains("turn 7"));
         assert!(result.contains("read_file"));
     }
+
+    // ── last_live_read tests (pure) ───────────────────────────────────────
+
+    #[test]
+    fn last_live_read_finds_prior_whole_file_read() {
+        let content = "fn example() {\n    // This is a longer function that does something\n    // interesting and takes up enough space that we can verify tokens > 0.\n    let x = 42;\n    x\n}\n";
+        let msgs = make_read_exchange("/r/foo.rs", content);
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(result.is_some());
+        let (turn, tokens) = result.unwrap();
+        assert_eq!(turn, 1);
+        assert!(
+            tokens > 0,
+            "tokens should be positive for non-trivial content"
+        );
+    }
+
+    #[test]
+    fn last_live_read_resolves_relative_path() {
+        let msgs = make_read_exchange("foo.rs", "relative content");
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn last_live_read_skips_superseded_breadcrumb() {
+        let content = format!(
+            "{SUPERSEDED_PREFIX} file edited at turn 5; this earlier read is stale — \
+             re-read with read_file for current content]"
+        );
+        let msgs = make_read_exchange("/r/foo.rs", &content);
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(result.is_none(), "superseded breadcrumb is not a live read");
+    }
+
+    #[test]
+    fn last_live_read_skips_already_read_reference() {
+        let content = format!(
+            "{REDUNDANT_READ_PREFIX} unchanged since your read at turn 1; that content \
+             is still above in this conversation — re-read with start_line/end_line or force:true \
+             only if you need it again]"
+        );
+        let msgs = make_read_exchange("/r/foo.rs", &content);
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(
+            result.is_none(),
+            "already-read reference is not a live read"
+        );
+    }
+
+    #[test]
+    fn last_live_read_ignores_ranged_prior_read() {
+        // Build a ranged read exchange (start_line present in args)
+        let arguments =
+            serde_json::to_string(&json!({ "path": "/r/foo.rs", "start_line": 1, "end_line": 10 }))
+                .unwrap();
+        let msgs = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: String::new(),
+                tool_calls: Some(vec![AiToolCall {
+                    id: "rcall-1".to_string(),
+                    name: "read_file".to_string(),
+                    arguments,
+                    thought_signature: None,
+                }]),
+                tool_results: None,
+                turn: Some(1),
+            },
+            Message {
+                role: "tool".to_string(),
+                content: String::new(),
+                tool_calls: None,
+                tool_results: Some(vec![AiToolResult {
+                    tool_call_id: "rcall-1".to_string(),
+                    tool_name: "read_file".to_string(),
+                    content: "ranged content".to_string(),
+                }]),
+                turn: Some(1),
+            },
+        ];
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(
+            result.is_none(),
+            "a ranged prior read does not cover the whole file"
+        );
+    }
+
+    #[test]
+    fn last_live_read_ignores_other_file() {
+        let msgs = make_read_exchange("/r/bar.rs", "bar content");
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn last_live_read_returns_latest_of_multiple() {
+        let mut msgs = Vec::new();
+        // First read at turn 1
+        let arguments1 = serde_json::to_string(&json!({ "path": "/r/foo.rs" })).unwrap();
+        msgs.push(Message {
+            role: "assistant".to_string(),
+            content: String::new(),
+            tool_calls: Some(vec![AiToolCall {
+                id: "rcall-1".to_string(),
+                name: "read_file".to_string(),
+                arguments: arguments1,
+                thought_signature: None,
+            }]),
+            tool_results: None,
+            turn: Some(1),
+        });
+        msgs.push(Message {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls: None,
+            tool_results: Some(vec![AiToolResult {
+                tool_call_id: "rcall-1".to_string(),
+                tool_name: "read_file".to_string(),
+                content: "first read content".to_string(),
+            }]),
+            turn: Some(1),
+        });
+        // Second read at turn 4
+        let arguments4 = serde_json::to_string(&json!({ "path": "/r/foo.rs" })).unwrap();
+        msgs.push(Message {
+            role: "assistant".to_string(),
+            content: String::new(),
+            tool_calls: Some(vec![AiToolCall {
+                id: "rcall-4".to_string(),
+                name: "read_file".to_string(),
+                arguments: arguments4,
+                thought_signature: None,
+            }]),
+            tool_results: None,
+            turn: Some(4),
+        });
+        msgs.push(Message {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls: None,
+            tool_results: Some(vec![AiToolResult {
+                tool_call_id: "rcall-4".to_string(),
+                tool_name: "read_file".to_string(),
+                content: "second read content".to_string(),
+            }]),
+            turn: Some(4),
+        });
+
+        let result = last_live_read(&msgs, Path::new("/r/foo.rs"), Path::new("/r"));
+        assert!(result.is_some());
+        let (turn, _) = result.unwrap();
+        assert_eq!(
+            turn, 4,
+            "should return the latest (turn 4), not the first (turn 1)"
+        );
+    }
+
+    // ── redundant_read_reference tests (TempDir + working_set) ────────────
+
+    fn make_read_call(path: &str) -> ToolCall {
+        ToolCall {
+            name: "read_file".to_string(),
+            arguments: json!({ "path": path }),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    fn make_ranged_read_call(path: &str) -> ToolCall {
+        ToolCall {
+            name: "read_file".to_string(),
+            arguments: json!({ "path": path, "start_line": 1, "end_line": 10 }),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    fn make_force_read_call(path: &str) -> ToolCall {
+        ToolCall {
+            name: "read_file".to_string(),
+            arguments: json!({ "path": path, "force": true }),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    #[test]
+    fn redundant_read_reference_dedupes_unchanged_reread() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("foo.rs");
+        // Content must be substantially longer than the ~130-char reference string
+        // so tokens_saved > 0
+        let content = "fn example() {\n    // This is a longer function that does something\n    // interesting and takes up enough space that we can verify tokens > 0.\n    // We need the content to be substantially longer than the dedupe reference\n    // string so that the tokens_saved calculation produces a positive number.\n    // Adding more lines to ensure the content is large enough for the test.\n    let x = 42;\n    let y = x + 1;\n    let z = y * 2;\n    println!(\"result: {}\", z);\n    z\n}\n\nfn another_function() {\n    // Another function to pad the content size well above the reference.\n    let items = vec![1, 2, 3, 4, 5];\n    items.iter().sum::<i32>()\n}\n";
+        std::fs::write(&file, content).unwrap();
+
+        let mut working_set = HashMap::new();
+        record_mtime(&mut working_set, &file);
+
+        let msgs = make_read_exchange(file.to_string_lossy().as_ref(), content);
+        let call = make_read_call(file.to_string_lossy().as_ref());
+
+        let result = redundant_read_reference(&call, &msgs, &working_set, dir.path());
+        assert!(result.is_some());
+        let (reference, tokens_saved, prior_turn) = result.unwrap();
+        assert!(
+            reference.starts_with("[already-read:"),
+            "reference should start with the dedupe prefix"
+        );
+        assert!(
+            tokens_saved > 0,
+            "tokens_saved should be positive for content longer than the reference (got {})",
+            tokens_saved
+        );
+        assert_eq!(prior_turn, 1);
+    }
+
+    #[test]
+    fn redundant_read_reference_skips_when_mtime_differs() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("foo.rs");
+        let content = "some content";
+        std::fs::write(&file, content).unwrap();
+
+        let mut working_set = HashMap::new();
+        // Deliberately wrong mtime — UNIX_EPOCH cannot equal the file's real mtime
+        working_set.insert(file.clone(), std::time::SystemTime::UNIX_EPOCH);
+
+        let msgs = make_read_exchange(file.to_string_lossy().as_ref(), content);
+        let call = make_read_call(file.to_string_lossy().as_ref());
+
+        let result = redundant_read_reference(&call, &msgs, &working_set, dir.path());
+        assert!(result.is_none(), "mtime mismatch should prevent dedupe");
+    }
+
+    #[test]
+    fn redundant_read_reference_skips_ranged_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("foo.rs");
+        let content = "some content";
+        std::fs::write(&file, content).unwrap();
+
+        let mut working_set = HashMap::new();
+        record_mtime(&mut working_set, &file);
+
+        let msgs = make_read_exchange(file.to_string_lossy().as_ref(), content);
+        let call = make_ranged_read_call(file.to_string_lossy().as_ref());
+
+        let result = redundant_read_reference(&call, &msgs, &working_set, dir.path());
+        assert!(result.is_none(), "ranged reads should not be deduped");
+    }
+
+    #[test]
+    fn redundant_read_reference_skips_force_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("foo.rs");
+        let content = "some content";
+        std::fs::write(&file, content).unwrap();
+
+        let mut working_set = HashMap::new();
+        record_mtime(&mut working_set, &file);
+
+        let msgs = make_read_exchange(file.to_string_lossy().as_ref(), content);
+        let call = make_force_read_call(file.to_string_lossy().as_ref());
+
+        let result = redundant_read_reference(&call, &msgs, &working_set, dir.path());
+        assert!(result.is_none(), "force:true reads should not be deduped");
+    }
+
+    #[test]
+    fn redundant_read_reference_none_when_not_in_working_set() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("foo.rs");
+        let content = "some content";
+        std::fs::write(&file, content).unwrap();
+
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+        let msgs = make_read_exchange(file.to_string_lossy().as_ref(), content);
+        let call = make_read_call(file.to_string_lossy().as_ref());
+
+        let result = redundant_read_reference(&call, &msgs, &working_set, dir.path());
+        assert!(
+            result.is_none(),
+            "first read (not in working set) should not be deduped"
+        );
+    }
+
+    #[test]
+    fn redundant_read_reference_none_when_no_live_prior_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("foo.rs");
+        let content = "some content";
+        std::fs::write(&file, content).unwrap();
+
+        let mut working_set = HashMap::new();
+        record_mtime(&mut working_set, &file);
+
+        // Only prior read is a superseded breadcrumb — nothing live to point at
+        let breadcrumb = format!(
+            "{SUPERSEDED_PREFIX} file edited at turn 3; this earlier read is stale — \
+             re-read with read_file for current content]"
+        );
+        let msgs = make_read_exchange(file.to_string_lossy().as_ref(), &breadcrumb);
+        let call = make_read_call(file.to_string_lossy().as_ref());
+
+        let result = redundant_read_reference(&call, &msgs, &working_set, dir.path());
+        assert!(
+            result.is_none(),
+            "no live prior read → no dedupe (safety gate)"
+        );
+    }
 }

@@ -4213,4 +4213,130 @@ mod tests {
         );
         assert_eq!(filter_name, "generic");
     }
+
+    // ── M10 phase-06: redundant-read dedupe ───────────────────────────────
+
+    #[tokio::test]
+    async fn loop_dedupes_unchanged_reread() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("foo.txt");
+        let content = "this is a sufficiently large file content that we can verify \
+                       tokens_saved is positive when the dedupe reference replaces \
+                       the full content in the tool result returned to the model on \
+                       the second read call of the same unchanged file this session";
+        std::fs::write(&file, content).unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            // Turn 1: first read of foo.txt
+            vec![native("read_file", json!({ "path": path }))],
+            // Turn 2: second read of the same file (unchanged)
+            vec![native("read_file", json!({ "path": path }))],
+            // Turn 3: done
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        // After the second read (turn 2), the model call at index 2 should
+        // contain a read_file tool result starting with [already-read:
+        let second_call_messages = &client.calls()[2].messages;
+        let has_dedupe_ref = second_call_messages.iter().any(|m| {
+            m.tool_results.as_ref().is_some_and(|trs| {
+                trs.iter()
+                    .any(|t| t.tool_name == "read_file" && t.content.starts_with("[already-read:"))
+            })
+        });
+        assert!(
+            has_dedupe_ref,
+            "second read of unchanged file should return an [already-read: reference"
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_logs_read_deduped_event() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("foo.txt");
+        let content = "this is a sufficiently large file content that we can verify \
+                       tokens_saved is positive when the dedupe reference replaces \
+                       the full content in the tool result returned to the model on \
+                       the second read call of the same unchanged file this session";
+        std::fs::write(&file, content).unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![native("read_file", json!({ "path": path }))],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        let recs = records(dir.path());
+        let has_read_deduped = recs.iter().any(|r| {
+            matches!(
+                &r.event,
+                SessionEvent::ReadDeduped { tokens_saved, .. } if *tokens_saved > 0
+            )
+        });
+        assert!(
+            has_read_deduped,
+            "session log should contain a ReadDeduped event with tokens_saved > 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_does_not_dedupe_after_edit() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("foo.txt");
+        let original_content = "original file content for dedupe after edit testing";
+        std::fs::write(&file, original_content).unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            // Turn 1: first read
+            vec![native("read_file", json!({ "path": path }))],
+            // Turn 2: write_file changes the file (mtime changes, prior read superseded)
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "new content that is different and long enough" }),
+            )],
+            // Turn 3: re-read after edit — should NOT be deduped
+            vec![native("read_file", json!({ "path": path }))],
+            // Turn 4: done
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        // After the re-read (turn 3), the model call at index 3 should contain
+        // a read_file tool result that does NOT start with [already-read:
+        let third_call_messages = &client.calls()[3].messages;
+        let read_file_result = third_call_messages.iter().find_map(|m| {
+            m.tool_results.as_ref().and_then(|trs| {
+                trs.iter()
+                    .find(|t| t.tool_name == "read_file")
+                    .map(|t| t.content.as_str())
+            })
+        });
+        assert!(
+            read_file_result.is_some(),
+            "there should be a read_file tool result in the third call messages"
+        );
+        let content = read_file_result.unwrap();
+        assert!(
+            !content.starts_with("[already-read:"),
+            "re-read after edit should NOT be deduped (mtime changed + prior read evicted)"
+        );
+
+        // No ReadDeduped event should have been logged
+        let recs = records(dir.path());
+        let has_read_deduped = recs
+            .iter()
+            .any(|r| matches!(&r.event, SessionEvent::ReadDeduped { .. }));
+        assert!(
+            !has_read_deduped,
+            "no ReadDeduped event should be logged when the file was edited between reads"
+        );
+    }
 }
