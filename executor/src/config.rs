@@ -23,6 +23,23 @@ impl Default for DashboardConfig {
     }
 }
 
+/// Context-optimization settings (M10). `output_filter` is the kill-switch for
+/// boundary output filtering — default on; set false to restore raw head+tail
+/// truncation with no recovery file.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContextConfig {
+    pub output_filter: bool,
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            output_filter: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -31,6 +48,7 @@ pub struct Config {
     pub budget: BudgetConfig,
     pub telemetry: TelemetryConfig,
     pub dashboard: DashboardConfig,
+    pub context: ContextConfig,
 }
 
 /// Cross-project telemetry store. `None` disables telemetry emission.
@@ -70,7 +88,7 @@ fn default_first_token_timeout_secs() -> u64 {
 }
 
 fn default_stream_idle_timeout_secs() -> u64 {
-    180
+    240
 }
 
 impl Default for ExecutorConfig {
@@ -521,5 +539,68 @@ format = "cargo fmt"
             "lint_fix must default to None when absent from [commands]"
         );
         assert_eq!(cfg.commands.format.as_deref(), Some("cargo fmt"));
+    }
+
+    #[test]
+    fn context_config_defaults_output_filter_on() {
+        let cfg = ContextConfig::default();
+        assert!(cfg.output_filter, "output_filter should default to true");
+
+        // A Config parsed from TOML with no [context] section should also default to true
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert!(
+            cfg.context.output_filter,
+            "context.output_filter should default to true when [context] section is absent"
+        );
+    }
+
+    #[test]
+    fn context_output_filter_can_be_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[context]
+output_filter = false
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert!(
+            !cfg.context.output_filter,
+            "output_filter should be false when explicitly set"
+        );
     }
 }
