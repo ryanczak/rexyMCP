@@ -1,7 +1,7 @@
 # Phase 08b: Surface context-efficiency in `rexymcp runs`
 
 **Milestone:** M10 — Context optimization
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done)
 **Estimated diff:** ~75 lines (incl. tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -258,3 +258,63 @@ What this phase must **not** do, even if tempted:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-16 16:15 (started)
+
+**Executor:** Claude (direct)
+
+Implementing PEAK_CXT and RECLAIMED columns in `mcp/src/runs.rs::format_runs`.
+
+### Update — 2025-07-16 16:17 (complete)
+
+**Summary:** Added two new columns (`PEAK_CXT` and `RECLAIMED`) to the `rexymcp runs` table. Extended the header line, computed per-run values from `run.context_efficiency` (fraction→percentage for PEAK_CXT, sum-of-all-four-sources with compact-number rendering for RECLAIMED), and appended them to the row format string. Both columns render as em-dash sentinels when zero. Three unit tests added. No struct changes — purely additive read of the existing `ContextEfficiency` field.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean, no output)
+
+cargo build 2>&1 | tail -20
+(clean, no warnings)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(clean, no warnings)
+
+cargo test 2>&1 | tail -30
+test result: ok. 664 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+```
+$ cargo run -p rexymcp -- runs --config rexymcp.toml --telemetry-path /tmp/runs-e2e-vs6QhQ.jsonl
+AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED
+740d    qwen   rust           default      ✓✓✓✓  5      complete  —           —             —       256k    68%        12k
+```
+
+Table has `PEAK_CXT` and `RECLAIMED` headers; `qwen` row shows `68%` and `12k` as expected.
+
+**Grep for spec-pinned literals:**
+```
+$ grep -n 'PEAK_CXT\|RECLAIMED' mcp/src/runs.rs
+66:        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED".to_string(),
+```
+Both literals present in the header line.
+
+**Files changed:**
+- `mcp/src/runs.rs` — extended header, added PEAK_CXT/RECLAIMED computation and format fields, added 3 unit tests
+- `docs/dev/milestones/M10-context-optimization/phase-08b-runs-context-efficiency-columns.md` — status flip to review + Update Log
+- `docs/dev/milestones/M10-context-optimization/README.md` — phase table row status to review
+
+**New tests:**
+- `format_runs_shows_context_efficiency_columns` in `mcp/src/runs.rs`
+- `format_runs_reclaimed_sums_all_four_sources` in `mcp/src/runs.rs`
+- `format_runs_context_efficiency_dashes_when_zero` in `mcp/src/runs.rs`
+
+**Commits:**
+- `92edbd1` — feat: surface context-efficiency columns in rexymcp runs table
+
+**Notes for review:** None — implementation follows the spec exactly.
