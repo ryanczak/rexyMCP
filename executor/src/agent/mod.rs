@@ -3783,6 +3783,40 @@ mod tests {
         assert_eq!(runs[0].context_window, Some(262_144));
     }
 
+    #[tokio::test]
+    async fn phase_run_context_efficiency_matches_session_log() {
+        let dir = TempDir::new().unwrap();
+        let telem = dir.path().join("telem");
+
+        let turn1 = vec![
+            AiEvent::Completion {
+                finish_reason: None,
+                model: Some("served-model-v2".into()),
+            },
+            AiEvent::Done(TokenBreakdown::default()),
+            AiEvent::Token("done".into()),
+        ];
+        let client = MockAiClientScript::new(vec![turn1]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_full_with_context_window(
+            &dir,
+            &client,
+            &verifier,
+            &NoopRunner,
+            &EMPTY_COMMANDS,
+            Some(&telem),
+            8,
+            Some(262_144),
+        )
+        .await;
+
+        let runs = read_runs(&telem);
+        assert_eq!(runs.len(), 1);
+        let expected = crate::store::telemetry::aggregate_context_efficiency(&records(dir.path()));
+        assert_eq!(runs[0].context_efficiency, expected);
+    }
+
     // ── M9/phase-01: post-write format hook ─────────────────────────────
 
     #[tokio::test]

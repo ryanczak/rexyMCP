@@ -1,5 +1,6 @@
 use crate::ai::types::TokenBreakdown;
 use crate::governor::scorer::Scorer;
+use crate::store::sessions::jsonl::read_session_log;
 use crate::store::telemetry::{self, Gates, PhaseRun};
 
 use super::{LoopDeps, PhaseInput};
@@ -87,6 +88,19 @@ pub(super) fn emit_phase_run(
     let now = (deps.clock)();
     let wall_clock_s = now.saturating_sub(metrics.start_ms) as f64 / 1000.0;
 
+    // Aggregate the context-efficiency signal from the durable session log the
+    // loop just wrote. Best-effort: a missing/unreadable log yields the default
+    // (all zeros) — telemetry never fails the phase. The path must mirror what
+    // `execute_phase` passed to `open_session_log` (see that call + `SessionLogger::open`).
+    let log_path = deps
+        .project_root
+        .join(".rexymcp")
+        .join("sessions")
+        .join(format!("session-{}-{}.jsonl", input.phase, deps.session_id));
+    let context_efficiency = read_session_log(&log_path)
+        .map(|recs| telemetry::aggregate_context_efficiency(&recs))
+        .unwrap_or_default();
+
     let run = PhaseRun {
         ts: now,
         model: deps.model.to_string(),
@@ -111,6 +125,7 @@ pub(super) fn emit_phase_run(
         length_finish_rate: (metrics.total_finishes > 0)
             .then(|| metrics.length_finishes as f64 / metrics.total_finishes as f64),
         context_window: deps.context_window,
+        context_efficiency,
     };
     let _ = telemetry::append(dir, &run);
 }

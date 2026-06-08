@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::types::TokenBreakdown;
+use crate::store::sessions::event::{SessionEvent, SessionRecord};
 
 /// Generation knobs for the run — "how" the model was asked. The executor layer
 /// often does not know these (M5 populates from the request); `None` until then.
@@ -28,6 +29,70 @@ pub struct Gates {
     pub build: Option<bool>,
     pub lint: Option<bool>,
     pub test: Option<bool>,
+}
+
+/// Context-efficiency signal for one run, aggregated from the session JSONL at
+/// phase end (M10). All token figures are chars/4 estimates, consistent with the
+/// per-lever events that produce them. Nested in `PhaseRun` as a single
+/// `#[serde(default)]` field so legacy records (and every struct literal) need
+/// only `Default`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContextEfficiency {
+    /// Highest `context_pct` observed across the run's per-turn `Metrics`
+    /// events; `0.0` if none were emitted.
+    pub peak_context_pct: f64,
+    /// Number of `Compaction` events the loop emitted.
+    pub compaction_count: usize,
+    /// Tokens freed by compaction: Σ(tokens_before − tokens_after) over
+    /// `Compaction` events.
+    pub compaction_tokens_reclaimed: usize,
+    /// Tokens reclaimed by the Arc-A boundary output filter: Σ(tokens_before −
+    /// tokens_after) over `OutputFiltered` events.
+    pub output_filtered_tokens: usize,
+    /// Tokens reclaimed by superseded-read eviction: Σ tokens_reclaimed over
+    /// `ReadEvicted` events.
+    pub read_evicted_tokens: usize,
+    /// Tokens saved by redundant-read dedupe: Σ tokens_saved over
+    /// `ReadDeduped` events.
+    pub read_deduped_tokens: usize,
+}
+
+/// Aggregate the context-efficiency signal from a run's session-log records.
+/// Pure over the slice; an empty slice yields `ContextEfficiency::default()`.
+pub fn aggregate_context_efficiency(records: &[SessionRecord]) -> ContextEfficiency {
+    let mut eff = ContextEfficiency::default();
+    for rec in records {
+        match &rec.event {
+            SessionEvent::Metrics { context_pct, .. } => {
+                eff.peak_context_pct = eff.peak_context_pct.max(*context_pct);
+            }
+            SessionEvent::Compaction {
+                tokens_before,
+                tokens_after,
+                ..
+            } => {
+                eff.compaction_count += 1;
+                eff.compaction_tokens_reclaimed += tokens_before.saturating_sub(*tokens_after);
+            }
+            SessionEvent::OutputFiltered {
+                tokens_before,
+                tokens_after,
+                ..
+            } => {
+                eff.output_filtered_tokens += tokens_before.saturating_sub(*tokens_after);
+            }
+            SessionEvent::ReadEvicted {
+                tokens_reclaimed, ..
+            } => {
+                eff.read_evicted_tokens += *tokens_reclaimed;
+            }
+            SessionEvent::ReadDeduped { tokens_saved, .. } => {
+                eff.read_deduped_tokens += *tokens_saved;
+            }
+            _ => {}
+        }
+    }
+    eff
 }
 
 /// One per-phase metrics row. Objective fields are filled by the executor; the
@@ -69,6 +134,11 @@ pub struct PhaseRun {
     /// `None` if unknown or the endpoint does not report it.
     #[serde(default)]
     pub context_window: Option<usize>,
+    /// Context-efficiency signal aggregated from the session JSONL at phase end
+    /// (M10/phase-08a). Default (all zeros) for legacy records and for runs that
+    /// produced no reclaim/metrics events.
+    #[serde(default)]
+    pub context_efficiency: ContextEfficiency,
 }
 
 /// Append one `PhaseRun` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`,
@@ -105,7 +175,156 @@ pub fn read(path: &Path) -> std::io::Result<Vec<PhaseRun>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::sessions::event::{SessionEvent, SessionRecord};
     use tempfile::TempDir;
+
+    fn make_metrics(context_pct: f64) -> SessionRecord {
+        SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::Metrics {
+                input_tokens: 0,
+                output_tokens: 0,
+                context_pct,
+                context_used: 0,
+                context_window: 0,
+            },
+        }
+    }
+
+    fn make_compaction(tokens_before: usize, tokens_after: usize) -> SessionRecord {
+        SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::Compaction {
+                tokens_before,
+                tokens_after,
+                messages_signaturized: 0,
+                messages_evicted: 0,
+            },
+        }
+    }
+
+    fn make_output_filtered(tokens_before: usize, tokens_after: usize) -> SessionRecord {
+        SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::OutputFiltered {
+                tokens_before,
+                tokens_after,
+                filter: "test".into(),
+            },
+        }
+    }
+
+    fn make_read_evicted(tokens_reclaimed: usize) -> SessionRecord {
+        SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::ReadEvicted {
+                path: "file.rs".into(),
+                reads_evicted: 1,
+                tokens_reclaimed,
+            },
+        }
+    }
+
+    fn make_read_deduped(tokens_saved: usize) -> SessionRecord {
+        SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::ReadDeduped {
+                path: "file.rs".into(),
+                tokens_saved,
+                prior_turn: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn aggregate_context_efficiency_empty_is_default() {
+        assert_eq!(
+            aggregate_context_efficiency(&[]),
+            ContextEfficiency::default()
+        );
+    }
+
+    #[test]
+    fn aggregate_context_efficiency_peak_is_max_not_last() {
+        let records = vec![make_metrics(0.4), make_metrics(0.9), make_metrics(0.2)];
+        let eff = aggregate_context_efficiency(&records);
+        assert_eq!(eff.peak_context_pct, 0.9);
+    }
+
+    #[test]
+    fn aggregate_context_efficiency_sums_compaction() {
+        let records = vec![make_compaction(1000, 600), make_compaction(500, 500)];
+        let eff = aggregate_context_efficiency(&records);
+        assert_eq!(eff.compaction_count, 2);
+        assert_eq!(eff.compaction_tokens_reclaimed, 400);
+    }
+
+    #[test]
+    fn aggregate_context_efficiency_sums_each_reclaim_source_independently() {
+        let records = vec![
+            make_output_filtered(200, 100),
+            make_read_evicted(50),
+            make_read_deduped(30),
+        ];
+        let eff = aggregate_context_efficiency(&records);
+        assert_eq!(eff.output_filtered_tokens, 100);
+        assert_eq!(eff.read_evicted_tokens, 50);
+        assert_eq!(eff.read_deduped_tokens, 30);
+        assert_eq!(eff.compaction_count, 0);
+        assert_eq!(eff.peak_context_pct, 0.0);
+    }
+
+    #[test]
+    fn aggregate_context_efficiency_ignores_unrelated_events() {
+        let records = vec![
+            SessionRecord {
+                ts: 0,
+                turn: 0,
+                event: SessionEvent::Prompt {
+                    rendered: "hi".into(),
+                },
+            },
+            SessionRecord {
+                ts: 0,
+                turn: 0,
+                event: SessionEvent::Completion { raw: "done".into() },
+            },
+            SessionRecord {
+                ts: 0,
+                turn: 0,
+                event: SessionEvent::SessionStart {
+                    session_id: "s".into(),
+                    model: "m".into(),
+                    phase: "p".into(),
+                },
+            },
+            SessionRecord {
+                ts: 0,
+                turn: 0,
+                event: SessionEvent::SessionEnd {
+                    status: "complete".into(),
+                    turns: 1,
+                },
+            },
+        ];
+        assert_eq!(
+            aggregate_context_efficiency(&records),
+            ContextEfficiency::default()
+        );
+    }
+
+    #[test]
+    fn phase_run_without_context_efficiency_deserializes() {
+        // Legacy JSONL line lacking context_efficiency (and context_window)
+        let legacy_json = r#"{"ts":1717000000000,"model":"qwen2.5-coder","generation_params":{"temperature":null,"seed":null},"phase_id":"phase-08","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"input_tokens":0,"output_tokens":0,"cache_read_tokens":0,"cache_write_tokens":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null,"served_model":null,"length_finish_rate":null}"#;
+        let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(run.context_efficiency, ContextEfficiency::default());
+    }
 
     fn sample() -> PhaseRun {
         PhaseRun {
@@ -136,6 +355,7 @@ mod tests {
             served_model: None,
             length_finish_rate: None,
             context_window: None,
+            context_efficiency: Default::default(),
         }
     }
 

@@ -363,6 +363,7 @@ mod tests {
             served_model: None,
             length_finish_rate: None,
             context_window: None,
+            context_efficiency: Default::default(),
         }
     }
 
@@ -748,6 +749,7 @@ mod tests {
             served_model: None,
             length_finish_rate,
             context_window: None,
+            context_efficiency: Default::default(),
         }
     }
 
