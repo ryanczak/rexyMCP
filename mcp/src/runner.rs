@@ -115,6 +115,7 @@ struct AssemblyInput<'a> {
 pub fn build_registry(
     scope: &Scope,
     bash_timeout_secs: u32,
+    filter_output: bool,
 ) -> (rexymcp_executor::tools::ToolRegistry, Vec<ToolSchema>) {
     let mut registry = rexymcp_executor::tools::ToolRegistry::new();
 
@@ -125,7 +126,7 @@ pub fn build_registry(
         tools::find_files(scope.clone()),
         tools::search(scope.clone()),
         tools::symbols(scope.clone()),
-        tools::bash(scope.clone(), bash_timeout_secs),
+        tools::bash_with_filter(scope.clone(), bash_timeout_secs, filter_output),
     ];
 
     for tool in &tools {
@@ -157,7 +158,7 @@ async fn run_phase_with(
     let scope = Scope::new(inp.repo_path)
         .map_err(|e| rexymcp_executor::error::Error::Internal(format!("scope error: {}", e)))?;
 
-    let (registry, tool_schemas) = build_registry(&scope, 30);
+    let (registry, tool_schemas) = build_registry(&scope, 30, inp.cfg.context.output_filter);
 
     let budget = Budget::from_context(
         inp.cfg.budget.context_length,
@@ -371,7 +372,7 @@ mod tests {
     fn build_registry_has_seven_tools() {
         let dir = tempfile::tempdir().unwrap();
         let scope = Scope::new(dir.path()).unwrap();
-        let (_registry, schemas) = build_registry(&scope, 30);
+        let (_registry, schemas) = build_registry(&scope, 30, true);
 
         assert_eq!(schemas.len(), 7);
         let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();

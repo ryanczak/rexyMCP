@@ -1,7 +1,7 @@
 # Phase 01: recoverable output filter for bash command output
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** done
 **Depends on:** none (first phase of M10)
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -537,3 +537,81 @@ None. `regex` is already an executor dependency (`executor/Cargo.toml:21`); no
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-07 (complete — architect closeout)
+
+**Summary:** Built the recoverable output filter exactly per spec. New
+`executor/src/context/output_filter.rs` (`normalize` = ANSI strip +
+consecutive-dup collapse with `(xN)` counts; `compact_with_recovery` =
+head+tail truncation over `LINE_CAP=100` with the full normalized output teed to
+a rotated recovery file under `.rexymcp/output/`, `MAX_RECOVERY_FILES=20`;
+best-effort `write_recovery`/`prune_recovery`). Wired into the `bash` tool behind
+a `filter: bool` field with an additive `bash_with_filter` constructor (`bash`'s
+2-arg signature untouched, so the ~10 parser call sites compile unchanged).
+`ContextConfig { output_filter: bool }` (default `true`) added to `Config`;
+threaded through `build_registry` (real caller reads
+`inp.cfg.context.output_filter`, test caller passes `true`). No new dependency
+(`regex` already present). No deviations from spec.
+
+The executor (Qwen/Qwen3.6-27B-FP8) completed the implementation on its third
+dispatch — the first two runs hit infra SSE stream stalls (no data for 180s)
+during the generation phase with zero code written; the user re-tuned vLLM
+between runs. The successful run produced all code and passed the in-loop gates
+but did not write this completion entry or commit before returning. Architect
+closed out the bookkeeping (this entry + status flip + commit), per the
+phase-04 / phase-06a precedent for "code complete, run cut short of
+bookkeeping."
+
+**Acceptance criteria:** all met (verified at review, below).
+
+**Commands (architect re-run):**
+
+```
+cargo fmt --all --check        → clean (no diffs)
+cargo build                    → Finished, zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test                     → executor 599 passed / 0 failed / 2 ignored;
+                                 mcp 242 passed / 1 failed
+```
+
+The single `cargo test` failure is `dashboard::transcript::tests::
+spinner_appended_to_empty_records` (a spinner-spacing assertion). It is
+**pre-existing and unrelated to this phase** — confirmed by stashing the phase
+changes and reproducing the failure on the clean base commit `02cb012`. It
+stems from the `74e8b11 adjsuting spinner frames` change, which adjusted the
+dog-chasing-brain frames but left the test asserting the old spacing. Tracked
+separately; out of scope here.
+
+**End-to-end verification:**
+
+1. `cargo test filtered_bash_truncation_writes_recovery_file` — passes. Per the
+   phase doc this is a real-artifact test: it spawns a real `sh` subprocess
+   emitting 200 lines and writes a real recovery file to a real `TempDir`,
+   asserting the body marker contains `full output: .rexymcp/output/cmd-output-`
+   and that a `cmd-output-*.log` exists under the scope root.
+2. Real binary config load — copied `rexymcp.toml`, appended
+   `[context]\noutput_filter = false`, ran
+   `cargo run -p rexymcp -- health --config <copy>` → exit 0, no config-parse
+   error. The new section loads on the shipped binary.
+
+**Files changed:**
+- `executor/src/context/output_filter.rs` — new module (+341), 10 unit tests
+- `executor/src/context/mod.rs` — register `output_filter`
+- `executor/src/config.rs` — `ContextConfig` + 2 tests
+- `executor/src/tools/bash.rs` — `filter` field, `bash_with_filter`, 2 tests
+- `executor/src/tools/mod.rs` — export `bash_with_filter`
+- `mcp/src/runner.rs` — `filter_output` param threaded through `build_registry`
+
+**New tests:** all 14 from the Test plan (10 `output_filter`, 2 bash-tool,
+2 config) — present and green.
+
+**Notes for review:** The lone `expect` in new code is on the `OnceLock`
+compile-time-constant ANSI regex — permitted by STANDARDS §2.1.
+
+### Review verdict — 2026-06-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none (two prior dispatches were infra SSE stalls, not code bounces; no bug filed)
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (architect closeout of completion bookkeeping)
+- **Scope deviations:** none
+- **Calibration:** none new. Reinforces the existing "executor completes correct code but run is cut short of the Update-Log/commit step → architect closes out" pattern (phase-04, phase-06a). Third+ occurrence of the infra-SSE-stall-then-clean-redispatch sequence — already known, no fold.

@@ -31,6 +31,7 @@ struct BashArgs {
 pub struct Bash {
     scope: Scope,
     default_timeout_secs: u32,
+    filter: bool,
 }
 
 #[async_trait]
@@ -156,7 +157,14 @@ impl Tool for Bash {
                     combined.push_str(&stderr_str);
                 }
 
-                let (body, truncated) = truncate_output(&combined);
+                let (body, truncated) = if self.filter {
+                    crate::context::output_filter::compact_with_recovery(
+                        &combined,
+                        self.scope.root(),
+                    )
+                } else {
+                    truncate_output(&combined)
+                };
 
                 let exit_code = output.status.code();
                 let status_line = match exit_code {
@@ -250,9 +258,14 @@ pub fn is_allowed_env_key(key: &str) -> bool {
 }
 
 pub fn bash(scope: Scope, default_timeout_secs: u32) -> Arc<dyn Tool> {
+    bash_with_filter(scope, default_timeout_secs, true)
+}
+
+pub fn bash_with_filter(scope: Scope, default_timeout_secs: u32, filter: bool) -> Arc<dyn Tool> {
     Arc::new(Bash {
         scope,
         default_timeout_secs,
+        filter,
     })
 }
 
@@ -498,5 +511,62 @@ mod tests {
         assert!(!is_allowed_env_key("SOME_RANDOM_VAR"));
         assert!(!is_allowed_env_key("SECRET_KEY"));
         assert!(!is_allowed_env_key("FOO"));
+    }
+
+    #[tokio::test]
+    async fn filtered_bash_truncation_writes_recovery_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let tool = bash_with_filter(scope, 30, true);
+        let result = tool
+            .execute(json!({
+                "command": "sh -c 'for i in $(seq 1 200); do echo \"line $i\"; done'"
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("omitted"));
+        assert!(
+            result
+                .output
+                .contains("full output: .rexymcp/output/cmd-output-"),
+            "marker should reference recovery file"
+        );
+
+        // Recovery file should exist
+        let recovery_dir = dir.path().join(".rexymcp/output");
+        assert!(recovery_dir.exists(), "recovery dir should exist");
+        let files: Vec<_> = std::fs::read_dir(&recovery_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert!(
+            !files.is_empty(),
+            "at least one cmd-output-*.log should exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn kill_switch_off_uses_legacy_truncation_without_recovery() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let tool = bash_with_filter(scope, 30, false);
+        let result = tool
+            .execute(json!({
+                "command": "sh -c 'for i in $(seq 1 200); do echo \"line $i\"; done'"
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(
+            result.output.contains("full output not retained"),
+            "legacy marker should appear"
+        );
+        assert!(
+            !dir.path().join(".rexymcp/output").exists(),
+            "no recovery dir should be created when filter is off"
+        );
     }
 }
