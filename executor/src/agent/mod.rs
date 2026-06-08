@@ -2004,13 +2004,19 @@ mod tests {
             vec![write_call(&dir, "a.rs", "v1")],
             vec![write_call(&dir, "a.rs", "v2")],
             vec![write_call(&dir, "a.rs", "v3")],
+            vec![write_call(&dir, "a.rs", "v4")],
+            vec![write_call(&dir, "a.rs", "v5")],
+            vec![write_call(&dir, "a.rs", "v6")],
             vec![token("unreached")],
         ]);
-        // Three consecutive Checked-with-author verifier runs.
+        // Six consecutive Checked-with-author verifier runs.
         let verifier = MockFileVerifier::new(vec![
             checked(vec![diag("err1")]),
             checked(vec![diag("err2")]),
             checked(vec![diag("err3")]),
+            checked(vec![diag("err4")]),
+            checked(vec![diag("err5")]),
+            checked(vec![diag("err6")]),
         ]);
 
         let result = run_with_verifier(&dir, &client, &verifier, 10).await;
@@ -2034,6 +2040,9 @@ mod tests {
         let path = dir.path().join("f.txt").to_string_lossy().to_string();
         let mk = || native("read_file", json!({ "path": path }));
         let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
             vec![mk()],
             vec![mk()],
             vec![mk()],
@@ -2076,7 +2085,14 @@ mod tests {
         std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
         let path = dir.path().join("f.txt").to_string_lossy().to_string();
         let mk = || native("read_file", json!({ "path": path }));
-        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+        ]);
         let verifier = MockFileVerifier::new(vec![]);
 
         run_with_verifier(&dir, &client, &verifier, 10).await;
@@ -2356,7 +2372,14 @@ mod tests {
                 json!({ "path": path, "old_str": "original", "new_str": "x" }),
             )
         };
-        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+        ]);
         let verifier = MockFileVerifier::new(vec![]);
 
         let result = run_with_verifier(&dir, &client, &verifier, 10).await;
@@ -2625,7 +2648,14 @@ mod tests {
         std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
         let path = dir.path().join("f.txt").to_string_lossy().to_string();
         let mk = || native("read_file", json!({ "path": path }));
-        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+        ]);
         let verifier = MockFileVerifier::new(vec![]);
         let runner = MockCommandRunner::new("should-not-run");
         let commands = CommandConfig {
@@ -2769,7 +2799,14 @@ mod tests {
         std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
         let path = dir.path().join("f.txt").to_string_lossy().to_string();
         let mk = || native("read_file", json!({ "path": path }));
-        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+        ]);
         let verifier = MockFileVerifier::new(vec![]);
 
         run_full(
@@ -2828,7 +2865,14 @@ mod tests {
         std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
         let path = dir.path().join("f.txt").to_string_lossy().to_string();
         let mk = || native("read_file", json!({ "path": path }));
-        let client = MockAiClientScript::new(vec![vec![mk()], vec![mk()], vec![mk()]]);
+        let client = MockAiClientScript::new(vec![
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+            vec![mk()],
+        ]);
         let verifier = MockFileVerifier::new(vec![]);
         let runner = MockCommandRunner::new("out");
         let commands = CommandConfig {

@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
-pub const IDENTICAL_CALL_THRESHOLD: usize = 3;
-pub const VERIFIER_PERSISTENCE_THRESHOLD: usize = 3;
+pub const IDENTICAL_CALL_THRESHOLD: usize = 6;
+pub const VERIFIER_PERSISTENCE_THRESHOLD: usize = 6;
 pub const RUNAWAY_OUTPUT_BYTES: usize = 100 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,7 +176,7 @@ mod tests {
             arguments: serde_json::json!({"path": "x.rs", "old": "a", "new": "b"}),
             succeeded: true,
         };
-        for _ in 0..3 {
+        for _ in 0..6 {
             recent.push_back(snap.clone());
         }
         let signal = evaluate(&recent, &[], None).unwrap();
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn detects_verifier_persistence() {
-        let counts = [2usize, 2, 2];
+        let counts = [2usize, 2, 2, 2, 2, 2];
         let recent = VecDeque::new();
         let signal = evaluate(&recent, &counts, None).unwrap();
         assert!(matches!(
@@ -277,10 +277,10 @@ mod tests {
             arguments: serde_json::json!({"path": "x.rs"}),
             succeeded: false,
         };
-        for _ in 0..3 {
+        for _ in 0..6 {
             recent.push_back(snap.clone());
         }
-        let counts = [2usize, 2, 2];
+        let counts = [2usize, 2, 2, 2, 2, 2];
         let signal = evaluate(&recent, &counts, None).unwrap();
         assert!(matches!(
             signal,
