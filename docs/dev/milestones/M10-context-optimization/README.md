@@ -177,13 +177,15 @@ filter, then the novel semantic levers, then measurement.
 | 05 | **Fix `Budget::estimate` — count tool exchange content.** `estimate` currently ignores `tool_calls[n].arguments` and `tool_results[n].content`, so `context_pct` is always ~15% (system-prompt only), the compactor's `would_overflow` never fires on real pressure, and phase-08's metrics would aggregate wrong values. Purely additive fix in `budget.rs` + 3 new tests. ([phase-05-budget-estimate-fix.md](phase-05-budget-estimate-fix.md)) | — | done |
 | 06 | **Redundant-read dedupe.** Re-reading an unchanged file (working-set mtime match) returns a compact "unchanged since turn N" reference instead of re-injecting content; forced re-read still available. Emits its own per-lever reclaim event. ([phase-06-redundant-read-dedupe.md](phase-06-redundant-read-dedupe.md)) | B | done |
 | 07 | **Content-aware compaction priority.** Replace value-blind compaction with a value-ranked **in-place signaturization** pass: shrink lowest-value tool output first (noisy command output before file reads), protect the last K turns, preserve tool-call/tool-result pairing. Also fixes the compactor's post-phase-05 token under-count. Single-file (`compactor.rs`); `CompactionReport` shape unchanged (per-source breakdown deferred to phase-08). ([phase-07-content-aware-compaction.md](phase-07-content-aware-compaction.md)) | B | done |
-| 08 | **Context-efficiency metrics on `PhaseRun`.** Aggregate the per-lever reclaim events (`OutputFiltered`, `ReadEvicted`, the dedupe event) + `Compaction` from the session JSONL onto `PhaseRun` (peak context %, compaction count, tokens reclaimed by source); fold into `StatusSummary`/dashboard; surface in `rexymcp runs` / scorecard so M10's effect is measurable across runs. | — | todo |
+| 08a | **Context-efficiency aggregation onto `PhaseRun`** (executor-only). New `ContextEfficiency` struct + pure `aggregate_context_efficiency` over the session-log records (peak context %, compaction count, tokens reclaimed by source); `emit_phase_run` reconstructs the log path and folds the aggregate onto `PhaseRun` as a `#[serde(default)]` field. The data-capture foundation; nothing surfaces it until 08b/08c. ([phase-08a-context-efficiency-phaserun.md](phase-08a-context-efficiency-phaserun.md)) | — | todo |
+| 08b | **Surface context-efficiency in `rexymcp runs` + scorecard** (mcp-only). Add display columns to `rexymcp runs` and aggregate means to the two scorecards (`model × tag` + `model × settings`) reading the 08a `PhaseRun` field, so M10's effect is comparable across runs. *Drafted on demand after 08a; may split further.* | — | todo |
+| 08c | **Fold reclaim events into `StatusSummary` / dashboard** (mcp-only, live view). `summarize` gains arms for the three reclaim variants (currently in the `_ => {}` catch-all) + an aggregate dashboard panel. *Drafted on demand; may merge with 08b if small.* | — | todo |
 
 Phases may split or merge at draft time. The table is the roadmap, not a
 contract; each phase doc is the contract. **Measurement is per-lever:** each
-reclaim phase (03/04/05) emits its own `SessionEvent` variant when it lands, and
-phase-07 reads those durable JSONL events back into `PhaseRun` — so no lever ships
-un-instrumented and phase-07 needs no retrofit.
+reclaim phase (03/04/06/07) emits its own `SessionEvent` variant when it lands, and
+**phase-08a** reads those durable JSONL events back into `PhaseRun` — so no lever
+ships un-instrumented and 08a needs no retrofit.
 
 ## Design decisions
 
