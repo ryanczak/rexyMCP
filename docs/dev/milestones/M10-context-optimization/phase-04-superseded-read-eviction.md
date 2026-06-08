@@ -1,7 +1,7 @@
 # Phase 04: superseded-read eviction
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-03 (the per-lever `OutputFiltered` reclaim-event pattern this phase mirrors for `ReadEvicted`). Arc A (phase-01/02) complete. First Arc B *behavior* phase.
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -502,3 +502,54 @@ None. No new dependency (`serde_json` is already used throughout `tools.rs`). No
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-07 (refined re-dispatch after hard_fail)
+
+The first dispatch hard-failed `VerifierFailurePersistent` (3 consecutive verifier
+failures) on three compile errors, **all** in the two MCP-side files. **The entire
+executor-crate half is already done and correct on the working tree — do NOT
+re-read or re-touch it.** Re-verifying already-correct files is what burned the turn
+budget last time (31 turns of wandering). Already landed and correct, leave alone:
+
+- `executor/src/store/sessions/event.rs` — `ReadEvicted` variant ✓
+- `executor/src/agent/tools.rs` — `evict_superseded_reads` fn ✓ (its `mod tests`
+  block has only phase-03's `dispatch_*` tests; you add the new tests in Step B)
+- `executor/src/agent/mod.rs` — import, call site, and `event_kind` test arm ✓
+- `mcp/src/log_query.rs` — `event_type_str` arm ✓
+- `mcp/src/dashboard/filter.rs` — **partial**: only the struct field and
+  `FILTER_ITEM_COUNT = 13` landed.
+
+**Your remaining work, in this exact order:**
+
+**Step A — make it compile (the known wall — do ALL of it, then stop and build).**
+This is the precise spot where both this phase *and* phase-03 stalled: a *partial*
+`filter.rs` is the failure mode. Apply **every** remaining edit from **Task 4(c)** —
+the `Default` field `read_evicted: true`, the `allows()` arm, the `toggle()` index-`12`
+arm, the `is_enabled()` index-`12` arm, the `item_label()` index-`12` arm, and the
+`assert!(f.read_evicted);` line in `filter_default_disables_progress` — **and** the
+**Task 4(d)** `record_lines` arm in `mcp/src/dashboard/transcript.rs` (that file is
+currently untouched — it needs the whole arm). The verbatim code for each is in
+Task 4 above; do not paraphrase it. **Then run `cargo build` and confirm it is
+green before writing a single test.** A green build is the checkpoint that proves
+Step A is complete.
+
+**Step B — only once `cargo build` is green — write the tests** from the Test plan:
+the 7 `evict_superseded_reads` unit tests in `tools.rs` and the 2 agent-loop tests
+in `mod.rs`. Do not run `cargo test` until the build is green — a non-compiling
+tree makes the verifier fail on compile noise, not on your tests, which is exactly
+the loop that tripped the hard-fail.
+
+Then run the full command set (`fmt --check`, `build`, `clippy`, `test` as separate
+invocations) and complete the Update Log + commit.
+
+### Update — 2026-06-07 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** First phase-04 dispatch, and the spec was already complete (Task 4
+enumerates all seven `filter.rs` sites + the `transcript.rs` arm verbatim) — so the
+refinement is not new spec content but a scope-narrowing checklist: the
+executor-crate half is preserved and correct, finish exactly the two MCP files with
+a compile-first-then-test ordering. The failure was state-tracking/focus across 31
+turns, not a missing instruction. (Second occurrence of the `filter.rs`
+exhaustive-match wall across phases — a calibration trend; if this re-dispatch hits
+the same class, session takeover is the next lever.)
