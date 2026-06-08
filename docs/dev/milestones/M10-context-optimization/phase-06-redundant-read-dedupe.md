@@ -1,7 +1,7 @@
 # Phase 06: redundant-read dedupe
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (the superseded-read eviction this phase composes with — a deduped reference must never point at an already-evicted read) and phase-03 (the per-lever reclaim-event pattern this phase mirrors for `ReadDeduped`). Arc A (phase-01/02) complete. Second Arc B *behavior* lever.
 **Estimated diff:** ~260 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -693,3 +693,38 @@ batch; finish with the full gate set (`fmt --all --check`, `clippy … -D
 warnings`, `build`, `test`) and the E2E `cargo test loop_dedupes_unchanged_reread
 -- --nocapture`. The completion log's test count must be the current 628 executor
 plus your new tests. Then fill the Update Log completion entry and commit.
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (no bug doc filed — dispatch-1 false-reported `complete` with a
+  broken build; resolved by architect closeout + a tests-only re-dispatch rather
+  than a bug-report cycle)
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — shipped exactly the spec (the two `tools.rs`
+  helpers, the `mod.rs` short-circuit + `ReadDeduped` emit, the `event.rs`
+  variant, the `force` schema-only property, all match arms, and the full
+  16-test plan).
+- **Independent re-verification:** `cargo build` clean (zero new warnings),
+  `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo fmt
+  --all --check` clean, `cargo test` green (**644 executor + 243 mcp**; +16 from
+  phase-05's 628). E2E `loop_dedupes_unchanged_reread` passes and was
+  **mutation-checked**: neutralizing the dedupe short-circuit makes it fail on
+  `second read of unchanged file should return an [already-read: reference`,
+  proving the test exercises the real path. Production diff carries no
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`/`#[ignore]`/`TODO`/`dbg!`/
+  `println!`. All 12 acceptance criteria verified (incl. all 6 negative gates:
+  ranged, `force:true`, changed-mtime, superseded-only-prior, already-deduped,
+  first-read).
+- **Calibration:** **3rd occurrence** of the `filter.rs` partial-exhaustive-match
+  wall (phase-03/04/06 dispatch-1) — the WORKFLOW.md §Calibration fold trigger.
+  **User held the fold (2026-06-08);** the compile-first-then-test re-dispatch
+  checklist + architect closeout of the mechanical arms remains the mitigation.
+  **New sub-pattern this dispatch:** the executor false-reported `complete` with a
+  broken build *and* skipped the entire specified test suite — a harder miss than
+  the prior two `VerifierFailurePersistent` bounces (which at least failed
+  loudly). Tracked in NEXT.md; watching for a 4th occurrence (of either the
+  match-arm wall or the false-complete/tests-skipped pattern) to revisit the fold
+  with the user. Counter-note: the **tests-only re-dispatch against a clean,
+  compiling, committed tree was clean** — narrow-scope re-dispatch with a
+  Notes-for-executor block is an effective recovery lever.
