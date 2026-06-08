@@ -1,7 +1,7 @@
 # Phase 08a: Context-efficiency aggregation onto `PhaseRun`
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (`OutputFiltered`), phase-04 (`ReadEvicted`), phase-06 (`ReadDeduped`), phase-07 (`Compaction` shape), phase-05 (`Budget::estimate` fix so `context_pct` is real)
 **Estimated diff:** ~230 lines (incl. tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -492,3 +492,12 @@ test result: ok. 664 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fi
 - `1ccba39` — docs: phase-08a doc split (08a/08b/08c) and NEXT.md pointer update
 
 **Notes for review:** Executor stalled on `IdenticalToolCallRepetition` (3× `read_file scorecard.rs`) — same pattern as phase-06 mechanical literal churn. Architect closed out the 3 remaining literals and all 7 tests. The `context_pct` in the E2E test is `used_tokens / 1_000_000` (small but non-zero), making the path-reconstruction assertion discriminating.
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** escalated (architect closeout after executor `hard_fail`)
+- **Bounces:** one executor dispatch (`hard_fail` — `IdenticalToolCallRepetition`, 3× `read_file scorecard.rs`); architect completed tasks 5 (3 remaining mcp literals) + all 7 tests, no re-dispatch
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (tasks 1–4 + 2/5 mcp literals); Claude Code (direct) closeout
+- **Scope deviations:** none — implementation matches the spec verbatim (struct, aggregator, `#[serde(default)]` field, internal path reconstruction with no call-site churn)
+- **Review checks:** all four gates re-run clean (`fmt --check`, `build`, `clippy -D warnings`, `test` = 243 mcp + 664 executor, deterministic across repeated full-suite runs). The E2E test `phase_run_context_efficiency_matches_session_log` was **mutation-verified**: injecting a wrong log-path prefix into `emit_phase_run` makes the persisted `context_efficiency` all-zeros while the independent on-disk read finds `peak_context_pct: 0.00336`, failing the equality assertion — confirming the test exercises the real read-back path, not a fake. The `unwrap_or_default()` in `emit_phase_run` is the phase-authorized best-effort telemetry read (documented; telemetry must never fail the phase) — not a STANDARDS §2.1 violation.
+- **Calibration:** 4th occurrence of the mechanical-multi-site-churn stall class (after phase-03/04/06 match-arm walls + phase-10b test-churn). This one was **struct-literal** churn (5 mcp `PhaseRun {…}` literals), not match-arm — the phase's no-call-site-churn `emit_phase_run` design successfully avoided the match-arm wall, but the 5 defaulted-field literal adds were still enough repetitive churn to trigger the read-repetition stall. Reinforces the held-fold discussion: for any field add touching N>2 struct literals across crates, consider pre-applying the mechanical literal adds in the phase doc as pre-completed work, or splitting the cross-crate literal fixups into a separate micro-step.
