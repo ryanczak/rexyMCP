@@ -1,7 +1,7 @@
 # Phase 05: fix `Budget::estimate` — count tool exchange content
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (surfaced the bug; see `bugs/bug-budget-estimate-1.md`)
 **Estimated diff:** ~20 lines
 **Tags:** language=rust, kind=fix, size=xs
@@ -310,3 +310,13 @@ Lines 48 and 53 are inside `estimate`, confirming the fix landed in the producti
 - (pending) — `fix: count tool exchange content in Budget::estimate`
 
 **Notes for review:** The spec referenced types as `AiToolCall`/`AiToolResult` but the actual types are `ToolCall`/`ToolResult` in `executor/src/ai/types.rs`. Adapted the test imports accordingly.
+
+### Review verdict — 2026-06-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (40 turns, clean — code, 3 tests, Update Log, and commit all landed)
+- **Independent re-run:** `cargo fmt --all --check`, `cargo build`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test` — all green, 628 pass (625 + 3 new).
+- **DoD:** all boxes met. The fix matches the spec verbatim (`estimate` now counts `tool_calls[n].arguments` + `tool_results[n].content`); the 3 new tests are real (each asserts `estimate == tokens::count(payload)`, which would be `0` and fail if the new branches were removed); no production `unwrap`/`expect`/`panic`/`unsafe`; one conventional commit (`43fa08b`) carrying code + tests + doc flips.
+- **Scope deviations:** none. The executor left `estimate_sums_prompt_and_messages` as-is per the spec's "leave as-is" instruction.
+- **Calibration:** **architect pre-injection naming error (1 occurrence — data, not a trend).** The spec sketch named the types `AiToolCall`/`AiToolResult`; the canonical types are `ToolCall`/`ToolResult` (`executor/src/ai/types.rs:4`). The `Ai*` names are a **file-local import alias** — `tools.rs:6` does `use crate::ai::types::{ToolCall as AiToolCall, ToolResult as AiToolResult}` — so they exist only inside `agent/tools.rs` and `agent/mod.rs` (where phase-04's tests live, which is why that spec's `Ai*` names compiled there). `budget.rs` has no such alias, so the executor correctly imported the canonical `ToolCall`/`ToolResult`. Clean adaptation, no bounce, but a less capable model could have copied the alias blindly and hit an unresolved-import error. Watch-item: when pre-injecting struct-construction code, cite the type by its canonical name and note any file-local aliases, rather than carrying a name over from whichever file the pattern was lifted from. Not worth a fold.

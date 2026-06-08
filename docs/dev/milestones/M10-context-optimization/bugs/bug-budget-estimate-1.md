@@ -1,7 +1,7 @@
 # Bug 1 on M10: `Budget::estimate` ignores tool exchanges — context_pct is always wrong
 
 **Severity:** major
-**Status:** open
+**Status:** fixed (M10 phase-05, commit `43fa08b`, 2026-06-07)
 **Filed:** 2026-06-07
 **Discovered:** phase-04 session `session-phase-04-6a263b1c.jsonl`
 
