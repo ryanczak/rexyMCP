@@ -91,4 +91,12 @@ pub enum SessionEvent {
         tokens_after: usize,
         filter: String,
     },
+    /// Emitted when a successful edit supersedes prior `read_file` results for a
+    /// file (M10 Arc B). `reads_evicted` results were replaced by a re-read
+    /// breadcrumb; `tokens_reclaimed` is the chars/4 estimate of context freed.
+    ReadEvicted {
+        path: String,
+        reads_evicted: usize,
+        tokens_reclaimed: usize,
+    },
 }

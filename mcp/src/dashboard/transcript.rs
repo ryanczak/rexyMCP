@@ -156,6 +156,16 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 false,
                 None,
             ),
+            SessionEvent::ReadEvicted {
+                reads_evicted,
+                tokens_reclaimed,
+                ..
+            } => (
+                format!("evicted {reads_evicted} stale read(s): -{tokens_reclaimed} tokens"),
+                Color::Cyan,
+                false,
+                None,
+            ),
         };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);

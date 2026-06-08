@@ -46,8 +46,9 @@ use metrics::{RunMetrics, emit_phase_run};
 use outcome::{budget_exceeded_result, build_artifacts, hard_fail_result, turns_line};
 use progress::{EmitCtx, ProgressCallback, emit_progress};
 use tools::{
-    append_tool_exchange, assistant_text, dispatch, edit_target, output_preview,
-    read_before_edit_refusal, record_mtime, render_diagnostics, resolve_path, user_text,
+    append_tool_exchange, assistant_text, dispatch, edit_target, evict_superseded_reads,
+    output_preview, read_before_edit_refusal, record_mtime, render_diagnostics, resolve_path,
+    user_text,
 };
 use verify::FileVerifier;
 
@@ -681,6 +682,28 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             && let Some(path) = resolve_path(&tool_call, deps.project_root)
         {
             record_mtime(&mut working_set, &path);
+        }
+
+        // Superseded-read eviction (M10 Arc B): a successful edit makes every
+        // prior read of this file stale. Replace those read results with a
+        // re-read breadcrumb to reclaim context and remove the stale-content
+        // hazard. Always safe — the read-before-edit gate forces a re-read.
+        if succeeded && let Some(path) = &edit_path {
+            let (reads_evicted, tokens_reclaimed) =
+                evict_superseded_reads(&mut messages, path, turns, deps.project_root);
+            if reads_evicted > 0 {
+                log_event(
+                    &log_handle,
+                    &redactor,
+                    deps.clock,
+                    turns,
+                    SessionEvent::ReadEvicted {
+                        path: path.display().to_string(),
+                        reads_evicted,
+                        tokens_reclaimed,
+                    },
+                );
+            }
         }
 
         // Post-write format hook (M9/phase-01). Runs the configured format
@@ -1703,6 +1726,7 @@ mod tests {
             SessionEvent::Metrics { .. } => "metrics",
             SessionEvent::Compaction { .. } => "compaction",
             SessionEvent::OutputFiltered { .. } => "output_filtered",
+            SessionEvent::ReadEvicted { .. } => "read_evicted",
         }
     }
 
@@ -2156,6 +2180,114 @@ mod tests {
             std::fs::read_to_string(&file).unwrap(),
             "edited",
             "patch after a read should apply"
+        );
+    }
+
+    // ── M10 phase-04: superseded-read eviction ────────────────────────────
+
+    #[tokio::test]
+    async fn loop_evicts_prior_read_after_patch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("foo.txt");
+        let original_content = "this is the original file content for eviction testing";
+        std::fs::write(&file, original_content).unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "edited" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        // The third model call (index 2) should have the evicted breadcrumb
+        // in place of the original read content.
+        let third_call_messages = &client.calls()[2].messages;
+        let has_breadcrumb = third_call_messages.iter().any(|m| {
+            m.tool_results
+                .as_ref()
+                .is_some_and(|trs| trs.iter().any(|t| t.content.starts_with("[superseded:")))
+        });
+        assert!(
+            has_breadcrumb,
+            "third call should contain a superseded breadcrumb"
+        );
+
+        // The read_file tool result specifically should NOT contain the original content.
+        // (The patch result legitimately echoes the old content in its unified diff;
+        // we only care that the read_file slot was evicted, not that the diff is suppressed.)
+        let read_result_has_original = third_call_messages.iter().any(|m| {
+            m.tool_results.as_ref().is_some_and(|trs| {
+                trs.iter()
+                    .any(|t| t.tool_name == "read_file" && t.content.contains(original_content))
+            })
+        });
+        assert!(
+            !read_result_has_original,
+            "read_file tool result should NOT contain the original content after eviction"
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_logs_read_evicted_event_after_patch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("foo.txt");
+        std::fs::write(&file, "original content").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let client = MockAiClientScript::new(vec![
+            vec![native("read_file", json!({ "path": path }))],
+            vec![native(
+                "patch",
+                json!({ "path": path, "old_str": "original", "new_str": "edited" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        let recs = records(dir.path());
+        let has_read_evicted = recs.iter().any(|r| {
+            matches!(
+                &r.event,
+                SessionEvent::ReadEvicted { reads_evicted, .. } if *reads_evicted >= 1
+            )
+        });
+        assert!(
+            has_read_evicted,
+            "session log should contain a ReadEvicted event with reads_evicted >= 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn loop_does_not_log_read_evicted_without_prior_read() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("foo.txt");
+        std::fs::write(&file, "original content").unwrap();
+        let path = file.to_string_lossy().to_string();
+        // No read_file — just a write_file (not gated, but no prior read to evict)
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "write_file",
+                json!({ "path": path, "content": "fresh content" }),
+            )],
+            vec![token("done")],
+        ]);
+        let verifier = MockFileVerifier::new(vec![]);
+
+        run_with_verifier(&dir, &client, &verifier, 8).await;
+
+        let recs = records(dir.path());
+        let has_read_evicted = recs
+            .iter()
+            .any(|r| matches!(&r.event, SessionEvent::ReadEvicted { .. }));
+        assert!(
+            !has_read_evicted,
+            "session log should NOT contain a ReadEvicted event when there was no prior read"
         );
     }
 

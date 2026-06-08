@@ -1,6 +1,6 @@
 use rexymcp_executor::store::sessions::event::SessionEvent;
 
-pub(crate) const FILTER_ITEM_COUNT: usize = 12;
+pub(crate) const FILTER_ITEM_COUNT: usize = 13;
 
 /// Per-event-type visibility toggles for the Activity pane.
 /// All enabled by default except `progress` (too noisy).
@@ -18,6 +18,7 @@ pub(crate) struct ActivityFilter {
     pub(crate) metrics: bool,
     pub(crate) compaction: bool,
     pub(crate) output_filtered: bool,
+    pub(crate) read_evicted: bool,
 }
 
 impl Default for ActivityFilter {
@@ -35,6 +36,7 @@ impl Default for ActivityFilter {
             metrics: true,
             compaction: true,
             output_filtered: true,
+            read_evicted: true,
         }
     }
 }
@@ -54,6 +56,7 @@ impl ActivityFilter {
             SessionEvent::Metrics { .. } => self.metrics,
             SessionEvent::Compaction { .. } => self.compaction,
             SessionEvent::OutputFiltered { .. } => self.output_filtered,
+            SessionEvent::ReadEvicted { .. } => self.read_evicted,
         }
     }
 
@@ -71,6 +74,7 @@ impl ActivityFilter {
             9 => self.metrics = !self.metrics,
             10 => self.compaction = !self.compaction,
             11 => self.output_filtered = !self.output_filtered,
+            12 => self.read_evicted = !self.read_evicted,
             _ => {}
         }
     }
@@ -89,6 +93,7 @@ impl ActivityFilter {
             9 => self.metrics,
             10 => self.compaction,
             11 => self.output_filtered,
+            12 => self.read_evicted,
             _ => false,
         }
     }
@@ -107,6 +112,7 @@ impl ActivityFilter {
             9 => "metrics",
             10 => "compaction",
             11 => "output filtered",
+            12 => "read evicted",
             _ => "?",
         }
     }
@@ -153,6 +159,7 @@ mod tests {
         assert!(f.metrics);
         assert!(f.compaction);
         assert!(f.output_filtered);
+        assert!(f.read_evicted);
     }
 
     #[test]

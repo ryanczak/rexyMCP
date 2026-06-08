@@ -1,7 +1,7 @@
 # Phase 04: superseded-read eviction
 
 **Milestone:** M10 — Context optimization
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03 (the per-lever `OutputFiltered` reclaim-event pattern this phase mirrors for `ReadEvicted`). Arc A (phase-01/02) complete. First Arc B *behavior* phase.
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -553,3 +553,28 @@ a compile-first-then-test ordering. The failure was state-tracking/focus across 
 turns, not a missing instruction. (Second occurrence of the `filter.rs`
 exhaustive-match wall across phases — a calibration trend; if this re-dispatch hits
 the same class, session takeover is the next lever.)
+
+### Update — 2026-06-07 (architect closeout after infra drop)
+
+**Dispatch 3 result:** `hard_fail` — `BackendError { message: "error decoding response
+body" }` at turn 44, after all implementation and tests were complete. The executor
+correctly handled Step A (filter.rs 6 patches + transcript.rs arm, green `cargo build`
+at turn 24) and Step B (all 10 tests written, loop test passing at turn 40); the
+backend dropped while the executor was finishing the Update Log and commit step.
+Working tree: all 6 files modified, 625 tests pass.
+
+**Lever:** architect closeout. The implementation is complete and verified — only the
+Update Log, format fix, and commit remain. Precedent: phase-01 M10, M8/phase-06a
+(same `error decoding response body` infra-drop class, post-implementation).
+
+**Architect actions:**
+- `rustfmt` on the two touched files (10 format diffs, all in test code)
+- Fixed one incorrect test assertion in `loop_evicts_prior_read_after_patch`: the
+  assertion `!has_original` was checking ALL tool results; the patch tool's unified
+  diff legitimately echoes the old content in its `-` line — the check should be
+  scoped to `tool_name == "read_file"` results only. Corrected.
+- `cargo fmt --all --check`, `cargo build`, `cargo clippy`, `cargo test` — all green;
+  625 tests pass (615 pre-phase-04 + 10 new).
+- Filed `bug-budget-estimate-1.md`: `Budget::estimate` ignores tool exchange content
+  (discovered by observing this session's flat `context_pct = 15%` across 44 turns).
+- Status flipped `in-progress` → `review`.
