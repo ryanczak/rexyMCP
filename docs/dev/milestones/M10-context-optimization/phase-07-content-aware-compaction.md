@@ -1,7 +1,7 @@
 # Phase 07: content-aware compaction priority
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (`[superseded:` breadcrumbs) and phase-06 (`[already-read:` references) — both produce already-reclaimed husks this phase must recognize and skip; phase-05 (`Budget::estimate` now counts `tool_calls`/`tool_results` content) — the correctness fix this phase carries into the compactor's own token accounting. Third Arc B lever.
 **Estimated diff:** ~300 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -523,3 +523,11 @@ $ grep -n 'RECENT_TURNS_PROTECTED' executor/src/context/compactor.rs
 **Commit:** `feat: content-aware compaction priority — value-ranked in-place signaturization pass`
 
 **Notes for review:** None. All acceptance criteria met.
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — only `compactor.rs` touched for code; phase doc Status + README table row are status bookkeeping.
+- **Calibration:** none. Clean single-file dispatch in 74 turns; all 8 pre-existing compactor tests passed unchanged, +13 new (657 executor total). Independently re-ran fmt/build/clippy/test (all green) and the two phase-doc-required e2e tests (`logs_compaction_event_when_budget_overflows`, `compact_reclaims_command_output_before_file_read`). Mutation-verified the value-ordering test: swapping `reclaim_rank`'s read_file/bash ranks fails `compact_reclaims_command_output_before_file_read`. A counter-point to the filter.rs match-arm wall — the deliberately single-file, zero-`SessionEvent` scope (no match-arm blast radius) is exactly the shape the executor handles cleanly first-try.
