@@ -1,7 +1,7 @@
 # Phase 02: structured cargo filter
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (recoverable output filter module + `filter_for_command` dispatch slot)
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -442,3 +442,13 @@ and one bash-tool integration test.
 **Commit:** `feat: structured cargo output filter with command-based dispatch`
 
 **Notes for review:** None. Implementation matches spec exactly. One test input was adapted: `cargo_filter_drops_compiling_noise` used bare `"Finished\n"` as input but the `is_cargo_noise` prefix check requires `"Finished "` (with trailing space), so the test input was updated to `"Finished dev [unoptimized] target(s) in 1.19s\n"` to match real cargo output. This is a test fix, not a behavior change.
+
+### Review verdict — 2026-06-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. One test-input adaptation (`cargo_filter_drops_compiling_noise`: bare `"Finished\n"` → `"Finished dev [...]"` to match the trailing-space prefix check) — correctly logged in Notes for review; a test-fixture fix, not a behavior change.
+- **Calibration:** none. Clean first-try with full bookkeeping (committed `8ccc896`, status flipped, Update Log filled) — contrast with phase-01's architect-closeout. Reinforces the existing "executor implements single-concern additive phases well" data point.
+
+**Architect review (2026-06-07):** Re-ran all four gates independently — fmt clean, build zero warnings, clippy clean, test 243 mcp + 609 executor (599 pre-flight + 10 new), 0 failures. All 9 acceptance criteria verified by grep + test. E2E: the real-`cargo`-subprocess integration test passes (failing test name survives, `... ok` lines dropped, `test result:` present); routing tests pass both directions. Code hygiene clean (no new unwrap/expect/panic — the lone `expect` is phase-01's `OnceLock` regex; no TODO/dbg/println/allow/ignore/unsafe). The `is_cargo_noise` keep-by-default design correctly preserves diagnostics while dropping progress/passing-test noise.
