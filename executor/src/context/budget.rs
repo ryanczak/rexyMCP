@@ -45,6 +45,16 @@ impl Budget {
         let mut total = tokens::count(system_prompt);
         for msg in messages {
             total = total.saturating_add(tokens::count(&msg.content));
+            if let Some(tcs) = &msg.tool_calls {
+                for tc in tcs {
+                    total = total.saturating_add(tokens::count(&tc.arguments));
+                }
+            }
+            if let Some(trs) = &msg.tool_results {
+                for tr in trs {
+                    total = total.saturating_add(tokens::count(&tr.content));
+                }
+            }
         }
         total
     }
@@ -68,6 +78,7 @@ impl Budget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::types::{ToolCall, ToolResult};
 
     #[test]
     fn default_is_never_overflow() {
@@ -105,6 +116,89 @@ mod tests {
         let result = budget.estimate("hello", &messages);
         let expected = tokens::count("hello") + tokens::count("world");
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn estimate_includes_tool_result_content() {
+        let budget = Budget::new(10_000);
+        let messages = vec![Message {
+            role: "tool".to_string(),
+            content: String::new(),
+            tool_calls: None,
+            tool_results: Some(vec![ToolResult {
+                tool_call_id: "id1".to_string(),
+                tool_name: "read_file".to_string(),
+                content: "file content goes here".to_string(),
+            }]),
+            turn: Some(1),
+        }];
+        let estimated = budget.estimate("", &messages);
+        assert!(
+            estimated > 0,
+            "estimate must count tool_result content, not just msg.content"
+        );
+        assert_eq!(estimated, tokens::count("file content goes here"));
+    }
+
+    #[test]
+    fn estimate_includes_tool_call_arguments() {
+        let budget = Budget::new(10_000);
+        let messages = vec![Message {
+            role: "assistant".to_string(),
+            content: String::new(),
+            tool_calls: Some(vec![ToolCall {
+                id: "tc1".to_string(),
+                name: "patch".to_string(),
+                arguments: r#"{"path":"foo.rs","old_str":"x","new_str":"y"}"#.to_string(),
+                thought_signature: None,
+            }]),
+            tool_results: None,
+            turn: Some(2),
+        }];
+        let estimated = budget.estimate("", &messages);
+        assert!(
+            estimated > 0,
+            "estimate must count tool_call arguments, not just msg.content"
+        );
+        assert_eq!(
+            estimated,
+            tokens::count(r#"{"path":"foo.rs","old_str":"x","new_str":"y"}"#)
+        );
+    }
+
+    #[test]
+    fn estimate_counts_all_payloads_in_a_tool_exchange() {
+        let budget = Budget::new(10_000);
+        let args = r#"{"path":"src/lib.rs"}"#;
+        let result_body = "pub fn hello() {}";
+        let messages = vec![
+            Message {
+                role: "assistant".to_string(),
+                content: String::new(),
+                tool_calls: Some(vec![ToolCall {
+                    id: "tc2".to_string(),
+                    name: "read_file".to_string(),
+                    arguments: args.to_string(),
+                    thought_signature: None,
+                }]),
+                tool_results: None,
+                turn: Some(1),
+            },
+            Message {
+                role: "tool".to_string(),
+                content: String::new(),
+                tool_calls: None,
+                tool_results: Some(vec![ToolResult {
+                    tool_call_id: "tc2".to_string(),
+                    tool_name: "read_file".to_string(),
+                    content: result_body.to_string(),
+                }]),
+                turn: Some(1),
+            },
+        ];
+        let estimated = budget.estimate("", &messages);
+        let expected = tokens::count(args) + tokens::count(result_body);
+        assert_eq!(estimated, expected);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Phase 05: fix `Budget::estimate` — count tool exchange content
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** review
 **Depends on:** phase-04 (surfaced the bug; see `bugs/bug-budget-estimate-1.md`)
 **Estimated diff:** ~20 lines
 **Tags:** language=rust, kind=fix, size=xs
@@ -257,3 +257,56 @@ None. No new dependency. No `Cargo.toml` change. No `docs/architecture.md` chang
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-16 (started)
+
+**Executor:** rexyMCP executor
+
+### Update — 2025-07-16 (complete)
+
+**Summary:** Fixed `Budget::estimate` to count `tool_calls[n].arguments` and `tool_results[n].content` in addition to `msg.content`. The fix is purely additive — it never decreases the estimate, only increases it for messages that were previously returning 0 for non-content payloads. No API change, no dependency, no config. Note: the actual type names in the codebase are `ToolCall` and `ToolResult` (not `AiToolCall`/`AiToolResult` as the spec sketch used); adapted cleanly.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0
+    Finished dev [unoptimized + debuginfo] target(s) in 1.2s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0
+    Finished dev [unoptimized + debuginfo] target(s) in 1.4s
+
+cargo test 2>&1 | tail -30
+test result: ok. 628 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+
+N/A — `estimate` is an internal measurement function with no CLI surface or JSONL behavior change. Correctness verified by unit tests asserting estimates grow as expected for tool-exchange messages.
+
+**Grep verification:**
+```
+grep -n 'tool_calls\|tool_results' executor/src/context/budget.rs
+48:            if let Some(tcs) = &msg.tool_calls {
+53:            if let Some(trs) = &msg.tool_results {
+```
+Lines 48 and 53 are inside `estimate`, confirming the fix landed in the production path.
+
+**Files changed:**
+- `executor/src/context/budget.rs` — extended `estimate` to count tool call arguments and tool result content; added 3 new unit tests
+
+**New tests:**
+- `estimate_includes_tool_result_content` in `executor/src/context/budget.rs`
+- `estimate_includes_tool_call_arguments` in `executor/src/context/budget.rs`
+- `estimate_counts_all_payloads_in_a_tool_exchange` in `executor/src/context/budget.rs`
+
+**Commits:**
+- (pending) — `fix: count tool exchange content in Budget::estimate`
+
+**Notes for review:** The spec referenced types as `AiToolCall`/`AiToolResult` but the actual types are `ToolCall`/`ToolResult` in `executor/src/ai/types.rs`. Adapted the test imports accordingly.
