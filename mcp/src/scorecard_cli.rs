@@ -41,7 +41,7 @@ pub fn format_settings_scorecard(rows: &[SettingsScorecardRow]) -> String {
 
     let mut lines = Vec::new();
     lines.push(
-        "MODEL  SETTINGS          N  GATES  PARSE_FAIL  LENGTH_FIN  AFT_RATE  TURNS_MEAN"
+        "MODEL  SETTINGS          N  GATES  PARSE_FAIL  LENGTH_FIN  AFT_RATE  TURNS_MEAN  PEAK_CXT  RECLAIMED"
             .to_string(),
     );
 
@@ -56,8 +56,19 @@ pub fn format_settings_scorecard(rows: &[SettingsScorecardRow]) -> String {
             .map(|v| format!("{:.2}", v))
             .unwrap_or_else(|| "—".to_string());
 
+        let peak_cxt = row
+            .peak_context_pct_mean
+            .map(|v| format!("{:.0}%", v * 100.0))
+            .unwrap_or_else(|| "—".to_string());
+
+        let reclaimed = match row.tokens_reclaimed_mean {
+            None => "—".to_string(),
+            Some(v) if v >= 1024.0 => format!("{:.0}k", v / 1024.0),
+            Some(v) => format!("{:.0}", v),
+        };
+
         lines.push(format!(
-            "{:<7} {:<15} {:>2}  {:>5.2}  {:>9.2}  {:>9}  {:>8}  {:>9.2}",
+            "{:<7} {:<15} {:>2}  {:>5.2}  {:>9.2}  {:>9}  {:>8}  {:>9.2}  {:>8}  {:>9}",
             row.model,
             row.settings,
             row.n_runs,
@@ -66,6 +77,8 @@ pub fn format_settings_scorecard(rows: &[SettingsScorecardRow]) -> String {
             length_finish,
             aft,
             row.turns_mean,
+            peak_cxt,
+            reclaimed,
         ));
     }
 
@@ -188,6 +201,8 @@ model = "qwen"
             n_with_verdict: 0,
             approved_first_try_rate: None,
             bounces_to_approval_mean: None,
+            peak_context_pct_mean: Some(0.71),
+            tokens_reclaimed_mean: Some(9216.0),
         }];
 
         let out = format_settings_scorecard(&rows);
@@ -199,8 +214,21 @@ model = "qwen"
             out.contains("0.25"),
             "expected length_finish_rate_mean in output: {out}"
         );
+        assert!(out.contains("PEAK_CXT"), "expected PEAK_CXT header: {out}");
+        assert!(
+            out.contains("RECLAIMED"),
+            "expected RECLAIMED header: {out}"
+        );
+        assert!(
+            out.contains("71%"),
+            "expected 71% for peak_context_pct_mean=0.71: {out}"
+        );
+        assert!(
+            out.contains("9k"),
+            "expected 9k for tokens_reclaimed_mean=9216: {out}"
+        );
 
-        // None length_finish renders as "—"
+        // None means render as "—"
         let rows_none = vec![SettingsScorecardRow {
             model: "gemma".to_string(),
             settings: "default".to_string(),
@@ -217,11 +245,18 @@ model = "qwen"
             n_with_verdict: 0,
             approved_first_try_rate: None,
             bounces_to_approval_mean: None,
+            peak_context_pct_mean: None,
+            tokens_reclaimed_mean: None,
         }];
         let out_none = format_settings_scorecard(&rows_none);
         assert!(
             out_none.contains('—'),
             "expected '—' for None length_finish_rate_mean: {out_none}"
+        );
+        // Sentinel for the new columns: the row must not render "0%" or "0" for the absent means
+        assert!(
+            !out_none.contains("0%"),
+            "expected no '0%' for None peak_context_pct_mean: {out_none}"
         );
     }
 

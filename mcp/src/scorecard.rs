@@ -25,6 +25,14 @@ pub struct SettingsScorecardRow {
     pub n_with_verdict: usize,
     pub approved_first_try_rate: Option<f64>,
     pub bounces_to_approval_mean: Option<f64>,
+    /// Mean peak context-window utilization (a FRACTION in [0.0, 1.0]) over the
+    /// runs in this bucket that carry context telemetry (`peak_context_pct >
+    /// 0.0`). `None` when no run in the bucket is context-measured.
+    pub peak_context_pct_mean: Option<f64>,
+    /// Mean total tokens reclaimed (sum of all four M10 sources) over the same
+    /// context-measured runs. `None` when none are context-measured. A measured
+    /// run that reclaimed nothing contributes `0.0`, not exclusion.
+    pub tokens_reclaimed_mean: Option<f64>,
 }
 
 /// Render the sampling-settings label matching `rexymcp runs`.
@@ -58,6 +66,9 @@ struct SettingsAccumulator {
     approved_first_try_count: usize,
     bounces_sum: f64,
     bounces_n: usize,
+    peak_context_pct_sum: f64,
+    tokens_reclaimed_sum: f64,
+    context_measured_n: usize,
 }
 
 /// Aggregate runs into a **model × settings** competency matrix.
@@ -115,6 +126,16 @@ pub fn aggregate_by_settings(
             acc.bounces_sum += b as f64;
             acc.bounces_n += 1;
         }
+
+        let eff = &run.context_efficiency;
+        if eff.peak_context_pct > 0.0 {
+            acc.peak_context_pct_sum += eff.peak_context_pct;
+            acc.tokens_reclaimed_sum += (eff.output_filtered_tokens
+                + eff.read_evicted_tokens
+                + eff.read_deduped_tokens
+                + eff.compaction_tokens_reclaimed) as f64;
+            acc.context_measured_n += 1;
+        }
     }
 
     let mut rows: Vec<SettingsScorecardRow> = buckets
@@ -151,6 +172,16 @@ pub fn aggregate_by_settings(
                 },
                 bounces_to_approval_mean: if acc.bounces_n > 0 {
                     Some(acc.bounces_sum / acc.bounces_n as f64)
+                } else {
+                    None
+                },
+                peak_context_pct_mean: if acc.context_measured_n > 0 {
+                    Some(acc.peak_context_pct_sum / acc.context_measured_n as f64)
+                } else {
+                    None
+                },
+                tokens_reclaimed_mean: if acc.context_measured_n > 0 {
+                    Some(acc.tokens_reclaimed_sum / acc.context_measured_n as f64)
                 } else {
                     None
                 },
@@ -964,6 +995,136 @@ mod tests {
         let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
         assert!(row.tokens_reclaimed_mean.is_some());
         assert!((row.tokens_reclaimed_mean.unwrap() - 0.0).abs() < f64::EPSILON);
+    }
+
+    // --- Context efficiency aggregation tests (phase 08d — model × settings) ---
+
+    fn make_run_with_eff(
+        model: &str,
+        temperature: Option<f64>,
+        eff: rexymcp_executor::store::telemetry::ContextEfficiency,
+    ) -> PhaseRun {
+        let mut r = make_run_with_settings(model, &["rust"], temperature, None, None);
+        r.context_efficiency = eff;
+        r
+    }
+
+    #[test]
+    fn by_settings_peak_context_pct_mean_averages_measured_runs() {
+        let runs = vec![
+            make_run_with_eff(
+                "m1",
+                Some(0.2),
+                ContextEfficiency {
+                    peak_context_pct: 0.6,
+                    ..Default::default()
+                },
+            ),
+            make_run_with_eff(
+                "m1",
+                Some(0.2),
+                ContextEfficiency {
+                    peak_context_pct: 0.8,
+                    ..Default::default()
+                },
+            ),
+        ];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].peak_context_pct_mean.is_some());
+        assert!(
+            (rows[0].peak_context_pct_mean.unwrap() - 0.7).abs() < f64::EPSILON,
+            "expected 0.7, got {:?}",
+            rows[0].peak_context_pct_mean
+        );
+    }
+
+    #[test]
+    fn by_settings_tokens_reclaimed_mean_sums_all_four_sources() {
+        let eff = ContextEfficiency {
+            peak_context_pct: 0.5,
+            compaction_count: 0,
+            output_filtered_tokens: 100,
+            read_evicted_tokens: 50,
+            read_deduped_tokens: 30,
+            compaction_tokens_reclaimed: 20,
+        };
+        let runs = vec![make_run_with_eff("m1", Some(0.2), eff)];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].tokens_reclaimed_mean.is_some());
+        assert!(
+            (rows[0].tokens_reclaimed_mean.unwrap() - 200.0).abs() < f64::EPSILON,
+            "expected 200.0, got {:?}",
+            rows[0].tokens_reclaimed_mean
+        );
+    }
+
+    #[test]
+    fn by_settings_context_efficiency_none_when_all_legacy() {
+        let runs = vec![make_run_with_eff("m1", None, ContextEfficiency::default())];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0].peak_context_pct_mean.is_none(),
+            "expected None for legacy run"
+        );
+        assert!(
+            rows[0].tokens_reclaimed_mean.is_none(),
+            "expected None for legacy run"
+        );
+    }
+
+    #[test]
+    fn by_settings_context_measured_excludes_legacy_runs() {
+        let measured = ContextEfficiency {
+            peak_context_pct: 0.5,
+            compaction_count: 0,
+            output_filtered_tokens: 400,
+            read_evicted_tokens: 0,
+            read_deduped_tokens: 0,
+            compaction_tokens_reclaimed: 0,
+        };
+        let runs = vec![
+            make_run_with_eff("m1", Some(0.2), measured),
+            make_run_with_eff("m1", Some(0.2), ContextEfficiency::default()), // legacy
+        ];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert!(
+            (rows[0].peak_context_pct_mean.unwrap() - 0.5).abs() < f64::EPSILON,
+            "expected measured-only mean 0.5, got {:?}",
+            rows[0].peak_context_pct_mean
+        );
+        assert!(
+            (rows[0].tokens_reclaimed_mean.unwrap() - 400.0).abs() < f64::EPSILON,
+            "expected measured-only mean 400.0, got {:?}",
+            rows[0].tokens_reclaimed_mean
+        );
+    }
+
+    #[test]
+    fn by_settings_measured_run_with_zero_reclaim_contributes() {
+        let eff = ContextEfficiency {
+            peak_context_pct: 0.5,
+            compaction_count: 0,
+            output_filtered_tokens: 0,
+            read_evicted_tokens: 0,
+            read_deduped_tokens: 0,
+            compaction_tokens_reclaimed: 0,
+        };
+        let runs = vec![make_run_with_eff("m1", Some(0.2), eff)];
+        let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0].tokens_reclaimed_mean.is_some(),
+            "expected Some(0.0) for measured run with zero reclaim, got None"
+        );
+        assert!(
+            (rows[0].tokens_reclaimed_mean.unwrap() - 0.0).abs() < f64::EPSILON,
+            "expected 0.0, got {:?}",
+            rows[0].tokens_reclaimed_mean
+        );
     }
 
     #[test]

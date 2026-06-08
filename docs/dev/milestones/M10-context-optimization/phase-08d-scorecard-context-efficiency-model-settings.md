@@ -1,7 +1,7 @@
 # Phase 08d: Aggregate context-efficiency into the model × settings scorecard
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** review
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done),
 phase-08c (the same two means on the model × tag `ScorecardRow` — done; this
 phase mirrors it on the sibling settings row)
@@ -429,3 +429,60 @@ What this phase must **not** do, even if tempted:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-08 (complete)
+
+**Summary:** Added `peak_context_pct_mean` and `tokens_reclaimed_mean` to
+`SettingsScorecardRow` (struct definition) + `SettingsAccumulator` (3 fields) +
+`aggregate_by_settings` (accumulation block) in `mcp/src/scorecard.rs`, and two
+new `PEAK_CXT` / `RECLAIMED` columns to `format_settings_scorecard` in
+`mcp/src/scorecard_cli.rs`. The executor (Qwen/Qwen3.6-27B-FP8) completed the
+struct definition, accumulator fields, and accumulation logic, then
+hard-failed `VerifierFailurePersistent` (3× E0063 on the constructor literal
+before filling it). Architect session takeover closed out: the constructor
+literal (`scorecard.rs:150`), both test literals in `scorecard_cli.rs`, the
+CLI columns + rendering, and 5 aggregation tests + 1 extended renderer test.
+
+**Acceptance criteria:** all ticked.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.57s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -10
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.62s
+
+cargo test 2>&1 | tail -10
+test result: ok. 664 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+(mcp) test result: ok. 257 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.01s
+```
+
+**End-to-end verification:**
+
+```
+cargo run -p rexymcp -- scorecard --config rexymcp.toml --telemetry-path /tmp/fixture_08d.jsonl
+
+MODEL  SETTINGS          N  GATES  PARSE_FAIL  LENGTH_FIN  AFT_RATE  TURNS_MEAN  PEAK_CXT  RECLAIMED
+Qwen/Qwen3.6-27B-FP8 temp=0.2         1   1.00       0.05       0.02      1.00      42.00       68%        13k
+```
+
+Fixture run: `peak_context_pct = 0.68` → `68%`; total reclaim = 8000+3500+1200+500 = 13200 → `13k`. Both columns present in header and row.
+
+**Files changed:**
+- `mcp/src/scorecard.rs` — 2 fields on `SettingsScorecardRow`, 3 fields on `SettingsAccumulator`, accumulation block, constructor literal, 5 new tests
+- `mcp/src/scorecard_cli.rs` — `PEAK_CXT`/`RECLAIMED` headers + row cells in `format_settings_scorecard`, 2 test literals fixed, renderer test extended
+
+**New tests:**
+- `by_settings_peak_context_pct_mean_averages_measured_runs` in `mcp/src/scorecard.rs`
+- `by_settings_tokens_reclaimed_mean_sums_all_four_sources` in `mcp/src/scorecard.rs`
+- `by_settings_context_efficiency_none_when_all_legacy` in `mcp/src/scorecard.rs`
+- `by_settings_context_measured_excludes_legacy_runs` in `mcp/src/scorecard.rs`
+- `by_settings_measured_run_with_zero_reclaim_contributes` in `mcp/src/scorecard.rs`
+- `format_settings_scorecard_shows_settings_and_signal` (extended) in `mcp/src/scorecard_cli.rs`
+
+**Notes for review:** Executor completed struct def + accumulator + accumulation (the additive parts), stalled on the constructor literal — the predicted mechanical-multi-site-churn stall (5th occurrence, controlled comparison arm). This is the calibration data point confirming literal-count as the stall driver (08c: 1 literal, clean first-try; 08d: 3 literals, stall before literal 1 of 3). Architect session takeover closed the remaining 3 literal sites + renderer + tests.
