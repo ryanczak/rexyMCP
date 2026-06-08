@@ -1,7 +1,7 @@
 # Phase 04: superseded-read eviction
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (the per-lever `OutputFiltered` reclaim-event pattern this phase mirrors for `ReadEvicted`). Arc A (phase-01/02) complete. First Arc B *behavior* phase.
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -578,3 +578,36 @@ Update Log, format fix, and commit remain. Precedent: phase-01 M10, M8/phase-06a
 - Filed `bug-budget-estimate-1.md`: `Budget::estimate` ignores tool exchange content
   (discovered by observing this session's flat `context_pct = 15%` across 44 turns).
 - Status flipped `in-progress` → `review`.
+
+### Review verdict — 2026-06-07
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 real bounce. Dispatch-1 hard-failed `VerifierFailurePersistent`
+  on a partial `filter.rs` (the exhaustive-match wall) → refined re-dispatch with a
+  compile-first-then-test checklist. The re-dispatch *cleared* the wall (executor
+  hit Step A correctly, green build at turn 24) and completed all 10 tests, then
+  infra-dropped (`BackendError`) at turn 44 post-completion — that drop is **not**
+  counted as a quality bounce (architect closeout, not a re-attempt).
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (all production code + all 10 tests). Architect
+  closeout: `rustfmt` + one wrong-assertion fix + commit.
+- **Independent re-run:** `cargo fmt --all --check`, `cargo build`, `cargo clippy
+  --all-targets --all-features -- -D warnings`, `cargo test` — all green, 625 pass.
+- **DoD:** all boxes met. Eviction fn pure + idempotent (guarded by `SUPERSEDED_PREFIX`);
+  all 7 `filter.rs` sites + `transcript.rs` arm + `log_query`/`event_kind` arms landed;
+  no production `unwrap`/`expect`/`panic`/`unsafe`; the `println!` hits in the diff are
+  test-fixture string content, not debug calls. E2E `loop_evicts_prior_read_after_patch`
+  exercises the real loop over a `TempDir` patch and observes the breadcrumb in
+  `client.calls()[2]`.
+- **Scope deviations:** architect corrected one test assertion the executor wrote
+  incorrectly (`!has_original` scoped to all tool results vs. just `read_file` — the
+  patch unified diff legitimately echoes old content). Mechanical, within the closeout.
+- **Calibration:**
+  1. **filter.rs exhaustive-match wall — trend (2nd occurrence: phase-03 d1, phase-04
+     d1) but the compile-first-then-test refinement cleared it on re-dispatch.** The
+     scope-narrowing checklist is the working mitigation; the three system-level
+     mitigations were considered and **declined by the user**. No fold.
+  2. **Budget instrument bug surfaced (`bug-budget-estimate-1`, major, pre-existing
+     since M4).** `context_pct` has been mis-measured (tool-exchange content invisible
+     to `estimate`), so the live compactor is effectively disabled and phase-07's
+     context-efficiency metrics would read wrong values. Not introduced by this phase;
+     must be fixed before phase-07.
