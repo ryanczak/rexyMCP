@@ -449,6 +449,6 @@ mod tests {
         let lines = transcript_lines(&[], &ActivityFilter::default(), Some(3));
         assert_eq!(lines.len(), 2);
         assert_eq!(format!("{}", lines[0]), "(no activity yet)");
-        assert_eq!(format!("{}", lines[1]), "   🐕   🧠");
+        assert_eq!(format!("{}", lines[1]), "   🐕    🧠");
     }
 }
