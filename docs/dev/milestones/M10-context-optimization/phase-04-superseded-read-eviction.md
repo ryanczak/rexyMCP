@@ -1,9 +1,9 @@
-# Phase 03: superseded-read eviction
+# Phase 04: superseded-read eviction
 
 **Milestone:** M10 — Context optimization
 **Status:** todo
-**Depends on:** phase-01, phase-02 (Arc A complete). This is the first Arc B phase.
-**Estimated diff:** ~160 lines
+**Depends on:** phase-03 (the per-lever `OutputFiltered` reclaim-event pattern this phase mirrors for `ReadEvicted`). Arc A (phase-01/02) complete. First Arc B *behavior* phase.
+**Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=feature, size=m
 
 ## Goal
@@ -14,7 +14,9 @@ turn-3 read content is still sitting in the message history — but it is now
 model could reason from pre-edit content. This phase makes an edit (`patch` /
 `write_file`) immediately replace every prior `read_file` result for that same
 file with a short breadcrumb pointing the model at a fresh re-read. Context
-shrinks and the stale content is gone.
+shrinks and the stale content is gone. The reclaim is recorded as a per-lever
+`SessionEvent::ReadEvicted` (mirroring phase-03's `OutputFiltered`), so the win is
+measurable on the live dashboard and aggregatable onto `PhaseRun` in phase-07.
 
 This is the first Arc B (semantic context-lifecycle) lever — it uses the
 read→edit transition the agent loop already tracks. The breadcrumb is always
@@ -115,12 +117,21 @@ appended and the working set is recorded:
 `write_file`/`patch` call and carries the resolved target path. `turns` and
 `deps.project_root` are also in scope.
 
-**Observability for the integration test.** The agent-loop tests inspect the
-messages sent to the model via `client.calls()[N].messages` (see
-`patch_after_reading_is_allowed`, `mod.rs:2112`). Because eviction mutates the
-in-memory `messages` that are sent on the *next* turn, the breadcrumb is visible
-in the subsequent call's messages. No new `SessionEvent` is added (the dashboard
-has no consumer for it yet; `PhaseRun` metrics for reclaimed context are phase-06).
+**Observability.** Two channels: (1) the breadcrumb is visible in the next model
+call's messages — the agent-loop tests inspect `client.calls()[N].messages` (see
+`patch_after_reading_is_allowed`, `mod.rs:2112`), and eviction mutates the
+in-memory `messages` sent on the *next* turn; (2) a `SessionEvent::ReadEvicted`
+event is logged (consumed by the dashboard transcript + log-query tools now;
+aggregated onto `PhaseRun` in phase-07).
+
+**The per-lever event pattern is established by phase-03** (`OutputFiltered`):
+adding a `SessionEvent` variant requires a new arm at exactly **four** exhaustive
+match sites — `executor/src/agent/mod.rs` `event_type_str`, `mcp/src/log_query.rs`
+`event_kind`, `mcp/src/dashboard/filter.rs` (`ActivityFilter` struct field +
+`Default` + `allows` arm), and `mcp/src/dashboard/transcript.rs` `record_lines`.
+The `status.rs` `_ => {}`, `cap.rs` catch-all, and the generic-serde sites
+(`agent/log.rs`, `store/sessions/jsonl.rs`) need **no** change. Phase-03's
+`OutputFiltered` arms are the worked example to mirror for `ReadEvicted`.
 
 ## Spec
 
@@ -140,7 +151,10 @@ const SUPERSEDED_PREFIX: &str = "[superseded:";
 /// Replace the content of every prior `read_file` tool-result for `edited_path`
 /// with a short re-read breadcrumb, because the file's on-disk content changed
 /// when the model edited it — the earlier read is now stale and only wastes
-/// context. Returns the number of read results evicted.
+/// context. Returns `(reads_evicted, tokens_reclaimed)` where `tokens_reclaimed`
+/// is the summed `tokens::count(original) - tokens::count(breadcrumb)` across the
+/// evicted reads (the chars/4 estimate, same heuristic as the budget) — the loop
+/// uses it to emit a `ReadEvicted` event.
 ///
 /// Safe by construction: the read-before-edit gate already forces a re-read
 /// before the next `patch`, so removing stale read content never causes a wrong
@@ -152,12 +166,14 @@ pub(super) fn evict_superseded_reads(
     edited_path: &Path,
     turn: usize,
     project_root: &Path,
-) -> usize {
+) -> (usize, usize) {
     let breadcrumb = format!(
         "{SUPERSEDED_PREFIX} file edited at turn {turn}; this earlier read is stale — \
          re-read with read_file for current content]"
     );
+    let breadcrumb_tokens = crate::context::tokens::count(&breadcrumb);
     let mut evicted = 0;
+    let mut tokens_reclaimed = 0usize;
     for i in 0..messages.len() {
         // Is messages[i] an assistant `read_file` call whose path == edited_path?
         let matches_read = messages[i]
@@ -183,15 +199,33 @@ pub(super) fn evict_superseded_reads(
             && r.tool_name == "read_file"
             && !r.content.starts_with(SUPERSEDED_PREFIX)
         {
+            tokens_reclaimed +=
+                crate::context::tokens::count(&r.content).saturating_sub(breadcrumb_tokens);
             r.content = breadcrumb.clone();
             evicted += 1;
         }
     }
-    evicted
+    (evicted, tokens_reclaimed)
 }
 ```
 
-### 2. Call it at the edit site in `executor/src/agent/mod.rs`
+### 2. Add the `ReadEvicted` variant
+
+In `executor/src/store/sessions/event.rs`, add after `OutputFiltered` (the
+phase-03 variant), mirroring its shape:
+
+```rust
+    /// Emitted when a successful edit supersedes prior `read_file` results for a
+    /// file (M10 Arc B). `reads_evicted` results were replaced by a re-read
+    /// breadcrumb; `tokens_reclaimed` is the chars/4 estimate of context freed.
+    ReadEvicted {
+        path: String,
+        reads_evicted: usize,
+        tokens_reclaimed: usize,
+    },
+```
+
+### 3. Call it at the edit site + emit `ReadEvicted` in `executor/src/agent/mod.rs`
 
 Immediately **after** the working-set record block (`mod.rs:660`, the closing `}`
 of the `if succeeded && (… read_file … patch …)` block), add:
@@ -202,28 +236,75 @@ of the `if succeeded && (… read_file … patch …)` block), add:
         // re-read breadcrumb to reclaim context and remove the stale-content
         // hazard. Always safe — the read-before-edit gate forces a re-read.
         if succeeded && let Some(path) = &edit_path {
-            evict_superseded_reads(&mut messages, path, turns, deps.project_root);
+            let (reads_evicted, tokens_reclaimed) =
+                evict_superseded_reads(&mut messages, path, turns, deps.project_root);
+            if reads_evicted > 0 {
+                log_event(
+                    &log_handle,
+                    &redactor,
+                    deps.clock,
+                    turns,
+                    SessionEvent::ReadEvicted {
+                        path: path.display().to_string(),
+                        reads_evicted,
+                        tokens_reclaimed,
+                    },
+                );
+            }
         }
 ```
 
-The return value is intentionally unused here — counting reclaimed context onto
-`PhaseRun` is phase-06's job (do **not** add a metrics field for it now; that is
-the "wire in a consumer that doesn't exist yet" trap).
+`log_event`, `log_handle`, `redactor`, `deps.clock`, `turns`, and `SessionEvent`
+are all in scope here (the loop logs many events nearby).
 
 Import: `evict_superseded_reads` is `pub(super)` in `tools.rs`; reference it the
 same way the call site already references `append_tool_exchange`, `record_mtime`,
-`resolve_path` (they share a `use super::tools::…` / `use super::…` import — find
-the existing import line in `mod.rs` that brings in `record_mtime` and add
-`evict_superseded_reads` to it).
+`resolve_path` — add it to the existing `use tools::{ … }` import block at the top
+of `mod.rs` (lines 48–51, which already bring in `record_mtime`).
+
+### 4. Add the four required `ReadEvicted` match arms
+
+Exactly as phase-03 did for `OutputFiltered` — mirror the existing `OutputFiltered`
+arm in each (it is the immediate worked example, added in the prior phase):
+
+- `executor/src/agent/mod.rs` `event_type_str`:
+  `SessionEvent::ReadEvicted { .. } => "read_evicted",`
+- `mcp/src/log_query.rs` `event_kind`:
+  `SessionEvent::ReadEvicted { .. } => "read_evicted",`
+- `mcp/src/dashboard/filter.rs` — add `pub(crate) read_evicted: bool` to
+  `ActivityFilter`, default it `true`, and add the `allows` arm
+  `SessionEvent::ReadEvicted { .. } => self.read_evicted,`
+- `mcp/src/dashboard/transcript.rs` `record_lines` — a render arm mirroring the
+  `OutputFiltered` one, e.g.:
+
+  ```rust
+              SessionEvent::ReadEvicted {
+                  reads_evicted,
+                  tokens_reclaimed,
+                  ..
+              } => (
+                  format!("evicted {reads_evicted} stale read(s): -{tokens_reclaimed} tokens"),
+                  Color::Cyan,
+                  false,
+                  None,
+              ),
+  ```
+
+Do **not** add a `status.rs` summarize arm (the `_ => {}` catch-all is correct;
+the `StatusSummary` fold + scorecard aggregation is phase-07).
 
 ## Acceptance criteria
 
 - [ ] `grep -n 'pub(super) fn evict_superseded_reads' executor/src/agent/tools.rs` matches.
 - [ ] `grep -n 'evict_superseded_reads' executor/src/agent/mod.rs` matches (the call site).
+- [ ] `grep -n 'ReadEvicted' executor/src/store/sessions/event.rs` matches the new variant.
 - [ ] After a successful `patch`/`write_file` of `foo`, every prior `read_file`
       result for `foo` in the message history has its content replaced by a
       breadcrumb starting `[superseded:`.
-- [ ] A `read_file` result for a **different** file is left untouched. **(negative)**
+- [ ] `evict_superseded_reads` returns `(reads_evicted, tokens_reclaimed)` with
+      `tokens_reclaimed > 0` when a non-trivial read is evicted.
+- [ ] A `read_file` result for a **different** file is left untouched, and the
+      return is `(0, 0)`. **(negative)**
 - [ ] A non-`read_file` tool result (e.g. a `bash` result) is never evicted, even
       across the same turn. **(negative)**
 - [ ] Eviction is idempotent: running it twice (e.g. editing the same file twice)
@@ -232,7 +313,10 @@ the existing import line in `mod.rs` that brings in `record_mtime` and add
       re-read.
 - [ ] In an agent-loop run that reads `foo` then patches `foo`, the model call
       *after* the patch carries the breadcrumb in place of the original read
-      content (verified via `client.calls()`).
+      content (verified via `client.calls()`), **and** a `ReadEvicted` event is
+      logged with `reads_evicted >= 1`.
+- [ ] An edit that supersedes no prior read logs **no** `ReadEvicted` event.
+      **(negative)**
 - [ ] `cargo build`, `cargo clippy --all-targets --all-features -- -D warnings`,
       `cargo fmt --all --check`, and `cargo test` all pass; test count is the
       pre-flight count plus the new tests.
@@ -249,28 +333,30 @@ no filesystem), so these tests need **no** `TempDir`.
 - `evict_superseded_reads_replaces_prior_read_of_edited_file` — messages =
   [read_file(`/r/foo.rs`) call, read result "OLD CONTENT"]; call
   `evict_superseded_reads(&mut msgs, Path::new("/r/foo.rs"), 7, Path::new("/r"))`
-  → returns 1, the tool result content starts with `[superseded:` and no longer
-  contains "OLD CONTENT".
+  → returns `(1, n)` with `n > 0`, the tool result content starts with
+  `[superseded:` and no longer contains "OLD CONTENT".
 
 - `evict_superseded_reads_resolves_relative_read_path` — the read call's `path`
   arg is relative (`"foo.rs"`) and `project_root` is `/r`; editing `/r/foo.rs`
   → the read is evicted (confirms the relative-join resolution).
 
 - `evict_superseded_reads_leaves_other_files_untouched` — read of `/r/bar.rs`,
-  edit `/r/foo.rs` → returns 0, the `bar.rs` read content is unchanged.
+  edit `/r/foo.rs` → returns `(0, 0)`, the `bar.rs` read content is unchanged.
   **(negative case)**
 
 - `evict_superseded_reads_ignores_non_read_results` — a `bash` exchange (assistant
   bash call + tool result whose `tool_name == "bash"`) for a command string that
-  has no bearing → returns 0, the bash result content is unchanged. **(negative)**
+  has no bearing → returns `(0, 0)`, the bash result content is unchanged.
+  **(negative)**
 
 - `evict_superseded_reads_is_idempotent` — run eviction twice for the same edited
-  path → first run returns 1, second run returns 0, and the content is a single
-  breadcrumb (does not contain a nested/second `[superseded:`). **(negative)**
+  path → first run returns `(1, _)`, second run returns `(0, 0)`, and the content
+  is a single breadcrumb (does not contain a nested/second `[superseded:`).
+  **(negative)**
 
 - `evict_superseded_reads_evicts_multiple_prior_reads` — two separate
-  `read_file(/r/foo.rs)` exchanges in the history → returns 2, both contents are
-  breadcrumbs.
+  `read_file(/r/foo.rs)` exchanges in the history → returns `(2, _)`, both
+  contents are breadcrumbs.
 
 - `evict_superseded_reads_breadcrumb_mentions_turn_and_reread` — breadcrumb
   contains `"turn 7"` and `"read_file"`.
@@ -285,6 +371,11 @@ Agent-loop integration test in `executor/src/agent/mod.rs`'s existing
   `[superseded:`, and does **not** contain the original file content string.
   Use `run_with_verifier(&dir, &client, &verifier, 8)` with a clean
   `MockFileVerifier`, exactly as `patch_after_reading_is_allowed` does.
+
+- `loop_logs_read_evicted_event_after_patch` — same script; assert a
+  `ReadEvicted` record (with `reads_evicted >= 1`) is in the session log. Mirror
+  whichever existing loop test asserts a logged event (the `Compaction`/`Metrics`
+  event tests — find one and reuse its log-read path).
 
 ## End-to-end verification
 
@@ -309,19 +400,22 @@ None. No new dependency (`serde_json` is already used throughout `tools.rs`). No
 ## Out of scope
 
 - **Content-aware compaction priority** (ranking superseded reads first *during
-  compaction*) — that is phase-05 (Arc B item 3). This phase evicts eagerly at
+  compaction*) — that is phase-06 (Arc B item 3). This phase evicts eagerly at
   edit time; it does **not** touch `context/compactor.rs`, `TARGET_FRACTION`, or
   the compaction passes.
 - **Redundant re-read dedupe** (returning "unchanged since turn N" when the model
-  re-reads an unchanged file) — that is phase-04 (Arc B item 2). Do not modify
+  re-reads an unchanged file) — that is phase-05 (Arc B item 2). Do not modify
   `read_file` or the read path.
 - **A config kill-switch.** Eviction is always-safe (breadcrumb + read-before-edit
   gate guarantee recovery), and a switch would require threading config through the
   loop's `LoopDeps` — a wide-blast-radius change out of proportion to a one-line
   call site. Deferred; revisit only if a real need appears.
-- **A new `SessionEvent` variant or `PhaseRun` metric** for evictions — phase-06
-  adds the reclaimed-context metric and its consumer together. Do not wire a
-  metrics field whose reader does not yet exist.
+- **A `PhaseRun` metric / scorecard field** for evictions — phase-07 aggregates the
+  `ReadEvicted` (and `OutputFiltered`) events from the session JSONL onto
+  `PhaseRun` *with* its scorecard reader. This phase emits the durable event; it
+  does **not** add a `RunMetrics`/`PhaseRun` field whose reader does not yet exist.
+- **A `status.rs` `StatusSummary` fold / dashboard summary panel** for evictions —
+  also phase-07. This phase emits + renders the transcript line only.
 - **Evicting reads of files edited via shell `bash` (e.g. `sed -i`).** Only
   `write_file`/`patch` (the tracked edit-class calls, `edit_path.is_some()`)
   trigger eviction — bash-side edits are not tracked by the working set and are

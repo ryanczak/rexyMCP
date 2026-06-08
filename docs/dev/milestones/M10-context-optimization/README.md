@@ -172,14 +172,17 @@ filter, then the novel semantic levers, then measurement.
 |----|-------|-----|--------|
 | 01 | **Recoverable output filter for bash output** ([phase-01-recoverable-output-filter.md](phase-01-recoverable-output-filter.md)). New `context/output_filter` module: ANSI strip + consecutive-dup collapse + truncate-with-**recovery file** under `.rexymcp/output/` (rotated), wired into the `bash` tool's existing truncation, gated by a `[context] output_filter` kill-switch (default on). Turns bash's current lossy "full output not retained" truncation into a recoverable one. Establishes the diagnostic-preservation contract + recovery-file primitive that phase-02 reuses. | A | done |
 | 02 | **Structured cargo filter (test/build/clippy).** Keyed on detecting `cargo` in the command: failures + diagnostics + summary only, block aggregation, preserve every `error[Exxx]` span, cap the list with recovery-file overflow (reuses phase-01's module). Introduces the per-command filter-selection abstraction (deferred from phase-01 — built once a second filter justifies it). The high-value filter for the project's own Rust toolchain. ([phase-02-structured-cargo-filter.md](phase-02-structured-cargo-filter.md)) | A | done |
-| 03 | **Superseded-read eviction.** On edit, mark prior `read_file` results for that path stale (via the working set); compaction evicts them first with a re-read breadcrumb. ([phase-03-superseded-read-eviction.md](phase-03-superseded-read-eviction.md)) | B | todo |
-| 04 | **Redundant-read dedupe.** Re-reading an unchanged file (working-set mtime match) returns a compact "unchanged since turn N" reference instead of re-injecting content; forced re-read still available. | B | todo |
-| 05 | **Content-aware compaction priority.** Replace oldest-first eviction with a value rank (superseded reads → noisy/dup output → old reasoning; protect diagnostics, phase doc, last K turns). Enrich `CompactionReport`. | B | todo |
-| 06 | **Context-efficiency metrics on `PhaseRun`.** Peak context %, compaction count, tokens reclaimed (filtering + superseded eviction); surface in `rexymcp runs` / scorecard so M10's effect is measurable across runs. | — | todo |
+| 03 | **Arc A reclaim events (`OutputFiltered`).** Per-lever `SessionEvent` recording how much the phase-01/02 boundary filters reclaimed (tokens before/after, generic vs cargo), emitted from the loop via the bash tool's `ToolResult.metadata`. Pure instrumentation — filter output unchanged. Establishes the per-lever reclaim-event pattern phases 04/05 reuse. ([phase-03-arc-a-reclaim-events.md](phase-03-arc-a-reclaim-events.md)) | A | todo |
+| 04 | **Superseded-read eviction (`ReadEvicted`).** On edit, replace prior `read_file` results for that path with a re-read breadcrumb (reclaim context + kill the stale-content hazard); emit a `ReadEvicted` event. Eager at edit time; no compactor change. ([phase-04-superseded-read-eviction.md](phase-04-superseded-read-eviction.md)) | B | todo |
+| 05 | **Redundant-read dedupe.** Re-reading an unchanged file (working-set mtime match) returns a compact "unchanged since turn N" reference instead of re-injecting content; forced re-read still available. Emits its own per-lever reclaim event. | B | todo |
+| 06 | **Content-aware compaction priority.** Replace oldest-first eviction with a value rank (superseded reads → noisy/dup output → old reasoning; protect diagnostics, phase doc, last K turns). Enrich `CompactionReport`. | B | todo |
+| 07 | **Context-efficiency metrics on `PhaseRun`.** Aggregate the per-lever reclaim events (`OutputFiltered`, `ReadEvicted`, the dedupe event) + `Compaction` from the session JSONL onto `PhaseRun` (peak context %, compaction count, tokens reclaimed by source); fold into `StatusSummary`/dashboard; surface in `rexymcp runs` / scorecard so M10's effect is measurable across runs. | — | todo |
 
-Phases may split or merge at draft time (e.g. 02 could split per command, or 03+05
-could merge if the eviction policy is small). The table is the roadmap, not a
-contract; each phase doc is the contract.
+Phases may split or merge at draft time. The table is the roadmap, not a
+contract; each phase doc is the contract. **Measurement is per-lever:** each
+reclaim phase (03/04/05) emits its own `SessionEvent` variant when it lands, and
+phase-07 reads those durable JSONL events back into `PhaseRun` — so no lever ships
+un-instrumented and phase-07 needs no retrofit.
 
 ## Design decisions
 
