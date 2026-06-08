@@ -193,6 +193,14 @@ pub struct ScorecardRow {
     /// Mean of `bounces_to_approval` over runs where it is `Some`.
     /// `None` when no such runs.
     pub bounces_to_approval_mean: Option<f64>,
+    /// Mean peak context-window utilization (a FRACTION in [0.0, 1.0]) over the
+    /// runs in this bucket that carry context telemetry (`peak_context_pct >
+    /// 0.0`). `None` when no run in the bucket is context-measured.
+    pub peak_context_pct_mean: Option<f64>,
+    /// Mean total tokens reclaimed (sum of all four M10 sources) over the same
+    /// context-measured runs. `None` when none are context-measured. A measured
+    /// run that reclaimed nothing contributes `0.0`, not exclusion.
+    pub tokens_reclaimed_mean: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -224,6 +232,9 @@ struct Accumulator {
     approved_first_try_count: usize,
     bounces_sum: f64,
     bounces_n: usize,
+    peak_context_pct_sum: f64,
+    tokens_reclaimed_sum: f64,
+    context_measured_n: usize,
 }
 
 fn gates_all_pass(gates: &Gates) -> bool {
@@ -277,6 +288,17 @@ pub fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardRo
                 acc.bounces_sum += b as f64;
                 acc.bounces_n += 1;
             }
+
+            let eff = &run.context_efficiency;
+            if eff.peak_context_pct > 0.0 {
+                acc.peak_context_pct_sum += eff.peak_context_pct;
+                acc.tokens_reclaimed_sum += (eff.output_filtered_tokens
+                    + eff.read_evicted_tokens
+                    + eff.read_deduped_tokens
+                    + eff.compaction_tokens_reclaimed)
+                    as f64;
+                acc.context_measured_n += 1;
+            }
         }
     }
 
@@ -312,6 +334,16 @@ pub fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardRo
                 } else {
                     None
                 },
+                peak_context_pct_mean: if acc.context_measured_n > 0 {
+                    Some(acc.peak_context_pct_sum / acc.context_measured_n as f64)
+                } else {
+                    None
+                },
+                tokens_reclaimed_mean: if acc.context_measured_n > 0 {
+                    Some(acc.tokens_reclaimed_sum / acc.context_measured_n as f64)
+                } else {
+                    None
+                },
             })
         })
         .collect();
@@ -330,7 +362,7 @@ pub fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardRo
 mod tests {
     use super::*;
     use rexymcp_executor::ai::types::TokenBreakdown;
-    use rexymcp_executor::store::telemetry::GenerationParams;
+    use rexymcp_executor::store::telemetry::{ContextEfficiency, GenerationParams};
 
     fn make_run(
         model: &str,
@@ -824,5 +856,137 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].settings, "temp=0.7");
         assert_eq!(rows[0].n_runs, 2);
+    }
+
+    // --- Context efficiency aggregation tests (phase 08c) ---
+
+    #[test]
+    fn scorecard_peak_context_pct_mean_averages_measured_runs() {
+        let eff = |pct| ContextEfficiency {
+            peak_context_pct: pct,
+            ..Default::default()
+        };
+        let runs = vec![
+            {
+                let mut r = make_run("m1", &["rust"], all_pass_gates(), false, None, None);
+                r.context_efficiency = eff(0.6);
+                r
+            },
+            {
+                let mut r = make_run("m1", &["rust"], all_pass_gates(), false, None, None);
+                r.context_efficiency = eff(0.8);
+                r
+            },
+        ];
+        let rows = aggregate(&runs, &ScorecardFilter::default());
+        let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+        assert!(row.peak_context_pct_mean.is_some());
+        assert!((row.peak_context_pct_mean.unwrap() - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn scorecard_tokens_reclaimed_mean_sums_all_four_sources() {
+        let eff = ContextEfficiency {
+            peak_context_pct: 0.5,
+            compaction_count: 0,
+            output_filtered_tokens: 100,
+            read_evicted_tokens: 50,
+            read_deduped_tokens: 30,
+            compaction_tokens_reclaimed: 20,
+        };
+        let runs = vec![{
+            let mut r = make_run("m1", &["rust"], all_pass_gates(), false, None, None);
+            r.context_efficiency = eff;
+            r
+        }];
+        let rows = aggregate(&runs, &ScorecardFilter::default());
+        let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+        assert!(row.tokens_reclaimed_mean.is_some());
+        assert!((row.tokens_reclaimed_mean.unwrap() - 200.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn scorecard_context_efficiency_none_when_all_legacy() {
+        let runs = vec![make_run(
+            "m1",
+            &["rust"],
+            all_pass_gates(),
+            false,
+            None,
+            None,
+        )];
+        let rows = aggregate(&runs, &ScorecardFilter::default());
+        let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+        assert!(row.peak_context_pct_mean.is_none());
+        assert!(row.tokens_reclaimed_mean.is_none());
+    }
+
+    #[test]
+    fn scorecard_context_measured_excludes_legacy_runs() {
+        let eff = |pct, reclaim| ContextEfficiency {
+            peak_context_pct: pct,
+            compaction_count: 0,
+            output_filtered_tokens: reclaim,
+            read_evicted_tokens: 0,
+            read_deduped_tokens: 0,
+            compaction_tokens_reclaimed: 0,
+        };
+        let runs = vec![
+            {
+                let mut r = make_run("m1", &["rust"], all_pass_gates(), false, None, None);
+                r.context_efficiency = eff(0.5, 400);
+                r
+            },
+            make_run("m1", &["rust"], all_pass_gates(), false, None, None), // legacy: all zeros
+        ];
+        let rows = aggregate(&runs, &ScorecardFilter::default());
+        let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+        assert!((row.peak_context_pct_mean.unwrap() - 0.5).abs() < f64::EPSILON);
+        assert!((row.tokens_reclaimed_mean.unwrap() - 400.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn scorecard_measured_run_with_zero_reclaim_contributes() {
+        let eff = ContextEfficiency {
+            peak_context_pct: 0.5,
+            compaction_count: 0,
+            output_filtered_tokens: 0,
+            read_evicted_tokens: 0,
+            read_deduped_tokens: 0,
+            compaction_tokens_reclaimed: 0,
+        };
+        let runs = vec![{
+            let mut r = make_run("m1", &["rust"], all_pass_gates(), false, None, None);
+            r.context_efficiency = eff;
+            r
+        }];
+        let rows = aggregate(&runs, &ScorecardFilter::default());
+        let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+        assert!(row.tokens_reclaimed_mean.is_some());
+        assert!((row.tokens_reclaimed_mean.unwrap() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn scorecard_row_serializes_context_efficiency_means() {
+        let eff = ContextEfficiency {
+            peak_context_pct: 0.7,
+            compaction_count: 0,
+            output_filtered_tokens: 4096,
+            read_evicted_tokens: 4096,
+            read_deduped_tokens: 2048,
+            compaction_tokens_reclaimed: 2048,
+        };
+        let runs = vec![{
+            let mut r = make_run("m1", &["rust"], all_pass_gates(), false, None, None);
+            r.context_efficiency = eff;
+            r
+        }];
+        let rows = aggregate(&runs, &ScorecardFilter::default());
+        let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+        let json = serde_json::to_string(row).unwrap();
+        assert!(json.contains(r#""peak_context_pct_mean""#));
+        assert!(json.contains(r#""tokens_reclaimed_mean""#));
+        assert!(json.contains(r#""peak_context_pct_mean":0.7"#));
+        assert!(json.contains(r#""tokens_reclaimed_mean":12288.0"#));
     }
 }

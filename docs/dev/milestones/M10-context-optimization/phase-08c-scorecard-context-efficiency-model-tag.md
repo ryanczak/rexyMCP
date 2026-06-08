@@ -1,7 +1,7 @@
 # Phase 08c: Aggregate context-efficiency into the model × tag scorecard
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** review
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done),
 phase-08b (per-run `rexymcp runs` columns — done)
 **Estimated diff:** ~70 lines (incl. tests)
@@ -324,3 +324,44 @@ What this phase must **not** do, even if tempted:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-01-09 (started)
+
+**Executor:** rexyMCP executor
+
+Implementing phase 08c: adding `peak_context_pct_mean` and `tokens_reclaimed_mean` to `ScorecardRow` + `Accumulator` + `aggregate` in `mcp/src/scorecard.rs`, plus 6 unit tests.
+
+### Update — 2025-01-09 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Added two aggregate context-efficiency fields to the model × tag scorecard (`ScorecardRow`), wired through `Accumulator` and `aggregate`, with 6 unit tests covering all acceptance criteria.
+
+**Files changed:**
+- `mcp/src/scorecard.rs` — added `peak_context_pct_mean` and `tokens_reclaimed_mean` to `ScorecardRow` (2 fields), `peak_context_pct_sum`, `tokens_reclaimed_sum`, `context_measured_n` to `Accumulator` (3 fields), accumulation logic in the `for tag in &run.tags` loop of `aggregate`, emission of both means in the `ScorecardRow { ... }` constructor, and 6 unit tests.
+- `docs/dev/milestones/M10-context-optimization/phase-08c-scorecard-context-efficiency-model-tag.md` — status `todo` → `in-progress` → `review`, Update Log entries.
+- `docs/dev/milestones/M10-context-optimization/README.md` — phase table row 08c `todo` → `review`.
+
+**Verification commands (all passed):**
+- `cargo build` — success, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo fmt --all --check` — clean
+- `cargo test` — 664 passed, 0 failed, 2 ignored
+
+**Verification summary:** build green, clippy clean, fmt clean, all 664 tests pass (including 6 new phase-08c tests).
+
+**End-to-end verification:** `scorecard_row_serializes_context_efficiency_means` asserts that a `ScorecardRow` with a measured run (`peak_context_pct=0.7`, reclaim sum=12288) serializes to JSON containing `"peak_context_pct_mean":0.7` and `"tokens_reclaimed_mean":12288.0`, proving the `model_scorecard` MCP tool wire output carries both new fields.
+
+**Grep proof (spec-pinned literals landed):**
+```
+$ grep -n 'peak_context_pct_mean\|tokens_reclaimed_mean' mcp/src/scorecard.rs
+199:    pub peak_context_pct_mean: Option<f64>,
+203:    pub tokens_reclaimed_mean: Option<f64>,
+337:                peak_context_pct_mean: if acc.context_measured_n > 0 {
+342:                tokens_reclaimed_mean: if acc.context_measured_n > 0 {
+... (14 more matches across tests)
+```
+
+**Notes for review:** None. Implementation follows the spec exactly — single-file (`mcp/src/scorecard.rs`), single struct literal updated, mirrors the `bounces_to_approval_mean` idiom for both new `Option<f64>` means.
+
+**Commit:** `feat(scorecard): aggregate context-efficiency into model × tag scorecard`
