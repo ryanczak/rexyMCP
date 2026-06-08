@@ -4,7 +4,15 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — phase-08b done (approved_first_try 2026-06-08). M10's next in-scope phases are **08c** (scorecard aggregations — the multi-site struct-literal work) and **08d** (dashboard/`StatusSummary` fold), both still `todo` and **not yet drafted** ("drafted on demand"). The architect drafts 08c next via `/rexymcp:architect next`; **revisit the held-fold mechanical-multi-site-churn calibration when drafting 08c** — it is the exact subclass that has stalled the executor 4× (it touches `ScorecardRow` + `SettingsScorecardRow` + accumulators + 2 aggregators across crates). The executor does not pick up work while this says "none."
+**Active phase:** **phase-08c** ([aggregate context-efficiency into the model × tag scorecard](milestones/M10-context-optimization/phase-08c-scorecard-context-efficiency-model-tag.md)) — drafted 2026-06-08, `todo`, awaiting dispatch. The user dispatches with `/rexymcp:dispatch phase-08c`.
+
+**The old combined 08c was split by output-struct (with the user, 2026-06-08)** to disarm the 4×-recurring mechanical-multi-site-churn stall *structurally* rather than by pre-injected site-list alone (08a stalled despite that mitigation). The two scorecards have asymmetric blast radius: **`ScorecardRow` (model × tag) = 1 struct literal, single-file `scorecard.rs`, MCP-tool-only/JSON (no CLI renderer)** — the clean half, now **08c**; **`SettingsScorecardRow` (model × settings) = 3 literals across `scorecard.rs` + `scorecard_cli.rs` + a CLI renderer** — the churn-dense half, now **08d**. The old dashboard/`StatusSummary` fold bumped 08d→**08e**. The user **held the WORKFLOW fold** (no `STANDARDS.md`/`WORKFLOW.md` edit yet) — gathering one more data point on whether the split reliably avoids the stall before folding "prefer splitting by output-struct over a pre-injected site list" into the existing "Prefer additive change shapes" section. **If 08c lands clean (1 literal) and 08d still churns (3 literals), that's the 5th occurrence + the controlled comparison → fold then.**
+
+**phase-08c scope (active, mcp-only, single-file `scorecard.rs`):** add `peak_context_pct_mean` + `tokens_reclaimed_mean` (both `Option<f64>`) to `ScorecardRow` + 3 additive `Accumulator` fields (`peak_context_pct_sum`/`tokens_reclaimed_sum`/`context_measured_n`, `Default`-derived → no literal churn) + a conditional accumulation block + 2 fields on the **single** `ScorecardRow{…}` constructor literal. Means are over **context-measured runs only** (predicate: `peak_context_pct > 0.0`; legacy/serde-default all-zero runs excluded from both numerator and denominator), mirroring the existing `length_finish_rate_mean`/`bounces_to_approval_mean` Option-mean idiom. `tokens_reclaimed` = sum of all four sources. Pinned boundary: a *measured* run that reclaimed `0` contributes `Some(0.0)`, **not** exclusion — only `peak == 0.0` excludes. 5 unit tests + a serde-wire serialization test (no CLI path for model×tag — it's `model_scorecard` MCP-tool-only). ~70 lines. Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
+
+**phase-08b done**
 
 **Prior active-phase pointer (now done):**
 
