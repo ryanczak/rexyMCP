@@ -487,6 +487,8 @@ test result: ok. 664 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fi
 - `phase_run_without_context_efficiency_deserializes` in `executor/src/store/telemetry.rs`
 - `phase_run_context_efficiency_matches_session_log` in `executor/src/agent/mod.rs`
 
-**Commits:** (appended after commit)
+**Commits:**
+- `14b4668` — feat: context-efficiency aggregation onto PhaseRun (M10/phase-08a)
+- `1ccba39` — docs: phase-08a doc split (08a/08b/08c) and NEXT.md pointer update
 
 **Notes for review:** Executor stalled on `IdenticalToolCallRepetition` (3× `read_file scorecard.rs`) — same pattern as phase-06 mechanical literal churn. Architect closed out the 3 remaining literals and all 7 tests. The `context_pct` in the E2E test is `used_tokens / 1_000_000` (small but non-zero), making the path-reconstruction assertion discriminating.
