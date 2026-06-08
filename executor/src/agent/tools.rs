@@ -104,18 +104,22 @@ pub(super) fn render_diagnostics(diagnostics: &[Diagnostic]) -> String {
     out
 }
 
-/// Dispatch a tool call through the registry. Returns `(succeeded, content)`
-/// where `content` is the message fed back to the model. A missing tool or an
-/// execution error is a model-visible failure, not an `Err`.
-pub(super) async fn dispatch(registry: &ToolRegistry, tc: &ToolCall) -> (bool, String) {
+/// Dispatch a tool call through the registry. Returns `(succeeded, content, metadata)`
+/// where `content` is the message fed back to the model and `metadata` is the
+/// success-path `ToolResult.metadata` (for per-lever instrumentation). A missing
+/// tool or an execution error is a model-visible failure, not an `Err`.
+pub(super) async fn dispatch(
+    registry: &ToolRegistry,
+    tc: &ToolCall,
+) -> (bool, String, Option<serde_json::Value>) {
     match registry.get(&tc.name) {
-        None => (false, format!("error: unknown tool '{}'", tc.name)),
+        None => (false, format!("error: unknown tool '{}'", tc.name), None),
         Some(tool) => match tool.execute(tc.arguments.clone()).await {
             Ok(result) => match result.error {
-                Some(error) => (false, error),
-                None => (true, result.output),
+                Some(error) => (false, error, None),
+                None => (true, result.output, result.metadata),
             },
-            Err(e) => (false, format!("tool execution failed: {e}")),
+            Err(e) => (false, format!("tool execution failed: {e}"), None),
         },
     }
 }
@@ -170,5 +174,78 @@ pub(super) fn user_text(content: &str, turn: usize) -> Message {
         tool_calls: None,
         tool_results: None,
         turn: Some(turn),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{Tool, ToolResult};
+    use serde_json::json;
+    use std::sync::Arc;
+
+    struct StubTool {
+        error: Option<String>,
+        metadata: Option<serde_json::Value>,
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for StubTool {
+        fn name(&self) -> &str {
+            "stub"
+        }
+        fn description(&self) -> &str {
+            "stub"
+        }
+        fn schema(&self) -> serde_json::Value {
+            json!({})
+        }
+        async fn execute(&self, _args: serde_json::Value) -> Result<ToolResult, anyhow::Error> {
+            Ok(ToolResult {
+                output: "ok".to_string(),
+                error: self.error.clone(),
+                metadata: self.metadata.clone(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_surfaces_success_metadata() {
+        let mut registry = ToolRegistry::new();
+        let tool: Arc<dyn Tool> = Arc::new(StubTool {
+            error: None,
+            metadata: Some(json!({"key": "value"})),
+        });
+        registry.register(tool);
+
+        let tc = ToolCall {
+            name: "stub".to_string(),
+            arguments: json!({}),
+            origin: crate::parser::Origin::Native,
+        };
+        let (ok, content, meta) = dispatch(&registry, &tc).await;
+        assert!(ok);
+        assert_eq!(content, "ok");
+        assert_eq!(meta, Some(json!({"key": "value"})));
+    }
+
+    #[tokio::test]
+    async fn dispatch_returns_none_metadata_on_error() {
+        let mut registry = ToolRegistry::new();
+        let tool: Arc<dyn Tool> = Arc::new(StubTool {
+            error: Some("fail".to_string()),
+            metadata: Some(json!({"key": "value"})),
+        });
+        registry.register(tool);
+
+        let tc = ToolCall {
+            name: "stub".to_string(),
+            arguments: json!({}),
+            origin: crate::parser::Origin::Native,
+        };
+        let (ok, content, meta) = dispatch(&registry, &tc).await;
+        assert!(!ok);
+        assert_eq!(content, "fail");
+        assert!(meta.is_none(), "error path should return None metadata");
     }
 }

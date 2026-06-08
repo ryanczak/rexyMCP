@@ -1,6 +1,6 @@
 use rexymcp_executor::store::sessions::event::SessionEvent;
 
-pub(crate) const FILTER_ITEM_COUNT: usize = 11;
+pub(crate) const FILTER_ITEM_COUNT: usize = 12;
 
 /// Per-event-type visibility toggles for the Activity pane.
 /// All enabled by default except `progress` (too noisy).
@@ -17,6 +17,7 @@ pub(crate) struct ActivityFilter {
     pub(crate) progress: bool,
     pub(crate) metrics: bool,
     pub(crate) compaction: bool,
+    pub(crate) output_filtered: bool,
 }
 
 impl Default for ActivityFilter {
@@ -33,6 +34,7 @@ impl Default for ActivityFilter {
             progress: false,
             metrics: true,
             compaction: true,
+            output_filtered: true,
         }
     }
 }
@@ -51,6 +53,7 @@ impl ActivityFilter {
             SessionEvent::Progress { .. } => self.progress,
             SessionEvent::Metrics { .. } => self.metrics,
             SessionEvent::Compaction { .. } => self.compaction,
+            SessionEvent::OutputFiltered { .. } => self.output_filtered,
         }
     }
 
@@ -67,6 +70,7 @@ impl ActivityFilter {
             8 => self.progress = !self.progress,
             9 => self.metrics = !self.metrics,
             10 => self.compaction = !self.compaction,
+            11 => self.output_filtered = !self.output_filtered,
             _ => {}
         }
     }
@@ -84,6 +88,7 @@ impl ActivityFilter {
             8 => self.progress,
             9 => self.metrics,
             10 => self.compaction,
+            11 => self.output_filtered,
             _ => false,
         }
     }
@@ -101,6 +106,7 @@ impl ActivityFilter {
             8 => "progress",
             9 => "metrics",
             10 => "compaction",
+            11 => "output filtered",
             _ => "?",
         }
     }
@@ -146,6 +152,7 @@ mod tests {
         assert!(f.hard_fail);
         assert!(f.metrics);
         assert!(f.compaction);
+        assert!(f.output_filtered);
     }
 
     #[test]

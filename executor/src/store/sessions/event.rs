@@ -82,4 +82,13 @@ pub enum SessionEvent {
         messages_signaturized: usize,
         messages_evicted: usize,
     },
+    /// Emitted once per `bash` call whose output the boundary filter (Arc A)
+    /// shrank. `filter` is `"generic"` (phase-01 normalize+truncate) or
+    /// `"cargo"` (phase-02 structured). Tokens reclaimed = `tokens_before -
+    /// tokens_after` (chars/4 estimate, same heuristic as the budget).
+    OutputFiltered {
+        tokens_before: usize,
+        tokens_after: usize,
+        filter: String,
+    },
 }

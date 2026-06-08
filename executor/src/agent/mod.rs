@@ -589,9 +589,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // Step 4.5 — read-before-edit gate (07d). A refusal short-circuits the
         // edit: no baseline, no dispatch, no verify — but it is still a
         // model-visible failure that feeds back and counts toward hard-fail.
-        let (succeeded, content) =
+        let (succeeded, content, tool_meta) =
             match read_before_edit_refusal(&tool_call, &working_set, deps.project_root) {
-                Some(refusal) => (false, refusal),
+                Some(refusal) => (false, refusal, None),
                 None => {
                     if let Some(path) = &edit_path
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
@@ -649,6 +649,30 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             succeeded,
         });
         append_tool_exchange(&mut messages, &tool_call, &content, turns);
+
+        // Per-lever reclaim event (M10 Arc A): record how much the boundary
+        // filter shrank this bash call's output. Emit only on a real reduction.
+        if let Some(meta) = &tool_meta
+            && let Some(of) = meta.get("output_filter")
+            && let (Some(before), Some(after), Some(filter)) = (
+                of.get("tokens_before").and_then(|v| v.as_u64()),
+                of.get("tokens_after").and_then(|v| v.as_u64()),
+                of.get("filter").and_then(|v| v.as_str()),
+            )
+            && after < before
+        {
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::OutputFiltered {
+                    tokens_before: before as usize,
+                    tokens_after: after as usize,
+                    filter: filter.to_string(),
+                },
+            );
+        }
 
         // Record the working set: a read makes a file patch-eligible; a successful
         // patch refreshes its mtime so a follow-up patch needs no re-read.
@@ -809,7 +833,7 @@ mod tests {
     use crate::phase::{Blocker, PhaseStatus};
     use crate::security::scope::Scope;
     use crate::store::telemetry::PhaseRun;
-    use crate::tools::{patch, read_file, write_file};
+    use crate::tools::{bash_with_filter, patch, read_file, write_file};
     use serde_json::json;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -1678,6 +1702,7 @@ mod tests {
             SessionEvent::SessionEnd { .. } => "session_end",
             SessionEvent::Metrics { .. } => "metrics",
             SessionEvent::Compaction { .. } => "compaction",
+            SessionEvent::OutputFiltered { .. } => "output_filtered",
         }
     }
 
@@ -3945,5 +3970,85 @@ mod tests {
             result.briefing.is_none(),
             "expected no hard_fail on lint_fix failure"
         );
+    }
+
+    #[tokio::test]
+    async fn loop_emits_output_filtered_event_for_filtered_bash() {
+        let dir = TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let mut registry = ToolRegistry::new();
+        registry.register(read_file(scope.clone()));
+        registry.register(write_file(scope.clone()));
+        registry.register(patch(scope.clone()));
+        registry.register(bash_with_filter(scope, 30, true));
+
+        // Script: one bash call producing >100 lines, then done.
+        let client = MockAiClientScript::new(vec![
+            vec![native(
+                "bash",
+                json!({ "command": "sh -c 'for i in $(seq 1 200); do echo \"line $i\"; done'" }),
+            )],
+            vec![token("done")],
+        ]);
+        let budget = Budget::new(1_000_000);
+
+        let result = execute_phase(
+            &input(),
+            LoopDeps {
+                client: &client,
+                registry: &registry,
+                tools: &[],
+                budget: &budget,
+                max_turns: 8,
+                project_root: dir.path(),
+                model: "test-model",
+                session_id: SESSION_ID,
+                clock: &clock_zero,
+                verifier: &NoopVerifier,
+                commands: &EMPTY_COMMANDS,
+                runner: &NoopRunner,
+                generation_params: GenerationParams::default(),
+                telemetry_dir: None,
+                progress: None,
+                context_window: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.status, PhaseStatus::Complete);
+
+        let recs = records(dir.path());
+        let filtered_recs: Vec<_> = recs
+            .iter()
+            .filter_map(|r| {
+                if let SessionEvent::OutputFiltered {
+                    tokens_before,
+                    tokens_after,
+                    filter,
+                } = &r.event
+                {
+                    Some((*tokens_before, *tokens_after, filter.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            !filtered_recs.is_empty(),
+            "expected at least one OutputFiltered record, got {} total records: {:?}",
+            recs.len(),
+            recs.iter()
+                .map(|r| event_kind(&r.event))
+                .collect::<Vec<_>>()
+        );
+
+        let (before, after, filter_name) = filtered_recs.first().unwrap();
+        assert!(
+            *after < *before,
+            "tokens_after ({after}) should be less than tokens_before ({before})"
+        );
+        assert_eq!(filter_name, "generic");
     }
 }

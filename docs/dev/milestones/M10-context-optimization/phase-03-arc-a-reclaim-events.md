@@ -1,7 +1,7 @@
 # Phase 03: Arc A reclaim events (OutputFiltered)
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01, phase-02 (the Arc A filters this phase instruments)
 **Estimated diff:** ~170 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -266,14 +266,36 @@ Mirror the `Compaction` arm in each. **(a)** `executor/src/agent/mod.rs`
         SessionEvent::OutputFiltered { .. } => "output_filtered",
 ```
 
-**(c)** `mcp/src/dashboard/filter.rs` — add a field to `ActivityFilter` (after
-`compaction`), default it `true`, and add the `allows` arm:
+**(c)** `mcp/src/dashboard/filter.rs` — this file has **five** sites that carry
+one entry per event kind, not just three. `output_filtered` is the **12th** kind
+(index `11`); `FILTER_ITEM_COUNT` is already `12`, so every per-index match must
+gain an arm `11`. Add **all** of:
 
 ```rust
-    pub(crate) output_filtered: bool,    // struct field
-    // in Default: output_filtered: true,
-    SessionEvent::OutputFiltered { .. } => self.output_filtered,   // allows() arm
+    // 1. struct field (ActivityFilter), after `compaction`:
+    pub(crate) output_filtered: bool,
+
+    // 2. Default impl, after `compaction: true,`:
+    output_filtered: true,
+
+    // 3. allows() match, after the Compaction arm:
+    SessionEvent::OutputFiltered { .. } => self.output_filtered,
+
+    // 4. toggle() match, after `10 => self.compaction = !self.compaction,`:
+    11 => self.output_filtered = !self.output_filtered,
+
+    // 5. is_enabled() match, after `10 => self.compaction,`:
+    11 => self.output_filtered,
+
+    // 6. item_label() match, after `10 => "compaction",`:
+    11 => "output filtered",
 ```
+
+Without **all six** edits the crate will not compile (`E0063` missing-field on
+`Default`, `E0004` non-exhaustive on `allows`) **or** will silently desync the
+filter panel (`toggle`/`is_enabled`/`item_label` falling through `_ =>` for the
+12th item). Also extend the `filter_default_disables_progress` test's assertion
+block with `assert!(f.output_filtered);` to mirror the other kinds.
 
 **(d)** `mcp/src/dashboard/transcript.rs` `record_lines` — add a render arm
 mirroring the `Compaction` one:
@@ -382,3 +404,122 @@ None. No new dependency. No `docs/architecture.md` change. No `Cargo.toml` chang
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-07
+
+The first dispatch hard-failed `VerifierFailurePersistent` (3 consecutive
+verifier failures) on three compile errors, **all** in the MCP-side consumers —
+the executor-crate half (event variant, `bash` metadata, `dispatch` widening,
+loop emit, `event_type_str`, `log_query`) all landed and are on the working tree
+already. **Continue from the existing partial state; do not revert it.** The
+remaining work is exactly:
+
+1. **`mcp/src/dashboard/filter.rs`** — the struct field `output_filtered` and
+   `FILTER_ITEM_COUNT = 12` are already present, but the file has **five** more
+   per-event-kind sites that still need the 12th entry (index `11`): the
+   `Default` impl, `allows()`, `toggle()`, `is_enabled()`, and `item_label()`.
+   See the revised Task 5(c) above — it now lists all six verbatim edits plus the
+   `assert!(f.output_filtered);` test line. The build errors were `E0063`
+   (Default missing `output_filtered`) and `E0004` (`allows` non-exhaustive);
+   the `toggle`/`is_enabled`/`item_label` index-11 arms prevent a silent panel
+   desync even though they compile via `_ =>`.
+2. **`mcp/src/dashboard/transcript.rs`** — never touched on the first dispatch.
+   Add the `record_lines` arm from Task 5(d) (the `OutputFiltered { tokens_before,
+   tokens_after, filter } => (…)` tuple).
+
+After these two files, run the full command set (`cargo build`, `clippy`, `fmt
+--check`, `test`) and complete the Update Log + commit.
+
+### Update — 2026-06-07 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** first-dispatch spec gap — Task 5(c) under-listed the `filter.rs`
+blast radius (3 of 5 per-event-kind sites), so the executor left the crate
+non-compiling; the spec is now tightened to enumerate every remaining site and
+the partial work is preserved for continuation.
+
+### Update — 2026-06-07 (complete)
+
+**Summary:** Continued from the partial state left by the first dispatch. The
+executor-crate half (event variant, `bash` metadata, `dispatch` widening, loop
+emit, `event_type_str`, `log_query`) was already on the working tree. Completed
+the remaining MCP-side consumers: `mcp/src/dashboard/filter.rs` (Default impl,
+`allows()`, `toggle()`, `is_enabled()`, `item_label()` — all six per-event-kind
+sites for index 11) and `mcp/src/dashboard/transcript.rs` (`record_lines` render
+arm). Added 6 new tests: 3 bash-tool unit tests
+(`filter_on_records_output_filter_metadata`,
+`cargo_command_records_cargo_filter_label`,
+`filter_off_records_no_output_filter_metadata`), 1 agent-loop integration test
+(`loop_emits_output_filtered_event_for_filtered_bash`), and 2 `dispatch` unit
+tests (`dispatch_surfaces_success_metadata`,
+`dispatch_returns_none_metadata_on_error`).
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (...)
+   Compiling rexymcp v0.1.3 (...)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.96s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (...)
+    Checking rexymcp v0.1.3 (...)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.54s
+
+cargo test 2>&1 | tail -30
+test result: ok. 615 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+
+`cargo test filter_on_records_output_filter_metadata -- --nocapture` passed —
+the test spawns real `sh`, runs a 200-line command through the filter, and
+asserts `tokens_after < tokens_before` with `filter == "generic"`. The
+`cargo_command_records_cargo_filter_label` test confirms `"cargo"` label on
+cargo-prefixed commands. The `filter_off_records_no_output_filter_metadata`
+negative test confirms no `output_filter` key when the kill-switch is off. The
+agent-loop test `loop_emits_output_filtered_event_for_filtered_bash` confirms
+the `OutputFiltered` event is written to the session JSONL with correct
+`tokens_after < tokens_before`.
+
+**Grep verification:**
+```
+$ grep -n 'OutputFiltered' executor/src/store/sessions/event.rs
+89:    OutputFiltered {
+```
+
+**Files changed:**
+- `mcp/src/dashboard/filter.rs` — Default impl, `allows()`, `toggle()`,
+  `is_enabled()`, `item_label()` arms for index 11; test assertion
+  `assert!(f.output_filtered)`
+- `mcp/src/dashboard/transcript.rs` — `record_lines` render arm for
+  `OutputFiltered`
+- `executor/src/tools/bash.rs` — 3 new unit tests for output_filter metadata
+- `executor/src/agent/tools.rs` — 2 new unit tests for `dispatch` metadata
+  surface
+- `executor/src/agent/mod.rs` — 1 new agent-loop integration test for
+  `OutputFiltered` event emission
+- `docs/dev/milestones/M10-context-optimization/phase-03-arc-a-reclaim-events.md`
+  — status flip to `review`, completion Update Log entry
+- `docs/dev/milestones/M10-context-optimization/README.md` — phase table row
+  updated to `review`
+
+**New tests:**
+- `filter_on_records_output_filter_metadata` in `executor/src/tools/bash.rs`
+- `cargo_command_records_cargo_filter_label` in `executor/src/tools/bash.rs`
+- `filter_off_records_no_output_filter_metadata` in `executor/src/tools/bash.rs`
+- `dispatch_surfaces_success_metadata` in `executor/src/agent/tools.rs`
+- `dispatch_returns_none_metadata_on_error` in `executor/src/agent/tools.rs`
+- `loop_emits_output_filtered_event_for_filtered_bash` in
+  `executor/src/agent/mod.rs`
+
+**Notes for review:** The `dispatch` widening (returning `Option<serde_json::Value>`
+metadata) is additive — the third tuple slot is `None` for all error/refusal/
+unknown-tool paths, so existing callers (only one: `mod.rs`) and future callers
+get the metadata without any behavioral change on the failure paths.

@@ -146,6 +146,16 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 false,
                 None,
             ),
+            SessionEvent::OutputFiltered {
+                tokens_before,
+                tokens_after,
+                filter,
+            } => (
+                format!("filtered ({filter}): {tokens_before} → {tokens_after} tokens"),
+                Color::Cyan,
+                false,
+                None,
+            ),
         };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);

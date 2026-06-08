@@ -176,7 +176,7 @@ impl Tool for Bash {
 
                 let output_body = format!("{status_line}\n\n{body}");
 
-                let metadata = json!({
+                let mut metadata = json!({
                     "exit_code": exit_code,
                     "duration_ms": elapsed.as_millis(),
                     "stdout_bytes": output.stdout.len(),
@@ -184,6 +184,19 @@ impl Tool for Bash {
                     "truncated": truncated,
                     "timed_out": false,
                 });
+                if self.filter {
+                    let filter_label =
+                        if crate::context::output_filter::is_cargo_command(&parsed.command) {
+                            "cargo"
+                        } else {
+                            "generic"
+                        };
+                    metadata["output_filter"] = json!({
+                        "tokens_before": crate::context::tokens::count(&combined),
+                        "tokens_after": crate::context::tokens::count(&body),
+                        "filter": filter_label,
+                    });
+                }
 
                 Ok(ToolResult {
                     output: output_body,
@@ -628,6 +641,82 @@ fn fails() { panic!("oh no"); }
         assert!(
             output.contains("test result:"),
             "test result summary should appear: {output}"
+        );
+    }
+
+    #[tokio::test]
+    async fn filter_on_records_output_filter_metadata() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let tool = bash_with_filter(scope, 30, true);
+        let result = tool
+            .execute(json!({
+                "command": "sh -c 'for i in $(seq 1 200); do echo \"line $i\"; done'"
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let meta = result
+            .metadata
+            .as_ref()
+            .expect("metadata should be present");
+        let of = meta
+            .get("output_filter")
+            .expect("output_filter should be present when filter is on");
+        let before = of.get("tokens_before").and_then(|v| v.as_u64()).unwrap();
+        let after = of.get("tokens_after").and_then(|v| v.as_u64()).unwrap();
+        let filter = of.get("filter").and_then(|v| v.as_str()).unwrap();
+        assert!(
+            after < before,
+            "tokens_after ({after}) should be less than tokens_before ({before})"
+        );
+        assert_eq!(filter, "generic");
+    }
+
+    #[tokio::test]
+    async fn cargo_command_records_cargo_filter_label() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let tool = bash_with_filter(scope, 30, true);
+        // Command string starts with "cargo" — it may fail to run (no cargo installed),
+        // but the filter label is derived from the command string, not the exit code.
+        let result = tool
+            .execute(json!({ "command": "cargo build" }))
+            .await
+            .unwrap();
+
+        let meta = result
+            .metadata
+            .as_ref()
+            .expect("metadata should be present");
+        let of = meta
+            .get("output_filter")
+            .expect("output_filter should be present when filter is on");
+        let filter = of.get("filter").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(filter, "cargo");
+    }
+
+    #[tokio::test]
+    async fn filter_off_records_no_output_filter_metadata() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let tool = bash_with_filter(scope, 30, false);
+        let result = tool
+            .execute(json!({
+                "command": "sh -c 'for i in $(seq 1 200); do echo \"line $i\"; done'"
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let meta = result
+            .metadata
+            .as_ref()
+            .expect("metadata should be present");
+        assert!(
+            meta.get("output_filter").is_none(),
+            "output_filter should not be present when filter is off"
         );
     }
 }
