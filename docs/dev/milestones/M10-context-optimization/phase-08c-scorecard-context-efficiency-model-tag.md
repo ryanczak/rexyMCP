@@ -1,7 +1,7 @@
 # Phase 08c: Aggregate context-efficiency into the model × tag scorecard
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done),
 phase-08b (per-run `rexymcp runs` columns — done)
 **Estimated diff:** ~70 lines (incl. tests)
@@ -365,3 +365,29 @@ $ grep -n 'peak_context_pct_mean\|tokens_reclaimed_mean' mcp/src/scorecard.rs
 **Notes for review:** None. Implementation follows the spec exactly — single-file (`mcp/src/scorecard.rs`), single struct literal updated, mirrors the `bounces_to_approval_mean` idiom for both new `Option<f64>` means.
 
 **Commit:** `feat(scorecard): aggregate context-efficiency into model × tag scorecard`
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (66-turn first-try dispatch)
+- **Scope deviations:** none — only `mcp/src/scorecard.rs` touched (plus the
+  authorized status-flip docs). The single `ScorecardRow` literal updated; no
+  `scorecard_cli.rs` / `server.rs` / `SettingsScorecardRow` / executor touch,
+  exactly as the split scoped it.
+- **Verification:** all four gates re-run clean by the reviewer (fmt, build,
+  clippy `-D warnings`, `cargo test` 664 executor + 252 mcp). The 6 new tests
+  pass. `scorecard_context_measured_excludes_legacy_runs` is strongly
+  mutation-resistant — it distinguishes the correct measured-only mean
+  (`0.5` / `400`) from the naive all-runs mean (`0.25` / `200`), so any
+  regression to averaging-in-the-zeros fails it. The serde-wire E2E
+  (`scorecard_row_serializes_context_efficiency_means`) confirms the
+  `model_scorecard` JSON output carries `peak_context_pct_mean:0.7` and
+  `tokens_reclaimed_mean:12288.0`.
+- **Calibration:** **the split paid off (controlled-comparison, half 1 of 2).**
+  08c was the 1-literal/single-file half of the old combined 08c — it landed
+  **clean, first-try, zero churn stall** (66 turns). This is the predicted
+  outcome of structurally reducing blast radius. The other half (08d, 3 literals
+  across 2 files) is the comparison: if it churns, literal-count is confirmed as
+  the stall driver and the WORKFLOW fold ("prefer splitting by output-struct")
+  is warranted. Fold still held pending 08d.
