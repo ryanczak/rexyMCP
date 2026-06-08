@@ -1,7 +1,7 @@
 # Phase 08d: Aggregate context-efficiency into the model × settings scorecard
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done),
 phase-08c (the same two means on the model × tag `ScorecardRow` — done; this
 phase mirrors it on the sibling settings row)
@@ -486,3 +486,13 @@ Fixture run: `peak_context_pct = 0.68` → `68%`; total reclaim = 8000+3500+1200
 - `format_settings_scorecard_shows_settings_and_signal` (extended) in `mcp/src/scorecard_cli.rs`
 
 **Notes for review:** Executor completed struct def + accumulator + accumulation (the additive parts), stalled on the constructor literal — the predicted mechanical-multi-site-churn stall (5th occurrence, controlled comparison arm). This is the calibration data point confirming literal-count as the stall driver (08c: 1 literal, clean first-try; 08d: 3 literals, stall before literal 1 of 3). Architect session takeover closed the remaining 3 literal sites + renderer + tests.
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** escalated
+- **Bounces:** none (no bug-report bounce; closed via session takeover after `VerifierFailurePersistent`)
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (additive parts) → Claude Code (direct) takeover for the 3 literal sites + CLI renderer + tests
+- **Scope deviations:** none — diff confined to `mcp/src/scorecard.rs` + `mcp/src/scorecard_cli.rs`; `server.rs`, `runs.rs`, and `ContextEfficiency` untouched
+- **Calibration:** literal-count confirmed as the stall driver (08c 1 literal → first-try; 08d 3 literals → stall). Governor `IDENTICAL_CALL_THRESHOLD` / `VERIFIER_PERSISTENCE_THRESHOLD` raised 3→6 (commit e543f57) to give wide-blast-radius mechanical edits more runway before hard-fail.
+
+**Review notes (architect re-verification):** all four gates re-run clean (fmt/build/clippy/`664`+`257` tests). New aggregation tests are mutation-resistant — `by_settings_context_measured_excludes_legacy_runs` distinguishes the correct measured-only mean (`0.5`/`400`) from the naive all-runs mean (`0.25`/`200`). E2E independently reproduced against the real `rexymcp scorecard` binary: a `peak_context_pct=0.68`, reclaim-sum `13200` fixture rendered `68%` / `13k` under the new `PEAK_CXT` / `RECLAIMED` columns. Nit (not blocking): the `rows_none` renderer sentinel asserts `!contains("0%")` (guards `PEAK_CXT`) but does not separately pin the `RECLAIMED` cell to `—` vs a hypothetical `0`; the None semantics are fully pinned at the aggregation layer, so behavior is correct.
