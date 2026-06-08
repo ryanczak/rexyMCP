@@ -1,7 +1,7 @@
 # Phase 08b: Surface context-efficiency in `rexymcp runs`
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done)
 **Estimated diff:** ~75 lines (incl. tests)
 **Tags:** language=rust, kind=feature, size=s

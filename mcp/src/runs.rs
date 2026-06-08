@@ -63,7 +63,7 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
 
     let mut lines = Vec::new();
     lines.push(
-        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN".to_string(),
+        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED".to_string(),
     );
 
     for run in runs {
@@ -108,8 +108,28 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             })
             .unwrap_or_else(|| "—".to_string());
 
+        let eff = &run.context_efficiency;
+
+        let peak_cxt = if eff.peak_context_pct == 0.0 {
+            "—".to_string()
+        } else {
+            format!("{:.0}%", eff.peak_context_pct * 100.0)
+        };
+
+        let reclaimed_total = eff.output_filtered_tokens
+            + eff.read_evicted_tokens
+            + eff.read_deduped_tokens
+            + eff.compaction_tokens_reclaimed;
+        let reclaimed = if reclaimed_total == 0 {
+            "—".to_string()
+        } else if reclaimed_total >= 1024 {
+            format!("{}k", reclaimed_total / 1024)
+        } else {
+            format!("{}", reclaimed_total)
+        };
+
         lines.push(format!(
-            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {:<7} {}",
+            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {:<7} {:<7} {:<10} {}",
             age,
             run.model,
             tags,
@@ -120,7 +140,9 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             verdict,
             served_model,
             trunc,
-            cxt_win
+            cxt_win,
+            peak_cxt,
+            reclaimed
         ));
     }
 
@@ -465,6 +487,100 @@ model = "qwen"
         assert!(
             gemma_line.contains('—'),
             "expected '—' sentinel for missing context window on gemma line: {gemma_line}"
+        );
+    }
+
+    #[test]
+    fn format_runs_shows_context_efficiency_columns() {
+        use rexymcp_executor::store::telemetry::ContextEfficiency;
+
+        let mut run = make_run(1000, "qwen", &["rust"], None);
+        run.context_efficiency = ContextEfficiency {
+            peak_context_pct: 0.68,
+            compaction_count: 2,
+            compaction_tokens_reclaimed: 8000,
+            output_filtered_tokens: 3000,
+            read_evicted_tokens: 1000,
+            read_deduped_tokens: 288,
+        };
+
+        let out = format_runs(&[run], 5000);
+
+        // Header contains both new column names
+        assert!(
+            out.lines().next().unwrap().contains("PEAK_CXT"),
+            "expected PEAK_CXT in header: {out}"
+        );
+        assert!(
+            out.lines().next().unwrap().contains("RECLAIMED"),
+            "expected RECLAIMED in header: {out}"
+        );
+
+        // Run line shows 68% and 12k (8000+3000+1000+288 = 12288 → 12k)
+        let qwen_line = out
+            .lines()
+            .find(|l| l.contains("qwen"))
+            .expect("expected a qwen line in output: {out}");
+        assert!(
+            qwen_line.contains("68%"),
+            "expected 68%% peak context in qwen line: {qwen_line}"
+        );
+        assert!(
+            qwen_line.contains("12k"),
+            "expected 12k reclaimed in qwen line: {qwen_line}"
+        );
+    }
+
+    #[test]
+    fn format_runs_reclaimed_sums_all_four_sources() {
+        use rexymcp_executor::store::telemetry::ContextEfficiency;
+
+        let mut run = make_run(1000, "qwen", &["rust"], None);
+        run.context_efficiency = ContextEfficiency {
+            peak_context_pct: 0.0,
+            compaction_count: 0,
+            compaction_tokens_reclaimed: 20,
+            output_filtered_tokens: 100,
+            read_evicted_tokens: 50,
+            read_deduped_tokens: 30,
+        };
+
+        let out = format_runs(&[run], 5000);
+
+        // Sum = 100 + 50 + 30 + 20 = 200 (sub-1024, renders as "200")
+        let qwen_line = out
+            .lines()
+            .find(|l| l.contains("qwen"))
+            .expect("expected a qwen line in output: {out}");
+        assert!(
+            qwen_line.contains("200"),
+            "expected 200 reclaimed (sum of all four sources) in qwen line: {qwen_line}"
+        );
+    }
+
+    #[test]
+    fn format_runs_context_efficiency_dashes_when_zero() {
+        // make_run already defaults context_efficiency to all-zeros
+        let run = make_run(1000, "qwen", &["rust"], None);
+
+        let out = format_runs(&[run], 5000);
+
+        let qwen_line = out
+            .lines()
+            .find(|l| l.contains("qwen"))
+            .expect("expected a qwen line in output: {out}");
+
+        // Both new columns render as "—" sentinel, not "0" or "0%"
+        assert!(
+            !qwen_line.contains("0%"),
+            "expected no '0%%' on qwen line when peak_context_pct is 0: {qwen_line}"
+        );
+        // The line should have em-dashes for the new columns
+        // Count dashes — we need at least the verdict dash plus the two new ones
+        let dash_count = qwen_line.matches('—').count();
+        assert!(
+            dash_count >= 3,
+            "expected at least 3 '—' sentinels on qwen line (verdict + peak_cxt + reclaimed): {qwen_line}"
         );
     }
 }
