@@ -1,7 +1,7 @@
 # Phase 07: content-aware compaction priority
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** review
 **Depends on:** phase-04 (`[superseded:` breadcrumbs) and phase-06 (`[already-read:` references) — both produce already-reclaimed husks this phase must recognize and skip; phase-05 (`Budget::estimate` now counts `tool_calls`/`tool_results` content) — the correctness fix this phase carries into the compactor's own token accounting. Third Arc B lever.
 **Estimated diff:** ~300 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -460,3 +460,66 @@ change. No change to any file other than `executor/src/context/compactor.rs`.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-01-28 (started)
+
+**Executor:** rexyMCP executor LLM
+
+Implementing content-aware compaction priority: `message_tokens` helper, `reclaim_rank` classifier, `signaturize_tool_result` in-place signaturizer, value-ranked pass 1.5, recency protection constant, and 13 new tests.
+
+### Update — 2025-01-28 (complete)
+
+**Tasks completed:**
+
+1. Added `message_tokens()` helper mirroring `Budget::estimate`'s per-message loop — counts `content` + `tool_calls[].arguments` + `tool_results[].content`. Fixed pass 2's token under-count by using `message_tokens(&removed)` instead of `tokens::count(&removed.content)`.
+2. Added `RECENT_TURNS_PROTECTED = 3` constant.
+3. Added `reclaim_rank()` classifier: returns `Some(0)` for non-`read_file` tool results, `Some(1)` for `read_file`, `None` for non-tool messages, already-reclaimed husks (`[compacted:`, `[superseded:`, `[already-read:`), or recency-protected turns.
+4. Added `signaturize_tool_result()` in-place signaturizer and pass 1.5 (value-ranked signaturization) between pass 1 and pass 2.
+5. Added 13 new tests: 3 for `message_tokens`, 5 for `reclaim_rank`, 5 for `compact` integration over structured message shape.
+
+**Verification commands:**
+
+```
+$ cargo fmt --all --check
+(no output — clean)
+
+$ cargo build
+Finished `dev` profile [optimized] target(s) in 0.15s
+
+$ cargo clippy --all-targets --all-features -- -D warnings
+Finished `dev` profile [optimized] target(s) in 0.15s
+
+$ cargo test
+test result: ok. 657 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+Pre-flight test count: 644 passed. Post-completion: 657 passed (+13 new tests). All 8 pre-existing compactor tests still pass unchanged.
+
+**End-to-end verification:**
+
+```
+$ cargo test logs_compaction_event_when_budget_overflows -- --nocapture
+test result: ok. 1 passed; 0 failed; 0 ignored
+
+$ cargo test compact_reclaims_command_output_before_file_read -- --nocapture
+test result: ok. 1 passed; 0 failed; 0 ignored
+```
+
+**Grep for spec-pinned literals:**
+
+```
+$ grep -n 'fn message_tokens' executor/src/context/compactor.rs
+160:fn message_tokens(msg: &Message) -> usize {
+$ grep -n 'fn reclaim_rank' executor/src/context/compactor.rs
+183:fn reclaim_rank(msg: &Message, newest_turn: Option<usize>) -> Option<u8> {
+$ grep -n 'fn signaturize_tool_result' executor/src/context/compactor.rs
+211:fn signaturize_tool_result(msg: &mut Message) {
+$ grep -n 'RECENT_TURNS_PROTECTED' executor/src/context/compactor.rs
+26:const RECENT_TURNS_PROTECTED: usize = 3;
+```
+
+**Files changed:** `executor/src/context/compactor.rs` (only file touched per authorization).
+
+**Commit:** `feat: content-aware compaction priority — value-ranked in-place signaturization pass`
+
+**Notes for review:** None. All acceptance criteria met.
