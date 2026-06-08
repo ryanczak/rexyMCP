@@ -1,7 +1,7 @@
 # Phase 08b: Surface context-efficiency in `rexymcp runs`
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-08a (`PhaseRun.context_efficiency` capture — done)
 **Estimated diff:** ~75 lines (incl. tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -318,3 +318,21 @@ Both literals present in the header line.
 - `92edbd1` — feat: surface context-efficiency columns in rexymcp runs table
 
 **Notes for review:** None — implementation follows the spec exactly.
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (29-turn first-try dispatch)
+- **Scope deviations:** none — touched only `format_runs` + `runs.rs` test
+  module (plus the authorized status-flip docs). No struct/scorecard/dashboard
+  changes, matching the single-file spec.
+- **Verification:** all four gates re-run clean by the reviewer (fmt, build,
+  clippy `-D warnings`, `cargo test` 664 executor + 246 mcp). The three new
+  tests pass; `format_runs_reclaimed_sums_all_four_sources` is mutation-resistant
+  (the unique `200` total breaks if any of the four sources is dropped). E2E
+  re-run against the real binary with the spec JSONL reproduced the
+  `PEAK_CXT`/`RECLAIMED` headers and the `qwen` row's `68%` / `12k`.
+- **Calibration:** nit (not folded) — the new test `.expect("… {out}")`
+  messages don't interpolate `{out}` (literal, not `format!`); this matches the
+  module's pre-existing gemma-line tests and is test-only, so not a bounce.
