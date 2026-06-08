@@ -158,7 +158,8 @@ impl Tool for Bash {
                 }
 
                 let (body, truncated) = if self.filter {
-                    crate::context::output_filter::compact_with_recovery(
+                    crate::context::output_filter::filter_for_command(
+                        &parsed.command,
                         &combined,
                         self.scope.root(),
                     )
@@ -567,6 +568,66 @@ mod tests {
         assert!(
             !dir.path().join(".rexymcp/output").exists(),
             "no recovery dir should be created when filter is off"
+        );
+    }
+
+    #[tokio::test]
+    async fn cargo_command_output_is_filtered_through_cargo_filter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // Create a minimal Cargo project in the TempDir
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "scratch"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            r#"#[test]
+fn passes() {}
+#[test]
+fn fails() { panic!("oh no"); }
+"#,
+        )
+        .unwrap();
+
+        let scope = Scope::new(dir.path()).unwrap();
+        let tool = bash_with_filter(scope, 60, true);
+        let result = tool
+            .execute(json!({ "command": "cargo test 2>&1" }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "cargo test should succeed as a tool call: {}",
+            result
+                .error
+                .as_ref()
+                .map_or("none".to_string(), |e| e.clone())
+        );
+        let output = &result.output;
+
+        // (a) The failing test name should appear
+        assert!(
+            output.contains("fails"),
+            "failing test name should appear in filtered output: {output}"
+        );
+
+        // (b) Passing-test `... ok` lines should be absent
+        assert!(
+            !output.contains("test passes ... ok"),
+            "passing test line should be filtered out: {output}"
+        );
+
+        // (c) `test result:` summary should appear
+        assert!(
+            output.contains("test result:"),
+            "test result summary should appear: {output}"
         );
     }
 }

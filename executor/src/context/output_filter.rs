@@ -101,6 +101,116 @@ pub fn compact_with_recovery(raw: &str, project_root: &Path) -> (String, bool) {
     (result, true)
 }
 
+/// Returns `true` when `command` is a `cargo` invocation. Matches `cargo`
+/// standing alone or followed by a space (i.e. `cargo <subcommand>`). Leading
+/// whitespace is stripped. Does not match `echo cargo` or `CARGO_HOME=…`.
+pub fn is_cargo_command(command: &str) -> bool {
+    let t = command.trim_start();
+    t == "cargo" || t.starts_with("cargo ")
+}
+
+/// Filter cargo subcommand output, keeping only diagnostic content: error and
+/// warning blocks (with their multi-line spans), test-failure blocks (panic,
+/// assertion, stdout headers), and the final summary line. Everything else —
+/// passing-test lines, progress messages (`Compiling`, `Checking`, `Finished`,
+/// etc.) — is dropped.
+///
+/// Unknown lines (not matching any keep or drop pattern) are kept by default —
+/// the keep-by-default rule ensures no diagnostic content is silently lost.
+///
+/// After filtering, if the result still exceeds `LINE_CAP` lines, the full
+/// filtered output is written to a recovery file via `compact_with_recovery`.
+/// Returns `(body, truncated)`.
+pub fn cargo_filter(raw: &str, project_root: &Path) -> (String, bool) {
+    let normalized = normalize(raw);
+    let mut kept = String::new();
+    let mut last_was_blank = true; // suppress leading blank lines
+
+    for line in normalized.lines() {
+        let trimmed = line.trim_start();
+
+        if is_cargo_noise(trimmed) {
+            continue;
+        }
+
+        // Collapse runs of blank lines to at most one.
+        if trimmed.is_empty() {
+            if !last_was_blank {
+                kept.push('\n');
+                last_was_blank = true;
+            }
+            continue;
+        }
+
+        last_was_blank = false;
+        kept.push_str(line);
+        kept.push('\n');
+    }
+
+    // Strip trailing blank line left by the collapse above.
+    let kept = kept.trim_end_matches('\n');
+    let kept = if kept.is_empty() {
+        String::new()
+    } else {
+        format!("{kept}\n")
+    };
+
+    // If filtering already brought output below the cap, return it directly.
+    let line_count = kept.lines().count();
+    if line_count <= LINE_CAP {
+        return (kept, false);
+    }
+
+    // Still over cap after filtering — write the full filtered output to a
+    // recovery file and return a head+tail view (reuses compact_with_recovery).
+    compact_with_recovery(&kept, project_root)
+}
+
+/// Returns `true` for lines that are pure cargo progress noise: passing tests,
+/// compilation progress, and other lines that carry no diagnostic information.
+fn is_cargo_noise(trimmed: &str) -> bool {
+    // Passing test line: "test foo::bar ... ok"
+    if trimmed.starts_with("test ") && trimmed.ends_with(" ... ok") {
+        return true;
+    }
+    // Cargo progress tokens (leading whitespace already stripped).
+    for prefix in &[
+        "Compiling ",
+        "Checking ",
+        "Finished ",
+        "Running ",
+        "Downloaded ",
+        "Downloading ",
+        "Blocking ",
+        "Updating ",
+        "Locking ",
+        "Fresh ",
+        "Dirty ",
+        "Replaced ",
+        "Unpacking ",
+    ] {
+        if trimmed.starts_with(prefix) {
+            return true;
+        }
+    }
+    // "running N test(s)" header line from libtest.
+    if trimmed.starts_with("running ") && trimmed.contains(" test") {
+        return true;
+    }
+    false
+}
+
+/// Dispatch to the appropriate output filter based on the command string.
+/// Cargo commands are routed to the structured `cargo_filter`; everything else
+/// falls back to the generic `compact_with_recovery`.
+pub fn filter_for_command(command: &str, raw: &str, project_root: &Path) -> (String, bool) {
+    if is_cargo_command(command) {
+        cargo_filter(raw, project_root)
+    } else {
+        compact_with_recovery(raw, project_root)
+    }
+}
+
 /// Write `content` to a fresh recovery file under `<root>/.rexymcp/output/`,
 /// prune to `MAX_RECOVERY_FILES`, and return the root-relative path (e.g.
 /// `.rexymcp/output/cmd-output-7.log`). `None` on any I/O failure.
@@ -337,5 +447,182 @@ mod tests {
         let min_seq = seqs.iter().min().copied().unwrap_or(0);
         // The newest (highest seq) should survive
         assert!(max_seq > min_seq, "newest files should survive rotation");
+    }
+
+    #[test]
+    fn is_cargo_command_matches_cargo_subcommands() {
+        assert!(is_cargo_command("cargo test"));
+        assert!(is_cargo_command("cargo build"));
+        assert!(is_cargo_command("  cargo clippy --all-targets"));
+        assert!(is_cargo_command("cargo"));
+        assert!(!is_cargo_command("echo cargo"));
+        assert!(!is_cargo_command("rustc main.rs"));
+        assert!(!is_cargo_command(""));
+        assert!(!is_cargo_command("CARGO_HOME=/foo cargo test"));
+    }
+
+    #[test]
+    fn cargo_filter_drops_passing_test_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "test foo::bar ... ok\ntest baz ... FAILED\n";
+        let (body, _truncated) = cargo_filter(input, dir.path());
+        assert!(
+            !body.contains(" ... ok"),
+            "passing test line should be dropped: {body}"
+        );
+        assert!(
+            body.contains("FAILED"),
+            "failing test line should be kept: {body}"
+        );
+    }
+
+    #[test]
+    fn cargo_filter_drops_compiling_noise() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "   Compiling foo v1.0\n    Finished dev [unoptimized] target(s) in 1.19s\n     Running unittests (target/debug/deps/foo-abc)\n";
+        let (body, _truncated) = cargo_filter(input, dir.path());
+        assert!(
+            !body.contains("Compiling"),
+            "Compiling line should be dropped: {body}"
+        );
+        assert!(
+            !body.contains("Finished"),
+            "Finished line should be dropped: {body}"
+        );
+        assert!(
+            !body.contains("Running"),
+            "Running line should be dropped: {body}"
+        );
+    }
+
+    #[test]
+    fn cargo_filter_keeps_error_diagnostic_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "error[E0425]: cannot find value `x`\n  --> src/main.rs:10:5\n   |\n10 |     x\n   |     ^ not found\n";
+        let (body, _truncated) = cargo_filter(input, dir.path());
+        assert!(
+            body.contains("error[E0425]"),
+            "error line should survive: {body}"
+        );
+        assert!(
+            body.contains("--> src/main.rs:10:5"),
+            "span line should survive: {body}"
+        );
+        assert!(body.contains("|"), "span detail should survive: {body}");
+        assert!(
+            body.contains("not found"),
+            "diagnostic message should survive: {body}"
+        );
+    }
+
+    #[test]
+    fn cargo_filter_keeps_test_failure_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "\
+test my_test ... FAILED
+
+---- my_test stdout ----
+
+thread 'my_test' panicked at 'assertion failed', src/lib.rs:5
+
+failures:
+
+    my_test
+
+test result: FAILED. 0 passed; 1 failed
+";
+        let (body, _truncated) = cargo_filter(input, dir.path());
+        assert!(
+            body.contains("test my_test ... FAILED"),
+            "failure line should survive: {body}"
+        );
+        assert!(
+            body.contains("---- my_test stdout ----"),
+            "stdout header should survive: {body}"
+        );
+        assert!(
+            body.contains("panicked at"),
+            "panic line should survive: {body}"
+        );
+        assert!(
+            body.contains("failures:"),
+            "failures header should survive: {body}"
+        );
+        assert!(
+            body.contains("test result: FAILED"),
+            "summary should survive: {body}"
+        );
+    }
+
+    #[test]
+    fn cargo_filter_keeps_summary_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "test result: ok. 42 passed; 0 failed; 0 ignored\n";
+        let (body, _truncated) = cargo_filter(input, dir.path());
+        assert!(
+            body.contains("test result: ok. 42 passed; 0 failed; 0 ignored"),
+            "summary line should be present: {body}"
+        );
+    }
+
+    #[test]
+    fn cargo_filter_uses_compact_when_filtered_output_still_long() {
+        let dir = tempfile::tempdir().unwrap();
+        // Build input with >100 distinct error blocks (each 2 lines, not noise)
+        let mut input = String::new();
+        for i in 0..60 {
+            input.push_str(&format!(
+                "error[E{:03}]: error number {}\n  --> src/lib.rs:{}:1\n",
+                i, i, i
+            ));
+        }
+        let (body, truncated) = cargo_filter(&input, dir.path());
+        assert!(
+            truncated,
+            "filtered output exceeding LINE_CAP should trigger compact"
+        );
+        // Recovery file should exist
+        let recovery_dir = dir.path().join(".rexymcp/output");
+        assert!(recovery_dir.exists(), "recovery dir should exist");
+        assert!(
+            body.contains("omitted"),
+            "elision marker should be present: {body}"
+        );
+    }
+
+    #[test]
+    fn filter_for_command_routes_cargo_to_structured_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = "test foo::bar ... ok\nCompiling foo v1.0\ntest baz ... FAILED\ntest result: FAILED. 0 passed; 1 failed\n";
+        let (body, _truncated) = filter_for_command("cargo test", input, dir.path());
+        assert!(
+            !body.contains(" ... ok"),
+            "passing test noise should be dropped by cargo filter: {body}"
+        );
+        assert!(
+            !body.contains("Compiling"),
+            "compiling noise should be dropped by cargo filter: {body}"
+        );
+        assert!(body.contains("FAILED"), "failure should be kept: {body}");
+    }
+
+    #[test]
+    fn filter_for_command_routes_non_cargo_to_generic() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = String::new();
+        for i in 0..200 {
+            input.push_str(&format!("line {i}\n"));
+        }
+        let (body, truncated) = filter_for_command("make build", &input, dir.path());
+        assert!(
+            truncated,
+            "non-cargo long output should be truncated by generic filter"
+        );
+        assert!(
+            body.contains("omitted"),
+            "elision marker should be present: {body}"
+        );
+        // Generic filter does NOT drop "test ... ok" lines — they survive
+        // because the generic filter doesn't know about cargo patterns.
     }
 }
