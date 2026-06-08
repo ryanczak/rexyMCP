@@ -1,7 +1,7 @@
 # Phase 03: Arc A reclaim events (OutputFiltered)
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-01, phase-02 (the Arc A filters this phase instruments)
 **Estimated diff:** ~170 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -523,3 +523,33 @@ $ grep -n 'OutputFiltered' executor/src/store/sessions/event.rs
 metadata) is additive — the third tuple slot is `None` for all error/refusal/
 unknown-tool paths, so existing callers (only one: `mod.rs`) and future callers
 get the metadata without any behavioral change on the failure paths.
+
+### Review verdict — 2026-06-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none (no review bug reports; the prior `VerifierFailurePersistent`
+  hard-fail was a pre-review escalation, resolved by refined re-dispatch)
+- **Executor:** local LLM (executor) — completed from the preserved partial state
+- **Scope deviations:** none — pure instrumentation; filter output unchanged, no
+  `status.rs`/`PhaseRun`/scorecard touch (correctly deferred to phase-07)
+- **Calibration:** one occurrence — the original Task 5(c) under-listed the
+  `filter.rs` per-event-kind blast radius (3 of 5 sites), causing the first
+  dispatch's hard-fail. Already folded into this phase's tightened spec; not yet a
+  trend, so no WORKFLOW.md fold. Watch for repeats when adding future
+  `SessionEvent` variants (e.g. phase-04 `ReadEvicted`).
+
+**Independent re-run (reviewer):**
+
+```
+cargo fmt --all --check          → clean (no output)
+cargo build                      → Finished, zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test                       → 615 passed; 0 failed; 2 ignored
+```
+
+DoD: all boxes checked. Acceptance criteria: all met — verified the
+`OutputFiltered` variant grep, the on/off/cargo-label bash tests, the
+`dispatch` None-on-error path, and the agent-loop event emission read back from
+the session JSONL. unwrap/expect appear only in test code; production paths are
+clean. The four exhaustive match sites compile and the transcript render arm is
+present.
