@@ -9,7 +9,7 @@ documented `rexymcp.toml` so new projects can get started without reading source
 and a `.mcp.json` causes duplicate server conflicts in Claude Code); (3) decompose the four largest source files so no production file
 exceeds the executor's RunawayOutput limit and each file has one clear concern.
 
-**Status:** in progress — phases 01, 02, 03 done; phases 04–05b remaining.
+**Status:** in progress — phases 01, 02, 03, 04 done; phases 05a, 05b remaining.
 
 **Depends on:** M1–M10 (all complete). No new feature work here; this milestone
 references existing behaviour only.
@@ -30,7 +30,7 @@ references existing behaviour only.
 | 01 | Governor thresholds → `[governor]` config | done | feature | m |
 | 02 | `rexymcp init` scaffold command | done | feature | m |
 | 03 | Split `agent/mod.rs` — extract test suite | done | refactor | m |
-| 04 | Split `scorecard.rs` — extract test suite | review | refactor | s |
+| 04 | Split `scorecard.rs` — extract test suite | done | refactor | s |
 | 05a | Split `server.rs` — extract test suite | todo | refactor | s |
 | 05b | Split `verifier.rs` — extract test suite | todo | refactor | s |
 

@@ -1,7 +1,7 @@
 # Phase 04: Split `scorecard.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (ordering only — no code dependency)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -233,3 +233,36 @@ explicitly requires, so it is not an unauthorized new file.)
 - End-to-end verification: N/A — pure internal file-split refactor, no runtime-loadable artifact.
 
 <!-- entries appended below this line -->
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-labels "Claude
+  (Sonnet 4.5)" and stamps `2025-06-16` — the recurring local-LLM identity/clock
+  quirk, cosmetic; the real executor is the configured local model)
+- **Scope deviations:** none — the diff is exactly two source files
+  (`scorecard.rs` 763-line deletion, `scorecard_tests.rs` 759-line addition; 761
+  ins / 761 del, a byte-for-byte `sed` move) plus the two doc files. Production
+  lines 1–391 untouched; `scorecard.rs` ends at 394 lines with the required
+  `#[cfg(test)] #[path = "scorecard_tests.rs"] mod tests;` declaration.
+- **Independent re-run:** `cargo fmt --all --check` ✅, `cargo build` ✅ (zero
+  warnings), `cargo clippy --all-targets --all-features -- -D warnings` ✅,
+  `cargo test` → 665 executor + 269 mcp pass; all 46 scorecard tests pass
+  unchanged. The single mcp red — `dashboard::panels::tests::session_lines_shows_spinner_when_active`
+  — is **pre-existing and out of phase scope**: it exists verbatim at the parent
+  commit `33a8d2e` (and was introduced by the direct commit `47d9e3b "refactored
+  spinner to be cooler"`), and phase-04's diff does not touch
+  `mcp/src/dashboard/panels.rs`. The phase's regression guard (same passing count
+  before and after) holds: 269 passed both before and after. The spec's "270"
+  estimate predated the spinner breakage.
+- **Calibration:** none for this phase. The `sed`-move method landed clean
+  first-try again — third consecutive split refactor (M11 phase-03, both M8
+  splits) to confirm the correctness-constraint pre-injection thesis: prescribing
+  a lossless `sed` move over a `write_file` regeneration is the load-bearing
+  instruction for this class.
+- **Follow-up (not a phase-04 defect):** `master` is red on the pre-existing
+  spinner test. The spinner renderer was changed by `47d9e3b` (actual output
+  `"🐕  🧠"`) but its test assertion still expects the old spacing
+  (`"🐕       🧠"`). Needs a separate trivial fix — update the assertion (or the
+  renderer, if the spacing regression is real). Flagged to the user at review.
