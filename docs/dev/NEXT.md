@@ -4,24 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-03** — [Split `agent/mod.rs` — extract test
-suite](milestones/M11-polish/phase-03-split-agent-mod.md). Drafted/activated
-2026-06-09; dispatch via `/rexymcp:dispatch phase-03`.
+**Active phase:** **none** — M11 / phase-03 approved `approved_first_try`
+(2026-06-09). The user advances to phase-04 via `/rexymcp:architect next`.
 
-**phase-03 scope (active):** pure file-split refactor. Move the single
-`#[cfg(test)] mod tests { … }` block (verified on HEAD: `#[cfg(test)]` at line
-882, `mod tests {` at 883, inner body 884–4430, closing `}` at 4431 — total
-4 431 lines / 163 KB) out of `executor/src/agent/mod.rs` into a new sibling
+**phase-03 done** (2026-06-09, approved_first_try): pure file-split refactor —
+moved the single ~3 547-line `#[cfg(test)] mod tests { … }` block out of
+`executor/src/agent/mod.rs` (was 4 431 lines / 163 KB, over the
+`runaway_output_bytes` read limit) into a new sibling
 `executor/src/agent/tests.rs`, replacing it with a `#[cfg(test)] mod tests;`
-declaration. Production code (lines 1–881) untouched; mod.rs ends ≤ 900 lines.
-**Method prescribed: `sed`, not `write_file`.** The bash classifier is a
-blocklist (`Severity::Allow` for `sed`/`mv`/`printf` + in-scope redirects —
-verified `security/bash_classify.rs`), so the ~3 547-line body is moved
-losslessly by `sed -n '884,4430p' mod.rs > tests.rs` rather than regenerated
-verbatim (infeasible for a 27B model: token-limit truncation + transcription
-errors, and the exact mechanical-churn shape that escalated M9/phase-04 and both
-M8 splits). Zero logic change; existing 665 executor tests must pass at the same
-count. Executor target: Qwen/Qwen3.6-27B-FP8.
+declaration. mod.rs now **883 lines** (production lines 1–881 byte-identical to
+parent + the 2-line declaration); tests.rs is the moved body (98 test fns
+preserved). **665 executor tests** pass at the same count; all four gates green
+on independent re-run. Committed `87faf8f` (refactor); approved `_`. **Clean
+first-try, 36 turns — the split-refactor class that escalated M9/phase-04 and
+both M8 splits landed first-try because the spec prescribed a lossless `sed`
+move (`sed -n '884,4430p' mod.rs > tests.rs`) over a verbatim ~3 547-line
+`write_file` regeneration.** This is the correctness-constraint pre-injection
+thesis confirmed: the load-bearing instruction was the tool-choice gotcha, not
+spec volume. Two minor process notes (no fold yet): (1) the phase was dispatched
+with the architect's uncommitted activation edits in the tree, so the executor
+swept NEXT.md + the phase-doc refresh into its `refactor:` commit — commit
+activation edits *before* dispatch next time (2nd dirty-tree occurrence after
+M9/phase-01); (2) the executor stamped the Update Log `2025-07-15` (local-LLM
+clock quirk, cosmetic).
 
 **Prior active-phase pointer (now done):**
 

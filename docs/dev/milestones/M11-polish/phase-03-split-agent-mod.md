@@ -1,7 +1,7 @@
 # Phase 03: Split `agent/mod.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (the test block references `GovernorConfig`, added in phase-01 — already on HEAD)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=m
@@ -250,3 +250,30 @@ requires, so it is not an unauthorized new file.)
 **Notes for review:** None. Pure move — zero logic changes.
 
 **Commit:** single `refactor:` commit
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** none. mod.rs trimmed to 883 lines (production lines
+  1–881 byte-identical to parent + the two-line `#[cfg(test)] mod tests;`
+  declaration); tests.rs is the 3 541-line moved body. All four gates green on
+  independent re-run (665 executor tests, same count as pre-flight; 98 test fns
+  preserved). Content-preservation verified: the moved body is byte-identical to
+  the original `mod tests { … }` inner body modulo the 4-space dedent and
+  rustfmt normalization (3 547 → 3 541 lines, whitespace-only).
+- **Calibration:** **The `sed`-over-`write_file` prescription worked exactly as
+  designed.** This is the split-refactor class that escalated M9/phase-04 and
+  both M8 splits (`IdenticalToolCallRepetition` mechanical-move churn); it landed
+  clean first-try in **36 turns** because the spec prescribed a lossless shell
+  move instead of a verbatim ~3 547-line regeneration. Validates the
+  correctness-constraint pre-injection thesis: the load-bearing instruction was
+  the tool-choice gotcha, not volume. **Two minor process notes (no fold yet):**
+  (1) the phase was dispatched with the architect's uncommitted activation edits
+  (NEXT.md + this phase doc's refresh) in the working tree, which the executor
+  swept into its `refactor:` commit `87faf8f` — content correct, but the
+  architect should commit activation edits before dispatch (2nd occurrence of the
+  dirty-tree pattern after M9/phase-01; architect-caused this time). (2) The
+  executor stamped the Update Log with `2025-07-15` instead of `2026-06-09` — a
+  known local-LLM clock quirk, cosmetic.
