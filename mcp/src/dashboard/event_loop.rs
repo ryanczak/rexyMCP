@@ -45,7 +45,7 @@ pub(crate) fn run_loop(
             .draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, &state, rates))?;
         offset = clamp_scroll(
             offset,
-            transcript_lines(&data.records, &filter_state.filter, spinner).len(),
+            transcript_lines(&data.records, &filter_state.filter).len(),
         );
 
         if event::poll(Duration::from_millis(500))?

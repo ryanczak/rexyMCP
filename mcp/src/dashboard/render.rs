@@ -78,7 +78,10 @@ pub(crate) fn render_dashboard(
     .areas::<3>(header);
 
     frame.render_widget(
-        panel(" Session ", session_lines(&data.summary, now_ms)),
+        panel(
+            " Session ",
+            session_lines(&data.summary, now_ms, state.spinner),
+        ),
         session_area,
     );
     let mut budget = budget_lines(&data.summary);
@@ -131,7 +134,7 @@ pub(crate) fn render_dashboard(
             activity_area,
         );
     } else {
-        let transcript = transcript_lines(&data.records, &filter_state.filter, state.spinner);
+        let transcript = transcript_lines(&data.records, &filter_state.filter);
         let viewport = activity_area.height.saturating_sub(2); // minus top+bottom border
         let n = transcript.len();
         let scroll = visible_offset(state.follow, state.offset, n, viewport);

@@ -4,6 +4,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crate::dashboard::transcript::SPINNER_FRAMES;
 use crate::status::{self, StatusSummary};
 
 /// Total usable content width for a Files panel line (indent + path + space +
@@ -20,9 +21,14 @@ pub struct BudgetRates {
     pub output_per_mtok: f64,
 }
 
-/// Session panel: phase / session / model / state / turn / stage / freshness.
-/// `now_ms` is injected (unix millis) so the age line is testable.
-pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
+/// Session panel: phase / session / model / state / turn / stage / freshness /
+/// optional spinner. `now_ms` is injected (unix millis) so the age line is
+/// testable. `spinner` is `Some(frame_index)` while the session is running.
+pub(crate) fn session_lines(
+    summary: &StatusSummary,
+    now_ms: u64,
+    spinner: Option<usize>,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     let phase = summary.phase.as_deref().unwrap_or("<unknown>");
@@ -66,6 +72,11 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
             None => format!("last update: {age_str} ago"),
         };
         lines.push(Line::from(line));
+    }
+
+    if let Some(frame) = spinner {
+        let glyph = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
+        lines.push(Line::from(glyph.to_string()));
     }
 
     lines
@@ -290,7 +301,7 @@ mod tests {
             ended: None,
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 0);
+        let lines = session_lines(&summary, 0, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s == "phase: phase-02"));
         assert!(text.iter().any(|s| s == "session: abc"));
@@ -304,7 +315,7 @@ mod tests {
             ended: Some("complete".into()),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 0);
+        let lines = session_lines(&summary, 0, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("ended (complete)")));
     }
@@ -317,7 +328,7 @@ mod tests {
             last_ts: Some(1000),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 4000);
+        let lines = session_lines(&summary, 4000, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("turn 5")));
         assert!(text.iter().any(|s| s.contains("verify")));
@@ -330,7 +341,7 @@ mod tests {
             last_ts: None,
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 9999);
+        let lines = session_lines(&summary, 9999, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(!text.iter().any(|s| s.contains("last update")));
     }
@@ -344,7 +355,7 @@ mod tests {
             update_interval_min_ms: Some(1000),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 5000);
+        let lines = session_lines(&summary, 5000, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
         assert!(age_line.contains("avg:"), "expected avg in: {age_line}");
@@ -357,10 +368,39 @@ mod tests {
             update_interval_avg_ms: None,
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 5000);
+        let lines = session_lines(&summary, 5000, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
         assert!(!age_line.contains("avg:"), "unexpected avg in: {age_line}");
+    }
+
+    #[test]
+    fn session_lines_shows_spinner_when_active() {
+        let summary = StatusSummary::default();
+        let lines = session_lines(&summary, 0, Some(0));
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert_eq!(text.last().unwrap(), "🐕       🧠");
+    }
+
+    #[test]
+    fn session_lines_spinner_cycles_frames() {
+        let summary = StatusSummary::default();
+        for (i, expected) in crate::dashboard::transcript::SPINNER_FRAMES
+            .iter()
+            .enumerate()
+        {
+            let lines = session_lines(&summary, 0, Some(i));
+            let last = format!("{}", lines.last().unwrap());
+            assert_eq!(last, *expected, "frame {i} mismatch");
+        }
+    }
+
+    #[test]
+    fn session_lines_omits_spinner_when_none() {
+        let summary = StatusSummary::default();
+        let lines = session_lines(&summary, 0, None);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(!text.iter().any(|s| s.contains("🐕")));
     }
 
     // --- files_lines tests ---

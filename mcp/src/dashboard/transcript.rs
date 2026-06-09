@@ -27,26 +27,18 @@ pub(crate) const SPINNER_FRAMES: &[&str] = &[
 ];
 
 /// Build all transcript lines for the given records, in chronological order.
-/// Filters records through `filter`, appends a spinner frame when `spinner` is
-/// `Some`. Returns a placeholder when all records are filtered out.
+/// Filters records through `filter`. Returns a placeholder when all records are
+/// filtered out.
 pub(crate) fn transcript_lines(
     records: &[SessionRecord],
     filter: &ActivityFilter,
-    spinner: Option<usize>,
 ) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line<'static>> = {
-        let visible: Vec<_> = records.iter().filter(|r| filter.allows(&r.event)).collect();
-        if visible.is_empty() {
-            vec![Line::from("(no activity yet)")]
-        } else {
-            visible.iter().flat_map(|r| record_lines(r)).collect()
-        }
-    };
-    if let Some(frame) = spinner {
-        let glyph = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
-        lines.push(Line::from(glyph.to_string()));
+    let visible: Vec<_> = records.iter().filter(|r| filter.allows(&r.event)).collect();
+    if visible.is_empty() {
+        vec![Line::from("(no activity yet)")]
+    } else {
+        visible.iter().flat_map(|r| record_lines(r)).collect()
     }
-    lines
 }
 
 /// Render one record as one or more transcript lines (header + optional body),
@@ -249,7 +241,7 @@ mod tests {
 
     #[test]
     fn transcript_lines_empty_placeholder() {
-        let lines = transcript_lines(&[], &ActivityFilter::default(), None);
+        let lines = transcript_lines(&[], &ActivityFilter::default());
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no activity")));
     }
@@ -440,45 +432,7 @@ mod tests {
                 },
             ),
         ];
-        let lines = transcript_lines(&records, &ActivityFilter::default(), None);
+        let lines = transcript_lines(&records, &ActivityFilter::default());
         assert_eq!(lines.len(), 5);
-    }
-
-    #[test]
-    fn spinner_appended_when_active() {
-        let records = vec![rec(100, 0, start_event())];
-        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(0));
-        let last = format!("{}", lines.last().unwrap());
-        assert_eq!(last, "🐕       🧠");
-    }
-
-    #[test]
-    fn spinner_frame_cycles_through_all_frames() {
-        let records = vec![rec(100, 0, start_event())];
-        for (i, expected) in SPINNER_FRAMES.iter().enumerate() {
-            let lines = transcript_lines(&records, &ActivityFilter::default(), Some(i));
-            let last = format!("{}", lines.last().unwrap());
-            assert_eq!(last, *expected, "frame {i} mismatch");
-        }
-        // Index 12 wraps to frame 0 (12 frames total, 12 % 12 == 0)
-        let lines = transcript_lines(&records, &ActivityFilter::default(), Some(12));
-        let last = format!("{}", lines.last().unwrap());
-        assert_eq!(last, SPINNER_FRAMES[0], "frame 12 should wrap to 0");
-    }
-
-    #[test]
-    fn spinner_absent_when_none() {
-        let records = vec![rec(100, 0, start_event())];
-        let lines = transcript_lines(&records, &ActivityFilter::default(), None);
-        let last = format!("{}", lines.last().unwrap());
-        assert!(!last.contains("🐕"), "spinner should not appear: {last}");
-    }
-
-    #[test]
-    fn spinner_appended_to_empty_records() {
-        let lines = transcript_lines(&[], &ActivityFilter::default(), Some(3));
-        assert_eq!(lines.len(), 2);
-        assert_eq!(format!("{}", lines[0]), "(no activity yet)");
-        assert_eq!(format!("{}", lines[1]), "   🐕    🧠");
     }
 }
