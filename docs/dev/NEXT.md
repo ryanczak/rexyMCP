@@ -4,24 +4,44 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-01** — [Verifier missing-binary → `Skipped`
-advisory](milestones/M12-executor-tooling/phase-01-verifier-degrade.md).
-Drafted/activated 2026-06-09; dispatch via `/rexymcp:dispatch phase-01`.
+**Active phase:** **phase-02** — [`rexymcp doctor` toolchain-availability
+command](milestones/M12-executor-tooling/phase-02-doctor.md). Drafted/activated
+2026-06-09; dispatch via `/rexymcp:dispatch phase-02`.
 
-**phase-01 scope (active — M12 Arc 0):** additive verifier robustness fix. Add a
-`VerifierResult::Skipped(String)` variant + a pure `spawn_failure(tool,
-install_hint, &io::Error)` classifier (`NotFound` → `Skipped` naming the binary +
-remedy; any other error → `Failed`), route the three spawn arms
-(`cargo`/`tsc`/`ruff` in `verifier.rs`) through it, and add the `Skipped` arm to
-the two exhaustive matches (`capture_baseline`; the agent-loop `verify` match at
-`mod.rs:781`). **Correction baked into the spec:** a missing binary does **not**
-strike today (only the `Checked` arm pushes to `recent_verifier_error_counts` at
-`mod.rs:794`; `hard_fail.rs:100` reads only that) — the real fix is replacing an
-opaque, remedy-less io-error repeated each edit turn with a clear `Skipped`
-advisory; the no-strike property is inherited structurally by not pushing to the
-counter. 3 new tests (2 pure classifier incl. the `PermissionDenied`→`Failed`
-negative case + 1 loop advisory). No new dep (`std::io::ErrorKind`). Executor
-target: Qwen/Qwen3.6-27B-FP8.
+**phase-02 scope (active — M12 Arc 0):** additive new CLI command, mcp-crate only
+(mirrors `init.rs`/`health`). New `mcp/src/doctor.rs` with pure helpers
+(`command_binary` first-token extractor; `resolve_binary(name, &[PathBuf])`
+exact-match PATH resolver — `is_file()` only, no substring, no dir match,
+separator-bearing names checked as literal paths; `build_report(&CommandConfig,
+&[PathBuf])`; `DoctorReport::tier0_ok()`; `format_report`) + a thin impure `run`
+that reads the real PATH via `std::env::var_os`/`split_paths`. **Tier 0** = the
+configured `[commands]` binaries (dedup by binary, roles merged) → **required**, a
+missing one makes `doctor` exit non-zero. **Tier 1** = the three per-language
+verifier enhancers (`cargo`/`tsc`/`ruff`, install hints reused verbatim from
+phase-01) → advisory, **fail-open** (never affects exit code — the pinned property
+`tier0_ok` ignores Tier 1). Plus a `Commands::Doctor { config, json }` clap
+variant + dispatch arm + `mod doctor;`. `--json` mirrors runs/scorecard. ~11
+hermetic unit tests (incl. 3 pinned negatives: dir-of-same-name, substring,
+blank-command) + 1 clap-parse test + 3 E2E (exit-0 all-present, exit-1
+missing-Tier-0, `--json` shape). No new dep (std only). **Out of scope:** language
+detection, touching `init`, version-checking, MCP/dashboard/bootstrap wiring.
+Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**phase-01 done** (2026-06-09, approved_first_try): verifier missing-binary →
+`Skipped` advisory. Added `VerifierResult::Skipped(String)` + the pure
+`spawn_failure(tool, install_hint, &io::Error)` classifier (`NotFound` → `Skipped`
+naming binary + remedy; else `Failed`), routed the three spawn arms through it,
+added `Skipped` arms to `capture_baseline` + the agent-loop verify match. The
+no-strike property is structural (only `Checked` pushes to
+`recent_verifier_error_counts`), confirmed at review. 3 new tests (2 pure
+classifier incl. the `PermissionDenied`→`Failed` negative + 1 loop advisory); one
+extra exhaustive-match arm (`python_verifier_handles_missing_ruff` test) was
+anticipated by the spec. **674 passed / 2 ignored** executor, all four gates green
+on independent re-run. Clean 64-turn first-try with full bookkeeping (status flip
++ Update Log + single `fix:` commit `f2f8759` all landed by the executor);
+approved `af18e14`. Cosmetic-only quirk: the Update Log self-labels "rexyMCP
+executor LLM" (the recurring local-LLM identity quirk; phase-06 datetime injection
+fixes the date once `rexymcp serve` is restarted — still pending below).
 
 **📌 M12 — Executor Tooling kicked off (2026-06-09, with the user).** Milestone
 [README](milestones/M12-executor-tooling/README.md) written; `architecture.md`
