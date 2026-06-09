@@ -12,15 +12,15 @@ use super::highlight::{highlighted_body_lines, plain_body_lines};
 pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 
 pub(crate) const SPINNER_FRAMES: &[&str] = &[
-    "🐕       🧠",
-    " 🐕      🧠",
-    "  🐕     🧠",
-    "   🐕    🧠",
-    "    🐕   🧠",
-    "     🐕  🧠",
-    "     🧠🐕💨",
+    "🐕  🧠",
+    "  🐕  🧠",
+    "    🐕  🧠",
+    "      🐕 🧠",
+    "        🐕 🧠",
+    "         🐕🧠",
+    "       🧠🐕💨",
+    "     🧠🐕",
     "   🧠🐕",
-    "  🧠🐕",
     " 🧠🐕",
     "🧠🐕",
     "🐕",
