@@ -4,17 +4,23 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none.** 🎉 **M11 — Polish is complete** (all seven phases
-approved_first_try, 2026-06-09 — see the
-[retrospective](milestones/M11-polish/README.md#retrospective--2026-06-09)). This
-is a **milestone boundary: a human gate.** The architect does not auto-advance.
+**Active phase:** **none yet — M12 kicked off, no phase drafted.** Run
+`/rexymcp:architect next` to draft **phase-01** (Arc B — find-references in
+`symbols`), which will set this pointer and ready it for `/rexymcp:dispatch`.
 
-**Awaiting human sign-off to kick off M12 — Executor Tooling** (sketched in
-`docs/architecture.md` § Status #12: net-new executor capability to make a weak
-local model more effective, each intervention measurable against the scorecard).
-M12 has not been expanded into phases. When you're ready, say so and run
-`/rexymcp:architect` to design M12 → its README + phase-01; the architect will
-not begin it unprompted.
+**📌 M12 — Executor Tooling kicked off (2026-06-09, with the user).** Milestone
+[README](milestones/M12-executor-tooling/README.md) written; `architecture.md`
+§ Status #12 marked in-progress. **Locked scope:** both arcs, **Arc B first**;
+**all three Arc B wins** (find-references + rustc suggested-fix spans + structured
+`cargo test` failure parsing); then Arc A (task tracking + dashboard panel) with
+**`task_tracking` default on**. Five planned phases (01–03 Arc B, 04–05 Arc A) —
+the architect expands each on demand. **Drafting watch-item:** phase-04 adds a new
+`SessionEvent::TaskUpdate` variant → the known `dashboard/filter.rs` 7-site
+match-arm wall (hard-failed M10 phase-03/04/06); enumerate every arm in that phase
+doc or split the mechanical fixups.
+
+**M11 — Polish is complete** 🎉 (all seven phases approved_first_try, 2026-06-09 —
+see the [retrospective](milestones/M11-polish/README.md#retrospective--2026-06-09)).
 
 **📌 Post-M11 operational follow-up (do before the next dispatch):** **restart
 `rexymcp serve`** so the rebuilt binary picks up phase-06's datetime injection —

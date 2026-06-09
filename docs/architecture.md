@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
 > **Status:** Living design doc. M1–M7, M9, M10, and M11 are fully implemented
-> and closed; M12 (executor tooling) awaits kickoff. M8 (live session dashboard) is implemented but
+> and closed; M12 (executor tooling) is active. M8 (live session dashboard) is implemented but
 > open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
 > live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
@@ -681,14 +681,16 @@ The project plan. Each entry becomes a milestone with its own
       `agent/prompt.rs`). Pure integer date arithmetic — no date dependency, no
       real wall-clock read, so it stays deterministic under test.
 
-12. **M12 — Executor Tooling** *(sketch, designed 2026-06-09; not yet kicked
-    off — fleshed out at the M11 boundary)*. Net-new executor capability aimed at
+12. **M12 — Executor Tooling** *(in progress, kicked off 2026-06-09)*. Net-new
+    executor capability aimed at
     making a weak local model more effective and more efficient. Each item below
     is an **intervention whose value is measurable against the scorecard** —
     rexyMCP using its own reason for existing. The discipline for the milestone:
     ship the certain-value half, gate the hypothesis half behind config, and let
     `bounces_to_approval` / `first_pass_rate` prune what doesn't earn its keep.
-    Two arcs:
+    **Locked scope (with the user, 2026-06-09): both arcs, Arc B first; all three
+    Arc B wins; `task_tracking` default on.** See
+    `docs/dev/milestones/M12-executor-tooling/README.md`. Two arcs:
 
     - **Arc A — structured task tracking.** A per-session TODO list the executor
       **tracks and checks off as it works — it does not generate it** (decomposition
