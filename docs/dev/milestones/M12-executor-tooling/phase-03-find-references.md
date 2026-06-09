@@ -1,7 +1,7 @@
 # Phase 03: Find-references in `symbols` (tree-sitter call-site search)
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** none (additive extension of the existing `symbols` tool)
 **Estimated diff:** ~320 lines (≈140 production + ≈180 tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -384,3 +384,26 @@ test result: ok. 685 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fi
 - (pending) — `feat: add references mode to symbols tool`
 
 **Notes for review:** None — implementation matches spec exactly. Grep confirms pinned literals landed: `grep -c 'RUST_REF_QUERY\|PYTHON_REF_QUERY\|VALID_MODES\|parse_references\|format_references' executor/src/tools/symbols.rs` → 20 matches across the expected definitions and call sites.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — single-file additive change exactly as spec'd;
+  definitions path byte-identical (all 19 prior `symbols` tests pass unchanged),
+  11 new tests all present and green. All four gates re-run green independently
+  (`fmt --check` clean, `build` zero warnings, `clippy -D warnings` clean,
+  `cargo test` 685 passed / 0 failed / 2 ignored). Production code clean of
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`. The
+  `references_exclude_strings_and_comments` test is mutation-resistant (asserts
+  `references == 2`; a substring-grep impl would count the comment + string and
+  yield 4). Committed `11b34cb` (the Update Log's "(pending)" was stale — the
+  `feat:` commit landed).
+- **Calibration:** one nit (not folded, no bounce) — `format_references`'s
+  truncation note reuses the definitions copy "…narrow your path or add a kind
+  filter to see more…", but `kind` is rejected in references mode, so the advice
+  is contradictory for this mode. Architect-induced (the spec pinned the "same
+  `[… truncated …]` shape"). One occurrence; harmless model-facing text. Fix
+  opportunistically in a future phase that touches `symbols` — not worth a
+  re-dispatch.

@@ -4,38 +4,38 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-03** (M12 Arc B — find-references in `symbols`),
-drafted 2026-06-09, **ready to dispatch** (`/rexymcp:dispatch phase-03`). Status
-`todo`; do not auto-advance — the user dispatches.
+**Active phase:** **none** — phase-03 approved 2026-06-09 (approved_first_try).
+The next M12 phase is **phase-04** (Arc B — surface rustc machine-applicable
+suggested-fix spans); the architect activates it via `/rexymcp:architect next`
+(do not auto-advance).
 
-**phase-03 scope (active — M12 Arc B):** additive extension of the existing
-`symbols` tool, **single file** (`executor/src/tools/symbols.rs`) — nothing else
-pins its schema/description (router categorizes by name, registry tests use a
-mock), so zero blast radius outside the file. New `mode: Option<String>` arg
-(`"definitions"` default | `"references"`); two reference tree-sitter queries
-(`RUST_REF_QUERY` capturing `(identifier)`/`(type_identifier)`/`(field_identifier)`
-— all three verified present in tree-sitter-rust 0.24.2 `node-types.json`;
-`PYTHON_REF_QUERY` = `(identifier)`); a `parse_references` mirroring `parse_file`
-(exact-token match, carries a trimmed source-line snippet); a `format_references`
-mirroring `format_output` (`✓ N references to …`, `{path,name,references,files,
-truncated}` metadata); references mode wired into `execute` + the single-file path
-honoring the **same** gitignore/`.rs`/`.py`/`max_results`/single-file semantics.
-**References include the definition site** (def + N calls → N+1). Loud failures
-for inapplicable combos: `kind` + references rejected, invalid `mode` rejected
-(STANDARDS §2.2). The grep-differentiator is pinned: occurrences inside string
-literals and comments are **not** references (tree-sitter token, not substring;
-`foo` ≠ `foobar`). ~11 new hermetic tests (real tree-sitter parse over `TempDir`,
-incl. 3 pinned negatives: substring, string/comment exclusion, kind-in-refs).
-Definitions-mode path stays byte-identical (existing tests unchanged). No new dep.
-E2E declared N/A (tool reachable only via a full `execute_phase` loop; the unit
-tests are de facto end-to-end — real grammars, real files, no mock). Executor
-target: Qwen/Qwen3.6-27B-FP8. **Out of scope:** semantic scope resolution, new
-languages, method/field disambiguation, the other Arc B phases (04/05),
-task tracking (06/07).
+**phase-03 done** (2026-06-09, approved_first_try): M12 Arc B's first
+code-intelligence win — find-references in the `symbols` tool. Single-file,
+additive (`executor/src/tools/symbols.rs`, +584/-75). New `mode: Option<String>`
+arg (`"definitions"` default | `"references"`); two reference tree-sitter queries
+(`RUST_REF_QUERY` = `(identifier)`/`(type_identifier)`/`(field_identifier)`,
+`PYTHON_REF_QUERY` = `(identifier)`); `parse_references` (exact-token match +
+trimmed source-line snippet) + `format_references` (`✓ N references to …`,
+`{path,name,references,files,truncated}` metadata); references wired into
+`execute` + `execute_single_file` honoring the same gitignore/`.rs`/`.py`/
+`max_results`/single-file semantics. **References include the definition site**
+(def + N calls → N+1). Loud rejection of `kind`+references and invalid `mode`.
+The grep-differentiator is **pinned and mutation-resistant**: string/comment
+occurrences are excluded (`references_exclude_strings_and_comments` asserts `==2`,
+not the 4 a substring grep would yield); `foo` ≠ `foobar`. 11 new hermetic tests
+(real tree-sitter over `TempDir`); definitions path byte-identical (19 prior
+tests unchanged). **685 passed / 0 failed / 2 ignored**, all four gates re-run
+green independently; production clean of `unwrap`/`expect`/`panic`/`unsafe`/
+`#[allow]`. Clean **59-turn first-try** with full bookkeeping (status flip +
+Update Log + single `feat:` commit `11b34cb`); approved `_`. **One nit (no fold,
+no bounce):** `format_references`'s truncation note reuses the definitions copy
+"…add a kind filter…", contradictory in references mode where `kind` is rejected
+— architect-induced (spec pinned the "same shape"); fix opportunistically in a
+future `symbols`-touching phase. No new dep.
 
 **Prior active-phase pointer (now done):**
 
-**phase-02 approved 2026-06-09.**
+**phase-02 approved 2026-06-09 (approved_first_try).**
 
 **phase-02 scope (active — M12 Arc 0):** additive new CLI command, mcp-crate only
 (mirrors `init.rs`/`health`). New `mcp/src/doctor.rs` with pure helpers
