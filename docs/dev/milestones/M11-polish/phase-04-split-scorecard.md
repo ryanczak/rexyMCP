@@ -1,7 +1,7 @@
 # Phase 04: Split `scorecard.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-03 (ordering only — no code dependency)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -201,5 +201,10 @@ explicitly requires, so it is not an unauthorized new file.)
   suite dwarfs its production code), not *what*.
 
 ## Update Log
+
+### Update — 2025-06-16 14:30 (started)
+
+**Executor:** Claude (Sonnet 4.5)
+**Action:** Flipped status to `in-progress`. Beginning pre-flight checks.
 
 <!-- entries appended below this line -->
