@@ -4,34 +4,57 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-05b** — [Split `verifier.rs` — extract test
-suite](milestones/M11-polish/phase-05b-split-verifier.md). Drafted/activated
-2026-06-09; dispatch via `/rexymcp:dispatch phase-05b`.
+**Active phase:** **phase-06** — [Inject the current date into the executor
+system prompt](milestones/M11-polish/phase-06-datetime-injection.md).
+Drafted/activated 2026-06-09; dispatch via `/rexymcp:dispatch phase-06`.
 
-**phase-05b scope (active):** pure file-split refactor — the **final
-file-decomposition phase of M11**, same shape as phases 03/04/05a. Move the
-single `#[cfg(test)] mod tests { … }` block (re-verified on HEAD while
-activating: total **1 163** lines, `#[cfg(test)]` at 495, `mod tests {` at 496,
-`use super::*;` at 497, inner body **497–1162**, closing `}` at 1163; **35**
-`#[test]`/`#[tokio::test]` fns, **2** of them `#[ignore]`-gated live-`rustc`
-tests) out of `executor/src/governor/verifier.rs` into a new sibling
-`executor/src/governor/verifier_tests.rs`. Production lines 1–494 untouched;
-verifier.rs ends ≤ 500 lines. **Two load-bearing pre-injections (same as
-05a):** (1) method prescribed `sed` not `write_file`
-(`sed -n '497,1162p' verifier.rs > verifier_tests.rs`); (2) the declaration
-**requires `#[path = "verifier_tests.rs"]`** because `verifier` is a single-file
-module (`pub mod verifier;` in governor/mod.rs:3) — a bare `mod tests;` would
-make the compiler look for `verifier/tests.rs` and fail. Plus: the
-`#[tokio::test]` async tests **and the 2 `#[ignore]`-gated live `rustc` tests**
-move verbatim, no special handling — the **`2 ignored`** count is part of the
-regression guard (if it drops to 0, an `#[ignore]` was lost). Zero logic change;
-existing **665 passed / 2 ignored** executor tests must hold at the same counts.
-Executor target: Qwen/Qwen3.6-27B-FP8.
+**phase-06 scope (active — the FINAL M11 phase):** give the executor temporal
+grounding. Prepend `Today's date is YYYY-MM-DD (UTC).` to the top of the
+assembled system prompt, formatted from the same injected `deps.clock`
+epoch-millis the loop already uses — closing the recurring hallucinated-Update-Log-date
+quirk (executor stamped `2025-07-09`/`2025-07-15` across recent phases).
+**Implementation correction vs. the original scope sketch:** the sketch said
+"chrono already a dep" — **it is not** (the workspace carries no date crate by
+design; `grep chrono Cargo.toml` is empty). So the phase formats the date with a
+**pure civil-from-days integer routine** (pre-injected verbatim, verified against
+5 fixtures incl. leap-day/epoch-zero/year-boundary) — **no dependency added**.
+**Additive shape (the load-bearing design choice):** a new `pub fn
+datetime_header(now_ms)` + private `format_utc_date(now_ms)` in
+`agent/prompt.rs`, composed at the single call site `agent/mod.rs:115` via
+`format!` — **`assemble_system_prompt`'s signature and its 3 existing tests are
+untouched**, dodging the mechanical test-call-site churn that has stalled the
+executor. 6 new tests (5 boundary/negative date cases + 1 header-content). Only
+two files touched (`prompt.rs`, `mod.rs`). **Kickoff amendments applied by the
+architect (authorized by the 2026-06-09 scope decision):** `architecture.md`
+§ Status gained the M11 "Executor temporal grounding" sub-goal; the M11 README
+gained the phase-06 row + goal/exit/motivation updates. Executor target:
+Qwen/Qwen3.6-27B-FP8.
 
-**📌 After 05b:** the **datetime-injection** phase (executor system-prompt
-temporal grounding) is the final M11 phase — see the M11 scope decision below.
-Do not draft it until 05b is done; it amends `architecture.md` § Status + the
-M11 README phase table at its kickoff (human-gated, same deferral as M10).
+**📌 M11 milestone close after phase-06:** phase-06 is the **last in-scope M11
+phase**. When it lands and is approved, M11 is complete → stop at the human gate,
+write the milestone retrospective in the README Notes, fold any calibration
+lessons (none expected — six clean splits + one additive feature), set this file
+to "none", and ask the user before kicking off M12 (Executor Tooling, sketched in
+`architecture.md` § Status #12). **Do not auto-advance into M12.**
+
+**Prior active-phase pointer (now done):**
+
+**phase-05b done** (2026-06-09, approved_first_try): pure file-split refactor —
+moved the single ~666-line `#[cfg(test)] mod tests { … }` block out of
+`executor/src/governor/verifier.rs` (1 163 lines) into a new sibling
+`executor/src/governor/verifier_tests.rs` (666 lines, all 35 test fns + 2
+`#[ignore]` live-`rustc` tests preserved), replacing it with a
+`#[cfg(test)] #[path = "verifier_tests.rs"] mod tests;` declaration. verifier.rs
+now **497 lines** (production 1–494 byte-identical to parent, verified by `diff`
+against `HEAD~1`, + the 3-line declaration). The `sed` move landed clean; **665
+passed / 2 ignored executor + 270 mcp** pass on independent re-run, all four
+gates green. Committed `105e15a` (refactor); approved `eeba032` (docs). **Clean
+first-try, 47 turns — sixth consecutive split refactor (M8 ×2, M11 phases
+03/04/05a/05b) to land first-try on the prescribed `sed`-move recipe; the
+`#[tokio::test]`/`#[ignore]`-moves-verbatim pre-injection held (the `2 ignored`
+guard caught nothing — none lost).** Process note (cosmetic, no fold): the
+Update Log self-labels "rexyMCP executor" and stamps `2025-07-09` — the recurring
+local-LLM identity/clock quirk that **phase-06 directly addresses**.
 
 **Prior active-phase pointer (now done):**
 
@@ -130,10 +153,9 @@ criterion, added E2E section + two negative-case tests per the "pin negative
 cases" fold).
 
 **Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — in progress.
-Six split/polish phases done so far: **01 (done)**, **02 (done)**,
-**03 (done — split agent/mod.rs)**, **04 (done — split scorecard.rs)**,
-**05a (done — split server.rs)**, **05b active (split verifier.rs)**; the
-datetime-injection phase is queued as the final M11 phase after 05b.
+**01–05b done** (01 governor config, 02 `rexymcp init`, 03/04/05a/05b the four
+test-suite splits); **06 active (datetime injection)** — the final M11 phase.
+After 06 approves, M11 closes at the human gate (retrospective + M12 sign-off).
 
 **phase-01 done** (2026-06-09, approved_first_try): moved the three governor
 hard-fail thresholds (`identical_call_threshold`, `verifier_persistence_threshold`,

@@ -674,6 +674,12 @@ The project plan. Each entry becomes a milestone with its own
       (1 153 → ≤ 400 lines, phase-04), `server.rs` (1 225 → ≤ 530 lines,
       phase-05a), `governor/verifier.rs` (1 163 → ≤ 340 lines, phase-05b). Pure
       move refactors — no logic changes.
+    - **Executor temporal grounding.** The local model has no clock, so it
+      stamps hallucinated dates in its Update Log. The system prompt now opens
+      with a `Today's date is YYYY-MM-DD (UTC).` line formatted from the same
+      injected `deps.clock` epoch-millis the rest of the loop uses (phase-06,
+      `agent/prompt.rs`). Pure integer date arithmetic — no date dependency, no
+      real wall-clock read, so it stays deterministic under test.
 
 12. **M12 — Executor Tooling** *(sketch, designed 2026-06-09; not yet kicked
     off — fleshed out at the M11 boundary)*. Net-new executor capability aimed at

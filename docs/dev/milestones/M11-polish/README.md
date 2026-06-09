@@ -1,15 +1,18 @@
 # M11 — Polish
 
 **Goal:** Improve maintainability, tuneability, and quality of life without
-changing any externally-visible behaviour. Three sub-goals: (1) make the
+changing any externally-visible behaviour. Four sub-goals: (1) make the
 governor's hard-fail thresholds configurable via `rexymcp.toml` instead of
 compile-time constants; (2) add a `rexymcp init` command that scaffolds a
 documented `rexymcp.toml` so new projects can get started without reading source
 (`.mcp.json` is intentionally excluded — the plugin registers via marketplace,
 and a `.mcp.json` causes duplicate server conflicts in Claude Code); (3) decompose the four largest source files so no production file
-exceeds the executor's RunawayOutput limit and each file has one clear concern.
+exceeds the executor's RunawayOutput limit and each file has one clear concern;
+(4) give the executor temporal grounding — inject the real date into its system
+prompt so it stops stamping hallucinated dates in its Update Log.
 
-**Status:** in progress — phases 01, 02, 03, 04, 05a, 05b done.
+**Status:** in progress — phases 01, 02, 03, 04, 05a, 05b done; phase 06
+(datetime injection) remaining.
 
 **Depends on:** M1–M10 (all complete). No new feature work here; this milestone
 references existing behaviour only.
@@ -22,6 +25,7 @@ references existing behaviour only.
 | No `rexymcp init` command | New users must hand-author `rexymcp.toml` by reading the source |
 | `executor/src/agent/mod.rs` is 4 420 lines (≈130 KB) | Exceeds the 100 KB RunawayOutput limit — the executor can only range-read it; test suite is 80% of the file |
 | `mcp/src/scorecard.rs` is 1 153 lines, `mcp/src/server.rs` is 1 225 lines, `executor/src/governor/verifier.rs` is 1 163 lines | Same pattern: large test suites buried in the same file as production code, obscuring structure |
+| The executor stamps hallucinated dates (`2025-07-09`, `2025-07-15`) in its Update Log | The local model has no clock; the system prompt never told it the date, though `deps.clock` is already injected everywhere else |
 
 ## Phases
 
@@ -33,6 +37,7 @@ references existing behaviour only.
 | 04 | Split `scorecard.rs` — extract test suite | done | refactor | s |
 | 05a | Split `server.rs` — extract test suite | done | refactor | s |
 | 05b | Split `verifier.rs` — extract test suite | done | refactor | s |
+| 06 | Inject current date into executor system prompt | todo | feature | s |
 
 ## Exit criteria
 
@@ -46,6 +51,8 @@ references existing behaviour only.
 - [ ] `mcp/src/scorecard.rs`, `mcp/src/server.rs`, and
   `executor/src/governor/verifier.rs` each have tests extracted to a sibling
   `*_tests.rs` file (or a `tests/` subdir where Rust module rules require it).
+- [ ] The executor system prompt opens with a `Today's date is YYYY-MM-DD
+  (UTC).` line formatted from the injected clock; no date dependency is added.
 - [ ] All gates pass: `cargo fmt --all --check`, `cargo build` (zero warnings),
   `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`.
 
