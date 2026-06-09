@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 mod cap;
 mod dashboard;
+mod init;
 mod log_query;
 mod roots;
 mod runner;
@@ -124,6 +125,15 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Scaffold rexymcp.toml in the target directory
+    Init {
+        /// Directory to initialise (default: current directory).
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        /// Overwrite existing files without prompting.
+        #[arg(long)]
+        force: bool,
+    },
     /// Live dashboard — tails the active session log and refreshes continuously
     Dashboard {
         /// Target repo root (where `.rexymcp/sessions/` lives)
@@ -204,6 +214,10 @@ async fn main() -> anyhow::Result<()> {
                     format!("{{\"error\": \"failed to serialize PhaseResult: {}\"}}", e)
                 })
             );
+            Ok(())
+        }
+        Commands::Init { dir, force } => {
+            init::run(&dir, force)?;
             Ok(())
         }
         Commands::Serve { config } => {
