@@ -379,7 +379,7 @@ mod tests {
         let summary = StatusSummary::default();
         let lines = session_lines(&summary, 0, Some(0));
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert_eq!(text.last().unwrap(), "🐕       🧠");
+        assert_eq!(text.last().unwrap(), "🐕  🧠");
     }
 
     #[test]
