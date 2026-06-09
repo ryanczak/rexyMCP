@@ -38,11 +38,24 @@ const VALID_KINDS: &[&str] = &[
     "function", "struct", "enum", "trait", "module", "const", "static", "type", "macro", "class",
 ];
 
+const VALID_MODES: &[&str] = &["definitions", "references"];
+
+const RUST_REF_QUERY: &str = r#"
+(identifier) @ref
+(type_identifier) @ref
+(field_identifier) @ref
+"#;
+
+const PYTHON_REF_QUERY: &str = r#"
+(identifier) @ref
+"#;
+
 #[derive(Deserialize)]
 struct SymbolsArgs {
     name: Option<String>,
     path: Option<String>,
     kind: Option<String>,
+    mode: Option<String>,
     max_results: Option<usize>,
 }
 
@@ -52,6 +65,13 @@ struct SymbolHit {
     col: usize,
     kind: String,
     name: String,
+}
+
+struct RefHit {
+    rel_path: String,
+    line: usize,
+    col: usize,
+    snippet: String,
 }
 
 pub struct Symbols {
@@ -65,7 +85,7 @@ impl Tool for Symbols {
     }
 
     fn description(&self) -> &str {
-        "Find symbol definitions by name across the scoped repo using tree-sitter. Supports Rust and Python."
+        "Find symbol definitions or references by name across the scoped repo using tree-sitter. Supports Rust and Python. In references mode, `kind` is not supported."
     }
 
     fn schema(&self) -> Value {
@@ -82,7 +102,11 @@ impl Tool for Symbols {
                 },
                 "kind": {
                     "type": "string",
-                    "description": "Restrict to one kind. Valid: function, struct, enum, trait, module, const, static, type, macro, class."
+                    "description": "Restrict to one kind (definitions mode only). Valid: function, struct, enum, trait, module, const, static, type, macro, class."
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "Search mode: \"definitions\" (default) or \"references\". In references mode, every syntactic usage of the name is returned."
                 },
                 "max_results": {
                     "type": "integer",
@@ -130,6 +154,30 @@ impl Tool for Symbols {
             });
         }
 
+        let mode = parsed.mode.as_deref();
+        if let Some(m) = mode
+            && !VALID_MODES.contains(&m)
+        {
+            return Ok(ToolResult {
+                output: String::new(),
+                error: Some(format!(
+                    "invalid mode: {m}. Valid modes: {}",
+                    VALID_MODES.join(", ")
+                )),
+                metadata: None,
+            });
+        }
+
+        if mode == Some("references") && parsed.kind.is_some() {
+            return Ok(ToolResult {
+                output: String::new(),
+                error: Some("kind filter is not supported in references mode".to_string()),
+                metadata: None,
+            });
+        }
+
+        let is_references = mode == Some("references");
+
         let max_results = parsed.max_results.unwrap_or(100);
         if max_results < 1 {
             return Ok(ToolResult {
@@ -166,67 +214,135 @@ impl Tool for Symbols {
             .unwrap_or_else(|_| search_root.clone());
 
         if search_root.is_file() {
-            return execute_single_file(&abs_root, &name, parsed.kind.as_deref(), max_results);
+            return execute_single_file(
+                &abs_root,
+                &name,
+                parsed.kind.as_deref(),
+                is_references,
+                max_results,
+            );
         }
 
-        let mut hits: Vec<SymbolHit> = Vec::new();
+        if is_references {
+            let mut hits: Vec<RefHit> = Vec::new();
 
-        for entry in Walk::new(&abs_root) {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+            for entry in Walk::new(&abs_root) {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
 
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                continue;
-            }
+                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    continue;
+                }
 
-            let ext = entry.path().extension().and_then(|e| e.to_str());
-            let lang = match ext {
-                Some("rs") => Language::Rust,
-                Some("py") => Language::Python,
-                _ => continue,
-            };
+                let ext = entry.path().extension().and_then(|e| e.to_str());
+                let lang = match ext {
+                    Some("rs") => Language::Rust,
+                    Some("py") => Language::Python,
+                    _ => continue,
+                };
 
-            let content = match std::fs::read_to_string(entry.path()) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+                let content = match std::fs::read_to_string(entry.path()) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
 
-            let file_hits = match parse_file(&content, lang, &name, parsed.kind.as_deref()) {
-                Ok(h) => h,
-                Err(_) => continue,
-            };
+                let file_hits = match parse_references(&content, lang, &name) {
+                    Ok(h) => h,
+                    Err(_) => continue,
+                };
 
-            let rel_path = entry
-                .path()
-                .strip_prefix(&abs_root)
-                .unwrap_or(entry.path())
-                .to_string_lossy()
-                .to_string();
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(&abs_root)
+                    .unwrap_or(entry.path())
+                    .to_string_lossy()
+                    .to_string();
 
-            for h in file_hits {
-                hits.push(SymbolHit {
-                    rel_path: rel_path.clone(),
-                    ..h
-                });
-                if hits.len() >= max_results {
-                    return Ok(format_output(&hits, &abs_root, &name, true));
+                for h in file_hits {
+                    hits.push(RefHit {
+                        rel_path: rel_path.clone(),
+                        ..h
+                    });
+                    if hits.len() >= max_results {
+                        return Ok(format_references(&hits, &abs_root, &name, true));
+                    }
                 }
             }
-        }
 
-        if hits.is_empty() {
-            Ok(ToolResult {
-                output: String::new(),
-                error: Some(format!(
-                    "no symbols named `{name}` in {}",
-                    abs_root.display()
-                )),
-                metadata: None,
-            })
+            if hits.is_empty() {
+                Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(format!(
+                        "no references to `{name}` in {}",
+                        abs_root.display()
+                    )),
+                    metadata: None,
+                })
+            } else {
+                Ok(format_references(&hits, &abs_root, &name, false))
+            }
         } else {
-            Ok(format_output(&hits, &abs_root, &name, false))
+            let mut hits: Vec<SymbolHit> = Vec::new();
+
+            for entry in Walk::new(&abs_root) {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+
+                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    continue;
+                }
+
+                let ext = entry.path().extension().and_then(|e| e.to_str());
+                let lang = match ext {
+                    Some("rs") => Language::Rust,
+                    Some("py") => Language::Python,
+                    _ => continue,
+                };
+
+                let content = match std::fs::read_to_string(entry.path()) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let file_hits = match parse_file(&content, lang, &name, parsed.kind.as_deref()) {
+                    Ok(h) => h,
+                    Err(_) => continue,
+                };
+
+                let rel_path = entry
+                    .path()
+                    .strip_prefix(&abs_root)
+                    .unwrap_or(entry.path())
+                    .to_string_lossy()
+                    .to_string();
+
+                for h in file_hits {
+                    hits.push(SymbolHit {
+                        rel_path: rel_path.clone(),
+                        ..h
+                    });
+                    if hits.len() >= max_results {
+                        return Ok(format_output(&hits, &abs_root, &name, true));
+                    }
+                }
+            }
+
+            if hits.is_empty() {
+                Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(format!(
+                        "no symbols named `{name}` in {}",
+                        abs_root.display()
+                    )),
+                    metadata: None,
+                })
+            } else {
+                Ok(format_output(&hits, &abs_root, &name, false))
+            }
         }
     }
 }
@@ -240,6 +356,7 @@ fn execute_single_file(
     path: &std::path::PathBuf,
     name: &str,
     kind_filter: Option<&str>,
+    is_references: bool,
     max_results: usize,
 ) -> Result<ToolResult> {
     let ext = path.extension().and_then(|e| e.to_str());
@@ -266,36 +383,56 @@ fn execute_single_file(
         }
     };
 
-    let file_hits = match parse_file(&content, lang, name, kind_filter) {
-        Ok(h) => h,
-        Err(_) => {
-            return Ok(ToolResult {
+    if is_references {
+        let file_hits = match parse_references(&content, lang, name) {
+            Ok(h) => h,
+            Err(_) => {
+                return Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(format!("no references to `{name}` in {}", path.display())),
+                    metadata: None,
+                });
+            }
+        };
+
+        let mut hits: Vec<RefHit> = file_hits;
+        let truncated = hits.len() >= max_results;
+        hits.truncate(max_results);
+
+        if hits.is_empty() {
+            Ok(ToolResult {
+                output: String::new(),
+                error: Some(format!("no references to `{name}` in {}", path.display())),
+                metadata: None,
+            })
+        } else {
+            Ok(format_references(&hits, path, name, truncated))
+        }
+    } else {
+        let file_hits = match parse_file(&content, lang, name, kind_filter) {
+            Ok(h) => h,
+            Err(_) => {
+                return Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(format!("no symbols named `{name}` in {}", path.display())),
+                    metadata: None,
+                });
+            }
+        };
+
+        let mut hits: Vec<SymbolHit> = file_hits;
+        let truncated = hits.len() >= max_results;
+        hits.truncate(max_results);
+
+        if hits.is_empty() {
+            Ok(ToolResult {
                 output: String::new(),
                 error: Some(format!("no symbols named `{name}` in {}", path.display())),
                 metadata: None,
-            });
+            })
+        } else {
+            Ok(format_output(&hits, path, name, truncated))
         }
-    };
-
-    let mut hits: Vec<SymbolHit> = file_hits
-        .into_iter()
-        .map(|h| SymbolHit {
-            rel_path: path.to_string_lossy().to_string(),
-            ..h
-        })
-        .collect();
-
-    let truncated = hits.len() >= max_results;
-    hits.truncate(max_results);
-
-    if hits.is_empty() {
-        Ok(ToolResult {
-            output: String::new(),
-            error: Some(format!("no symbols named `{name}` in {}", path.display())),
-            metadata: None,
-        })
-    } else {
-        Ok(format_output(&hits, path, name, truncated))
     }
 }
 
@@ -354,6 +491,48 @@ fn parse_file(
     Ok(hits)
 }
 
+fn parse_references(source: &str, lang: Language, requested_name: &str) -> Result<Vec<RefHit>> {
+    let (language, query_str) = match lang {
+        Language::Rust => (tree_sitter_rust::LANGUAGE.into(), RUST_REF_QUERY),
+        Language::Python => (tree_sitter_python::LANGUAGE.into(), PYTHON_REF_QUERY),
+    };
+
+    let language: tree_sitter::Language = language;
+    let query = Query::new(&language, query_str)?;
+
+    let mut parser = Parser::new();
+    parser.set_language(&language)?;
+
+    let Some(tree) = parser.parse(source.as_bytes(), None) else {
+        return Ok(Vec::new());
+    };
+
+    let mut cursor = QueryCursor::new();
+    let mut it = cursor.matches(&query, tree.root_node(), source.as_bytes());
+
+    let mut hits = Vec::new();
+    while let Some(m) = it.next() {
+        for cap in m.captures {
+            let Some(text) = source.get(cap.node.byte_range()) else {
+                continue;
+            };
+            if text != requested_name {
+                continue;
+            }
+            let p = cap.node.start_position();
+            let snippet = source.lines().nth(p.row).unwrap_or("").trim().to_string();
+            hits.push(RefHit {
+                rel_path: String::new(),
+                line: p.row + 1,
+                col: p.column + 1,
+                snippet,
+            });
+        }
+    }
+
+    Ok(hits)
+}
+
 fn format_output(hits: &[SymbolHit], abs_root: &Path, name: &str, truncated: bool) -> ToolResult {
     let file_set: std::collections::HashSet<&str> =
         hits.iter().map(|h| h.rel_path.as_str()).collect();
@@ -387,6 +566,47 @@ fn format_output(hits: &[SymbolHit], abs_root: &Path, name: &str, truncated: boo
         "path": abs_root.to_string_lossy(),
         "name": name,
         "definitions": hits.len(),
+        "files": file_count,
+        "truncated": truncated,
+    });
+
+    ToolResult {
+        output,
+        error: None,
+        metadata: Some(metadata),
+    }
+}
+
+fn format_references(hits: &[RefHit], abs_root: &Path, name: &str, truncated: bool) -> ToolResult {
+    let file_set: std::collections::HashSet<&str> =
+        hits.iter().map(|h| h.rel_path.as_str()).collect();
+    let file_count = file_set.len();
+
+    let mut output = format!("✓ {} references to `{name}`\n\n", hits.len());
+
+    let mut current_file = "";
+    for hit in hits {
+        if hit.rel_path != current_file {
+            if !current_file.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(&format!("{}:\n", hit.rel_path));
+            current_file = &hit.rel_path;
+        }
+        output.push_str(&format!("  {}:{}  {}\n", hit.line, hit.col, hit.snippet));
+    }
+
+    if truncated {
+        output.push_str(&format!(
+            "\n[… truncated at {} references; narrow your path or add a kind filter to see more …]",
+            hits.len()
+        ));
+    }
+
+    let metadata = json!({
+        "path": abs_root.to_string_lossy(),
+        "name": name,
+        "references": hits.len(),
         "files": file_count,
         "truncated": truncated,
     });
@@ -862,5 +1082,294 @@ mod tests {
         assert_eq!(meta["definitions"].as_u64().unwrap(), 2);
         assert_eq!(meta["files"].as_u64().unwrap(), 2);
         assert!(!meta["truncated"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn references_finds_call_sites() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("src/lib.rs", "fn foo() { foo(); foo(); }\n")],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        assert!(result.output.contains("✓ 3 references to `foo`"));
+        let meta = result.metadata.as_ref().unwrap();
+        assert_eq!(meta["references"].as_u64().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn references_exclude_substring() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("src/lib.rs", "fn foobar() {}\nfn foo() { foo(); }\n")],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        let meta = result.metadata.as_ref().unwrap();
+        let count = meta["references"].as_u64().unwrap();
+        // foo def + foo call = 2, foobar occurrences should not match
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn references_exclude_strings_and_comments() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[(
+                "src/lib.rs",
+                "fn foo() { foo(); }\n// foo again\nfn other() { let s = \"foo\"; }\n",
+            )],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        let meta = result.metadata.as_ref().unwrap();
+        // def + call = 2; comment and string literal excluded
+        assert_eq!(meta["references"].as_u64().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn references_across_multiple_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[
+                ("a.rs", "fn foo() { foo(); }\n"),
+                ("b.rs", "fn bar() { foo(); }\n"),
+            ],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        let meta = result.metadata.as_ref().unwrap();
+        assert_eq!(meta["files"].as_u64().unwrap(), 2);
+        // a.rs: foo def + foo call = 2; b.rs: foo call = 1; total = 3
+        assert_eq!(meta["references"].as_u64().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn references_python_identifier() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("src/lib.py", "def foo():\n    pass\nfoo()\n")],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        let meta = result.metadata.as_ref().unwrap();
+        // def + call = 2
+        assert_eq!(meta["references"].as_u64().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn references_respects_max_results() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("src/lib.rs", "fn foo() { foo(); foo(); foo(); }\n")],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "max_results": 1,
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        let meta = result.metadata.as_ref().unwrap();
+        assert!(meta["truncated"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn references_kind_filter_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(dir.path(), &[("src/lib.rs", "fn foo() {}\n")]);
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "kind": "function",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_some());
+        assert!(
+            result
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("not supported in references mode")
+        );
+    }
+
+    #[tokio::test]
+    async fn references_invalid_mode_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(dir.path(), &[("src/lib.rs", "fn foo() {}\n")]);
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "usages",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_some());
+        assert!(result.error.as_ref().unwrap().contains("invalid mode"));
+    }
+
+    #[tokio::test]
+    async fn references_single_file_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("src/lib.rs");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "fn foo() { foo(); }\n").unwrap();
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": file.to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        let meta = result.metadata.as_ref().unwrap();
+        assert_eq!(meta["references"].as_u64().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn references_no_matches_advisory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(dir.path(), &[("src/lib.rs", "fn foo() {}\n")]);
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "nonexistent",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_some());
+        assert!(result.error.as_ref().unwrap().contains("no references to"));
+    }
+
+    #[tokio::test]
+    async fn references_snippet_shows_source_line() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(dir.path(), &[("src/lib.rs", "fn foo() { foo(); }\n")]);
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.error.is_none(),
+            "unexpected error: {:?}",
+            result.error
+        );
+        assert!(result.output.contains("foo();"));
     }
 }

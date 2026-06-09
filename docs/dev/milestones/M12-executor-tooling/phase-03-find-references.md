@@ -1,7 +1,7 @@
 # Phase 03: Find-references in `symbols` (tree-sitter call-site search)
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** none (additive extension of the existing `symbols` tool)
 **Estimated diff:** ~320 lines (≈140 production + ≈180 tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -323,3 +323,64 @@ None. No new dependencies (`tree-sitter`, `tree-sitter-rust`,
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-09 (started)
+
+**Executor:** rexyMCP executor (Claude Sonnet 4.6)
+
+**Progress:** Phase 03 implementation started. Adding `mode` parameter to `symbols` tool with `references` support via tree-sitter call-site search. All changes in `executor/src/tools/symbols.rs`.
+
+### Update — 2026-06-09 (complete)
+
+**Summary:** Added `mode` parameter to the `symbols` tool enabling `references` mode — a syntactic call-site search via tree-sitter. All changes are in `executor/src/tools/symbols.rs`: new `VALID_MODES` const, `RUST_REF_QUERY`/`PYTHON_REF_QUERY` constants, `RefHit` struct, `parse_references` and `format_references` functions, wiring into `execute` and `execute_single_file`, schema/description updates, and 11 new tests. No deviations from the spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean — no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.12s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.55s
+
+cargo test 2>&1 | tail -30
+test result: ok. 685 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**Verification summary:** `cargo fmt --all --check` clean, `cargo build` zero new warnings, `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo test` 685 passed (0 failed).
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable CLI/binary artifact. Unit tests invoke the real `Symbols` tool with real compiled-in tree-sitter grammars against real files in a `TempDir`. Key outputs:
+- `references_finds_call_sites`: output contains `✓ 3 references to \`foo\``; metadata `references` == 3 (def + 2 calls).
+- `references_exclude_strings_and_comments`: metadata `references` == 2 (def + call only; comment `foo` and string `"foo"` excluded by tree-sitter parse tree).
+
+**Files changed:**
+- `executor/src/tools/symbols.rs` — Added `mode` parameter, reference queries, `RefHit` struct, `parse_references`, `format_references`, wired into `execute`/`execute_single_file`, updated schema/description, 11 new tests.
+- `docs/dev/milestones/M12-executor-tooling/phase-03-find-references.md` — Status `todo` → `review`, Update Log entries.
+- `docs/dev/milestones/M12-executor-tooling/README.md` — Phase table row updated to `review`.
+
+**New tests:**
+- `references_finds_call_sites` in `executor/src/tools/symbols.rs`
+- `references_exclude_substring` in `executor/src/tools/symbols.rs`
+- `references_exclude_strings_and_comments` in `executor/src/tools/symbols.rs`
+- `references_across_multiple_files` in `executor/src/tools/symbols.rs`
+- `references_python_identifier` in `executor/src/tools/symbols.rs`
+- `references_respects_max_results` in `executor/src/tools/symbols.rs`
+- `references_kind_filter_rejected` in `executor/src/tools/symbols.rs`
+- `references_invalid_mode_rejected` in `executor/src/tools/symbols.rs`
+- `references_single_file_path` in `executor/src/tools/symbols.rs`
+- `references_no_matches_advisory` in `executor/src/tools/symbols.rs`
+- `references_snippet_shows_source_line` in `executor/src/tools/symbols.rs`
+
+**Commits:**
+- (pending) — `feat: add references mode to symbols tool`
+
+**Notes for review:** None — implementation matches spec exactly. Grep confirms pinned literals landed: `grep -c 'RUST_REF_QUERY\|PYTHON_REF_QUERY\|VALID_MODES\|parse_references\|format_references' executor/src/tools/symbols.rs` → 20 matches across the expected definitions and call sites.
