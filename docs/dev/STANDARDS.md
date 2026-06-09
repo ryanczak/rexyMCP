@@ -121,6 +121,17 @@ comments above every function. Doc comments (`///`) on public APIs are fine.
   **stop, report a blocker**, and wait for principal-engineer authorization.
 - When lifting a module from Rexy, lift the code — do **not** add Rexy as a
   dependency. rexyMCP does not link against Rexy.
+- **Runtime toolchain binaries are distinct from crate dependencies.** A crate
+  dep is compiled in (`cargo build` installs it); a *runtime* shell-out to a
+  binary (`cargo`, `tsc`, `ruff`, `rust-analyzer`, …) must exist on the executor
+  host. If a phase makes the code shell out to a **new** binary, declare it in the
+  phase doc's Authorizations/Pre-flight (the architect verifies availability at
+  design time). When a required binary is **absent at runtime**, degrade to a
+  model-visible advisory `ToolResult`/`VerifierResult` that names the missing
+  binary and the remedy — never `panic!`, never an opaque "spawn failed", and not
+  a verifier-failure outcome the governor counts as a strike (a missing tool is a
+  *skipped* check, not a failed one). This fits the error model: a missing
+  toolchain is a model-visible outcome, not a `Result::Err`.
 
 ---
 

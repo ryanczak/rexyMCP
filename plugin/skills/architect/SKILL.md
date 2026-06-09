@@ -77,6 +77,28 @@ inspecting the repo:
 (e.g. their `cargo` invocation is `cargo +nightly …`). Use Claude Code's
 interactive prompts.
 
+**Then verify the resolved toolchain is actually installed.** Detection found
+the *commands*; this step confirms the *binaries* exist on the executor host —
+run `rexymcp doctor` if available, otherwise `which`/`--version` checks. Two
+tiers (see `WORKFLOW.md` § "Validation features depend on the target toolchain"):
+
+- **Tier 0 — the `[commands]` toolchain** (`build`/`test`/`lint`/`format`). Always
+  required: the DoD gates run it, and it is how the project supports *any*
+  language (point it at `zig build`/`go test`/etc.). If a Tier-0 binary is
+  missing, the project cannot be built or tested — surface it prominently.
+- **Tier 1 — validation enhancers** the verifier/code-intelligence shell out to,
+  only for languages with built-in support (today `cargo`/`tsc`/`ruff`; a future
+  `rust-analyzer`). Missing here is **degraded, not broken** — the executor falls
+  back to Tier-0-only.
+
+For anything missing, **present a resolution plan and let the user choose**:
+install it now (give the concrete command), or proceed with that enhancer
+degraded. Do **not** silently proceed, and do **not** treat a language with no
+built-in Tier-1 verifier (e.g. Zig) as "missing tooling" — it runs on Tier 0
+alone; say so. This detection is the architect's job, **not** `rexymcp init`'s
+(init stays a static scaffolder that must not become opinionated about which
+languages are supported).
+
 Write the resolved set to `<target_repo>/rexymcp.toml`:
 
 ```toml

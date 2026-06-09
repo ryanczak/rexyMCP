@@ -115,6 +115,16 @@ comments above every function. Doc comments on public APIs are fine.
 - **Do not add new dependencies** unless the phase doc authorizes it. Adding a
   dependency is a design decision, not an implementation choice. If you need one,
   **stop, report a blocker**, and wait for principal-engineer authorization.
+- **Runtime toolchain binaries are distinct from package dependencies.** A package
+  dep is compiled/installed by the build; a *runtime* shell-out to a binary (a
+  compiler, a linter, a language server) must exist on the executor host. If a
+  phase makes the code shell out to a **new** binary, declare it in the phase
+  doc's Authorizations/Pre-flight (the architect verifies availability at design
+  time). When a required binary is **absent at runtime**, degrade to a
+  model-visible advisory result that names the missing binary and the remedy —
+  never a panic, never an opaque "spawn failed", and not a verifier-failure
+  outcome a governor counts as a strike (a missing tool is a *skipped* check, not
+  a failed one). A missing toolchain is a model-visible outcome, not an error.
 
 ---
 

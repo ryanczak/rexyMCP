@@ -602,3 +602,45 @@ Apply the formatting fix manually on close-out until the runtime hook lands.
 google/gemma-4-12b hit the same ruff formatting verifier halt. Spec
 instruction pre-injected in phase-03 — still failed, confirming the fix
 must be runtime-side.)*
+
+### Validation features depend on the target toolchain — verify availability at design time
+
+Validation features (a verifier that runs the project's checker, code-intelligence
+features like find-references or compiler-suggested-fixes) shell out to
+**per-language toolchains** the executor host must actually have. They split into
+two tiers, and the tiers answer "fail open or fail hard?" differently:
+
+- **Tier 0 — the `{BUILD_COMMAND}` / `{TEST_COMMAND}` / `{LINT_COMMAND}` /
+  `{FORMAT_COMMAND}` toolchain.** Language-agnostic, user-configured, and
+  **already a hard requirement**: a phase cannot reach `done` without build/test
+  passing (STANDARDS §1). **This is how the project supports *any* language** —
+  point the command set at the language's tools and the loop + DoD gates work,
+  even for a language with no dedicated verifier.
+- **Tier 1 — validation *enhancers*** that **augment** Tier 0 with incremental,
+  structured feedback. The loop **degrades gracefully** to Tier-0-only without
+  them. Enhancers backed by a *compiled-in library* (e.g. a bundled parser grammar)
+  need **no** machine install; only enhancers that **shell out to a binary** are a
+  runtime-availability concern.
+
+**Fail-open at runtime; fail-hard-*advisory* where a human is present.** The
+deciding axis is *who can act on a missing tool, and when*:
+
+- **At the human-present boundary** (project bootstrap / first design session):
+  detect missing toolchain binaries and **present a resolution plan** — install
+  instructions, or scope the feature to the languages whose toolchain is confirmed
+  present and defer the rest. The user chooses; advisory, not a refusal.
+- **At runtime inside the headless executor**: a missing binary must **degrade to
+  a model-visible advisory that names the binary and the remedy** and let the
+  executor keep working — never a panic, never an opaque "spawn failed", and never
+  an outcome the verifier governor counts as a *failure strike* (a missing tool is
+  a skipped/advisory outcome, distinct from "the tool ran and found errors").
+
+**When drafting a phase that adds or extends a validation feature, the architect
+must:** (1) enumerate the runtime binaries it invokes (name + minimum version +
+the exact flags / machine-readable format it parses), distinguishing compiled-in
+libraries from machine binaries; (2) confirm they are present and emit that format
+— or instruct a Pre-flight check; (3) if a binary is missing for a target
+language, inform the user with a resolution plan before shipping a feature that
+would only degrade; (4) pin the missing-binary runtime behavior in the phase doc
+as a named advisory, per the rule above. Record the feature's toolchain
+dependencies in the phase doc (Pre-flight or a "Toolchain dependencies" line).

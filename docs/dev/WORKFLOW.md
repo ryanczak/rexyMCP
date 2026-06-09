@@ -50,6 +50,17 @@ Before dispatching any phase in a project, confirm both of these:
    template. If `rexymcp` is not yet installed, point the user to the plugin
    marketplace.
 
+3. **Target toolchain is present.** Confirm the binaries rexyMCP's validation
+   features shell out to are installed and on PATH (run `rexymcp doctor` once it
+   exists, or `which`/`--version` checks): the Tier-0 `[commands]` toolchain
+   (always required — the DoD gates run it), plus the Tier-1 enhancers for the
+   project's language (`cargo`/`tsc`/`ruff`, future `rust-analyzer`). If a binary
+   is missing, **present a resolution plan** and let the user choose — install it,
+   or proceed with that enhancer degraded (the runtime falls back per the
+   "Validation features depend on the target toolchain" calibration below). A
+   language with no built-in Tier-1 verifier (e.g. Zig) is fine: it runs on
+   Tier-0 alone — say so rather than treating it as missing tooling.
+
 ### `.mcp.json` is forbidden in project directories
 
 Placing a `.mcp.json` in a project directory **conflicts with the plugin
@@ -668,3 +679,54 @@ signatures without updating all callers — `E0061` on 2 sites); M7 phase-05b (m
 before the 3-strike verifier limit). Both resolved by additive restructure (phase-05a:
 a worked-example cascade in Task 5; phase-05b: new sibling `AiEvent::Completion`
 variant leaving `Done` untouched).
+
+### Validation features depend on the target toolchain — verify availability at design time
+
+rexyMCP's validation features shell out to **per-language toolchains** the
+executor host must actually have. They split into two tiers, and the tiers
+answer "fail open or fail hard?" differently:
+
+- **Tier 0 — the `[commands]` toolchain** (`format`/`build`/`lint`/`test`, e.g.
+  `cargo …`, `zig build`, `go test`). Language-agnostic, user-configured in
+  `rexymcp.toml`, and **already a hard requirement**: a phase cannot reach `done`
+  without `build`/`test` passing (STANDARDS §1). **This is how rexyMCP supports
+  *any* language**, including ones with no built-in verifier — you point
+  `[commands]` at the language's tools and the loop + DoD gates work.
+- **Tier 1 — validation *enhancers*** (the verifier's `cargo check`/`tsc`/`ruff`,
+  and code-intelligence features like find-references or compiler-suggested-fixes).
+  These are language-specific and **augment** Tier 0 with incremental, structured
+  feedback. The loop **degrades gracefully** to Tier-0-only without them. Note:
+  enhancers backed by *compiled-in crates* (tree-sitter grammars) need **no**
+  machine install — only enhancers that **shell out to a binary** (`cargo`, `tsc`,
+  `ruff`, a future `rust-analyzer`) are a runtime-availability concern.
+
+**Fail-open at runtime; fail-hard-*advisory* where a human is present.** The
+deciding axis is *who can act on a missing tool, and when*:
+
+- **At the human-present boundary** (first `/architect` / bootstrap): detect
+  missing toolchain binaries and **present a resolution plan** — install
+  instructions, or scope the feature to the languages whose toolchain is
+  confirmed present and defer the rest. The user chooses; this is advisory, not a
+  refusal to continue.
+- **At runtime inside the headless loop**: a missing binary must **degrade to a
+  model-visible advisory that names the binary and the remedy** ("rust-analyzer
+  not found on PATH; find-references unavailable") and let the executor keep
+  working with its other tools — never a panic, never an opaque "spawn failed",
+  and never an outcome the governor counts as a verifier *failure strike* (a
+  missing tool is a `Skipped`/advisory outcome, distinct from "the tool ran and
+  found errors").
+
+**When drafting a phase that adds or extends a validation feature, the architect
+must:** (1) enumerate the runtime binaries it invokes (name + minimum version +
+the exact flags / machine-readable format it parses), distinguishing compiled-in
+crates from machine binaries; (2) confirm they are present and emit that format —
+or instruct a Pre-flight check; (3) if a binary is missing for a target language,
+inform the user with a resolution plan before shipping a feature that would only
+degrade; (4) pin the missing-binary runtime behavior in the phase doc as a named
+advisory, per the rule above. Record the feature's toolchain dependencies in the
+phase doc (Pre-flight or a "Toolchain dependencies" line).
+
+*(Folded 2026-06-09, user-initiated at the M12 — Executor Tooling kickoff, when
+validation features — find-references, compiler suggested-fixes, structured
+test-failure parsing — entered the roadmap. Not a bounce-driven fold; a
+forward-looking discipline for a new feature class.)*
