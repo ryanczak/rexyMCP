@@ -8,7 +8,7 @@ documented `rexymcp.toml` + `.mcp.json` so new projects can get started without
 reading source; (3) decompose the four largest source files so no production file
 exceeds the executor's RunawayOutput limit and each file has one clear concern.
 
-**Status:** in progress — phase-01 active.
+**Status:** review — phase-01 complete, awaiting review.
 
 **Depends on:** M1–M10 (all complete). No new feature work here; this milestone
 references existing behaviour only.

@@ -40,6 +40,31 @@ impl Default for ContextConfig {
     }
 }
 
+/// Governor hard-fail thresholds. Tune these to match your model's cadence.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GovernorConfig {
+    /// Consecutive identical tool calls before `IdenticalToolCallRepetition`
+    /// hard-fail. Default 6.
+    pub identical_call_threshold: usize,
+    /// Consecutive turns with author-attributed verifier errors before
+    /// `VerifierFailurePersistent` hard-fail. Default 6.
+    pub verifier_persistence_threshold: usize,
+    /// Single tool-output bytes before `RunawayOutput` hard-fail.
+    /// Default 102400 (100 KB).
+    pub runaway_output_bytes: usize,
+}
+
+impl Default for GovernorConfig {
+    fn default() -> Self {
+        Self {
+            identical_call_threshold: 6,
+            verifier_persistence_threshold: 6,
+            runaway_output_bytes: 100 * 1024,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -49,6 +74,7 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     pub dashboard: DashboardConfig,
     pub context: ContextConfig,
+    pub governor: GovernorConfig,
 }
 
 /// Cross-project telemetry store. `None` disables telemetry emission.
@@ -602,5 +628,37 @@ output_filter = false
             !cfg.context.output_filter,
             "output_filter should be false when explicitly set"
         );
+    }
+
+    #[test]
+    fn governor_config_round_trips_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 10
+verifier_persistence_threshold = 8
+runaway_output_bytes = 204800
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.governor.identical_call_threshold, 10);
+        assert_eq!(cfg.governor.verifier_persistence_threshold, 8);
+        assert_eq!(cfg.governor.runaway_output_bytes, 204800);
     }
 }

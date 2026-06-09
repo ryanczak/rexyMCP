@@ -196,6 +196,7 @@ async fn run_phase_with(
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
         context_window: inp.context_window,
+        governor: inp.cfg.governor,
     };
 
     agent::execute_phase(&input, deps).await

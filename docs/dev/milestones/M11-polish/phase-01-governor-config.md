@@ -1,7 +1,7 @@
 # Phase 01: Governor thresholds → `[governor]` config
 
 **Milestone:** M11 — Polish
-**Status:** todo
+**Status:** review
 **Depends on:** nothing (pure config plumbing)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -230,4 +230,36 @@ governor: inp.cfg.governor,
 
 ## Update Log
 
-<!-- entries appended below this line -->
+### Update — 2025-07-18 (started)
+
+**Executor:** rexyMCP executor LLM
+
+Implementing Spec tasks: adding `GovernorConfig` to config, wiring through `hard_fail.rs`, `LoopDeps`, and `runner.rs`.
+
+### Update — 2025-07-18 (complete)
+
+**Executor:** rexyMCP executor LLM
+
+**Summary:** Moved three hard-coded governor constants from `hard_fail.rs` into `[governor]` config section of `rexymcp.toml`. Defaults match previous constant values (6, 6, 102400).
+
+**Files changed:**
+- `executor/src/config.rs` — added `GovernorConfig` struct with `Default` impl, added `governor` field to `Config`, added `governor_config_round_trips_from_toml` test
+- `executor/src/governor/hard_fail.rs` — removed 3 `pub const`, added `GovernorConfig` parameter to `evaluate()`, updated helpers to accept threshold params, updated all test calls
+- `executor/src/agent/mod.rs` — added `GovernorConfig` import, added `governor` field to `LoopDeps`, updated `evaluate()` call site, updated all 8 `LoopDeps { ... }` construction sites in tests
+- `mcp/src/runner.rs` — added `governor: inp.cfg.governor` to `LoopDeps` construction
+
+**Verification summary:**
+- `cargo fmt --all --check`: passed
+- `cargo build`: passed, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: passed
+- `cargo test`: 665 passed, 0 failed, 2 ignored
+
+**End-to-end verification:**
+- `grep "pub const IDENTICAL_CALL_THRESHOLD" executor/src/governor/hard_fail.rs` → 0 matches (constants removed)
+- `grep "GovernorConfig" executor/src/config.rs` → struct + Default impl + Config field present
+- `cargo test governor_config_round_trips_from_toml` → passed (non-default values 10, 8, 204800 round-trip through TOML)
+
+**Notes for review:**
+- No behavioral changes — `GovernorConfig::default()` produces identical values to the removed constants
+- All existing tests pass unchanged (only the call sites needed the 4th argument added)
+

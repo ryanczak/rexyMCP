@@ -2,9 +2,7 @@ use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
-pub const IDENTICAL_CALL_THRESHOLD: usize = 6;
-pub const VERIFIER_PERSISTENCE_THRESHOLD: usize = 6;
-pub const RUNAWAY_OUTPUT_BYTES: usize = 100 * 1024;
+use crate::config::GovernorConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallSnapshot {
@@ -46,9 +44,7 @@ impl HardFailSignal {
                 format!("verifier flagged errors on {consecutive_failures} consecutive turns")
             }
             Self::RunawayOutput { tool, bytes } => {
-                format!(
-                    "tool {tool} produced {bytes} bytes (over {RUNAWAY_OUTPUT_BYTES} threshold)"
-                )
+                format!("tool {tool} produced {bytes} bytes (over threshold)")
             }
             Self::BackendError { message } => {
                 format!("backend error: {message}")
@@ -61,24 +57,33 @@ pub fn evaluate(
     recent_tool_calls: &VecDeque<ToolCallSnapshot>,
     recent_verifier_error_counts: &[usize],
     last_tool_output: Option<(&str, usize)>,
+    config: &GovernorConfig,
 ) -> Option<HardFailSignal> {
-    if let Some(signal) = check_identical_repetition(recent_tool_calls) {
+    if let Some(signal) =
+        check_identical_repetition(recent_tool_calls, config.identical_call_threshold)
+    {
         return Some(signal);
     }
-    if let Some(signal) = check_verifier_persistence(recent_verifier_error_counts) {
+    if let Some(signal) = check_verifier_persistence(
+        recent_verifier_error_counts,
+        config.verifier_persistence_threshold,
+    ) {
         return Some(signal);
     }
-    if let Some(signal) = check_runaway_output(last_tool_output) {
+    if let Some(signal) = check_runaway_output(last_tool_output, config.runaway_output_bytes) {
         return Some(signal);
     }
     None
 }
 
-fn check_identical_repetition(recent: &VecDeque<ToolCallSnapshot>) -> Option<HardFailSignal> {
-    if recent.len() < IDENTICAL_CALL_THRESHOLD {
+fn check_identical_repetition(
+    recent: &VecDeque<ToolCallSnapshot>,
+    threshold: usize,
+) -> Option<HardFailSignal> {
+    if recent.len() < threshold {
         return None;
     }
-    let last_n: Vec<_> = recent.iter().rev().take(IDENTICAL_CALL_THRESHOLD).collect();
+    let last_n: Vec<_> = recent.iter().rev().take(threshold).collect();
     let first = &last_n[0];
     let all_identical = last_n
         .iter()
@@ -88,15 +93,15 @@ fn check_identical_repetition(recent: &VecDeque<ToolCallSnapshot>) -> Option<Har
     }
     Some(HardFailSignal::IdenticalToolCallRepetition {
         tool: first.tool.clone(),
-        consecutive_count: IDENTICAL_CALL_THRESHOLD as u32,
+        consecutive_count: threshold as u32,
     })
 }
 
-fn check_verifier_persistence(counts: &[usize]) -> Option<HardFailSignal> {
-    if counts.len() < VERIFIER_PERSISTENCE_THRESHOLD {
+fn check_verifier_persistence(counts: &[usize], threshold: usize) -> Option<HardFailSignal> {
+    if counts.len() < threshold {
         return None;
     }
-    let last_n = &counts[counts.len() - VERIFIER_PERSISTENCE_THRESHOLD..];
+    let last_n = &counts[counts.len() - threshold..];
 
     // Must all be > 0
     if last_n.contains(&0) {
@@ -111,13 +116,13 @@ fn check_verifier_persistence(counts: &[usize]) -> Option<HardFailSignal> {
     }
 
     Some(HardFailSignal::VerifierFailurePersistent {
-        consecutive_failures: VERIFIER_PERSISTENCE_THRESHOLD as u32,
+        consecutive_failures: threshold as u32,
     })
 }
 
-fn check_runaway_output(output: Option<(&str, usize)>) -> Option<HardFailSignal> {
+fn check_runaway_output(output: Option<(&str, usize)>, limit: usize) -> Option<HardFailSignal> {
     let (tool, bytes) = output?;
-    if bytes <= RUNAWAY_OUTPUT_BYTES {
+    if bytes <= limit {
         return None;
     }
     Some(HardFailSignal::RunawayOutput {
@@ -179,7 +184,7 @@ mod tests {
         for _ in 0..6 {
             recent.push_back(snap.clone());
         }
-        let signal = evaluate(&recent, &[], None).unwrap();
+        let signal = evaluate(&recent, &[], None, &GovernorConfig::default()).unwrap();
         assert!(matches!(
             signal,
             HardFailSignal::IdenticalToolCallRepetition { .. }
@@ -190,7 +195,7 @@ mod tests {
     fn detects_verifier_persistence() {
         let counts = [2usize, 2, 2, 2, 2, 2];
         let recent = VecDeque::new();
-        let signal = evaluate(&recent, &counts, None).unwrap();
+        let signal = evaluate(&recent, &counts, None, &GovernorConfig::default()).unwrap();
         assert!(matches!(
             signal,
             HardFailSignal::VerifierFailurePersistent { .. }
@@ -200,7 +205,14 @@ mod tests {
     #[test]
     fn detects_runaway_output() {
         let recent = VecDeque::new();
-        let signal = evaluate(&recent, &[], Some(("read_file", RUNAWAY_OUTPUT_BYTES + 1))).unwrap();
+        let cfg = GovernorConfig::default();
+        let signal = evaluate(
+            &recent,
+            &[],
+            Some(("read_file", cfg.runaway_output_bytes + 1)),
+            &cfg,
+        )
+        .unwrap();
         assert!(matches!(signal, HardFailSignal::RunawayOutput { .. }));
     }
 
@@ -219,7 +231,15 @@ mod tests {
             arguments: serde_json::json!({"path": "b"}),
             succeeded: true,
         });
-        assert!(evaluate(&recent, &[1], Some(("read_file", 100))).is_none());
+        assert!(
+            evaluate(
+                &recent,
+                &[1],
+                Some(("read_file", 100)),
+                &GovernorConfig::default()
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -232,7 +252,7 @@ mod tests {
                 succeeded: true,
             });
         }
-        assert!(evaluate(&recent, &[], None).is_none());
+        assert!(evaluate(&recent, &[], None, &GovernorConfig::default()).is_none());
     }
 
     #[test]
@@ -246,27 +266,36 @@ mod tests {
         for _ in 0..2 {
             recent.push_back(snap.clone());
         }
-        assert!(evaluate(&recent, &[], None).is_none());
+        assert!(evaluate(&recent, &[], None, &GovernorConfig::default()).is_none());
     }
 
     #[test]
     fn no_verifier_persistence_when_errors_decrease() {
         let counts = [5usize, 3, 1];
         let recent = VecDeque::new();
-        assert!(evaluate(&recent, &counts, None).is_none());
+        assert!(evaluate(&recent, &counts, None, &GovernorConfig::default()).is_none());
     }
 
     #[test]
     fn no_verifier_persistence_when_a_count_is_zero() {
         let counts = [2usize, 0, 2];
         let recent = VecDeque::new();
-        assert!(evaluate(&recent, &counts, None).is_none());
+        assert!(evaluate(&recent, &counts, None, &GovernorConfig::default()).is_none());
     }
 
     #[test]
     fn no_runaway_at_exact_threshold() {
         let recent = VecDeque::new();
-        assert!(evaluate(&recent, &[], Some(("read_file", RUNAWAY_OUTPUT_BYTES))).is_none());
+        let cfg = GovernorConfig::default();
+        assert!(
+            evaluate(
+                &recent,
+                &[],
+                Some(("read_file", cfg.runaway_output_bytes)),
+                &cfg
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -281,7 +310,7 @@ mod tests {
             recent.push_back(snap.clone());
         }
         let counts = [2usize, 2, 2, 2, 2, 2];
-        let signal = evaluate(&recent, &counts, None).unwrap();
+        let signal = evaluate(&recent, &counts, None, &GovernorConfig::default()).unwrap();
         assert!(matches!(
             signal,
             HardFailSignal::IdenticalToolCallRepetition { .. }

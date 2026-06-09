@@ -26,7 +26,7 @@ use tokio::time::interval;
 
 use crate::ai::AiClient;
 use crate::ai::types::{AiEvent, Message, ToolSchema};
-use crate::config::CommandConfig;
+use crate::config::{CommandConfig, GovernorConfig};
 use crate::context::budget::Budget;
 use crate::context::compactor::compact;
 use crate::error::{Error, Result};
@@ -103,6 +103,8 @@ pub struct LoopDeps<'a> {
     /// computation). Best-effort when `Some`: a callback that panics is
     /// outside this contract; the loop assumes the callback is safe.
     pub progress: Option<&'a dyn ProgressCallback>,
+    /// Governor hard-fail thresholds — read from `[governor]` in rexymcp.toml.
+    pub governor: GovernorConfig,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -807,6 +809,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             &recent_tool_calls,
             &recent_verifier_error_counts,
             Some((&tool_call.name, content.len())),
+            &deps.governor,
         ) {
             log_event(
                 &log_handle,
@@ -980,6 +983,7 @@ mod tests {
             telemetry_dir: None,
             progress: None,
             context_window: None,
+            governor: GovernorConfig::default(),
         }
     }
 
@@ -1731,6 +1735,7 @@ mod tests {
             telemetry_dir: None,
             progress: None,
             context_window: None,
+            governor: GovernorConfig::default(),
         };
 
         execute_phase(&input(), d).await.unwrap();
@@ -1849,6 +1854,7 @@ mod tests {
             telemetry_dir: None,
             progress: None,
             context_window: None,
+            governor: GovernorConfig::default(),
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -2484,6 +2490,7 @@ mod tests {
             telemetry_dir,
             progress: None,
             context_window,
+            governor: GovernorConfig::default(),
         };
         execute_phase(&input(), d).await.unwrap()
     }
@@ -3237,6 +3244,7 @@ mod tests {
             telemetry_dir: None,
             progress: Some(capture),
             context_window: None,
+            governor: GovernorConfig::default(),
         }
     }
 
@@ -3309,6 +3317,7 @@ mod tests {
                 telemetry_dir: self.telemetry_dir,
                 progress: Some(self.capture),
                 context_window: None,
+                governor: GovernorConfig::default(),
             }
         }
     }
@@ -3493,6 +3502,7 @@ mod tests {
             telemetry_dir: None,
             progress: Some(&PanicCallback),
             context_window: None,
+            governor: GovernorConfig::default(),
         };
         execute_phase(&input(), d).await.unwrap();
     }
@@ -4251,6 +4261,7 @@ mod tests {
                 telemetry_dir: None,
                 progress: None,
                 context_window: None,
+                governor: GovernorConfig::default(),
             },
         )
         .await
