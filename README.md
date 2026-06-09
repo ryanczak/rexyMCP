@@ -163,14 +163,16 @@ at milestone close.
   a lean result never means lost detail.
 - **Per-run statistics & settings scorecard** — each run emits a `PhaseRun`
   record (model, sampling settings, served-model id, length-truncation rate,
-  context window, gates, reliability/efficiency metrics, and — at review — the
-  architect's verdict) into a shared telemetry store. Two CLI views let you act
-  on that data: `rexymcp runs` lists individual runs with all their stats so you
-  can see exactly what happened on each dispatch; `rexymcp scorecard` aggregates
-  runs into a **`model × settings` competency matrix** so you can compare e.g.
-  `temperature=0.2` vs `temperature=0.7` for your model on your kind of work. The
-  `model_scorecard` MCP tool (Claude-facing) provides the `model × tag` slice for
-  the architect to consult at dispatch time.
+  context window, peak context utilization, tokens reclaimed by source, gates,
+  reliability/efficiency metrics, and — at review — the architect's verdict) into
+  a shared telemetry store. Two CLI views let you act on that data: `rexymcp runs`
+  lists individual runs with all their stats (including `PEAK_CXT` and
+  `RECLAIMED` columns) so you can see exactly what happened on each dispatch;
+  `rexymcp scorecard` aggregates runs into a **`model × settings` competency
+  matrix** so you can compare e.g. `temperature=0.2` vs `temperature=0.7` for
+  your model on your kind of work. The `model_scorecard` MCP tool (Claude-facing)
+  provides the `model × tag` slice, including context-efficiency means, for the
+  architect to consult at dispatch time.
 
 **The MCP server (`rexymcp serve`)**
 
@@ -192,9 +194,10 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
   `PhaseResult` as JSON), no MCP client required.
 - `rexymcp serve` — start the MCP stdio server.
 - `rexymcp dashboard` — live full-screen TUI over the session JSONL: Session,
-  Budget (tokens · context % · tok/s · $ saved), Compactions, Activity transcript
-  (scrollable full replay), and Files panels. Stays open and auto-follows new
-  sessions. `--config` loads `[dashboard]` rates for the `$ saved` line.
+  Budget (tokens · context % · tok/s · $ saved), Reclaim (compaction + per-lever
+  Arc A/B sources), Activity transcript (scrollable full replay), and Files panels.
+  Stays open and auto-follows new sessions. `--config` loads `[dashboard]` rates
+  for the `$ saved` line.
 - `rexymcp status` — one-shot session summary (human or `--json`). Scriptable;
   the lightweight alternative to `dashboard` for CI / piping.
 - `rexymcp runs` — list individual `PhaseRun` records with per-run stats (model,
@@ -228,7 +231,7 @@ specific answer to that constraint:
 | The model gets into a loop, retrying the same broken edit | **Loop detector** (part of the governor) recognizes repetition patterns and converts them to a `hard_fail` briefing before they burn the turn budget |
 | The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit-class tool call and injects the compiler diagnostics back into the turn for a retry — the model sees what's broken and fixes it without a wasted round-trip |
 | Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: the loop tracks which files the model has read this session and refuses to patch files it hasn't seen, preventing blind overwrites |
-| The context window fills up mid-phase | **Context budgeting + compaction**: configurable `max_context_pct` triggers a summary compaction before the window is exhausted, so the model doesn't hit a hard cutoff in the middle of a thought |
+| The context window fills up mid-phase | **Context budgeting + M10 optimization**: configurable `max_context_pct` triggers value-ranked compaction (lowest-value tool output first, last 3 turns protected). Arc A filters bash output at the boundary (ANSI strip, dup collapse, structured cargo compressor). Arc B evicts superseded file reads on edit and dedupes re-reads of unchanged files. Every lever is metered and visible live in `rexymcp status` / the dashboard |
 | The model uses `bash` irresponsibly | **Security scope confinement** restricts every file and shell operation to the target-repo root, and a bash classifier blocks the command categories most likely to cause damage |
 | You don't know if a model is actually good for your codebase | **Per-run telemetry** records the objective outcome of every dispatch — gates, parse-failure rate, truncation rate, turns, the architect's verdict — so over time you accumulate real evidence about which models and settings earn their keep on your kind of work |
 
@@ -265,14 +268,19 @@ the process docs that govern all future work.
    The WORKFLOW.md embedded in the plugin is the canonical copy — changes here
    propagate to every new project that bootstraps from it.
 
-**A concrete example from building rexyMCP itself:** during M7, the executor
-(Qwen3.6-27B) twice failed by mutating a shared type used at many call sites,
-getting trapped by the verifier's 3-strike limit before it could finish
-updating all the callers. Two occurrences → a trend → a fold: the
-["Prefer additive change shapes"](docs/dev/WORKFLOW.md) rule was added to the
-spec-writing contract. The very next phase, the architect used an additive new
-variant instead of mutating the existing one. Zero cascade. The fold earned its
-keep on the first application.
+**A concrete example from building rexyMCP itself:** during M10, the executor
+(Qwen3.6-27B) stalled five times on phases that required editing the same
+pattern across many sites — a match-arm wall here, struct-literal churn there.
+The natural response was to split work so each dispatch touched only one
+non-default struct literal. To validate the hypothesis, two sibling phases were
+run back-to-back as a controlled A/B: 08c (1 literal, single file) landed clean
+in 66 turns; 08d (3 literals across two files) stalled exactly as predicted —
+same pre-injection quality on both arms. Five occurrences plus a clean controlled
+A/B → a confident fold: *prefer splitting a feature by output-struct so each
+dispatch touches ≤1 non-default struct literal.* Phase 08e was drafted as the
+low-churn counter-shape (purely additive fields, no literal to touch) and landed
+first-try, confirming the lever. The fold is now part of the spec-writing contract
+that governs every future phase.
 
 The improvement loop turns rexyMCP's own development history into a better
 tool for every project that uses it.
