@@ -1,7 +1,7 @@
 # Phase 08e: Fold reclaim events into `StatusSummary` + the live dashboard
 
 **Milestone:** M10 — Context optimization
-**Status:** todo
+**Status:** review
 **Depends on:** phase-03 (`OutputFiltered` event — done), phase-04 (`ReadEvicted`
 — done), phase-06 (`ReadDeduped` — done), phase-08a–08d (context-efficiency
 surfacing — done). This is the **live-view** sibling of 08b/08c/08d: those folded
@@ -459,3 +459,42 @@ What this phase must **not** do, even if tempted:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-09 (started)
+
+**Executor:** rexyMCP executor
+
+### Update — 2025-07-09 (complete)
+
+**Tasks completed:**
+1. Added six fields to `StatusSummary` (`output_filtered_count`, `output_filtered_tokens`, `read_evicted_count`, `read_evicted_tokens`, `read_deduped_count`, `read_deduped_tokens`) — purely additive via `..StatusSummary::default()`.
+2. Added three match arms to `summarize` for `OutputFiltered`, `ReadEvicted`, `ReadDeduped` before the `_ => {}` catch-all.
+3. Renamed `compactions_lines` → `reclaim_lines` in `panels.rs`, extended to render all four reclaim sources (compaction + filter + evict + dedupe).
+4. Repointed `render.rs`: import `reclaim_lines`, retitled panel from "Compactions" to "Reclaim".
+5. Added `reclaimed:` line to `format_status`, gated on nonzero total reclaim.
+6. Renamed existing compaction panel tests to `reclaim_lines_*`, added lever-specific tests.
+7. Added `summarize` fold tests for all three new levers plus a negative case.
+8. Added `format_status` reclaim line tests (positive and negative).
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed (after formatting)
+- `cargo build -p rexymcp` — passed, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo test -p rexymcp` — 266 passed, 0 failed
+
+**End-to-end verification:**
+- `rexymcp status --repo <tmp> --json` confirmed six new fields in JSON output:
+  `"output_filtered_count": 1, "output_filtered_tokens": 800, "read_evicted_count": 1, "read_evicted_tokens": 500, "read_deduped_count": 1, "read_deduped_tokens": 300`
+- `rexymcp status --repo <tmp>` (text) confirmed:
+  `reclaimed: 1600 tokens (filter 800, evict 500, dedupe 300, compaction 0)`
+
+**Files changed:**
+- `mcp/src/status.rs` — six new fields, three summarize arms, format_status reclaim line, test helpers + 6 new tests
+- `mcp/src/dashboard/panels.rs` — renamed `compactions_lines` → `reclaim_lines`, extended body, renamed + added 4 panel tests
+- `mcp/src/dashboard/render.rs` — import rename, panel title + function call rename
+- `docs/dev/milestones/M10-context-optimization/phase-08e-reclaim-events-statussummary-dashboard.md` — status → review, Update Log
+- `docs/dev/milestones/M10-context-optimization/README.md` — phase table row → review
+
+**Notes for review:** None — implementation matches spec exactly.
+
+**Commit:** `feat: fold reclaim events into StatusSummary and live dashboard`

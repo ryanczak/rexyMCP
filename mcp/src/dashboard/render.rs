@@ -8,8 +8,7 @@ use ratatui::{
 
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
-    BudgetRates, budget_lines, compactions_lines, dollars_saved_line, files_lines, panel,
-    session_lines,
+    BudgetRates, budget_lines, dollars_saved_line, files_lines, panel, reclaim_lines, session_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -88,7 +87,7 @@ pub(crate) fn render_dashboard(
     }
     frame.render_widget(panel(" Budget ", budget), budget_area);
     frame.render_widget(
-        panel(" Compactions ", compactions_lines(&data.summary)),
+        panel(" Reclaim ", reclaim_lines(&data.summary)),
         compactions_area,
     );
 

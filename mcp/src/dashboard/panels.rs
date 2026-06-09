@@ -71,20 +71,44 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
     lines
 }
 
-/// Compactions panel: count, freed tokens, compression ratio.
-pub(crate) fn compactions_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
-    if summary.compaction_count == 0 {
-        return vec![Line::from("(no compactions)")];
+/// Reclaim panel: compaction plus the three M10 per-lever reclaim sources.
+pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    if summary.compaction_count > 0 {
+        let before = summary.compaction_tokens_before;
+        let after = summary.compaction_tokens_after;
+        lines.push(Line::from(format!("events: {}", summary.compaction_count)));
+        lines.push(Line::from(format!(
+            "freed: {} tokens",
+            before.saturating_sub(after)
+        )));
+        if after != 0 {
+            let ratio = before as f64 / after as f64;
+            lines.push(Line::from(format!("ratio: {ratio:.1}x")));
+        }
     }
-    let before = summary.compaction_tokens_before;
-    let after = summary.compaction_tokens_after;
-    let mut lines = vec![
-        Line::from(format!("events: {}", summary.compaction_count)),
-        Line::from(format!("freed: {} tokens", before.saturating_sub(after))),
-    ];
-    if after != 0 {
-        let ratio = before as f64 / after as f64;
-        lines.push(Line::from(format!("ratio: {ratio:.1}x")));
+    if summary.output_filtered_count > 0 {
+        lines.push(Line::from(format!(
+            "filter: {} calls, {} freed",
+            summary.output_filtered_count, summary.output_filtered_tokens
+        )));
+    }
+    if summary.read_evicted_count > 0 {
+        lines.push(Line::from(format!(
+            "evict: {} reads, {} freed",
+            summary.read_evicted_count, summary.read_evicted_tokens
+        )));
+    }
+    if summary.read_deduped_count > 0 {
+        lines.push(Line::from(format!(
+            "dedupe: {} reads, {} saved",
+            summary.read_deduped_count, summary.read_deduped_tokens
+        )));
+    }
+
+    if lines.is_empty() {
+        return vec![Line::from("(no reclaim yet)")];
     }
     lines
 }
@@ -657,25 +681,25 @@ mod tests {
         );
     }
 
-    // --- compactions_lines tests ---
+    // --- reclaim_lines tests ---
 
     #[test]
-    fn compactions_lines_empty_placeholder() {
+    fn reclaim_lines_empty_placeholder() {
         let summary = StatusSummary::default();
-        let lines = compactions_lines(&summary);
+        let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("no compactions")));
+        assert!(text.iter().any(|s| s.contains("no reclaim yet")));
     }
 
     #[test]
-    fn compactions_lines_shows_events_and_ratio() {
+    fn reclaim_lines_shows_compaction_events_and_ratio() {
         let summary = StatusSummary {
             compaction_count: 2,
             compaction_tokens_before: 1000,
             compaction_tokens_after: 600,
             ..StatusSummary::default()
         };
-        let lines = compactions_lines(&summary);
+        let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("events: 2")));
         assert!(text.iter().any(|s| s.contains("freed: 400")));
@@ -683,18 +707,61 @@ mod tests {
     }
 
     #[test]
-    fn compactions_lines_omits_ratio_when_after_zero() {
+    fn reclaim_lines_omits_ratio_when_after_zero() {
         let summary = StatusSummary {
             compaction_count: 1,
             compaction_tokens_before: 500,
             compaction_tokens_after: 0,
             ..StatusSummary::default()
         };
-        let lines = compactions_lines(&summary);
+        let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("events: 1")));
         assert!(text.iter().any(|s| s.contains("freed: 500")));
         assert!(!text.iter().any(|s| s.contains("x")));
+    }
+
+    #[test]
+    fn reclaim_lines_shows_filter_lever() {
+        let summary = StatusSummary {
+            output_filtered_count: 3,
+            output_filtered_tokens: 2048,
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("filter: 3 calls")));
+        assert!(text.iter().any(|s| s.contains("2048")));
+    }
+
+    #[test]
+    fn reclaim_lines_shows_evict_and_dedupe_levers() {
+        let summary = StatusSummary {
+            read_evicted_count: 2,
+            read_evicted_tokens: 900,
+            read_deduped_count: 1,
+            read_deduped_tokens: 120,
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("evict: 2 reads")));
+        assert!(text.iter().any(|s| s.contains("dedupe: 1 reads")));
+    }
+
+    #[test]
+    fn reclaim_lines_lever_absent_renders_no_lever_line() {
+        let summary = StatusSummary {
+            compaction_count: 1,
+            compaction_tokens_before: 500,
+            compaction_tokens_after: 200,
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(!text.iter().any(|s| s.contains("filter:")));
+        assert!(!text.iter().any(|s| s.contains("evict:")));
+        assert!(!text.iter().any(|s| s.contains("dedupe:")));
     }
 
     // --- dollars_saved tests ---

@@ -62,6 +62,18 @@ pub struct StatusSummary {
     pub compaction_tokens_before: usize,
     /// Sum of `tokens_after` across all `Compaction` records.
     pub compaction_tokens_after: usize,
+    /// Number of `OutputFiltered` records (Arc-A boundary filter) seen so far.
+    pub output_filtered_count: usize,
+    /// Sum of tokens reclaimed by the boundary filter (`tokens_before - tokens_after`).
+    pub output_filtered_tokens: usize,
+    /// Number of `ReadEvicted` records (Arc-B superseded-read eviction) seen so far.
+    pub read_evicted_count: usize,
+    /// Sum of `tokens_reclaimed` across all `ReadEvicted` records.
+    pub read_evicted_tokens: usize,
+    /// Number of `ReadDeduped` records (Arc-B redundant-read dedupe) seen so far.
+    pub read_deduped_count: usize,
+    /// Sum of `tokens_saved` across all `ReadDeduped` records.
+    pub read_deduped_tokens: usize,
     /// Min/avg/max interval (ms) between consecutive records. Present when ≥2 intervals exist.
     pub update_interval_min_ms: Option<u64>,
     pub update_interval_avg_ms: Option<u64>,
@@ -161,6 +173,24 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 summary.compaction_tokens_before += *tokens_before;
                 summary.compaction_tokens_after += *tokens_after;
             }
+            SessionEvent::OutputFiltered {
+                tokens_before,
+                tokens_after,
+                ..
+            } => {
+                summary.output_filtered_count += 1;
+                summary.output_filtered_tokens += tokens_before.saturating_sub(*tokens_after);
+            }
+            SessionEvent::ReadEvicted {
+                tokens_reclaimed, ..
+            } => {
+                summary.read_evicted_count += 1;
+                summary.read_evicted_tokens += *tokens_reclaimed;
+            }
+            SessionEvent::ReadDeduped { tokens_saved, .. } => {
+                summary.read_deduped_count += 1;
+                summary.read_deduped_tokens += *tokens_saved;
+            }
             _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
     }
@@ -250,6 +280,24 @@ pub fn format_status(summary: &StatusSummary, now_ms: u64) -> String {
     if let Some(ts) = summary.last_ts {
         let age_ms = now_ms.saturating_sub(ts);
         lines.push(format!("last update: {} ago", humanize_age(age_ms)));
+    }
+
+    let reclaimed = summary.output_filtered_tokens
+        + summary.read_evicted_tokens
+        + summary.read_deduped_tokens
+        + summary
+            .compaction_tokens_before
+            .saturating_sub(summary.compaction_tokens_after);
+    if reclaimed > 0 {
+        lines.push(format!(
+            "reclaimed: {reclaimed} tokens (filter {}, evict {}, dedupe {}, compaction {})",
+            summary.output_filtered_tokens,
+            summary.read_evicted_tokens,
+            summary.read_deduped_tokens,
+            summary
+                .compaction_tokens_before
+                .saturating_sub(summary.compaction_tokens_after),
+        ));
     }
 
     lines.join("\n")
@@ -395,6 +443,30 @@ mod tests {
         }
     }
 
+    fn output_filtered(tokens_before: usize, tokens_after: usize, filter: &str) -> SessionEvent {
+        SessionEvent::OutputFiltered {
+            tokens_before,
+            tokens_after,
+            filter: filter.into(),
+        }
+    }
+
+    fn read_evicted(path: &str, reads_evicted: usize, tokens_reclaimed: usize) -> SessionEvent {
+        SessionEvent::ReadEvicted {
+            path: path.into(),
+            reads_evicted,
+            tokens_reclaimed,
+        }
+    }
+
+    fn read_deduped(path: &str, tokens_saved: usize, prior_turn: usize) -> SessionEvent {
+        SessionEvent::ReadDeduped {
+            path: path.into(),
+            tokens_saved,
+            prior_turn,
+        }
+    }
+
     #[test]
     fn summarize_empty_log_is_all_none() {
         let s = summarize(&[]);
@@ -469,6 +541,72 @@ mod tests {
         ]);
         let out = format_status(&s, 2_000);
         assert!(out.contains("state: ended (hard_fail)"));
+    }
+
+    #[test]
+    fn summarize_folds_output_filtered_count_and_tokens() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, output_filtered(1000, 200, "cargo")),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.output_filtered_count, 1);
+        assert_eq!(s.output_filtered_tokens, 800);
+    }
+
+    #[test]
+    fn summarize_folds_read_evicted() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, read_evicted("src/lib.rs", 1, 500)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.read_evicted_count, 1);
+        assert_eq!(s.read_evicted_tokens, 500);
+    }
+
+    #[test]
+    fn summarize_folds_read_deduped() {
+        let recs = vec![
+            rec(100, 0, start()),
+            rec(200, 1, read_deduped("src/lib.rs", 300, 3)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.read_deduped_count, 1);
+        assert_eq!(s.read_deduped_tokens, 300);
+    }
+
+    #[test]
+    fn summarize_reclaim_levers_default_zero_when_absent() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, progress(1, "turn_start"))];
+        let s = summarize(&recs);
+        assert_eq!(s.output_filtered_count, 0);
+        assert_eq!(s.output_filtered_tokens, 0);
+        assert_eq!(s.read_evicted_count, 0);
+        assert_eq!(s.read_evicted_tokens, 0);
+        assert_eq!(s.read_deduped_count, 0);
+        assert_eq!(s.read_deduped_tokens, 0);
+    }
+
+    #[test]
+    fn format_status_shows_reclaimed_line_when_reclaim_occurred() {
+        let s = summarize(&[
+            rec(1_000, 0, start()),
+            rec(2_000, 1, output_filtered(1000, 200, "cargo")),
+        ]);
+        let out = format_status(&s, 5_000);
+        assert!(out.contains("reclaimed:"));
+        assert!(out.contains("800"));
+    }
+
+    #[test]
+    fn format_status_omits_reclaimed_line_when_no_reclaim() {
+        let s = summarize(&[
+            rec(1_000, 0, start()),
+            rec(2_000, 1, progress(1, "tool:patch")),
+        ]);
+        let out = format_status(&s, 5_000);
+        assert!(!out.contains("reclaimed:"));
     }
 
     #[test]
