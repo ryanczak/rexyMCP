@@ -9,7 +9,7 @@ documented `rexymcp.toml` so new projects can get started without reading source
 and a `.mcp.json` causes duplicate server conflicts in Claude Code); (3) decompose the four largest source files so no production file
 exceeds the executor's RunawayOutput limit and each file has one clear concern.
 
-**Status:** in progress — phases 01, 02, 03, 04, 05a done; phase 05b remaining.
+**Status:** in progress — phases 01, 02, 03, 04, 05a, 05b done.
 
 **Depends on:** M1–M10 (all complete). No new feature work here; this milestone
 references existing behaviour only.
@@ -32,7 +32,7 @@ references existing behaviour only.
 | 03 | Split `agent/mod.rs` — extract test suite | done | refactor | m |
 | 04 | Split `scorecard.rs` — extract test suite | done | refactor | s |
 | 05a | Split `server.rs` — extract test suite | done | refactor | s |
-| 05b | Split `verifier.rs` — extract test suite | todo | refactor | s |
+| 05b | Split `verifier.rs` — extract test suite | review | refactor | s |
 
 ## Exit criteria
 

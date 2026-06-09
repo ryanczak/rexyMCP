@@ -1,7 +1,7 @@
 # Phase 05b: Split `verifier.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** todo
+**Status:** review
 **Depends on:** phase-05a (ordering only — no code dependency; same refactor class)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -225,3 +225,38 @@ explicitly requires, so it is not an unauthorized new file.)
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-09 (started)
+
+**Executor:** rexyMCP executor
+
+Confirmed boundaries: `verifier.rs` is 1163 lines, `#[cfg(test)]` at line 495,
+`use super::*;` at line 497, closing `}` at line 1163. Pre-flight test count:
+**665 passed; 0 failed; 2 ignored**. Repo clean.
+
+### Update — 2025-07-09 (complete)
+
+**Tasks completed:** Moved ~666-line `#[cfg(test)] mod tests { … }` block from
+`verifier.rs` to sibling `verifier_tests.rs` via `sed` extraction + 3-line
+file-module declaration with `#[path = "verifier_tests.rs"]`.
+
+**Verification commands:**
+- `cargo build -p rexymcp-executor` — success, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — success
+- `cargo test -p rexymcp-executor` — **665 passed; 0 failed; 2 ignored** (matches pre-flight exactly)
+- `cargo fmt --all --check` — success
+- `wc -l verifier.rs` — 497 lines (≤ 500 ✓)
+
+**Files changed:**
+- `executor/src/governor/verifier.rs` — trimmed from 1163 → 497 lines; inline test block replaced with `#[cfg(test)] #[path = "verifier_tests.rs"] mod tests;`
+- `executor/src/governor/verifier_tests.rs` — new file, 666 lines, full test body verbatim
+
+**Commit:** one `refactor:` commit
+
+**Notes for review:** Pure file-split refactor. No logic changes. Same recipe as
+phase-05a (`server.rs` → `server_tests.rs`). The `#[path]` attribute is present
+and required since `verifier` is a single-file module.
+
+**End-to-end verification:** N/A — pure internal file-split refactor, no runtime artifact.
+
+**Grep check:** `grep -c '#\[path = "verifier_tests.rs"\]' executor/src/governor/verifier.rs` → 1 ✓
