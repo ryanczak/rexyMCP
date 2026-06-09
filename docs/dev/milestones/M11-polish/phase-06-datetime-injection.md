@@ -334,6 +334,6 @@ $ grep -n "Today's date is" executor/src/agent/prompt.rs
 - `datetime_header_contains_grounding_line` in `prompt.rs`
 
 **Commits:**
-- `f45ed26` — feat: inject current date into executor system prompt
+- `f1c30dd` — feat: inject current date into executor system prompt
 
 **Notes for review:** None — implementation matches spec verbatim.
