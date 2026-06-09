@@ -1,7 +1,7 @@
 # Phase 01: Verifier missing-binary → `Skipped` advisory
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** none (first M12 phase)
 **Estimated diff:** ~70 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -349,3 +349,13 @@ grep -n "verifier skipped" executor/src/agent/mod.rs → 808
 - The `Skipped` arm in `mod.rs` does NOT touch `recent_verifier_error_counts` — the no-strike guarantee is structural (only `Checked` pushes to that vector).
 
 **End-to-end verification:** N/A — the verifier is an internal loop component with no CLI entrypoint. The missing-binary path is covered by the pure `spawn_failure_not_found_is_skipped_naming_remedy` unit test and the loop advisory by `loop_surfaces_skipped_verifier_as_advisory`. Optional manual check: run the executor with `PATH=` against a `.rs` edit and observe `verifier skipped: cargo not found …`.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Independent re-run:** `cargo fmt --all --check` clean; `cargo build` zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` clean; `cargo test -p rexymcp-executor` **674 passed / 0 failed / 2 ignored** (671 baseline + 3 new, ignored count unchanged). All four gates green.
+- **DoD:** all boxes met. The `Skipped` arm at `mod.rs:807` does not push to `recent_verifier_error_counts` (only the `Checked` arm does) — the no-strike property is structural as specced. `spawn_failure` is pure/private with no `unwrap`/`expect`/`panic!`; the pinned `spawn_failure_other_error_stays_failed` (`PermissionDenied → Failed`) negative case is mutation-resistant. No `TODO`/`dbg!`/`println!`/`unsafe`/`#[allow]`/`#[ignore]` introduced.
+- **Scope deviations:** none. The executor added a `Skipped(_)` arm to one extra exhaustive match — the `python_verifier_handles_missing_ruff` test in `verifier_tests.rs` — which the spec explicitly anticipated ("`cargo build` will name any other … add `Skipped` there too and note it") and the executor noted. Anticipated, not a deviation.
+- **Calibration:** none. Clean 64-turn first-try with full bookkeeping (status flip + Update Log + single `fix:` commit `f2f8759` all landed by the executor). Note (cosmetic, no fold): the Update Log self-labels "rexyMCP executor LLM" and stamps the started/complete entries — the recurring local-LLM identity quirk; the date is correct now (phase-06 datetime injection, server restart pending per NEXT.md).
