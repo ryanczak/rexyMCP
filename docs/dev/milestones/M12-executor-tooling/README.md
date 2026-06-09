@@ -17,7 +17,7 @@ incremental code intelligence harvested cheaply from parsers already in the tree
 
 | Pain point | Intervention |
 |---|---|
-| A missing toolchain binary makes the verifier return `Failed("cargo check spawn failed…")` (`verifier.rs:250`), which the governor counts as a strike → opaque `VerifierFailurePersistent` hard_fail, and the human is never told to install anything | **0 — degrade**: missing binary → a `Skipped`/advisory outcome that names the remedy and accrues no strike |
+| A missing toolchain binary makes the verifier return `Failed("cargo check spawn failed: …os error 2")` (`verifier.rs:250`); the loop appends that raw, remedy-less io-error to the conversation **every edit turn** (`mod.rs:804`) — opaque and repeated | **0 — degrade**: missing binary → a distinct `Skipped` advisory that names the binary + how to install it (and, being non-`Checked`, accrues no governor strike — same as `Failed`/`Unsupported` today) |
 | No way for the human to see, before dispatching, whether the target toolchain is installed | **0 — `rexymcp doctor`**: a CLI report of per-language toolchain availability (the architect runs it at bootstrap; also scriptable/CI) |
 | Breaking multi-site changes run out of verifier runway before the cascade compiles (folded in WORKFLOW § "Prefer additive change shapes") | **B — find-references**: enumerate every call site *before* the breaking edit |
 | The verifier parses cargo JSON but discards rustc's machine-applicable `suggested_replacement` spans | **B — suggested-fixes**: feed "rustc suggests X→Y at line N" to the model |
@@ -39,7 +39,7 @@ once.
 
 | Phase | Title | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Arc 0 — verifier missing-binary → `Skipped` advisory (degrade, no governor strike) | todo | bugfix | s |
+| 01 | Arc 0 — verifier missing-binary → `Skipped` advisory ([phase-01-verifier-degrade.md](phase-01-verifier-degrade.md)) | todo | bugfix | s |
 | 02 | Arc 0 — `rexymcp doctor` toolchain-availability command | todo | feature | m |
 | 03 | Arc B — find-references in `symbols` (tree-sitter call-site search) | todo | feature | m |
 | 04 | Arc B — surface rustc machine-applicable suggested-fix spans | todo | feature | s |
@@ -50,10 +50,11 @@ once.
 ## Exit criteria
 
 - [ ] When a verifier toolchain binary is **absent** (`cargo`/`tsc`/`ruff` not on
-  PATH), the verifier returns a `Skipped`/advisory outcome that names the missing
-  binary and the remedy and is **not** counted as a verifier failure strike by the
-  governor — distinct from "the tool ran and found diagnostics". A pinned test
-  simulates the missing-binary path.
+  PATH), the verifier returns a `Skipped` advisory naming the missing binary and
+  the remedy — distinct from `Failed` (a genuine infra error) and from "the tool
+  ran and found diagnostics" — and the loop surfaces it as a *skipped* (not
+  *failed*) notice without accruing a verifier-persistence strike. A pinned test
+  simulates the missing-binary path via the pure spawn-error classifier.
 - [ ] `rexymcp doctor` reports, per language, whether the Tier-0 command-set
   toolchain and the Tier-1 enhancer binaries are installed and on PATH, with a
   non-zero exit when a **required** (Tier-0) tool is missing.
@@ -103,9 +104,10 @@ once.
   design discussion on fail-open vs. fail-hard for missing validation tooling.
   Resolution: **fail-hard-advisory where a human can act, fail-open at runtime.**
   Two phases: (01) the verifier missing-binary degrade fix — today a missing
-  binary returns `Failed`, which the governor strikes into an opaque
-  `VerifierFailurePersistent`; it should be a `Skipped` advisory that names the
-  remedy; (02) a standalone `rexymcp doctor` command the architect runs at
+  binary returns `Failed` with a raw, remedy-less io-error repeated each edit
+  turn (it does *not* strike — only `Checked` feeds the governor); it should be a
+  distinct `Skipped` advisory that names the binary + remedy; (02) a standalone
+  `rexymcp doctor` command the architect runs at
   bootstrap to detect+report toolchain availability. **Detection is the
   architect's job + `doctor`, NOT `rexymcp init`** — init stays a static
   scaffolder so it never becomes opinionated about which languages are supported

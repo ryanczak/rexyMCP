@@ -695,9 +695,10 @@ The project plan. Each entry becomes a milestone with its own
 
     - **Arc 0 — toolchain robustness.** Validation features shell out to
       per-language toolchains; missing ones must **fail open at runtime** (the
-      verifier returns a `Skipped`/advisory naming the remedy, not a `Failed` the
-      governor strikes into a `VerifierFailurePersistent`) and **fail-hard-advisory
-      where a human can act** (a new `rexymcp doctor` command + architect bootstrap
+      verifier returns a `Skipped` advisory naming the binary + remedy, distinct
+      from a `Failed` infra error and from a `Checked` diagnostic, instead of the
+      raw remedy-less spawn error it repeats today) and **fail-hard-advisory where
+      a human can act** (a new `rexymcp doctor` command + architect bootstrap
       detection present a resolution plan). Detection lives in the architect +
       `doctor`, never in `rexymcp init` (which stays a static scaffolder, so an
       unsupported language like Zig runs on the Tier-0 command set alone). The

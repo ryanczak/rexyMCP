@@ -4,9 +4,24 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none yet — M12 kicked off, no phase drafted.** Run
-`/rexymcp:architect next` to draft **phase-01** (Arc 0 — verifier missing-binary →
-`Skipped` advisory), which will set this pointer and ready it for `/rexymcp:dispatch`.
+**Active phase:** **phase-01** — [Verifier missing-binary → `Skipped`
+advisory](milestones/M12-executor-tooling/phase-01-verifier-degrade.md).
+Drafted/activated 2026-06-09; dispatch via `/rexymcp:dispatch phase-01`.
+
+**phase-01 scope (active — M12 Arc 0):** additive verifier robustness fix. Add a
+`VerifierResult::Skipped(String)` variant + a pure `spawn_failure(tool,
+install_hint, &io::Error)` classifier (`NotFound` → `Skipped` naming the binary +
+remedy; any other error → `Failed`), route the three spawn arms
+(`cargo`/`tsc`/`ruff` in `verifier.rs`) through it, and add the `Skipped` arm to
+the two exhaustive matches (`capture_baseline`; the agent-loop `verify` match at
+`mod.rs:781`). **Correction baked into the spec:** a missing binary does **not**
+strike today (only the `Checked` arm pushes to `recent_verifier_error_counts` at
+`mod.rs:794`; `hard_fail.rs:100` reads only that) — the real fix is replacing an
+opaque, remedy-less io-error repeated each edit turn with a clear `Skipped`
+advisory; the no-strike property is inherited structurally by not pushing to the
+counter. 3 new tests (2 pure classifier incl. the `PermissionDenied`→`Failed`
+negative case + 1 loop advisory). No new dep (`std::io::ErrorKind`). Executor
+target: Qwen/Qwen3.6-27B-FP8.
 
 **📌 M12 — Executor Tooling kicked off (2026-06-09, with the user).** Milestone
 [README](milestones/M12-executor-tooling/README.md) written; `architecture.md`
@@ -19,10 +34,10 @@ governor strike), 02 `rexymcp doctor`, 03–05 Arc B, 06–07 Arc A — the arch
 expands each on demand. **Drafting watch-items:** (a) phase-06 adds a new
 `SessionEvent::TaskUpdate` variant → the known `dashboard/filter.rs` 7-site
 match-arm wall (hard-failed M10 phase-03/04/06); enumerate every arm or split the
-mechanical fixups. (b) phase-01 must make the missing-binary path a non-strike
-advisory — see the toolchain-dependency discipline folded into WORKFLOW.md/
-STANDARDS.md (commit `5cc2ff2`). (c) phases 01/04 shell out to `cargo` — already a
-hard requirement; no new toolchain dep in M12.
+mechanical fixups. (b) the toolchain-dependency discipline is folded into
+WORKFLOW.md/STANDARDS.md/architect SKILL (commit `5cc2ff2`). (c) no new toolchain
+dep in M12 — every shell-out reuses `cargo` (already required) or compiled-in
+tree-sitter grammars.
 
 **M11 — Polish is complete** 🎉 (all seven phases approved_first_try, 2026-06-09 —
 see the [retrospective](milestones/M11-polish/README.md#retrospective--2026-06-09)).
