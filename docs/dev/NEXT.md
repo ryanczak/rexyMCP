@@ -4,12 +4,21 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M11 / phase-01** — governor thresholds → `[governor]` config.
-See [`docs/dev/milestones/M11-polish/phase-01-governor-config.md`](milestones/M11-polish/phase-01-governor-config.md).
+**Active phase:** **none** — M11 / phase-01 approved `approved_first_try`
+(2026-06-09). The user advances to phase-02 via `/rexymcp:architect next`.
 
 **Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — in progress.
-Six phases: 01 (governor config), 02 (init command), 03 (split agent/mod.rs),
+Six phases: **01 (done)**, 02 (init command), 03 (split agent/mod.rs),
 04 (split scorecard.rs), 05a (split server.rs), 05b (split verifier.rs).
+
+**phase-01 done** (2026-06-09, approved_first_try): moved the three governor
+hard-fail thresholds (`identical_call_threshold`, `verifier_persistence_threshold`,
+`runaway_output_bytes`) from compile-time constants in `hard_fail.rs` to a new
+`[governor]` section / `GovernorConfig` in `config.rs`, threaded through
+`LoopDeps` + `mcp/src/runner.rs`. Defaults match the old constants (6/6/102400),
+so zero behavioural change. Clean 84-turn first-try, all gates green (665 executor
++ 265 mcp). One out-of-scope nit logged: a stale `RUNAWAY_OUTPUT_BYTES` doc-comment
+reference in `read_file.rs:17` to sweep later.
 
 **WORKFLOW.md split-calibration fold:** held. The user has explicitly declined to
 apply this fold. Do not apply it.

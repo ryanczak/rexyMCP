@@ -8,7 +8,7 @@ documented `rexymcp.toml` + `.mcp.json` so new projects can get started without
 reading source; (3) decompose the four largest source files so no production file
 exceeds the executor's RunawayOutput limit and each file has one clear concern.
 
-**Status:** review — phase-01 complete, awaiting review.
+**Status:** in progress — phase-01 done; phases 02–05b remaining.
 
 **Depends on:** M1–M10 (all complete). No new feature work here; this milestone
 references existing behaviour only.
@@ -26,7 +26,7 @@ references existing behaviour only.
 
 | Phase | Title | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Governor thresholds → `[governor]` config | review | feature | m |
+| 01 | Governor thresholds → `[governor]` config | done | feature | m |
 | 02 | `rexymcp init` scaffold command | todo | feature | m |
 | 03 | Split `agent/mod.rs` — extract test suite | todo | refactor | m |
 | 04 | Split `scorecard.rs` — extract test suite | todo | refactor | s |

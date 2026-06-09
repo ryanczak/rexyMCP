@@ -1,7 +1,7 @@
 # Phase 01: Governor thresholds → `[governor]` config
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** nothing (pure config plumbing)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -262,4 +262,21 @@ Implementing Spec tasks: adding `GovernorConfig` to config, wiring through `hard
 **Notes for review:**
 - No behavioral changes — `GovernorConfig::default()` produces identical values to the removed constants
 - All existing tests pass unchanged (only the call sites needed the 4th argument added)
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** the `RunawayOutput::describe` string was simplified from
+  `"over {RUNAWAY_OUTPUT_BYTES} threshold"` to `"over threshold"` (the threshold
+  value is no longer a const to interpolate). The byte count remains in the
+  variant's `bytes` field, so no information is lost — accepted.
+- **Calibration:** none. Clean 84-turn first-try: all four gates green on
+  independent re-run (665 executor + 265 mcp), constants fully removed,
+  `governor_config_round_trips_from_toml` verified mutation-resistant (asserts
+  non-default 10/8/204800 survive a TOML round-trip).
+- **Nit (not folded, out of scope):** `executor/src/tools/read_file.rs:17` still
+  names `RUNAWAY_OUTPUT_BYTES` in a doc comment — stale after this phase removed
+  the const. read_file.rs was not in phase scope; sweep in a later phase.
 
