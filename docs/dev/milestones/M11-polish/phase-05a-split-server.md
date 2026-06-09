@@ -1,7 +1,7 @@
 # Phase 05a: Split `server.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (ordering only — no code dependency; same refactor class)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -248,3 +248,30 @@ Moved `#[cfg(test)] mod tests { … }` from `mcp/src/server.rs` (1 225 lines) in
 **Notes for review:** None — clean first-try split, identical to phase-04 pattern.
 
 **End-to-end verification:** N/A — pure internal file-split refactor; no runtime-loadable artifact.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-labels "rexyMCP
+  executor" and stamps `2025-07-09` — the recurring local-LLM identity/clock
+  quirk, cosmetic)
+- **Scope deviations:** none — the diff is exactly two source files
+  (`server.rs` 708-line deletion, `server_tests.rs` 702-line addition) plus the
+  two doc files. **Production lines 1–518 are byte-identical to the parent**
+  (verified by `diff`); `server.rs` ends at 521 lines with the required
+  `#[cfg(test)] #[path = "server_tests.rs"] mod tests;` declaration.
+- **Independent re-run:** `cargo fmt --all --check` ✅, `cargo build` ✅ (zero
+  warnings), `cargo clippy --all-targets --all-features -- -D warnings` ✅,
+  `cargo test` → **270 mcp + 665 executor** pass, zero failures. All 38 test fns
+  moved losslessly (test-fn-name diff between parent block and `server_tests.rs`
+  is empty). The body landed at 702 lines vs. the spec's ~704 estimate — rustfmt
+  collapsed two trailing blank lines (Step 4 authorized `rustfmt` on the touched
+  files); behaviorally identical.
+- **Calibration:** none new. The `sed`-move recipe landed clean first-try
+  again (27 turns) — **fifth consecutive split refactor** (M8 ×2, M11 phases
+  03/04/05a) on the prescribed lossless-move method. The `#[tokio::test]`
+  async-tests-move-verbatim pre-injection was correct (no special handling was
+  needed). Two pre-existing `eprintln!` calls in production (`server.rs:426`,
+  `:450`) are untouched by this phase — note for a future sweep, not a
+  phase-05a defect.
