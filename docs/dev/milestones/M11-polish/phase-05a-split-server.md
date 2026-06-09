@@ -1,7 +1,7 @@
 # Phase 05a: Split `server.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** todo
+**Status:** review
 **Depends on:** phase-04 (ordering only — no code dependency; same refactor class)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -218,3 +218,33 @@ explicitly requires, so it is not an unauthorized new file.)
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-09 (started)
+
+**Executor:** rexyMCP executor
+
+Moved `#[cfg(test)] mod tests { … }` from `mcp/src/server.rs` (1 225 lines) into sibling `mcp/src/server_tests.rs` via `sed`, per phase-04 recipe.
+
+### Update — 2025-07-09 (complete)
+
+**Executor:** rexyMCP executor
+
+**Verification commands (all clean):**
+- `cargo build -p rexymcp` — success, zero warnings
+- `cargo clippy -p rexymcp --all-targets --all-features -- -D warnings` — success, zero warnings
+- `cargo test -p rexymcp` — **270 passed** (matches pre-flight count)
+- `cargo fmt --all --check` — clean
+- `wc -l mcp/src/server.rs` → 521 (≤ 525 ✓)
+- `grep '#\[path' mcp/src/server.rs` → `#[path = "server_tests.rs"]` present ✓
+- `head -1 mcp/src/server_tests.rs` → `use super::*;` ✓
+- `tail -1 mcp/src/server_tests.rs` → `}` ✓
+
+**Files changed:**
+- `mcp/src/server.rs` — trimmed from 1 225 → 521 lines (production code + 3-line module declaration)
+- `mcp/src/server_tests.rs` — new, 704 lines (full test body, byte-for-byte move via `sed`)
+
+**Commit:** `refactor: split server.rs test suite into server_tests.rs`
+
+**Notes for review:** None — clean first-try split, identical to phase-04 pattern.
+
+**End-to-end verification:** N/A — pure internal file-split refactor; no runtime-loadable artifact.
