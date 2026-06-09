@@ -26,7 +26,7 @@ references existing behaviour only.
 
 | Phase | Title | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Governor thresholds → `[governor]` config | todo | feature | m |
+| 01 | Governor thresholds → `[governor]` config | review | feature | m |
 | 02 | `rexymcp init` scaffold command | todo | feature | m |
 | 03 | Split `agent/mod.rs` — extract test suite | todo | refactor | m |
 | 04 | Split `scorecard.rs` — extract test suite | todo | refactor | s |
