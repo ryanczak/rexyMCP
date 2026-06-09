@@ -29,7 +29,7 @@ references existing behaviour only.
 |---|---|---|---|---|
 | 01 | Governor thresholds → `[governor]` config | done | feature | m |
 | 02 | `rexymcp init` scaffold command | done | feature | m |
-| 03 | Split `agent/mod.rs` — extract test suite | todo | refactor | m |
+| 03 | Split `agent/mod.rs` — extract test suite | review | refactor | m |
 | 04 | Split `scorecard.rs` — extract test suite | todo | refactor | s |
 | 05a | Split `server.rs` — extract test suite | todo | refactor | s |
 | 05b | Split `verifier.rs` — extract test suite | todo | refactor | s |

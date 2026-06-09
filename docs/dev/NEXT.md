@@ -4,8 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — M11 / phase-02 approved `approved_first_try`
-(2026-06-09). The user advances to phase-03 via `/rexymcp:architect next`.
+**Active phase:** **phase-03** — [Split `agent/mod.rs` — extract test
+suite](milestones/M11-polish/phase-03-split-agent-mod.md). Drafted/activated
+2026-06-09; dispatch via `/rexymcp:dispatch phase-03`.
+
+**phase-03 scope (active):** pure file-split refactor. Move the single
+`#[cfg(test)] mod tests { … }` block (verified on HEAD: `#[cfg(test)]` at line
+882, `mod tests {` at 883, inner body 884–4430, closing `}` at 4431 — total
+4 431 lines / 163 KB) out of `executor/src/agent/mod.rs` into a new sibling
+`executor/src/agent/tests.rs`, replacing it with a `#[cfg(test)] mod tests;`
+declaration. Production code (lines 1–881) untouched; mod.rs ends ≤ 900 lines.
+**Method prescribed: `sed`, not `write_file`.** The bash classifier is a
+blocklist (`Severity::Allow` for `sed`/`mv`/`printf` + in-scope redirects —
+verified `security/bash_classify.rs`), so the ~3 547-line body is moved
+losslessly by `sed -n '884,4430p' mod.rs > tests.rs` rather than regenerated
+verbatim (infeasible for a 27B model: token-limit truncation + transcription
+errors, and the exact mechanical-churn shape that escalated M9/phase-04 and both
+M8 splits). Zero logic change; existing 665 executor tests must pass at the same
+count. Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
 
 **phase-02 done** (2026-06-09, approved_first_try): added the `rexymcp init
 [--dir <path>] [--force]` scaffold command. New `mcp/src/init.rs` (a raw-string
