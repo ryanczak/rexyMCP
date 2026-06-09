@@ -4,8 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — M11 / phase-03 approved `approved_first_try`
-(2026-06-09). The user advances to phase-04 via `/rexymcp:architect next`.
+**Active phase:** **phase-04** — [Split `scorecard.rs` — extract test
+suite](milestones/M11-polish/phase-04-split-scorecard.md). Drafted/activated
+2026-06-09; dispatch via `/rexymcp:dispatch phase-04`.
+
+**phase-04 scope (active):** pure file-split refactor, same shape as phase-03.
+Move the single `#[cfg(test)] mod tests { … }` block (verified on HEAD:
+`#[cfg(test)]` at 392, `mod tests {` at 393, inner body 394–1152, closing `}` at
+1153 — total 1 153 lines, 34 test fns) out of `mcp/src/scorecard.rs` into a new
+sibling `mcp/src/scorecard_tests.rs`. Production lines 1–391 untouched;
+scorecard.rs ends ≤ 400 lines. **Two load-bearing pre-injections:** (1) method
+prescribed `sed` not `write_file` (`sed -n '394,1152p' scorecard.rs >
+scorecard_tests.rs` — the recipe that landed phase-03 clean first-try); (2) the
+declaration **requires `#[path = "scorecard_tests.rs"]`** because `scorecard` is
+a single-file module (`mod scorecard;` in main.rs) — a bare `mod tests;` would
+make the compiler look for `scorecard/tests.rs` and fail. (Contrast phase-03:
+`agent` is a directory module, so `agent/tests.rs` needed no `#[path]`.) Zero
+logic change; existing 270 mcp tests must pass at the same count. Executor
+target: Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
 
 **phase-03 done** (2026-06-09, approved_first_try): pure file-split refactor —
 moved the single ~3 547-line `#[cfg(test)] mod tests { … }` block out of
