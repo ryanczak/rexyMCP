@@ -1,7 +1,7 @@
 # Phase 02: `rexymcp init` scaffold command
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (must be done first — `rexymcp init` writes a `[governor]`
 section whose fields are defined in phase-01)
 **Estimated diff:** ~200 lines
@@ -260,3 +260,22 @@ grep -n "rexymcp.toml — executor configuration" mcp/src/init.rs
 - `fd28174` — feat: add rexymcp init scaffold command
 
 **Notes for review:** None. Implementation matches spec exactly.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** none. All five spec tasks landed as written; `run()`
+  uses `anyhow::Result` (the binary-entry pattern the spec authorized as the
+  alternative to the crate error type).
+- **Calibration:** none. Clean 47-turn first-try. All four gates green on
+  independent re-run (665 executor + 270 mcp). E2E reproduced against the real
+  binary: `init --dir <tmp>` → `wrote rexymcp.toml`; re-run refuses with
+  exit 1 and leaves the file untouched; `--force` overwrites; `.mcp.json`
+  absent; the generated config parses through `Config::load` (verified via
+  `rexymcp health --config <tmp>/rexymcp.toml`, which loaded it and reached a
+  live endpoint — no parse error). `init_writes_parseable_config` is
+  mutation-resistant (asserts concrete field values 32768/70/200/1 and
+  governor 6/6/102400). The actual landed commit is `c69f2a8` (the Update Log
+  cites `fd28174`, a pre-amend sha — cosmetic, the tree is correct).

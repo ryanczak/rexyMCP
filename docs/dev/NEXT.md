@@ -4,26 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **[M11 / phase-02 — `rexymcp init` scaffold command](milestones/M11-polish/phase-02-init-command.md)**
-(activated 2026-06-09, `Status: todo` — fresh first dispatch). Adds a
-`rexymcp init [--dir <path>] [--force]` CLI subcommand that writes a documented
-`rexymcp.toml` (no `.mcp.json`) and refuses to clobber an existing file without
-`--force`. New `mcp/src/init.rs` module + one `Commands::Init` variant + match
-arm in `main.rs`. Dispatch via `/rexymcp:dispatch phase-02`.
+**Active phase:** **none** — M11 / phase-02 approved `approved_first_try`
+(2026-06-09). The user advances to phase-03 via `/rexymcp:architect next`.
 
-**phase-02 doc refreshed on activation (2026-06-09):** corrected two stale
-timeout-default comments in the template (`first_token_timeout_secs` 120→600,
-`stream_idle_timeout_secs` 180→240 — actual defaults per `config.rs:112-118`),
-reworded the confusing "uncomment required keys" parse criterion (the template
-parses as-is), added the missing **End-to-end verification** section (real CLI
-artifact: the generated config the binary loads), and added two negative-case
-tests per the WORKFLOW "pin negative cases" fold (no-clobber content-unchanged
-assertion + `.mcp.json`-absent assertion).
+**phase-02 done** (2026-06-09, approved_first_try): added the `rexymcp init
+[--dir <path>] [--force]` scaffold command. New `mcp/src/init.rs` (a raw-string
+documented `rexymcp.toml` template + `run()` that refuses to clobber an existing
+file without `--force` and never writes `.mcp.json`) + one `Commands::Init`
+clap variant + dispatch arm in `main.rs`. Purely additive — no existing-type
+churn. 5 hermetic `TempDir` tests (write / parseable-config / refuse-overwrite
+with content-unchanged negative assertion / force-overwrite / no-`.mcp.json`).
+**665 executor + 270 mcp** pass. Committed `c69f2a8` (feat); approved `_`.
+Clean 47-turn first-try — E2E reproduced at review against the real binary
+(`init` → wrote; re-run → exit 1, file untouched; `--force` → overwrote;
+generated config loaded via `rexymcp health`). Doc was refreshed on activation
+(stale timeout-default comments 120→600 / 180→240 corrected, reworded parse
+criterion, added E2E section + two negative-case tests per the "pin negative
+cases" fold).
 
 **Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — in progress.
-Six phases: **01 (done)**, **02 (init command — active)**, 03 (split
-agent/mod.rs), 04 (split scorecard.rs), 05a (split server.rs), 05b (split
-verifier.rs).
+Six phases: **01 (done)**, **02 (done)**, 03 (split agent/mod.rs),
+04 (split scorecard.rs), 05a (split server.rs), 05b (split verifier.rs).
 
 **phase-01 done** (2026-06-09, approved_first_try): moved the three governor
 hard-fail thresholds (`identical_call_threshold`, `verifier_persistence_threshold`,
