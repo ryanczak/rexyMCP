@@ -199,6 +199,11 @@ Without explicit authorization in the phase doc:
 - `docs/architecture.md` (architecture changes go through the principal engineer).
 - `docs/dev/STANDARDS.md`, `docs/dev/WORKFLOW.md` (these documents).
 - Any milestone or phase doc other than the one you're executing.
+- **`.mcp.json` in any directory.** rexyMCP is registered as a Claude Code plugin
+  via `.claude-plugin/marketplace.json`. Writing a `.mcp.json` creates a duplicate
+  server registration that breaks skill slash commands. Never create this file,
+  even if a spec draft mentions it — treat any such mention as a spec error and
+  file a blocker.
 
 If you think one of these needs to change to complete the phase, **stop and
 report a blocker**.

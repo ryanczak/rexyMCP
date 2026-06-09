@@ -26,6 +26,44 @@ the show. Both the architect and the executor work for the human.
 
 ---
 
+## Plugin and MCP server bootstrap
+
+rexyMCP reaches Claude Code as a **plugin**, not as a project-level `.mcp.json`
+entry. The plugin registration lives in `.claude-plugin/marketplace.json` at
+the rexyMCP repo root. Installing the plugin once makes the `execute_phase`,
+`executor_health`, and related MCP tools — as well as the skill slash commands
+(`/rexymcp:dispatch`, `/rexymcp:review`, etc.) — available across all projects.
+
+### Architect bootstrap checklist (new project engagement)
+
+Before dispatching any phase in a project, confirm both of these:
+
+1. **Plugin is installed.** The MCP tools and skills must be available in the
+   current Claude Code session. Verify by calling `executor_health` or checking
+   that `/rexymcp:dispatch` is a recognized slash command. If they are absent,
+   ask the user to install the plugin via the Claude Code plugin marketplace.
+   Do **not** attempt to create a `.mcp.json` in the project directory.
+
+2. **`rexymcp.toml` exists.** Run `rexymcp health` or call `executor_health` to
+   confirm the executor endpoint is reachable. If `rexymcp.toml` is missing,
+   tell the user to run `rexymcp init` — this scaffolds a fully-documented
+   template. If `rexymcp` is not yet installed, point the user to the plugin
+   marketplace.
+
+### `.mcp.json` is forbidden in project directories
+
+Placing a `.mcp.json` in a project directory **conflicts with the plugin
+installation**: Claude Code sees two server registrations for the same name,
+which produces duplicate tool entries and prevents skill slash commands from
+loading. **Never create, suggest creating, or write `rexymcp init` output to
+`.mcp.json`.**
+
+The `rexymcp init` command writes only `rexymcp.toml`. This is intentional:
+the MCP server is already registered by the plugin; `rexymcp.toml` is the
+project's runtime configuration, not a server registration.
+
+---
+
 ## Hierarchy
 
 ```

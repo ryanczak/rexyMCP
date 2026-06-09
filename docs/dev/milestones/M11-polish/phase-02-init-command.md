@@ -10,10 +10,14 @@ section whose fields are defined in phase-01)
 ## Goal
 
 Add `rexymcp init [--force]` — a command that writes a fully-documented
-`rexymcp.toml` and a `.mcp.json` Claude Code plugin entry to the current directory
-(or `--dir <path>`). Refuse to overwrite either file unless `--force` is given.
-After running `rexymcp init`, a user can immediately run `rexymcp serve` and
-install the plugin into Claude Code without reading any source code.
+`rexymcp.toml` to the current directory (or `--dir <path>`). Refuse to overwrite
+without `--force`. After running `rexymcp init`, a user has a complete, commented
+config file ready to edit without reading any source code.
+
+**Do not write `.mcp.json`.** rexyMCP is installed as a Claude Code plugin via
+`.claude-plugin/marketplace.json`. Writing a `.mcp.json` in the project directory
+registers a duplicate MCP server entry, causing conflicts in Claude Code that
+prevent skills from loading.
 
 ## Pre-flight
 
@@ -30,7 +34,7 @@ install the plugin into Claude Code without reading any source code.
 The CLI in `main.rs` uses `clap` with a `Commands` enum. Add:
 
 ```rust
-/// Scaffold rexymcp.toml and .mcp.json in the target directory.
+/// Scaffold rexymcp.toml in the target directory.
 Init {
     /// Directory to initialise (default: current directory).
     #[arg(long, default_value = ".")]
@@ -96,21 +100,7 @@ output_filter = true              # filter/truncate bash output to conserve cont
 # dir = "/path/to/shared/telemetry"  # cross-project PhaseRun telemetry store
 ```
 
-#### 2b. The `.mcp.json` template
-
-```json
-{
-  "mcpServers": {
-    "rexymcp": {
-      "type": "stdio",
-      "command": "rexymcp",
-      "args": ["serve", "--config", "rexymcp.toml"]
-    }
-  }
-}
-```
-
-#### 2c. `run` function logic
+#### 2b. `run` function logic
 
 ```rust
 pub fn run(dir: &std::path::Path, force: bool) -> crate::error::Result<()>
@@ -121,21 +111,18 @@ pattern of other CLI handlers in `main.rs`.)
 
 Steps:
 1. Check `dir` exists and is a directory. If not, return an error.
-2. For each of the two output paths (`dir/rexymcp.toml` and `dir/.mcp.json`):
-   - If the file exists and `!force`, print a one-line message to stderr
-     (`"rexymcp.toml already exists — use --force to overwrite"`) and return
-     `Err(...)`.
+2. Compute `dir/rexymcp.toml`. If the file exists and `!force`, print a one-line
+   message to stderr (`"rexymcp.toml already exists — use --force to overwrite"`)
+   and return `Err(...)`.
 3. Write `rexymcp.toml` with the template above.
-4. Write `.mcp.json` with the template above.
-5. Print two success lines to stdout:
+4. Print one success line to stdout:
    ```
    wrote rexymcp.toml
-   wrote .mcp.json
    ```
 
-Do **not** use `println!` in production paths — use `eprintln!` for warnings and
-return `Err` on failures; final success lines are acceptable `println!` since this
-is a CLI UX tool (the STANDARDS prohibition covers debug prints, not CLI output).
+Do **not** write `.mcp.json`. Do **not** use `println!` in production paths for
+debug output — `eprintln!` for warnings, `Err` on failures; the final success line
+is acceptable `println!` since this is a CLI UX tool.
 
 ### 3. Error handling
 
@@ -145,13 +132,13 @@ writes.
 
 ## Acceptance criteria
 
-- [ ] `rexymcp init` (no args) writes `./rexymcp.toml` and `./.mcp.json` in the
-  current directory, printing `wrote rexymcp.toml` and `wrote .mcp.json`.
+- [ ] `rexymcp init` (no args) writes `./rexymcp.toml` in the current directory,
+  printing `wrote rexymcp.toml`.
 - [ ] `rexymcp init --dir /some/path` writes into `/some/path/`.
 - [ ] Running `rexymcp init` a second time (without `--force`) exits non-zero and
-  prints the "already exists" message to stderr for the first conflicting file
-  without overwriting either file.
-- [ ] `rexymcp init --force` overwrites both files.
+  prints the "already exists" message to stderr without overwriting the file.
+- [ ] `rexymcp init --force` overwrites `rexymcp.toml`.
+- [ ] No `.mcp.json` is written under any invocation.
 - [ ] The written `rexymcp.toml` is valid TOML that parses with `Config::load_with_env`
   (after uncommenting the required `[executor]` keys that have no defaults — the
   test may need to supply `REXYMCP_BASE_URL` or similar).
@@ -160,10 +147,10 @@ writes.
 - [ ] `cargo test` passes.
 - [ ] `cargo fmt --all --check` passes.
 - [ ] At least 3 unit tests in `mcp/src/init.rs` (or `mcp/tests/init_tests.rs`):
-  - `init_writes_both_files` — verify both files are created in a `TempDir`.
+  - `init_writes_toml` — verify `rexymcp.toml` is created in a `TempDir`.
   - `init_refuses_overwrite_without_force` — write once, write again, expect `Err`.
-  - `init_force_overwrites` — write once, write again with `--force`, expect both
-    files are overwritten (check content changed if needed).
+  - `init_force_overwrites` — write once, write again with `--force`, expect the
+    file is overwritten (check content changed if needed).
 
 ## Notes for executor
 
