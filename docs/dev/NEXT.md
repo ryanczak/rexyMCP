@@ -4,26 +4,54 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-05a** — [Split `server.rs` — extract test
-suite](milestones/M11-polish/phase-05a-split-server.md). Drafted/activated
-2026-06-09; dispatch via `/rexymcp:dispatch phase-05a`.
+**Active phase:** **phase-05b** — [Split `verifier.rs` — extract test
+suite](milestones/M11-polish/phase-05b-split-verifier.md). Drafted/activated
+2026-06-09; dispatch via `/rexymcp:dispatch phase-05b`.
 
-**phase-05a scope (active):** pure file-split refactor, same shape as phases
-03/04. Move the single `#[cfg(test)] mod tests { … }` block (verified on HEAD:
-`#[cfg(test)]` at 519, `mod tests {` at 520, inner body 521–1224, closing `}` at
-1225 — total 1 225 lines, 34 fns incl. `#[tokio::test]` async tests) out of
-`mcp/src/server.rs` into a new sibling `mcp/src/server_tests.rs`. Production
-lines 1–518 untouched; server.rs ends ≤ 525 lines. **Two load-bearing
-pre-injections (same as phase-04):** (1) method prescribed `sed` not `write_file`
-(`sed -n '521,1224p' server.rs > server_tests.rs` — the recipe that landed
-phases 03/04 clean first-try; the pre-existing June-8 stub wrongly prescribed a
-two-range-read `write_file` regeneration and was rewritten); (2) the declaration
-**requires `#[path = "server_tests.rs"]`** because `server` is a single-file
-module (`mod server;` in main.rs:15) — a bare `mod tests;` would make the
-compiler look for `server/tests.rs` and fail. Plus a third note: the block's
-`#[tokio::test]` async tests move verbatim, no special handling. Zero logic
-change; existing **270** mcp tests must pass at the same count. Executor target:
-Qwen/Qwen3.6-27B-FP8.
+**phase-05b scope (active):** pure file-split refactor — the **final
+file-decomposition phase of M11**, same shape as phases 03/04/05a. Move the
+single `#[cfg(test)] mod tests { … }` block (re-verified on HEAD while
+activating: total **1 163** lines, `#[cfg(test)]` at 495, `mod tests {` at 496,
+`use super::*;` at 497, inner body **497–1162**, closing `}` at 1163; **35**
+`#[test]`/`#[tokio::test]` fns, **2** of them `#[ignore]`-gated live-`rustc`
+tests) out of `executor/src/governor/verifier.rs` into a new sibling
+`executor/src/governor/verifier_tests.rs`. Production lines 1–494 untouched;
+verifier.rs ends ≤ 500 lines. **Two load-bearing pre-injections (same as
+05a):** (1) method prescribed `sed` not `write_file`
+(`sed -n '497,1162p' verifier.rs > verifier_tests.rs`); (2) the declaration
+**requires `#[path = "verifier_tests.rs"]`** because `verifier` is a single-file
+module (`pub mod verifier;` in governor/mod.rs:3) — a bare `mod tests;` would
+make the compiler look for `verifier/tests.rs` and fail. Plus: the
+`#[tokio::test]` async tests **and the 2 `#[ignore]`-gated live `rustc` tests**
+move verbatim, no special handling — the **`2 ignored`** count is part of the
+regression guard (if it drops to 0, an `#[ignore]` was lost). Zero logic change;
+existing **665 passed / 2 ignored** executor tests must hold at the same counts.
+Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**📌 After 05b:** the **datetime-injection** phase (executor system-prompt
+temporal grounding) is the final M11 phase — see the M11 scope decision below.
+Do not draft it until 05b is done; it amends `architecture.md` § Status + the
+M11 README phase table at its kickoff (human-gated, same deferral as M10).
+
+**Prior active-phase pointer (now done):**
+
+**phase-05a done** (2026-06-09, approved_first_try): pure file-split refactor —
+moved the single ~704-line `#[cfg(test)] mod tests { … }` block out of
+`mcp/src/server.rs` (1 225 lines) into a new sibling `mcp/src/server_tests.rs`
+(702 lines, all test fns preserved), replacing it with a
+`#[cfg(test)] #[path = "server_tests.rs"] mod tests;` declaration. server.rs now
+**521 lines** (production 1–518 byte-identical to parent, verified by `diff`, +
+the 3-line declaration). The `sed` move landed clean; **270 mcp + 665 executor**
+pass on independent re-run, all four gates green. Committed `9a7efa0`
+(refactor); approved `5b7c77b` (docs). **Clean first-try, 27 turns — fifth
+consecutive split refactor (M8 ×2, M11 phases 03/04/05a) to land first-try on
+the prescribed `sed`-move recipe; the `#[tokio::test]`-moves-verbatim
+pre-injection held (no special handling needed).** Process note (cosmetic, no
+fold): the Update Log self-labels "rexyMCP executor" and stamps `2025-07-09` —
+the recurring local-LLM identity/clock quirk (the very gap the queued
+datetime-injection phase addresses). Surfaced two pre-existing `eprintln!` calls
+in production (`server.rs:426`, `:450`) untouched by this phase — note for a
+future sweep, not a phase-05a defect.
 
 **Prior active-phase pointer (now done):**
 
@@ -102,8 +130,10 @@ criterion, added E2E section + two negative-case tests per the "pin negative
 cases" fold).
 
 **Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — in progress.
-Six phases: **01 (done)**, **02 (done)**, 03 (split agent/mod.rs),
-04 (split scorecard.rs), 05a (split server.rs), 05b (split verifier.rs).
+Six split/polish phases done so far: **01 (done)**, **02 (done)**,
+**03 (done — split agent/mod.rs)**, **04 (done — split scorecard.rs)**,
+**05a (done — split server.rs)**, **05b active (split verifier.rs)**; the
+datetime-injection phase is queued as the final M11 phase after 05b.
 
 **phase-01 done** (2026-06-09, approved_first_try): moved the three governor
 hard-fail thresholds (`identical_call_threshold`, `verifier_persistence_threshold`,
