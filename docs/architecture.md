@@ -688,9 +688,20 @@ The project plan. Each entry becomes a milestone with its own
     rexyMCP using its own reason for existing. The discipline for the milestone:
     ship the certain-value half, gate the hypothesis half behind config, and let
     `bounces_to_approval` / `first_pass_rate` prune what doesn't earn its keep.
-    **Locked scope (with the user, 2026-06-09): both arcs, Arc B first; all three
-    Arc B wins; `task_tracking` default on.** See
-    `docs/dev/milestones/M12-executor-tooling/README.md`. Two arcs:
+    **Locked scope (with the user, 2026-06-09): three arcs — Arc 0 (toolchain
+    robustness) first, then Arc B (all three code-intelligence wins), then Arc A
+    (task tracking, `task_tracking` default on).** See
+    `docs/dev/milestones/M12-executor-tooling/README.md`. Three arcs:
+
+    - **Arc 0 — toolchain robustness.** Validation features shell out to
+      per-language toolchains; missing ones must **fail open at runtime** (the
+      verifier returns a `Skipped`/advisory naming the remedy, not a `Failed` the
+      governor strikes into a `VerifierFailurePersistent`) and **fail-hard-advisory
+      where a human can act** (a new `rexymcp doctor` command + architect bootstrap
+      detection present a resolution plan). Detection lives in the architect +
+      `doctor`, never in `rexymcp init` (which stays a static scaffolder, so an
+      unsupported language like Zig runs on the Tier-0 command set alone). The
+      discipline is folded into WORKFLOW.md/STANDARDS.md/the architect skill.
 
     - **Arc A — structured task tracking.** A per-session TODO list the executor
       **tracks and checks off as it works — it does not generate it** (decomposition

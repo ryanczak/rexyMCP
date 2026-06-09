@@ -3,9 +3,11 @@
 **Goal:** Give the local-LLM executor net-new capability that makes a weak model
 more effective and more efficient, where **every intervention's value is
 measurable against the scorecard** (`bounces_to_approval`, `first_pass_rate`).
-Two arcs, run **Arc B first**: (B) incremental code intelligence harvested
-cheaply from parsers already in the tree, then (A) architect-seeded structured
-task tracking gated for a clean A/B.
+Three arcs: (0) toolchain robustness — make the validation features degrade
+gracefully when a tool is absent and let the human see what's missing; (B)
+incremental code intelligence harvested cheaply from parsers already in the tree;
+(A) architect-seeded structured task tracking gated for a clean A/B. Order: Arc 0
+(foundational), then **Arc B**, then Arc A.
 
 **Status:** in-progress
 
@@ -15,6 +17,8 @@ task tracking gated for a clean A/B.
 
 | Pain point | Intervention |
 |---|---|
+| A missing toolchain binary makes the verifier return `Failed("cargo check spawn failed…")` (`verifier.rs:250`), which the governor counts as a strike → opaque `VerifierFailurePersistent` hard_fail, and the human is never told to install anything | **0 — degrade**: missing binary → a `Skipped`/advisory outcome that names the remedy and accrues no strike |
+| No way for the human to see, before dispatching, whether the target toolchain is installed | **0 — `rexymcp doctor`**: a CLI report of per-language toolchain availability (the architect runs it at bootstrap; also scriptable/CI) |
 | Breaking multi-site changes run out of verifier runway before the cascade compiles (folded in WORKFLOW § "Prefer additive change shapes") | **B — find-references**: enumerate every call site *before* the breaking edit |
 | The verifier parses cargo JSON but discards rustc's machine-applicable `suggested_replacement` spans | **B — suggested-fixes**: feed "rustc suggests X→Y at line N" to the model |
 | `cargo test` failures reach the model as raw text; the retry loop has no structured expected-vs-actual signal | **B — structured test-failure parsing** (extends the M10 cargo filter) |
@@ -29,19 +33,30 @@ task tracking gated for a clean A/B.
 
 ## Phases
 
-Run in order; Arc B (01–03) before Arc A (04–05). The architect expands each
-phase doc on demand (`/rexymcp:architect next`), not all at once.
+Run in order: Arc 0 (01–02, foundational) → Arc B (03–05) → Arc A (06–07). The
+architect expands each phase doc on demand (`/rexymcp:architect next`), not all at
+once.
 
 | Phase | Title | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Arc B — find-references in `symbols` (tree-sitter call-site search) | todo | feature | m |
-| 02 | Arc B — surface rustc machine-applicable suggested-fix spans | todo | feature | s |
-| 03 | Arc B — structured `cargo test` failure parsing (expected-vs-actual) | todo | feature | m |
-| 04 | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, Spec-seeded list, config-gated (`task_tracking`, default on) | todo | feature | l |
-| 05 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
+| 01 | Arc 0 — verifier missing-binary → `Skipped` advisory (degrade, no governor strike) | todo | bugfix | s |
+| 02 | Arc 0 — `rexymcp doctor` toolchain-availability command | todo | feature | m |
+| 03 | Arc B — find-references in `symbols` (tree-sitter call-site search) | todo | feature | m |
+| 04 | Arc B — surface rustc machine-applicable suggested-fix spans | todo | feature | s |
+| 05 | Arc B — structured `cargo test` failure parsing (expected-vs-actual) | todo | feature | m |
+| 06 | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, Spec-seeded list, config-gated (`task_tracking`, default on) | todo | feature | l |
+| 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
 
 ## Exit criteria
 
+- [ ] When a verifier toolchain binary is **absent** (`cargo`/`tsc`/`ruff` not on
+  PATH), the verifier returns a `Skipped`/advisory outcome that names the missing
+  binary and the remedy and is **not** counted as a verifier failure strike by the
+  governor — distinct from "the tool ran and found diagnostics". A pinned test
+  simulates the missing-binary path.
+- [ ] `rexymcp doctor` reports, per language, whether the Tier-0 command-set
+  toolchain and the Tier-1 enhancer binaries are installed and on PATH, with a
+  non-zero exit when a **required** (Tier-0) tool is missing.
 - [ ] `symbols` can return the **call sites / references** of a named symbol via
   tree-sitter (Rust + Python, the languages it already supports), with pinned
   negative cases (a same-named symbol in an unrelated scope must **not** match by
@@ -84,6 +99,19 @@ phase doc on demand (`/rexymcp:architect next`), not all at once.
 - **`task_tracking` default = on.** Tracking becomes the new normal; control runs
   flip it off. Local-LLM tokens are free and the 131071-token window has never
   hit a compaction event, so the added context is affordable.
+- **Arc 0 — toolchain robustness added (2026-06-09, with the user)** after a
+  design discussion on fail-open vs. fail-hard for missing validation tooling.
+  Resolution: **fail-hard-advisory where a human can act, fail-open at runtime.**
+  Two phases: (01) the verifier missing-binary degrade fix — today a missing
+  binary returns `Failed`, which the governor strikes into an opaque
+  `VerifierFailurePersistent`; it should be a `Skipped` advisory that names the
+  remedy; (02) a standalone `rexymcp doctor` command the architect runs at
+  bootstrap to detect+report toolchain availability. **Detection is the
+  architect's job + `doctor`, NOT `rexymcp init`** — init stays a static
+  scaffolder so it never becomes opinionated about which languages are supported
+  (a project in an unsupported language like Zig runs on the Tier-0 command set
+  alone). Discipline folded into WORKFLOW.md/STANDARDS.md/architect SKILL.md
+  (commit `5cc2ff2`).
 
 ### Pre-injection watch-items for the drafting architect
 

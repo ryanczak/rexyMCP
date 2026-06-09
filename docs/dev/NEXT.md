@@ -5,19 +5,24 @@ engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
 **Active phase:** **none yet — M12 kicked off, no phase drafted.** Run
-`/rexymcp:architect next` to draft **phase-01** (Arc B — find-references in
-`symbols`), which will set this pointer and ready it for `/rexymcp:dispatch`.
+`/rexymcp:architect next` to draft **phase-01** (Arc 0 — verifier missing-binary →
+`Skipped` advisory), which will set this pointer and ready it for `/rexymcp:dispatch`.
 
 **📌 M12 — Executor Tooling kicked off (2026-06-09, with the user).** Milestone
 [README](milestones/M12-executor-tooling/README.md) written; `architecture.md`
-§ Status #12 marked in-progress. **Locked scope:** both arcs, **Arc B first**;
-**all three Arc B wins** (find-references + rustc suggested-fix spans + structured
-`cargo test` failure parsing); then Arc A (task tracking + dashboard panel) with
-**`task_tracking` default on**. Five planned phases (01–03 Arc B, 04–05 Arc A) —
-the architect expands each on demand. **Drafting watch-item:** phase-04 adds a new
+§ Status #12 marked in-progress. **Locked scope: three arcs —**
+**Arc 0 (toolchain robustness)** first, then **Arc B** (all three code-intelligence
+wins: find-references + rustc suggested-fix spans + structured `cargo test` failure
+parsing), then **Arc A** (task tracking + dashboard panel, `task_tracking` default
+on). **Seven planned phases:** 01 verifier missing-binary degrade (`Skipped`, no
+governor strike), 02 `rexymcp doctor`, 03–05 Arc B, 06–07 Arc A — the architect
+expands each on demand. **Drafting watch-items:** (a) phase-06 adds a new
 `SessionEvent::TaskUpdate` variant → the known `dashboard/filter.rs` 7-site
-match-arm wall (hard-failed M10 phase-03/04/06); enumerate every arm in that phase
-doc or split the mechanical fixups.
+match-arm wall (hard-failed M10 phase-03/04/06); enumerate every arm or split the
+mechanical fixups. (b) phase-01 must make the missing-binary path a non-strike
+advisory — see the toolchain-dependency discipline folded into WORKFLOW.md/
+STANDARDS.md (commit `5cc2ff2`). (c) phases 01/04 shell out to `cargo` — already a
+hard requirement; no new toolchain dep in M12.
 
 **M11 — Polish is complete** 🎉 (all seven phases approved_first_try, 2026-06-09 —
 see the [retrospective](milestones/M11-polish/README.md#retrospective--2026-06-09)).
