@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 mod cap;
 mod dashboard;
+mod doctor;
 mod init;
 mod log_query;
 mod roots;
@@ -147,6 +148,16 @@ enum Commands {
         /// Path to the config file
         #[arg(long)]
         config: Option<PathBuf>,
+    },
+    /// Report whether the configured toolchain + verifier enhancers are on PATH
+    Doctor {
+        /// Path to the config file
+        #[arg(long)]
+        config: Option<PathBuf>,
+
+        /// Emit the report as JSON instead of a human summary
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -364,6 +375,16 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             });
             Ok(())
+        }
+        Commands::Doctor { config, json } => {
+            let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
+            let cfg = Config::load_with_env(&config_path)?;
+            let ok = doctor::run(&cfg.commands, json);
+            if ok {
+                Ok(())
+            } else {
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -602,6 +623,35 @@ mod tests {
                 assert_eq!(config, None);
             }
             _ => panic!("expected Dashboard"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_doctor_with_config_and_json() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "doctor",
+            "--config",
+            "/some/rexymcp.toml",
+            "--json",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Doctor { config, json }) => {
+                assert_eq!(config, Some(PathBuf::from("/some/rexymcp.toml")));
+                assert!(json);
+            }
+            _ => panic!("expected Doctor"),
+        }
+
+        let cli2 = Cli::try_parse_from(["rexymcp", "doctor"]).unwrap();
+        match cli2.command {
+            Some(Commands::Doctor { config, json }) => {
+                assert_eq!(config, None);
+                assert!(!json);
+            }
+            _ => panic!("expected Doctor"),
         }
     }
 }

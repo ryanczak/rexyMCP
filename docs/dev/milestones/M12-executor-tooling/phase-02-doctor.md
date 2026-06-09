@@ -1,7 +1,7 @@
 # Phase 02: `rexymcp doctor` — toolchain-availability command
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (the `Skipped` runtime-degrade fix; this is its
 human-present counterpart)
 **Estimated diff:** ~200 lines
@@ -414,3 +414,31 @@ doc. `doctor.rs` is the one new file the command requires.
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-09 00:00 (complete)
+
+**By:** executor
+
+**Summary:** Implemented `rexymcp doctor` — toolchain-availability command.
+
+**Files changed:**
+- `mcp/src/doctor.rs` — new module: `command_binary`, `resolve_binary`, `build_report`, `DoctorReport`, `ToolStatus`, `format_report`, `run`, plus 18 unit tests.
+- `mcp/src/main.rs` — added `mod doctor`, `Commands::Doctor` variant, dispatch arm, and `cli_parse_doctor_with_config_and_json` test.
+- `docs/dev/milestones/M12-executor-tooling/phase-02-doctor.md` — status `todo` → `review`, Update Log entry.
+- `docs/dev/milestones/M12-executor-tooling/README.md` — phase table row `todo` → `review`.
+
+**Verification commands (all clean):**
+- `cargo fmt --all --check` — pass
+- `cargo build` — zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — pass
+- `cargo test -p rexymcp` — 289 passed (was 270, +19 new tests)
+
+**End-to-end verification:**
+1. All Tier-0 present: `cargo run -p rexymcp -- doctor --config rexymcp.toml` → exit 0, cargo row marked `ok`, three Tier-1 rows (cargo ok, tsc MISSING, ruff ok), "All required tools are present."
+2. Missing Tier-0: throwaway config with `build = "definitely-not-a-real-binary-xyz build"` → exit 1, binary marked `MISSING`, "A required tool is missing" warning present.
+3. `--json` shape: `cargo run -p rexymcp -- doctor --config rexymcp.toml --json` → parseable JSON with `tier0`/`tier1` arrays, each containing `binary`/`found`/`note`.
+
+**Notes for review:**
+- Tier-1 install-hint wording matches phase-01's `spawn_failure` strings verbatim.
+- `resolve_binary` uses `is_file()` which inherently rejects directories and does exact matching (no substring matches).
+- Tier-0 dedup merges roles into the `note` field (e.g. "format, build, lint, test" for a Rust project where all commands use `cargo`).
