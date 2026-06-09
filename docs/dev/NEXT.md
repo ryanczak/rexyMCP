@@ -28,6 +28,20 @@ activation edits *before* dispatch next time (2nd dirty-tree occurrence after
 M9/phase-01); (2) the executor stamped the Update Log `2025-07-15` (local-LLM
 clock quirk, cosmetic).
 
+**📌 M11 scope decision (2026-06-09, with the user):** add **datetime injection
+into the executor system prompt** as the **final M11 phase, after the three
+splits (04, 05a, 05b)**. Rationale: the executor has no temporal grounding
+(stamped phase-03's Update Log `2025-07-15`); all *machine* records already use
+the real injected `LoopDeps.clock` (epoch-millis), so only model-authored prose
+is wrong — a polish fix, not a correctness fix. Implementation is small and
+hermetic: format `(deps.clock)()` → `YYYY-MM-DD` (chrono already a dep) and
+prepend one line to the system prompt in `executor/src/agent/prompt.rs` (96
+lines); tests inject a fixed clock for a deterministic date string (no
+`Utc::now()`, satisfies STANDARDS §3.3). **When drafted, this phase amends
+`architecture.md` § Status (M11 entry) + the M11 README phase table — a
+human-gated amendment, applied at the phase's kickoff (same deferral pattern as
+M10's architecture entry).** Do not draft it until phases 04/05a/05b are done.
+
 **Prior active-phase pointer (now done):**
 
 **phase-02 done** (2026-06-09, approved_first_try): added the `rexymcp init
