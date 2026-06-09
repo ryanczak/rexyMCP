@@ -112,7 +112,11 @@ pub struct LoopDeps<'a> {
 /// surface as `Err`; model-visible outcomes (parse failures, unknown/failed
 /// tools) are fed back into the conversation and never error.
 pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<PhaseResult> {
-    let system = prompt::assemble_system_prompt(deps.commands, &input.standards, &input.phase_doc);
+    let system = format!(
+        "{}{}",
+        prompt::datetime_header((deps.clock)()),
+        prompt::assemble_system_prompt(deps.commands, &input.standards, &input.phase_doc),
+    );
     let tools_opt = if deps.tools.is_empty() {
         None
     } else {

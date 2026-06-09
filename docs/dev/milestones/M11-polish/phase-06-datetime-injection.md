@@ -1,7 +1,7 @@
 # Phase 06: Inject the current date into the executor system prompt
 
 **Milestone:** M11 — Polish
-**Status:** todo
+**Status:** review
 **Depends on:** phase-05b (ordering only — no code dependency)
 **Estimated diff:** ~55 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -278,3 +278,62 @@ touch `docs/architecture.md` or other phases.)
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2025-07-10 00:00 (started)
+
+**Executor:** Claude (direct)
+
+Implementing `format_utc_date` and `datetime_header` in `prompt.rs`, composing at the call site in `mod.rs`.
+
+### Update — 2025-07-10 00:00 (complete)
+
+**Summary:** Added `format_utc_date(now_ms: u64) -> String` (private) and `datetime_header(now_ms: u64) -> String` (public) to `executor/src/agent/prompt.rs`. The date formatter uses the prescribed civil-from-days integer algorithm verbatim. The header is composed additively at the single call site in `executor/src/agent/mod.rs` via `format!`, prepending the date line before `# Executor contract`. No changes to `assemble_system_prompt`'s signature or its three existing tests.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(exit 0, clean)
+
+cargo build -p rexymcp-executor 2>&1 | tail -5
+(exit 0, zero warnings)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -5
+(exit 0, clean)
+
+cargo test -p rexymcp-executor 2>&1 | grep "test result"
+test result: ok. 671 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.07s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+Verification summary: build clean (zero warnings), clippy clean, tests 671 passed / 2 ignored (up from 665, +6 new tests), fmt clean.
+
+**End-to-end verification:**
+
+Per phase doc: "Confirm at review by reading the assembled `system` string composition at `executor/src/agent/mod.rs:115` and the `datetime_header` body — the date line precedes `# Executor contract`. No CLI/binary entrypoint exposes the system prompt directly, so quoting live output is not applicable; the deterministic `datetime_header_contains_grounding_line` test stands in for the wire content."
+
+Grep proof for spec-pinned literal:
+```
+$ grep -n "Today's date is" executor/src/agent/prompt.rs
+49:    format!("Today's date is {} (UTC).\n\n", format_utc_date(now_ms))
+86:        assert!(header.contains("Today's date is 2026-06-09 (UTC)."));
+```
+
+**Files changed:**
+- `executor/src/agent/prompt.rs` — added `format_utc_date`, `datetime_header`, and 6 unit tests
+- `executor/src/agent/mod.rs` — composed `datetime_header` at the `execute_phase` call site
+
+**New tests:**
+- `format_utc_date_formats_midnight_epoch_millis` in `prompt.rs`
+- `format_utc_date_truncates_time_of_day` in `prompt.rs`
+- `format_utc_date_handles_leap_day` in `prompt.rs`
+- `format_utc_date_handles_epoch_zero` in `prompt.rs`
+- `format_utc_date_does_not_roll_over_at_year_boundary` in `prompt.rs`
+- `datetime_header_contains_grounding_line` in `prompt.rs`
+
+**Commits:**
+- `f45ed26` — feat: inject current date into executor system prompt
+
+**Notes for review:** None — implementation matches spec verbatim.

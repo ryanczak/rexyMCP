@@ -23,9 +23,68 @@ pub fn assemble_system_prompt(
     out
 }
 
+/// Format epoch-millis (UTC) as `YYYY-MM-DD` using civil-from-days integer
+/// arithmetic — no date dependency, deterministic, hermetic. Input is the
+/// injected `clock` value (always ≥ 0), so no negative-era branch is needed.
+fn format_utc_date(now_ms: u64) -> String {
+    let days = (now_ms / 1_000) / 86_400; // whole days since 1970-01-01 (UTC)
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097; // day-of-era, [0, 146096]
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day-of-year, [0, 365]
+    let mp = (5 * doy + 2) / 153; // month-prime, [0, 11]
+    let day = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let month = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if month <= 2 { year + 1 } else { year };
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// The one-line temporal-grounding header prepended to the system prompt. The
+/// local model has no clock of its own; without this it stamps hallucinated
+/// dates in its Update Log. Built from the injected `clock`, never real
+/// wall-clock time, so it stays deterministic under test.
+pub fn datetime_header(now_ms: u64) -> String {
+    format!("Today's date is {} (UTC).\n\n", format_utc_date(now_ms))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_utc_date_formats_midnight_epoch_millis() {
+        assert_eq!(format_utc_date(1_780_963_200_000), "2026-06-09");
+    }
+
+    #[test]
+    fn format_utc_date_truncates_time_of_day() {
+        // 2026-06-09 13:45:30 UTC — time-of-day is dropped, not rolled forward
+        assert_eq!(format_utc_date(1_781_012_730_000), "2026-06-09");
+    }
+
+    #[test]
+    fn format_utc_date_handles_leap_day() {
+        assert_eq!(format_utc_date(1_709_208_000_000), "2024-02-29");
+    }
+
+    #[test]
+    fn format_utc_date_handles_epoch_zero() {
+        assert_eq!(format_utc_date(0), "1970-01-01");
+    }
+
+    #[test]
+    fn format_utc_date_does_not_roll_over_at_year_boundary() {
+        // 2025-12-31 23:59:59 UTC — must stay 2025-12-31, not roll to 2026-01-01
+        assert_eq!(format_utc_date(1_767_225_599_000), "2025-12-31");
+    }
+
+    #[test]
+    fn datetime_header_contains_grounding_line() {
+        let header = datetime_header(1_780_963_200_000);
+        assert!(header.contains("Today's date is 2026-06-09 (UTC)."));
+    }
 
     #[test]
     fn assembles_system_prompt_in_contract_standards_phase_order() {

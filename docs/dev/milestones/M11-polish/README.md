@@ -37,7 +37,7 @@ references existing behaviour only.
 | 04 | Split `scorecard.rs` — extract test suite | done | refactor | s |
 | 05a | Split `server.rs` — extract test suite | done | refactor | s |
 | 05b | Split `verifier.rs` — extract test suite | done | refactor | s |
-| 06 | Inject current date into executor system prompt | todo | feature | s |
+| 06 | Inject current date into executor system prompt | review | feature | s |
 
 ## Exit criteria
 
