@@ -4,10 +4,37 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — phase-03 approved 2026-06-09 (approved_first_try).
-The next M12 phase is **phase-04** (Arc B — surface rustc machine-applicable
-suggested-fix spans); the architect activates it via `/rexymcp:architect next`
-(do not auto-advance).
+**Active phase:** **phase-04** — drafted + activated 2026-06-09, status `todo`,
+awaiting `/rexymcp:dispatch phase-04`
+([phase-04-suggested-fixes.md](milestones/M12-executor-tooling/phase-04-suggested-fixes.md)).
+
+**phase-04 scope (active — M12 Arc B):** surface rustc's **machine-applicable**
+`suggested_replacement` spans to the model. **Single-file, additive** —
+`executor/src/governor/verifier.rs` only. Adds a private recursive
+`collect_machine_suggestions(message)` helper that walks a rustc diagnostic's
+`children` for `help` spans carrying a string `suggested_replacement` +
+`suggestion_applicability == "MachineApplicable"`, and **appends** one
+`rustc suggests (machine-applicable): replace at line L:C with \`REPL\` — <help>`
+line per suggestion to the `Diagnostic.message` string inside `parse_cargo_line`.
+**No new `Diagnostic` field / no `Suggestion` struct** — that would break ~33
+`Diagnostic { … }` literals across 9 files in both crates (the M10 08a/08d
+struct-literal-churn stall class); message-enrichment touches one function,
+breaks zero literals, changes zero existing tests, and the suggestion flows to
+the retry message / briefing / JSONL for free (`render_diagnostics` unchanged).
+**Pinned correctness boundary:** only `MachineApplicable` is surfaced —
+`MaybeIncorrect` / `HasPlaceholders` / `Unspecified` / `null` are excluded
+(three **real, verbatim** rustc-JSON fixtures pre-injected: A=E0596 `mut `
+MachineApplicable → surfaced; B=E0308 `.expect("REASON")` HasPlaceholders →
+excluded; C=E0425 `foo` MaybeIncorrect → excluded). When no machine-applicable
+suggestion is present, `message` is byte-identical to today (existing parse tests
+green). ~4-5 new tests in `verifier_tests.rs`. No new dep, no shell-out (parses
+JSON already captured by the existing `cargo check`), no `SessionEvent`/dashboard
+touch. **Out of scope:** `tsc`/`ruff` suggestions, warning-level suggestions, the
+other Arc B phases. Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
+
+**phase-03 approved 2026-06-09 (approved_first_try).**
 
 **phase-03 done** (2026-06-09, approved_first_try): M12 Arc B's first
 code-intelligence win — find-references in the `symbols` tool. Single-file,
