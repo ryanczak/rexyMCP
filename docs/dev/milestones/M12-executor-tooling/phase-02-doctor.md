@@ -1,7 +1,7 @@
 # Phase 02: `rexymcp doctor` — toolchain-availability command
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (the `Skipped` runtime-degrade fix; this is its
 human-present counterpart)
 **Estimated diff:** ~200 lines
@@ -442,3 +442,28 @@ doc. `doctor.rs` is the one new file the command requires.
 - Tier-1 install-hint wording matches phase-01's `spawn_failure` strings verbatim.
 - `resolve_binary` uses `is_file()` which inherently rejects directories and does exact matching (no substring matches).
 - Tier-0 dedup merges roles into the `note` field (e.g. "format, build, lint, test" for a Rust project where all commands use `cargo`).
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — additive throughout (one new module, one clap
+  variant, one dispatch arm, one `mod` declaration); no existing type changed
+  shape, no new dependency, no `unsafe`, no `#[allow]`/`#[ignore]`.
+- **Calibration:** none. Clean 58-turn first-try with full bookkeeping (status
+  flip + Update Log + single `feat:` commit `45a4c6f` all landed by the
+  executor). All four gates green on independent re-run (fmt clean, build
+  zero-warnings, clippy clean, **289 passed** mcp = 270 baseline + 19 new). All
+  three E2E cases reproduced at review against the real binary: all-Tier-0
+  present → exit 0 (`cargo` row, 4 roles merged); a `definitely-not-a-real-binary-xyz`
+  Tier-0 binary → `MISSING` + warning + exit 1; `--json` → parseable
+  `tier0`/`tier1` arrays. The fail-open property (`tier0_ok()` ignores Tier 1)
+  is pinned by `tier0_ok_true_when_all_present_ignoring_tier1`; the two pinned
+  negatives (`resolve_binary_rejects_directory_of_same_name`,
+  `resolve_binary_is_exact_not_substring`) were spot-checked as
+  mutation-resistant (`.exists()`-for-`.is_file()` and substring-match mutations
+  each fail them). Cosmetic-only quirk (no fold): the completion Update Log
+  self-stamps `00:00` and "executor" — the recurring local-LLM clock/identity
+  quirk that phase-06's datetime injection fixes once `rexymcp serve` is
+  restarted (still pending).

@@ -40,7 +40,7 @@ once.
 | Phase | Title | Status | Kind | Size |
 |---|---|---|---|---|
 | 01 | Arc 0 — verifier missing-binary → `Skipped` advisory ([phase-01-verifier-degrade.md](phase-01-verifier-degrade.md)) | done | bugfix | s |
-| 02 | Arc 0 — `rexymcp doctor` toolchain-availability command ([phase-02-doctor.md](phase-02-doctor.md)) | review | feature | m |
+| 02 | Arc 0 — `rexymcp doctor` toolchain-availability command ([phase-02-doctor.md](phase-02-doctor.md)) | done | feature | m |
 | 03 | Arc B — find-references in `symbols` (tree-sitter call-site search) | todo | feature | m |
 | 04 | Arc B — surface rustc machine-applicable suggested-fix spans | todo | feature | s |
 | 05 | Arc B — structured `cargo test` failure parsing (expected-vs-actual) | todo | feature | m |

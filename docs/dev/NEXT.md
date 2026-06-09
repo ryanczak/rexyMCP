@@ -4,9 +4,9 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-02** — [`rexymcp doctor` toolchain-availability
-command](milestones/M12-executor-tooling/phase-02-doctor.md). Drafted/activated
-2026-06-09; dispatch via `/rexymcp:dispatch phase-02`.
+**Active phase:** **none** — phase-02 approved 2026-06-09. The next M12 phase is
+**phase-03** (Arc B — find-references in `symbols`); the architect activates it
+via `/rexymcp:architect next` (do not auto-advance).
 
 **phase-02 scope (active — M12 Arc 0):** additive new CLI command, mcp-crate only
 (mirrors `init.rs`/`health`). New `mcp/src/doctor.rs` with pure helpers
@@ -26,6 +26,26 @@ blank-command) + 1 clap-parse test + 3 E2E (exit-0 all-present, exit-1
 missing-Tier-0, `--json` shape). No new dep (std only). **Out of scope:** language
 detection, touching `init`, version-checking, MCP/dashboard/bootstrap wiring.
 Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**phase-02 done** (2026-06-09, approved_first_try): `rexymcp doctor` —
+toolchain-availability command. New mcp-only `mcp/src/doctor.rs` with the pure
+helpers `command_binary` (first-token extractor), `resolve_binary(name, &[PathBuf])`
+(exact-match PATH resolver — `is_file()` only, separator-bearing names checked as
+literal paths), `build_report(&CommandConfig, &[PathBuf])`, `DoctorReport::tier0_ok()`,
+`format_report` + a thin impure `run`/`path_dirs` reading the real PATH. **Tier 0**
+= configured `[commands]` binaries (dedup by binary, roles merged into the note) →
+required, a missing one exits non-zero; **Tier 1** = the three verifier enhancers
+(`cargo`/`tsc`/`ruff`, hints reused from phase-01) → advisory, fail-open
+(`tier0_ok` ignores Tier 1). Plus a `Commands::Doctor { config, json }` clap variant
++ dispatch arm + `mod doctor;`. **289 passed** mcp (270 baseline + 19 new, incl. the
+3 pinned negatives dir-of-same-name/substring/blank + a clap-parse test). All three
+E2E reproduced at review against the real binary (exit-0 all-present with the `cargo`
+row showing 4 merged roles; exit-1 `definitely-not-a-real-binary-xyz` MISSING; `--json`
+parseable `tier0`/`tier1`). No new dep (std only). Clean 58-turn first-try with full
+bookkeeping (status flip + Update Log + single `feat:` commit `45a4c6f`); approved
+`_`. Cosmetic-only quirk: the Update Log self-stamps `00:00`/"executor" (the recurring
+local-LLM clock/identity quirk; phase-06 datetime injection fixes it once `rexymcp
+serve` is restarted — still pending below).
 
 **phase-01 done** (2026-06-09, approved_first_try): verifier missing-binary →
 `Skipped` advisory. Added `VerifierResult::Skipped(String)` + the pure
