@@ -1,7 +1,7 @@
 # Phase 05b: Split `verifier.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-05a (ordering only — no code dependency; same refactor class)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -260,3 +260,28 @@ and required since `verifier` is a single-file module.
 **End-to-end verification:** N/A — pure internal file-split refactor, no runtime artifact.
 
 **Grep check:** `grep -c '#\[path = "verifier_tests.rs"\]' executor/src/governor/verifier.rs` → 1 ✓
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-labels "rexyMCP
+  executor" and stamps `2025-07-09` — the recurring local-LLM identity/clock
+  quirk, cosmetic; the very gap the queued datetime-injection phase addresses)
+- **Scope deviations:** none — the diff is exactly two source files
+  (`verifier.rs` 670-line deletion, `verifier_tests.rs` 666-line addition) plus
+  the two doc files. **Production lines 1–494 are byte-identical to the parent**
+  (verified by `diff` against `HEAD~1`); `verifier.rs` ends at 497 lines with the
+  required `#[cfg(test)] #[path = "verifier_tests.rs"] mod tests;` declaration.
+- **Independent re-run:** `cargo fmt --all --check` ✅, `cargo build` ✅ (zero
+  warnings), `cargo clippy --all-targets --all-features -- -D warnings` ✅,
+  `cargo test` → **665 passed / 2 ignored** (executor, exact pre-flight match) +
+  **270** (mcp), zero failures. All **35** test fns and **2** `#[ignore]`-gated
+  live-`rustc` tests moved losslessly (`verifier_tests.rs` begins `use super::*;`,
+  ends `}`); the `2 ignored` regression guard held — no `#[ignore]` lost.
+- **Calibration:** none new. The `sed`-move recipe landed clean first-try again
+  (47 turns) — **sixth consecutive split refactor** (M8 ×2, M11 phases
+  03/04/05a/05b) on the prescribed lossless-move method. The
+  `#[tokio::test]`/`#[ignore]`-move-verbatim pre-injection was correct (no special
+  handling needed). This is the **last file-decomposition phase of M11**; only the
+  queued datetime-injection phase remains before the milestone retrospective.

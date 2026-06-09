@@ -32,7 +32,7 @@ references existing behaviour only.
 | 03 | Split `agent/mod.rs` — extract test suite | done | refactor | m |
 | 04 | Split `scorecard.rs` — extract test suite | done | refactor | s |
 | 05a | Split `server.rs` — extract test suite | done | refactor | s |
-| 05b | Split `verifier.rs` — extract test suite | review | refactor | s |
+| 05b | Split `verifier.rs` — extract test suite | done | refactor | s |
 
 ## Exit criteria
 
