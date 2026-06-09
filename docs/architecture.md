@@ -674,3 +674,63 @@ The project plan. Each entry becomes a milestone with its own
       (1 153 → ≤ 400 lines, phase-04), `server.rs` (1 225 → ≤ 530 lines,
       phase-05a), `governor/verifier.rs` (1 163 → ≤ 340 lines, phase-05b). Pure
       move refactors — no logic changes.
+
+12. **M12 — Executor Tooling** *(sketch, designed 2026-06-09; not yet kicked
+    off — fleshed out at the M11 boundary)*. Net-new executor capability aimed at
+    making a weak local model more effective and more efficient. Each item below
+    is an **intervention whose value is measurable against the scorecard** —
+    rexyMCP using its own reason for existing. The discipline for the milestone:
+    ship the certain-value half, gate the hypothesis half behind config, and let
+    `bounces_to_approval` / `first_pass_rate` prune what doesn't earn its keep.
+    Two arcs:
+
+    - **Arc A — structured task tracking.** A per-session TODO list the executor
+      **tracks and checks off as it works — it does not generate it** (decomposition
+      stays the architect's job; the list is seeded from the phase doc's numbered
+      Spec, and the executor only flips state pending → active → done and may append
+      discovered sub-steps). Motivated by two logged failure modes a checklist
+      directly attacks: dropped-subtask stalls (phase-08a did tasks 1–4 then stalled)
+      and premature/false completion (phase-06). The "more context" cost is a
+      non-issue: at the configured 131071-token window we have **never observed a
+      compaction event**, so there is ample headroom. Pieces:
+      - A new `SessionEvent::TaskUpdate { … }` (id, title, state) substrate; the
+        loop seeds the list from the Spec and emits updates as the executor checks
+        items off.
+      - **Config-gated** (a `[tasks]` / `[executor] task_tracking` toggle, default
+        TBD) so it is a clean **A/B** intervention — runs with it on vs. off are
+        directly comparable on the scorecard. This is the load-bearing requirement:
+        no measurement without an off-switch.
+      - **Dashboard `Tasks` panel**, placed **above the Files panel** in the lower
+        region — the Files panel's height is halved to make room, so the band shows
+        TODO (active/pending/done) over Files. Same panel pattern as M8
+        (`SessionEvent` → `summarize` fold → `panels.rs` render fn → `render.rs`
+        layout slot).
+
+    - **Arc B — incremental code intelligence (keep-it-simple; full LSP deferred).**
+      We already have two of LSP's four headline features: `symbols` (tree-sitter
+      definition search, Rust + Python) and the verifier's structured `Diagnostic`s
+      (`cargo check`/`tsc`/`ruff` parsed from JSON). Rather than build a full LSP
+      *client* — a subsystem (subprocess lifecycle, JSON-RPC, document-sync as the
+      executor edits, per-language server discovery, multi-second rust-analyzer cold
+      start that fights the turn loop) — harvest the specific high-value wins cheaply:
+      - **Find-references in `symbols`** via tree-sitter (syntactic call-site search,
+        deps already present). Attacks the multi-site-change failure class folded into
+        WORKFLOW (§ "Prefer additive change shapes") — enumerate every call site
+        *before* a breaking edit.
+      - **Surface compiler suggested-fixes.** The verifier parses cargo JSON and has a
+        `Help` severity but does not extract rustc's machine-applicable
+        `suggested_replacement` spans; feeding those to the model ("rustc suggests X→Y
+        at line N") is a cheap diagnostic upgrade.
+      - **Structured test-failure parsing** — turn `cargo test` failures into
+        expected-vs-actual records for the verifier-retry loop (extends the M10 cargo
+        filter, which already preserves test summaries).
+      - **Full LSP is a candidate, not committed.** Build it only if bounce-cause
+        tagging shows symbol-resolution / wrong-API-usage is a *dominant* failure
+        class. If the data says so, it is its own milestone (transport → lifecycle →
+        doc-sync → tool surfaces → hermetic tests).
+
+    **Non-goals (M12):** no executor-side planning/decomposition (the dropped Rexy
+    planner stays dropped — Arc A tracks an architect-authored list, it does not
+    create one); no full LSP client until measurement justifies the effort; no new
+    cloud/network tooling (the executor stays offline — see "No internal cloud
+    escalation").
