@@ -1,12 +1,12 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 and M9 are fully implemented and closed;
-> M8 (live session dashboard) is implemented but open — the wireframe redesign
-> shipped (2026-06-03) and M8 remains open for live-session confirmation and bug
-> fixes before its milestone close. This document is the source of truth for the
-> *intended* design; the code under `executor/` and `mcp/` is the source of truth
-> for what actually runs. Milestones are listed in the **Status** section at the
-> bottom — that list is the project plan.
+> **Status:** Living design doc. M1–M7, M9, and M10 are fully implemented and
+> closed; M8 (live session dashboard) is implemented but open — the wireframe
+> redesign shipped (2026-06-03) and M8 remains open for live-session confirmation
+> and bug fixes before its milestone close. This document is the source of truth
+> for the *intended* design; the code under `executor/` and `mcp/` is the source
+> of truth for what actually runs. Milestones are listed in the **Status** section
+> at the bottom — that list is the project plan.
 
 ## What rexyMCP is
 
@@ -617,8 +617,11 @@ The project plan. Each entry becomes a milestone with its own
      yellow 50–80 / red ≥80), tok/s (derived from `Metrics` record timestamps),
      and `$ saved` (configurable cloud-baseline $/Mtok via `[dashboard]` in
      `rexymcp.toml`; shows `—` when unset).
-   - **Compactions panel** — compaction event count, tokens freed, compression
-     ratio.
+   - **Reclaim panel** — aggregate live reclaim across all four M10 sources:
+     compaction (event count, tokens freed, compression ratio), boundary-filter
+     (`OutputFiltered`), superseded-read eviction (`ReadEvicted`), and redundant-read
+     dedupe (`ReadDeduped`). Each lever line is omitted when its count is zero;
+     placeholder `(no reclaim yet)` when none have fired.
    - **Activity transcript** — full scrollable replay of all session events
      (`Prompt`, `Completion`, `ToolCall`/`ToolResult`, `Verify`, `ParseFailed`,
      `HardFail`, `Compaction`, `Progress`, `Metrics`, `SessionStart`/`SessionEnd`),
@@ -627,3 +630,31 @@ The project plan. Each entry becomes a milestone with its own
    - **`[dashboard]` config section** — `saved_input_per_mtok` /
      `saved_output_per_mtok` (f64, default 0.0 → show `—`). A missing section
      falls back to defaults (purely additive; no required config to run).
+10. **M10 — Context optimization** *(done, 2026-06-08)*. Two arcs shrink the
+    executor's context footprint so the local model completes more phases without
+    compaction or hard-fail. Ships:
+    - **Arc A — boundary output filtering.** `executor/src/context/output_filter.rs`:
+      generic ANSI-strip + consecutive-dup collapse + head/tail truncation tee'ing
+      full output to a rotated recovery file (phase-01). A structured cargo filter
+      (phase-02) routes `cargo` invocations through a diagnostics-preserving
+      compressor. Per-lever `SessionEvent::OutputFiltered` records how many tokens
+      each filter reclaimed (phase-03).
+    - **Arc B — semantic context lifecycle.** `read_file` dedupes re-reads of
+      unchanged files to a compact reference (phase-06, `ReadDeduped` event).
+      Successful edits evict superseded prior reads for that path (phase-04,
+      `ReadEvicted` event). The context compactor (phase-07) gains value-ranked
+      in-place signaturization — shrinks lowest-value tool output first (command
+      noise before file reads), protects the last 3 turns, preserves
+      tool-call/result pairing.
+    - **Measurement spine.** `Budget::estimate` correctness fix — now counts
+      `tool_calls[n].arguments` + `tool_results[n].content` so `context_pct` grows
+      turn-over-turn and the compactor fires on real pressure (phase-05). Phase-08
+      surfaces the per-lever reclaim signals post-hoc and live:
+      - **08a** — `ContextEfficiency` struct + `aggregate_context_efficiency` over
+        the session log; `PhaseRun.context_efficiency` (`#[serde(default)]`).
+      - **08b** — `PEAK_CXT` + `RECLAIMED` columns in `rexymcp runs`.
+      - **08c/08d** — `peak_context_pct_mean` + `tokens_reclaimed_mean` on both
+        scorecards (`model × tag` MCP tool; `model × settings` CLI).
+      - **08e** — `StatusSummary` six additive fields + three `summarize` arms;
+        the dashboard Compactions panel repurposed as the aggregate **Reclaim**
+        panel; `rexymcp status` `reclaimed:` line.
