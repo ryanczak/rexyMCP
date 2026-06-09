@@ -4,9 +4,38 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — phase-02 approved 2026-06-09. The next M12 phase is
-**phase-03** (Arc B — find-references in `symbols`); the architect activates it
-via `/rexymcp:architect next` (do not auto-advance).
+**Active phase:** **phase-03** (M12 Arc B — find-references in `symbols`),
+drafted 2026-06-09, **ready to dispatch** (`/rexymcp:dispatch phase-03`). Status
+`todo`; do not auto-advance — the user dispatches.
+
+**phase-03 scope (active — M12 Arc B):** additive extension of the existing
+`symbols` tool, **single file** (`executor/src/tools/symbols.rs`) — nothing else
+pins its schema/description (router categorizes by name, registry tests use a
+mock), so zero blast radius outside the file. New `mode: Option<String>` arg
+(`"definitions"` default | `"references"`); two reference tree-sitter queries
+(`RUST_REF_QUERY` capturing `(identifier)`/`(type_identifier)`/`(field_identifier)`
+— all three verified present in tree-sitter-rust 0.24.2 `node-types.json`;
+`PYTHON_REF_QUERY` = `(identifier)`); a `parse_references` mirroring `parse_file`
+(exact-token match, carries a trimmed source-line snippet); a `format_references`
+mirroring `format_output` (`✓ N references to …`, `{path,name,references,files,
+truncated}` metadata); references mode wired into `execute` + the single-file path
+honoring the **same** gitignore/`.rs`/`.py`/`max_results`/single-file semantics.
+**References include the definition site** (def + N calls → N+1). Loud failures
+for inapplicable combos: `kind` + references rejected, invalid `mode` rejected
+(STANDARDS §2.2). The grep-differentiator is pinned: occurrences inside string
+literals and comments are **not** references (tree-sitter token, not substring;
+`foo` ≠ `foobar`). ~11 new hermetic tests (real tree-sitter parse over `TempDir`,
+incl. 3 pinned negatives: substring, string/comment exclusion, kind-in-refs).
+Definitions-mode path stays byte-identical (existing tests unchanged). No new dep.
+E2E declared N/A (tool reachable only via a full `execute_phase` loop; the unit
+tests are de facto end-to-end — real grammars, real files, no mock). Executor
+target: Qwen/Qwen3.6-27B-FP8. **Out of scope:** semantic scope resolution, new
+languages, method/field disambiguation, the other Arc B phases (04/05),
+task tracking (06/07).
+
+**Prior active-phase pointer (now done):**
+
+**phase-02 approved 2026-06-09.**
 
 **phase-02 scope (active — M12 Arc 0):** additive new CLI command, mcp-crate only
 (mirrors `init.rs`/`health`). New `mcp/src/doctor.rs` with pure helpers
