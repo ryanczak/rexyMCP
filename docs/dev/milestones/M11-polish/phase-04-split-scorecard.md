@@ -1,7 +1,7 @@
 # Phase 04: Split `scorecard.rs` — extract test suite
 
 **Milestone:** M11 — Polish
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03 (ordering only — no code dependency)
 **Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
@@ -206,5 +206,30 @@ explicitly requires, so it is not an unauthorized new file.)
 
 **Executor:** Claude (Sonnet 4.5)
 **Action:** Flipped status to `in-progress`. Beginning pre-flight checks.
+
+### Update — 2025-06-16 14:35 (complete)
+
+**Executor:** Claude (Sonnet 4.5)
+
+**Summary:** Extracted the ~759-line `#[cfg(test)] mod tests { … }` block from `mcp/src/scorecard.rs` (1153 lines) into a new sibling file `mcp/src/scorecard_tests.rs` (759 lines). `scorecard.rs` is now 394 lines (production code + `#[path]` declaration). Zero logic changes — test body moved byte-for-byte via `sed`.
+
+**Files changed:**
+- `mcp/src/scorecard.rs` — trimmed to lines 1–391 + `#[cfg(test)] #[path = "scorecard_tests.rs"] mod tests;`
+- `mcp/src/scorecard_tests.rs` — new file, 759 lines (full test body)
+
+**Commit:** `6be6e91` — `refactor: split scorecard.rs test suite into scorecard_tests.rs`
+
+**Verification summary:**
+- `cargo build -p rexymcp` — passed, zero warnings
+- `cargo clippy -p rexymcp --all-targets --all-features -- -D warnings` — passed
+- `cargo test -p rexymcp` — 269 passed; 1 pre-existing failure (`dashboard::panels::tests::session_lines_shows_spinner_when_active` — unrelated to this phase, present before the split)
+- `cargo test -p rexymcp scorecard` — 46 passed, 0 failed (all scorecard tests intact)
+- `cargo fmt --all --check` — passed
+- `wc -l mcp/src/scorecard.rs` — 394 (≤ 400 target met)
+- `grep` for `#[path = "scorecard_tests.rs"]` — found at line 393
+
+**Notes for review:**
+- Pre-flight test count was 269 passed (not 270 as spec estimated). The spec's "270" was an approximation. All 46 scorecard tests pass unchanged. The 1 failing test (`session_lines_shows_spinner_when_active`) is in the dashboard module, pre-existing and unrelated.
+- End-to-end verification: N/A — pure internal file-split refactor, no runtime-loadable artifact.
 
 <!-- entries appended below this line -->
