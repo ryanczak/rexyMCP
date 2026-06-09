@@ -1,9 +1,9 @@
 # rexyMCP — Architecture
 
 > **Status:** Living design doc. M1–M7, M9, and M10 are fully implemented and
-> closed; M8 (live session dashboard) is implemented but open — the wireframe
-> redesign shipped (2026-06-03) and M8 remains open for live-session confirmation
-> and bug fixes before its milestone close. This document is the source of truth
+> closed; M11 (polish) is active. M8 (live session dashboard) is implemented but
+> open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
+> live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
 > of truth for what actually runs. Milestones are listed in the **Status** section
 > at the bottom — that list is the project plan.
@@ -658,3 +658,19 @@ The project plan. Each entry becomes a milestone with its own
       - **08e** — `StatusSummary` six additive fields + three `summarize` arms;
         the dashboard Compactions panel repurposed as the aggregate **Reclaim**
         panel; `rexymcp status` `reclaimed:` line.
+
+11. **M11 — Polish** *(in progress, started 2026-06-08)*. Maintainability,
+    tuneability, and quality-of-life improvements. Three sub-goals:
+    - **Configurable governor thresholds.** `IDENTICAL_CALL_THRESHOLD`,
+      `VERIFIER_PERSISTENCE_THRESHOLD`, and `RUNAWAY_OUTPUT_BYTES` move from
+      compile-time constants to a `[governor]` section in `rexymcp.toml`
+      (phase-01, new `GovernorConfig` in `config.rs`).
+    - **`rexymcp init`.** New CLI subcommand that scaffolds a fully-documented
+      `rexymcp.toml` (including `[governor]`) and a `.mcp.json` Claude Code plugin
+      entry so new projects can onboard without reading source (phase-02).
+    - **File decomposition.** Four files that exceed the executor's 100 KB
+      RunawayOutput limit have their test suites extracted to sibling `*_tests.rs`
+      files: `agent/mod.rs` (4 420 → ≤ 900 lines, phase-03), `scorecard.rs`
+      (1 153 → ≤ 400 lines, phase-04), `server.rs` (1 225 → ≤ 530 lines,
+      phase-05a), `governor/verifier.rs` (1 163 → ≤ 340 lines, phase-05b). Pure
+      move refactors — no logic changes.

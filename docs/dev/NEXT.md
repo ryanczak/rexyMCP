@@ -4,15 +4,15 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none.** M10 (context optimization) is **complete** — all 13 phases
-`done` as of 2026-06-08; phase-08e (the last in-scope phase) approved `approved_first_try`,
-the low-churn counter-shape that landed clean and confirmed additive-shape as the
-mechanical-stall lever. See the M10 README § Notes for the milestone retrospective.
+**Active phase:** **M11 / phase-01** — governor thresholds → `[governor]` config.
+See [`docs/dev/milestones/M11-polish/phase-01-governor-config.md`](milestones/M11-polish/phase-01-governor-config.md).
 
-**Awaiting human gate before the next milestone:** (1) the held `WORKFLOW.md`
-split-calibration fold (below — 5 occurrences + a controlled A/B, surfaced for sign-off);
-(2) the `docs/architecture.md` § Status M10 entry (a human-gated source-of-truth edit,
-deferred to formal M10 sign-off). The user kicks off the next milestone explicitly.
+**Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — in progress.
+Six phases: 01 (governor config), 02 (init command), 03 (split agent/mod.rs),
+04 (split scorecard.rs), 05a (split server.rs), 05b (split verifier.rs).
+
+**WORKFLOW.md split-calibration fold:** held. The user has explicitly declined to
+apply this fold. Do not apply it.
 
 **📌 Split-calibration tracking — controlled comparison COMPLETE, both halves landed (2026-06-08):** The combined 08c was split by output-struct (with the user) to disarm the recurring mechanical-multi-site-churn stall *structurally*. **Result: the literal-count hypothesis is confirmed.** 08c (1 literal, single file, MCP-tool-only) landed **clean, first-try, 66 turns, zero churn stall**. 08d (3 literals across `scorecard.rs` + `scorecard_cli.rs`) **stalled exactly as predicted** — the executor (Qwen/Qwen3.6-27B-FP8) completed the additive struct/accumulator/accumulation, then hard-failed `VerifierFailurePersistent` on the constructor literal before filling literal 1 of 3; architect session takeover closed the 3 literal sites + renderer + tests (approved at review as `escalated`). Same pre-injection quality on both arms → **literal-count is the stall driver. This is the 5th occurrence + a controlled A/B.** **Fold to land with user sign-off at the M10 retrospective:** add to WORKFLOW.md's "Prefer additive change shapes" guidance — *"prefer splitting a feature by output-struct so each executor dispatch touches ≤1 non-`Default` struct literal; a pre-injected site-list alone does not prevent the stall (08a, 08d both stalled despite complete site-lists)."* The governor thresholds were already raised 3→6 (commit e543f57) as an interim mitigation. **08e was drafted as the low-churn counter-shape** (additive fields only, no literal churn) — if it lands clean first-try, that further confirms additive-shape as the lever.
 
