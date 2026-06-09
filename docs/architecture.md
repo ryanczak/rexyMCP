@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7, M9, and M10 are fully implemented and
-> closed; M11 (polish) is active. M8 (live session dashboard) is implemented but
+> **Status:** Living design doc. M1–M7, M9, M10, and M11 are fully implemented
+> and closed; M12 (executor tooling) awaits kickoff. M8 (live session dashboard) is implemented but
 > open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
 > live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
@@ -659,7 +659,7 @@ The project plan. Each entry becomes a milestone with its own
         the dashboard Compactions panel repurposed as the aggregate **Reclaim**
         panel; `rexymcp status` `reclaimed:` line.
 
-11. **M11 — Polish** *(in progress, started 2026-06-08)*. Maintainability,
+11. **M11 — Polish** *(done, 2026-06-09; 7/7 phases approved_first_try)*. Maintainability,
     tuneability, and quality-of-life improvements. Three sub-goals:
     - **Configurable governor thresholds.** `IDENTICAL_CALL_THRESHOLD`,
       `VERIFIER_PERSISTENCE_THRESHOLD`, and `RUNAWAY_OUTPUT_BYTES` move from

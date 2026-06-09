@@ -4,38 +4,51 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-06** — [Inject the current date into the executor
-system prompt](milestones/M11-polish/phase-06-datetime-injection.md).
-Drafted/activated 2026-06-09; dispatch via `/rexymcp:dispatch phase-06`.
+**Active phase:** **none.** 🎉 **M11 — Polish is complete** (all seven phases
+approved_first_try, 2026-06-09 — see the
+[retrospective](milestones/M11-polish/README.md#retrospective--2026-06-09)). This
+is a **milestone boundary: a human gate.** The architect does not auto-advance.
 
-**phase-06 scope (active — the FINAL M11 phase):** give the executor temporal
-grounding. Prepend `Today's date is YYYY-MM-DD (UTC).` to the top of the
-assembled system prompt, formatted from the same injected `deps.clock`
-epoch-millis the loop already uses — closing the recurring hallucinated-Update-Log-date
-quirk (executor stamped `2025-07-09`/`2025-07-15` across recent phases).
-**Implementation correction vs. the original scope sketch:** the sketch said
-"chrono already a dep" — **it is not** (the workspace carries no date crate by
-design; `grep chrono Cargo.toml` is empty). So the phase formats the date with a
-**pure civil-from-days integer routine** (pre-injected verbatim, verified against
-5 fixtures incl. leap-day/epoch-zero/year-boundary) — **no dependency added**.
-**Additive shape (the load-bearing design choice):** a new `pub fn
-datetime_header(now_ms)` + private `format_utc_date(now_ms)` in
-`agent/prompt.rs`, composed at the single call site `agent/mod.rs:115` via
-`format!` — **`assemble_system_prompt`'s signature and its 3 existing tests are
-untouched**, dodging the mechanical test-call-site churn that has stalled the
-executor. 6 new tests (5 boundary/negative date cases + 1 header-content). Only
-two files touched (`prompt.rs`, `mod.rs`). **Kickoff amendments applied by the
-architect (authorized by the 2026-06-09 scope decision):** `architecture.md`
-§ Status gained the M11 "Executor temporal grounding" sub-goal; the M11 README
-gained the phase-06 row + goal/exit/motivation updates. Executor target:
-Qwen/Qwen3.6-27B-FP8.
+**Awaiting human sign-off to kick off M12 — Executor Tooling** (sketched in
+`docs/architecture.md` § Status #12: net-new executor capability to make a weak
+local model more effective, each intervention measurable against the scorecard).
+M12 has not been expanded into phases. When you're ready, say so and run
+`/rexymcp:architect` to design M12 → its README + phase-01; the architect will
+not begin it unprompted.
 
-**📌 M11 milestone close after phase-06:** phase-06 is the **last in-scope M11
-phase**. When it lands and is approved, M11 is complete → stop at the human gate,
-write the milestone retrospective in the README Notes, fold any calibration
-lessons (none expected — six clean splits + one additive feature), set this file
-to "none", and ask the user before kicking off M12 (Executor Tooling, sketched in
-`architecture.md` § Status #12). **Do not auto-advance into M12.**
+**📌 Post-M11 operational follow-up (do before the next dispatch):** **restart
+`rexymcp serve`** so the rebuilt binary picks up phase-06's datetime injection —
+the live MCP process does not reload server code after a rebuild (known
+stale-server behaviour). Until restarted, the next executor session still runs the
+pre-phase-06 prompt and will keep stamping hallucinated dates.
+
+**📌 Deferred cleanup sweep (out of every M11 phase's scope; gather for a future
+micro-phase):** (1) two `eprintln!` in production at `mcp/src/server.rs:426`/`:450`;
+(2) stale `RUNAWAY_OUTPUT_BYTES` doc-comment ref in
+`executor/src/tools/read_file.rs:17`; (3) the executor's wrong identity
+self-labelling in Update Logs (cosmetic).
+
+**Prior active-phase pointer (now done):**
+
+**phase-06 done** (2026-06-09, approved_first_try): executor temporal grounding —
+prepended `Today's date is YYYY-MM-DD (UTC).` to the assembled system prompt,
+formatted from the injected `deps.clock` epoch-millis. New private
+`format_utc_date(now_ms)` (pure civil-from-days integer arithmetic — **no date
+dependency**; the original scope sketch's "chrono already a dep" was wrong and the
+spec corrected it) + public `datetime_header(now_ms)` in `agent/prompt.rs`,
+composed at the single call site `agent/mod.rs:115` via `format!`.
+**Additive shape held** — `assemble_system_prompt`'s 3-param signature and its
+three existing tests are byte-untouched. 6 new tests (5 boundary/negative date
+cases incl. leap-day/epoch-zero/year-boundary + 1 header-content); **671 passed /
+2 ignored executor + 270 mcp** on independent re-run, all four gates green. The
+year-boundary + time-truncation tests were **mutation-verified at review** (ms→s
+divisor mutation failed 4/6 date tests). Committed `f1c30dd` (feat) + `b691166`
+(docs); approved `_`. **Clean first-try, 51 turns** — the additive-shape
+pre-injection dodged the mechanical test-call-site churn a signature change would
+have caused. The architecture.md M11 amendment was the architect's authorized
+kickoff commit `0cc8547`, not the executor's (it stayed in `prompt.rs`/`mod.rs`).
+Process note: the Update Log self-stamped `2025-07-10` / "Claude (direct)" — the
+same quirk this phase fixes for *future* runs once the server is restarted.
 
 **Prior active-phase pointer (now done):**
 
@@ -152,10 +165,9 @@ generated config loaded via `rexymcp health`). Doc was refreshed on activation
 criterion, added E2E section + two negative-case tests per the "pin negative
 cases" fold).
 
-**Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — in progress.
-**01–05b done** (01 governor config, 02 `rexymcp init`, 03/04/05a/05b the four
-test-suite splits); **06 active (datetime injection)** — the final M11 phase.
-After 06 approves, M11 closes at the human gate (retrospective + M12 sign-off).
+**Milestone:** [M11 — Polish](milestones/M11-polish/README.md) — **done**
+(7/7 approved_first_try, 2026-06-09). Next milestone M12 (Executor Tooling)
+awaits human sign-off; not yet expanded into phases.
 
 **phase-01 done** (2026-06-09, approved_first_try): moved the three governor
 hard-fail thresholds (`identical_call_threshold`, `verifier_persistence_threshold`,

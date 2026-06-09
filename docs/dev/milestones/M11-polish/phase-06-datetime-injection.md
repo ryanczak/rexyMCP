@@ -1,7 +1,7 @@
 # Phase 06: Inject the current date into the executor system prompt
 
 **Milestone:** M11 — Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-05b (ordering only — no code dependency)
 **Estimated diff:** ~55 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -337,3 +337,36 @@ $ grep -n "Today's date is" executor/src/agent/prompt.rs
 - `f1c30dd` — feat: inject current date into executor system prompt
 
 **Notes for review:** None — implementation matches spec verbatim.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-labels "Claude
+  (direct)" and stamps `2025-07-10` — the recurring local-LLM identity/clock
+  quirk; cosmetic, and the very gap this phase closes for *future* runs once the
+  rebuilt server is restarted)
+- **Scope deviations:** none — the diff is exactly the two source files
+  (`prompt.rs` +59, `mod.rs` +4/-1) plus the phase doc and the README status
+  flip. `assemble_system_prompt`'s 3-param signature and its three existing tests
+  are byte-untouched (additive shape held); the algorithm body was used verbatim.
+  The architecture.md M11 amendment was the architect's authorized kickoff commit
+  (`0cc8547`), not the executor's — the executor correctly stayed within
+  `prompt.rs`/`mod.rs`.
+- **Independent re-run:** `cargo fmt --all --check` ✅, `cargo build` ✅ (zero
+  warnings), `cargo clippy --all-targets --all-features -- -D warnings` ✅,
+  `cargo test` → **671 passed / 2 ignored** (executor, = 665 + 6 new) + **270**
+  (mcp), zero failures. No new dependency (`Cargo.toml` absent from the diff). No
+  new `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]` in production.
+- **Test quality:** mutation-verified at review — replacing
+  `(now_ms / 1_000) / 86_400` with `now_ms / 86_400` (treating ms as seconds, the
+  bug the spec explicitly warned against) failed **4 of the 6** date tests
+  (`epoch_zero` correctly survives, since `0` maps identically). The
+  year-boundary and time-of-day-truncation guards are genuinely mutation-resistant.
+- **Calibration:** none new. Additive-shape pre-injection (new `datetime_header`
+  composed at the call site rather than widening `assemble_system_prompt`) landed
+  clean first-try, dodging the mechanical test-call-site churn that has stalled
+  signature changes before — reconfirming the "prefer additive change shapes"
+  fold rather than adding to it. The chrono-not-a-dep correction in the spec was
+  load-bearing: had the doc told the executor "chrono is already a dep," it would
+  have either filed a blocker or added an unauthorized dependency.
