@@ -4,24 +4,48 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-04** — [Split `scorecard.rs` — extract test
-suite](milestones/M11-polish/phase-04-split-scorecard.md). Drafted/activated
-2026-06-09; dispatch via `/rexymcp:dispatch phase-04`.
+**Active phase:** **phase-05a** — [Split `server.rs` — extract test
+suite](milestones/M11-polish/phase-05a-split-server.md). Drafted/activated
+2026-06-09; dispatch via `/rexymcp:dispatch phase-05a`.
 
-**phase-04 scope (active):** pure file-split refactor, same shape as phase-03.
-Move the single `#[cfg(test)] mod tests { … }` block (verified on HEAD:
-`#[cfg(test)]` at 392, `mod tests {` at 393, inner body 394–1152, closing `}` at
-1153 — total 1 153 lines, 34 test fns) out of `mcp/src/scorecard.rs` into a new
-sibling `mcp/src/scorecard_tests.rs`. Production lines 1–391 untouched;
-scorecard.rs ends ≤ 400 lines. **Two load-bearing pre-injections:** (1) method
-prescribed `sed` not `write_file` (`sed -n '394,1152p' scorecard.rs >
-scorecard_tests.rs` — the recipe that landed phase-03 clean first-try); (2) the
-declaration **requires `#[path = "scorecard_tests.rs"]`** because `scorecard` is
-a single-file module (`mod scorecard;` in main.rs) — a bare `mod tests;` would
-make the compiler look for `scorecard/tests.rs` and fail. (Contrast phase-03:
-`agent` is a directory module, so `agent/tests.rs` needed no `#[path]`.) Zero
-logic change; existing 270 mcp tests must pass at the same count. Executor
-target: Qwen/Qwen3.6-27B-FP8.
+**phase-05a scope (active):** pure file-split refactor, same shape as phases
+03/04. Move the single `#[cfg(test)] mod tests { … }` block (verified on HEAD:
+`#[cfg(test)]` at 519, `mod tests {` at 520, inner body 521–1224, closing `}` at
+1225 — total 1 225 lines, 34 fns incl. `#[tokio::test]` async tests) out of
+`mcp/src/server.rs` into a new sibling `mcp/src/server_tests.rs`. Production
+lines 1–518 untouched; server.rs ends ≤ 525 lines. **Two load-bearing
+pre-injections (same as phase-04):** (1) method prescribed `sed` not `write_file`
+(`sed -n '521,1224p' server.rs > server_tests.rs` — the recipe that landed
+phases 03/04 clean first-try; the pre-existing June-8 stub wrongly prescribed a
+two-range-read `write_file` regeneration and was rewritten); (2) the declaration
+**requires `#[path = "server_tests.rs"]`** because `server` is a single-file
+module (`mod server;` in main.rs:15) — a bare `mod tests;` would make the
+compiler look for `server/tests.rs` and fail. Plus a third note: the block's
+`#[tokio::test]` async tests move verbatim, no special handling. Zero logic
+change; existing **270** mcp tests must pass at the same count. Executor target:
+Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
+
+**phase-04 done** (2026-06-09, approved_first_try): pure file-split refactor —
+moved the single ~759-line `#[cfg(test)] mod tests { … }` block out of
+`mcp/src/scorecard.rs` (1 153 lines) into a new sibling
+`mcp/src/scorecard_tests.rs` (759 lines, 34 test fns preserved), replacing it
+with a `#[cfg(test)] #[path = "scorecard_tests.rs"] mod tests;` declaration.
+scorecard.rs now **394 lines** (production 1–391 byte-identical + the 3-line
+declaration). The `sed` move (`sed -n '394,1152p'`) landed byte-for-byte (761
+ins / 761 del); **665 executor + 269 mcp** pass on independent re-run, all four
+gates green. Committed `6be6e91` (refactor); approved `07adb6b`. **Clean
+first-try, 39 turns — fourth consecutive split refactor (M8 ×2, M11 phase-03,
+phase-04) to land first-try on the prescribed `sed`-move recipe; the
+correctness-constraint pre-injection thesis holds.** Process notes (cosmetic,
+no fold): the executor's Update Log self-labels "Claude (Sonnet 4.5)" and stamps
+`2025-06-16` — the recurring local-LLM identity/clock quirk. **Surfaced a
+pre-existing master-red test** (`dashboard::panels::tests::session_lines_shows_spinner_when_active`),
+introduced by the direct commit `47d9e3b "refactored spinner to be cooler"`
+which changed the spinner's frame spacing but not its test assertion — fixed
+directly at review (`2592d0f`, assertion updated `"🐕       🧠"` → `"🐕  🧠"`),
+restoring the mcp suite to **270 passing**.
 
 **Prior active-phase pointer (now done):**
 

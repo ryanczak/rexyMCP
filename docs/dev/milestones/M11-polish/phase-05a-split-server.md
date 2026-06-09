@@ -2,94 +2,218 @@
 
 **Milestone:** M11 — Polish
 **Status:** todo
-**Depends on:** phase-04 (ordering only)
-**Estimated diff:** ~0 net lines (move only)
+**Depends on:** phase-04 (ordering only — no code dependency; same refactor class)
+**Estimated diff:** ~0 net lines (pure move — no logic changes)
 **Tags:** language=rust, kind=refactor, size=s
 
 ## Goal
 
-`mcp/src/server.rs` is 1 225 lines: ~519 lines of production code (MCP server
-handler, inner logic functions, tool implementations) followed by ~706 lines of
-`#[cfg(test)] mod tests { … }`. Extract the test block into
-`mcp/src/server_tests.rs`.
+`mcp/src/server.rs` is **1 225 lines** — ~518 lines of production code (the
+`rmcp` MCP server impl: `RexyMcpServer`, `McpProgressNotifier`, the `_inner`
+tool entrypoints, the `#[rmcp::tool_router]` impl, `ServerHandler`) followed by
+a single ~704-line `#[cfg(test)] mod tests { … }` block. Move the test block into
+a new sibling file `mcp/src/server_tests.rs`, leaving `server.rs` as
+production-code-only.
 
-**Zero logic changes.**
+**Zero logic changes.** Every test moves byte-for-byte; the only production-source
+change is replacing the inline `mod tests { … }` with a file-module declaration.
+All gates pass identically before and after; the mcp test count is unchanged.
+This is the **same refactor as phase-04** (`scorecard.rs` → `scorecard_tests.rs`,
+landed clean first-try via `sed`) — follow that recipe exactly.
+
+## Architecture references
+
+Read before starting:
+
+- `docs/architecture.md#status` — M11 §"File decomposition" names this phase
+  (`server.rs` is one of the four largest source files); pure move refactor, no
+  logic changes.
 
 ## Pre-flight
 
 1. Read `docs/dev/STANDARDS.md` top to bottom.
 2. Read this entire phase doc before touching any code.
-3. Run `cargo test -p rexymcp` and confirm all tests pass on HEAD.
+3. Run `cargo test -p rexymcp 2>&1 | tail -3` and record the passing test count
+   (expected: **270**). The same count must pass after the move.
 4. Confirm the repo is on a clean branch with no uncommitted changes.
 
 ## Current state
 
-`mcp/src/server.rs` (1 225 lines):
-- Lines 1–519 (approx): production code — `RexyMcpServer`, `McpProgressNotifier`,
-  `execute_phase_inner`, `executor_health_inner`, log query inners,
-  `model_scorecard_inner`, the `#[rmcp::tool_router]` impl, `ServerHandler`.
-- Lines 520–1225 (approx): `#[cfg(test)] mod tests { … }`.
+Boundaries verified on HEAD:
+
+```
+518:                 ← last production line (blank; the closing brace of the last
+                       production item is on an earlier line)
+519:#[cfg(test)]
+520:mod tests {
+521:    use super::*;
+522:    use tempfile::TempDir;
+        … ~702 lines, 34 fns (helpers + 28 #[test]/#[tokio::test]) …
+1224:    }            ← closes the final test fn
+1225:}                ← closes `mod tests {`
+```
+
+So the **inner body** of the test module is **lines 521–1224**, and production
+code is **lines 1–518**.
+
+> **These line numbers were grep-verified against HEAD while drafting.** Re-confirm
+> as the first step; if a rebase shifted them, adapt the `sed` ranges to the
+> confirmed numbers.
+
+`server` is declared `mod server;` in `mcp/src/main.rs:15` — a **single-file
+module**, which determines the declaration form in Step 3 below.
+
+**The test block contains `#[tokio::test]` async tests** (e.g. at lines 556, 570,
+586, 601, 1138, 1196). This changes **nothing** about the move — `sed` moves the
+attributes and bodies verbatim, and `use super::*;` resolves the same imports from
+the sibling file. Do not add, remove, or rewrite any `#[tokio::test]`/`#[test]`
+attribute.
 
 ## Spec
 
-### Step 1: determine exact boundary
+### The method: move with `sed`, do NOT retype the body
+
+This is the same move just done for `mcp/src/scorecard.rs` →
+`mcp/src/scorecard_tests.rs` (phase-04, landed clean first-try via `sed`). **Do
+not reproduce the ~704-line test body with `write_file` or `patch`** — a verbatim
+regeneration risks truncation/transcription errors and the repeated-patch churn
+that has stalled split refactors before. Let the shell move the bytes losslessly.
+The `bash` tool permits `sed`/`mv`/`printf` and in-scope redirects (the classifier
+blocks only device writes / `mkfs` / `git push` / `rm -rf /` etc.).
+
+### Step 1 — confirm the boundaries
 
 ```bash
-grep -n "^#\[cfg(test)\]" mcp/src/server.rs
+wc -l mcp/src/server.rs
+grep -n '^#\[cfg(test)\]$' mcp/src/server.rs   # expect: 519
+sed -n '519,521p' mcp/src/server.rs            # expect: #[cfg(test)] / mod tests { / use super::*;
+tail -n 2 mcp/src/server.rs                    # expect: a closing `}` (line 1225)
+```
+
+Use the confirmed numbers: `BODY_START` = the `use super::*;` line (expected 521),
+`PROD_END` = the line before `#[cfg(test)]` (expected 518), `BODY_END` = total
+lines − 1 (the line before the final `}`, expected 1224).
+
+### Step 2 — extract the test body to `server_tests.rs`
+
+The new file is the module *body* — the inner content **without** the outer
+`mod tests { … }` wrapper and **without** the `#[cfg(test)]` attribute (those are
+supplied by the declaration in Step 3). So it starts at `use super::*;` and ends
+at the last test fn's closing `}`:
+
+```bash
+sed -n '521,1224p' mcp/src/server.rs > mcp/src/server_tests.rs
+```
+
+### Step 3 — trim `server.rs` and add the file-module declaration
+
+Cannot redirect into `server.rs` while reading it; write to a temp then move:
+
+```bash
+{ sed -n '1,518p' mcp/src/server.rs; \
+  printf '#[cfg(test)]\n#[path = "server_tests.rs"]\nmod tests;\n'; } \
+  > mcp/src/server.rs.new
+mv mcp/src/server.rs.new mcp/src/server.rs
+```
+
+**The `#[path = "server_tests.rs"]` attribute is REQUIRED and load-bearing.**
+`server` is a *single-file* module (`mcp/src/server.rs`, not `server/mod.rs`). A
+bare `mod tests;` inside it makes the compiler look for `mcp/src/server/tests.rs`
+or `mcp/src/server/tests/mod.rs` — **not** the sibling `server_tests.rs`, so the
+build would fail with "file not found for module `tests`". The `#[path]` attribute
+points the `tests` module at the sibling file explicitly. (This is exactly the
+phase-04 situation: `scorecard` was likewise a single-file module and required
+`#[path = "scorecard_tests.rs"]`. Contrast `executor/src/agent/tests.rs`, which
+needed no `#[path]` because `agent` is a *directory* module.)
+
+### Step 4 — format the two touched files
+
+Format only the touched files — **never** run the writing form `cargo fmt --all`:
+
+```bash
+rustfmt mcp/src/server.rs mcp/src/server_tests.rs
+```
+
+### Step 5 — verify
+
+```bash
+cargo build -p rexymcp 2>&1 | tail -5
+cargo clippy -p rexymcp --all-targets --all-features -- -D warnings 2>&1 | tail -5
+cargo test -p rexymcp 2>&1 | tail -3
+cargo fmt --all --check
 wc -l mcp/src/server.rs
 ```
 
-### Step 2: create `mcp/src/server_tests.rs`
-
-Read `server.rs` in two range-reads (~650 lines each). Write `server_tests.rs`
-containing the inner body of `mod tests { … }` — everything between the outer
-braces, not including the `mod tests { … }` wrapper itself.
-
-The file will begin with the `use` imports from the original test block (including
-`use super::*;` or whatever the test imports actually are — copy them exactly).
-
-### Step 3: trim `server.rs` and add declaration
-
-Remove the `#[cfg(test)]` block from `server.rs` and append:
-
-```rust
-#[cfg(test)]
-#[path = "server_tests.rs"]
-mod tests;
-```
-
-(Same `#[path]` pattern as phase-04 — necessary because the file is named
-`server_tests.rs`, not `tests.rs`.)
-
-### Step 4: verify and format
-
-```bash
-cargo build -p rexymcp
-cargo test -p rexymcp
-rustfmt mcp/src/server.rs mcp/src/server_tests.rs
-cargo fmt --all --check
-```
+The test count must equal Pre-flight (270). `wc -l server.rs` must be ≤ 525
+(production lines 1–518 + the 3-line declaration).
 
 ## Acceptance criteria
 
-- [ ] `mcp/src/server.rs` is ≤ 530 lines (production code only).
-- [ ] `mcp/src/server_tests.rs` exists and contains all tests.
+- [ ] `mcp/src/server.rs` is ≤ 525 lines and contains **no** inline
+  `#[cfg(test)] mod tests { … }` block — only the
+  `#[cfg(test)] #[path = "server_tests.rs"] mod tests;` declaration.
+- [ ] `mcp/src/server_tests.rs` exists and contains the full test body
+  (begins with `use super::*;`, ends with the last test fn's closing brace).
 - [ ] `cargo build -p rexymcp` succeeds with zero warnings.
 - [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes.
-- [ ] `cargo test -p rexymcp` passes — same test count as before.
+- [ ] `cargo test -p rexymcp` passes with the **same test count as Pre-flight
+  (270)** — no test added, removed, renamed, or skipped.
 - [ ] `cargo fmt --all --check` passes.
-- [ ] No logic change of any kind.
+- [ ] `git diff --stat` shows exactly two source files: `server.rs` (large
+  deletion) and `server_tests.rs` (large addition).
+
+## Test plan
+
+No new tests. This is a pure file-split move — the existing test fns in the block
+provide complete coverage and must pass unchanged. The "same test count before and
+after" criterion is the regression guard: any transcription or boundary error
+shows up as a changed count or a compile failure.
+
+## End-to-end verification
+
+> Not applicable — phase ships no runtime-loadable artifact. Pure internal
+> file-split refactor: no production behavior, MCP-tool surface, or config
+> changes; the only build-visible effect (test compilation) is covered by
+> `cargo test`.
+
+## Authorizations
+
+None. (No new dependency; no `unsafe`; no edit to `Cargo.toml`, the architecture
+doc, or any other phase doc. `server_tests.rs` is a new source file the spec
+explicitly requires, so it is not an unauthorized new file.)
+
+## Out of scope
+
+- Do **not** sub-split `server_tests.rs` — one flat file is the goal.
+- Do **not** edit, rename, reorder, add, or delete any test, helper fn, `use`
+  statement, `#[allow]`, `#[test]`, or `#[tokio::test]`. Move the body
+  byte-for-byte.
+- Do **not** touch `main.rs`, `runner.rs`, or any other file — the tests
+  reference production items via `use super::*;` / `crate::…`, which still
+  resolves unchanged from `server_tests.rs`.
+- Do **not** change any production code in `server.rs` lines 1–518.
 
 ## Notes for executor
 
-- `server.rs` is 1 225 lines — readable in two range-reads of ~650 lines each.
-  Do NOT attempt a full single read.
-- The `server_tests.rs` file will contain test helpers that call the `_inner`
-  functions directly (e.g. `execute_phase_inner_with_client`). Those functions
-  are `pub(crate)` in `server.rs` and will remain accessible to the test module
-  via `use super::*;`.
-- Check whether the test block imports `use super::*;` or individual items — copy
-  exactly.
+- **Why `sed`, not `write_file`:** the test body is ~704 lines. Regenerating it
+  through `write_file` risks truncation/corruption and the repeated-patch churn
+  that stalls large moves. `sed` moves the bytes losslessly in one command — no
+  regeneration, no transcription risk. This is the prescribed method.
+- **The `#[path]` attribute is the one thing that will break the build if
+  omitted** — see Step 3. It is required because `server` is a single-file
+  module, exactly as in phase-04's `scorecard` split.
+- The `#[tokio::test]` async tests in the block need **no special handling** —
+  they move with the body verbatim. Do not "convert" or touch them.
+- The test helpers call `pub(crate)` `_inner` functions directly (e.g.
+  `execute_phase_inner_*`); they remain accessible from `server_tests.rs` via
+  `use super::*;` unchanged.
+- `server.rs` is 1 225 lines, but you do **not** need to read the test body to
+  move it — `sed` operates on it without loading it into the conversation.
+- If `cargo test` reports a different count or a compile error after the move, the
+  cause is a wrong boundary line in Step 2/3 or a missing `#[path]` — re-run the
+  Step 1 checks. Do not "fix" it by editing test contents.
+- Commit as a single `refactor:` commit; the body explains *why* (the file's test
+  suite dwarfs its production code), not *what*.
 
 ## Update Log
 
