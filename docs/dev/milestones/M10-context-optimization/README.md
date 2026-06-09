@@ -181,7 +181,7 @@ filter, then the novel semantic levers, then measurement.
 | 08b | **Surface context-efficiency in `rexymcp runs`** (mcp-only, single-file). Add two per-run columns — `PEAK_CXT` (peak context utilization) + `RECLAIMED` (total tokens reclaimed by all four levers) — to `format_runs`, reading the 08a `PhaseRun.context_efficiency` field. Purely additive (read-only), no struct changes. ([phase-08b-runs-context-efficiency-columns.md](phase-08b-runs-context-efficiency-columns.md)) | — | done |
 | 08c | **Aggregate context-efficiency into the model × tag scorecard** (mcp-only, single-file). Add `peak_context_pct_mean` + `tokens_reclaimed_mean` (both `Option<f64>`, mean over context-measured runs) to `ScorecardRow` + its `Accumulator` + the `aggregate` function — all in `mcp/src/scorecard.rs`, exactly **one** struct literal. MCP-tool-only (no CLI); new fields serialize through `model_scorecard` automatically. ([phase-08c-scorecard-context-efficiency-model-tag.md](phase-08c-scorecard-context-efficiency-model-tag.md)) | — | done |
 | 08d | **Aggregate context-efficiency into the model × settings scorecard** ([phase-08d-scorecard-context-efficiency-model-settings.md](phase-08d-scorecard-context-efficiency-model-settings.md)) (mcp-only). The same two means on `SettingsScorecardRow` + `SettingsAccumulator` + `aggregate_by_settings` + new columns in the `format_settings_scorecard` CLI renderer. Three struct-literal sites across `scorecard.rs` + `scorecard_cli.rs` — the churn-dense half, split out from 08c so each dispatch is single-concern. | — | done |
-| 08e | **Fold reclaim events into `StatusSummary` / dashboard** ([phase-08e-reclaim-events-statussummary-dashboard.md](phase-08e-reclaim-events-statussummary-dashboard.md)) (mcp-only, live view). `summarize` gains three arms folding `OutputFiltered`/`ReadEvicted`/`ReadDeduped` (currently in the `_ => {}` catch-all) into six additive `StatusSummary` counters; the dashboard's Compactions panel is repurposed into an aggregate **Reclaim** panel (`compactions_lines`→`reclaim_lines`); `format_status` gains a `reclaimed:` line. The three variants already exist (03/04/06) and are already handled in `log_query`/`transcript`/`filter` — **no new variant, no match-arm wall**; field-adds are additive (every `StatusSummary` literal spreads `..default()`). | — | review |
+| 08e | **Fold reclaim events into `StatusSummary` / dashboard** ([phase-08e-reclaim-events-statussummary-dashboard.md](phase-08e-reclaim-events-statussummary-dashboard.md)) (mcp-only, live view). `summarize` gains three arms folding `OutputFiltered`/`ReadEvicted`/`ReadDeduped` (currently in the `_ => {}` catch-all) into six additive `StatusSummary` counters; the dashboard's Compactions panel is repurposed into an aggregate **Reclaim** panel (`compactions_lines`→`reclaim_lines`); `format_status` gains a `reclaimed:` line. The three variants already exist (03/04/06) and are already handled in `log_query`/`transcript`/`filter` — **no new variant, no match-arm wall**; field-adds are additive (every `StatusSummary` literal spreads `..default()`). | — | done |
 
 Phases may split or merge at draft time. The table is the roadmap, not a
 contract; each phase doc is the contract. **Measurement is per-lever:** each
@@ -255,7 +255,54 @@ over already-captured, already-redacted output.
 
 ## Notes
 
-*(milestone retrospective written at milestone close)*
+### Milestone retrospective (2026-06-08, M10 complete — all 13 phases done)
+
+**What shipped.** Two arcs landed end-to-end. **Arc A** (boundary output filtering):
+phase-01 recoverable generic filter + phase-02 structured cargo filter. **Arc B**
+(semantic context lifecycle): phase-04 superseded-read eviction, phase-06 redundant-read
+dedupe, phase-07 value-ranked content-aware compaction — all built on the M4
+read-before-edit working set. The cross-cutting **measurement spine**: phase-03 retrofit
+of per-lever reclaim events (`OutputFiltered`), phase-05 `Budget::estimate` correctness
+fix (it was counting only `msg.content`, so `context_pct` never grew), and the phase-08
+surfacing fan-out — 08a aggregation onto `PhaseRun`, 08b `runs` columns, 08c model×tag
+scorecard, 08d model×settings scorecard, 08e (this phase) the live `StatusSummary` /
+dashboard / `rexymcp status` view. Every reclaim lever is now visible both **post-hoc**
+(runs + scorecards) and **live** (dashboard Reclaim panel + `status --json`).
+
+**What worked.** The **per-lever-`SessionEvent` measurement strategy** (decided with the
+user 2026-06-07) paid off exactly as intended: because each lever emitted a durable JSONL
+event the moment it landed, the 08-series surfacing phases were pure additive reads with
+zero retrofit. The **split-by-output-struct** decomposition of the surfacing work (08a–08e)
+kept each dispatch single-concern and let the no-churn halves land first-try.
+
+**What broke — the dominant calibration story.** The local executor (Qwen/Qwen3.6-27B-FP8)
+stalled on **repetitive multi-site mechanical edits five times** across M10: phase-03/04/06
+(match-arm `filter.rs` walls — `VerifierFailurePersistent` or false-`complete`), phase-08a
+(5 cross-crate struct-literal field-adds — `IdenticalToolCallRepetition`), and phase-08d
+(3 cross-file literals — `VerifierFailurePersistent`). This was confirmed by a **controlled
+A/B**: 08c (1 literal, single file) landed clean first-try in 66 turns; its split sibling
+08d (3 literals across two files) stalled exactly as predicted, same pre-injection quality
+on both arms — isolating **literal/site-count** as the stall driver, not task difficulty.
+**08e was drafted as the low-churn counter-shape** (six purely additive `..default()` fields,
+three new arms before an intact `_ => {}`, no struct literal to touch) and **landed clean,
+first-try** — the predicted payoff, further confirming additive-shape as the lever.
+
+**Recovery levers that worked:** (1) architect session takeover / closeout of the mechanical
+remainder after a `hard_fail` (08a, 08d); (2) narrow-scope re-dispatch against a clean
+committed tree (06 tests-only); (3) the compile-first-then-test re-dispatch checklist (03,
+04); (4) the interim governor-threshold raise 3→6 (commit `e543f57`).
+
+**Held calibration fold (for the user, at this retrospective).** Five occurrences + a
+controlled A/B is well past the three-strikes fold bar. The proposed `WORKFLOW.md` addition
+to the "Prefer additive change shapes" guidance: *"prefer splitting a feature by
+output-struct so each executor dispatch touches ≤1 non-`Default` struct literal; a
+pre-injected site-list alone does not prevent the stall (08a, 08d both stalled despite
+complete site-lists)."* Per the hard rule, `WORKFLOW.md` is not edited without explicit
+user sign-off — this fold is surfaced for that decision, not applied here.
+
+**Outstanding (human-gated, unchanged by this phase):** `docs/architecture.md` § Status
+still carries no M10 entry — adding it is an edit to a human-gated source-of-truth file
+and is deferred to formal M10 sign-off (see below).
 
 The architecture.md § Status list does not yet carry an M10 entry — adding it is a
 documentation edit to a human-gated source-of-truth file (a hard rule: no

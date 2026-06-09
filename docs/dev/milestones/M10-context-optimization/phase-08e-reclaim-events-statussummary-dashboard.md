@@ -1,7 +1,7 @@
 # Phase 08e: Fold reclaim events into `StatusSummary` + the live dashboard
 
 **Milestone:** M10 — Context optimization
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (`OutputFiltered` event — done), phase-04 (`ReadEvicted`
 — done), phase-06 (`ReadDeduped` — done), phase-08a–08d (context-efficiency
 surfacing — done). This is the **live-view** sibling of 08b/08c/08d: those folded
@@ -498,3 +498,36 @@ What this phase must **not** do, even if tempted:
 **Notes for review:** None — implementation matches spec exactly.
 
 **Commit:** `feat: fold reclaim events into StatusSummary and live dashboard`
+
+### Review verdict — 2026-06-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor
+- **Scope deviations:** none
+- **Calibration:** none
+
+**Re-run command set (independent):** `cargo fmt --all --check` ✓ · `cargo build`
+✓ (zero warnings) · `cargo clippy --all-targets --all-features -- -D warnings` ✓ ·
+`cargo test` ✓ (266 + 664 passed, 0 failed, 2 ignored).
+
+**End-to-end re-verification (real binary against a TempDir fixture):**
+
+```
+$ rexymcp status --repo <tmp> --json
+  "output_filtered_count": 1, "output_filtered_tokens": 800,
+  "read_evicted_count": 1, "read_evicted_tokens": 500,
+  "read_deduped_count": 1, "read_deduped_tokens": 300
+
+$ rexymcp status --repo <tmp>
+reclaimed: 1600 tokens (filter 800, evict 500, dedupe 300, compaction 0)
+```
+
+Matches the executor's quoted outputs. Diff is exactly the spec'd shape: six
+additive `StatusSummary` fields, three `summarize` arms before an intact
+`_ => {}`, `compactions_lines`→`reclaim_lines` rename + extension, the two
+`render.rs` repoints, and the gated `reclaimed:` line. No out-of-scope files
+touched (`log_query`/`transcript`/`filter`/`runs`/`scorecard`/`main.rs` all
+untouched); no new `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]` in production
+paths; negative tests (`*_omits_*`, `*_absent_*`, `*_default_zero_*`) guard the
+must-not-fire cases. **This is the last in-scope M10 phase — milestone closed.**
