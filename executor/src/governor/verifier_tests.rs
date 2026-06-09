@@ -209,8 +209,11 @@ async fn verify_dispatches_py_to_python() {
         VerifierResult::Failed(msg) => {
             assert!(msg.contains("ruff spawn failed"));
         }
+        VerifierResult::Skipped(_) => {
+            // ruff not installed — acceptable, the tool isn't on PATH
+        }
         VerifierResult::Unsupported => {
-            panic!("expected Checked or Failed, got Unsupported");
+            panic!("expected Checked, Failed, or Skipped, got Unsupported");
         }
     }
 }
@@ -662,5 +665,41 @@ async fn capture_baseline_skips_unsupported_files() {
     assert!(!baseline.signatures.is_empty());
     for sig in &baseline.signatures {
         assert_eq!(sig.path.extension().and_then(|s| s.to_str()), Some("rs"));
+    }
+}
+
+#[test]
+fn spawn_failure_not_found_is_skipped_naming_remedy() {
+    let err = std::io::Error::new(std::io::ErrorKind::NotFound, "x");
+    let result = spawn_failure("cargo", "install the Rust toolchain", &err);
+
+    match result {
+        VerifierResult::Skipped(msg) => {
+            assert!(
+                msg.contains("cargo"),
+                "Skipped message must name the tool: {msg}"
+            );
+            assert!(
+                msg.contains("install the Rust toolchain"),
+                "Skipped message must contain the install hint: {msg}"
+            );
+        }
+        other => panic!("expected Skipped, got {:?}", other),
+    }
+}
+
+#[test]
+fn spawn_failure_other_error_stays_failed() {
+    let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+    let result = spawn_failure("cargo", "install the Rust toolchain", &err);
+
+    match result {
+        VerifierResult::Failed(msg) => {
+            assert!(
+                msg.contains("spawn failed"),
+                "Non-NotFound error must produce Failed with 'spawn failed': {msg}"
+            );
+        }
+        other => panic!("expected Failed, got {:?}", other),
     }
 }

@@ -804,6 +804,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 VerifierResult::Failed(msg) => {
                     messages.push(user_text(&format!("verifier failed: {msg}"), turns));
                 }
+                VerifierResult::Skipped(msg) => {
+                    messages.push(user_text(&format!("verifier skipped: {msg}"), turns));
+                }
             }
         }
 

@@ -82,6 +82,13 @@ pub enum VerifierResult {
     /// The agent loop appends a brief "verifier failed: X"
     /// notice but doesn't treat this as the model's fault.
     Failed(String),
+    /// A required checker binary isn't installed (not on PATH).
+    /// Distinct from `Failed` (a genuine infra error) and from
+    /// `Unsupported` (the file type has no checker at all). The
+    /// agent loop surfaces this as a one-line advisory naming the
+    /// binary and how to install it; it is NOT the model's fault
+    /// and never counts toward verifier-persistence hard-fail.
+    Skipped(String),
 }
 
 /// A set of diagnostic signatures present at session start.
@@ -168,7 +175,9 @@ pub async fn capture_baseline(paths: &[PathBuf]) -> Baseline {
                     baseline.record(d);
                 }
             }
-            VerifierResult::Unsupported | VerifierResult::Failed(_) => {
+            VerifierResult::Unsupported
+            | VerifierResult::Failed(_)
+            | VerifierResult::Skipped(_) => {
                 // No baseline diagnostics for files the
                 // verifier can't check. Skip.
             }
@@ -225,6 +234,21 @@ pub async fn verify(path: &Path) -> VerifierResult {
     }
 }
 
+/// Map a checker-spawn `io::Error` to a VerifierResult. A
+/// `NotFound` error means the toolchain binary isn't installed —
+/// a `Skipped` advisory that names the remedy. Any other spawn
+/// error is a genuine infrastructure `Failed`.
+fn spawn_failure(tool: &str, install_hint: &str, err: &std::io::Error) -> VerifierResult {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        VerifierResult::Skipped(format!(
+            "{tool} not found on PATH — {install_hint}; \
+             incremental verification is disabled this run"
+        ))
+    } else {
+        VerifierResult::Failed(format!("{tool} spawn failed: {err}"))
+    }
+}
+
 async fn verify_rust(path: &Path) -> VerifierResult {
     let crate_root = match find_crate_root(path) {
         Some(root) => root,
@@ -247,7 +271,11 @@ async fn verify_rust(path: &Path) -> VerifierResult {
     {
         Ok(o) => o,
         Err(e) => {
-            return VerifierResult::Failed(format!("cargo check spawn failed: {e}"));
+            return spawn_failure(
+                "cargo",
+                "install the Rust toolchain via https://rustup.rs",
+                &e,
+            );
         }
     };
 
@@ -355,7 +383,7 @@ async fn verify_typescript(path: &Path) -> VerifierResult {
     {
         Ok(o) => o,
         Err(e) => {
-            return VerifierResult::Failed(format!("tsc spawn failed: {e}"));
+            return spawn_failure("tsc", "install TypeScript (npm install -g typescript)", &e);
         }
     };
 
@@ -441,7 +469,7 @@ async fn verify_python(path: &Path) -> VerifierResult {
     {
         Ok(o) => o,
         Err(e) => {
-            return VerifierResult::Failed(format!("ruff spawn failed: {e}"));
+            return spawn_failure("ruff", "install ruff (pip install ruff)", &e);
         }
     };
 

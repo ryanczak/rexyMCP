@@ -1,7 +1,7 @@
 # Phase 01: Verifier missing-binary → `Skipped` advisory
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** none (first M12 phase)
 **Estimated diff:** ~70 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -305,4 +305,47 @@ and `spawn_failure` are additions the spec requires, not new files.)
 
 ## Update Log
 
-<!-- entries appended below this line -->
+### Update — 2026-06-09 (started)
+
+**Executor:** rexyMCP executor LLM
+
+**Summary:** Implementing `VerifierResult::Skipped` variant + `spawn_failure` classifier to turn missing-binary spawn errors into clear, remedy-naming advisories.
+
+### Update — 2026-06-09 (complete)
+
+**Executor:** rexyMCP executor LLM
+
+**Summary:** Added `Skipped(String)` variant to `VerifierResult`, a pure `spawn_failure` classifier, routed all three spawn arms through it, and handled `Skipped` in `capture_baseline`, the agent loop, and one test match. Added 3 new tests.
+
+**Verification commands:**
+```
+cargo build -p rexymcp-executor: success (0 warnings)
+cargo clippy --all-targets --all-features -- -D warnings: success
+cargo test -p rexymcp-executor: 674 passed; 0 failed; 2 ignored
+cargo fmt --all --check: success
+```
+
+**One-line verification summary:** build clean, clippy clean, 674 tests pass (2 ignored unchanged), fmt clean.
+
+**Grep proof for pinned literals:**
+```
+grep -n "Skipped(String)" executor/src/governor/verifier.rs → 91:Skipped(String)
+grep -n "spawn_failure" executor/src/governor/verifier.rs → 241,274,386,472
+grep -n "verifier skipped" executor/src/agent/mod.rs → 808
+```
+
+**Files changed:**
+- `executor/src/governor/verifier.rs` — added `Skipped` variant, `spawn_failure` helper, routed 3 spawn arms, updated `capture_baseline` match
+- `executor/src/governor/verifier_tests.rs` — added `spawn_failure_not_found_is_skipped_naming_remedy`, `spawn_failure_other_error_stays_failed`, updated `python_verifier_handles_missing_ruff` match
+- `executor/src/agent/mod.rs` — added `Skipped` arm to verifier result match
+- `executor/src/agent/tests.rs` — added `loop_surfaces_skipped_verifier_as_advisory`
+- `docs/dev/milestones/M12-executor-tooling/phase-01-verifier-degrade.md` — status flip + Update Log
+- `docs/dev/milestones/M12-executor-tooling/README.md` — phase table status flip
+
+**Commit:** fix: verifier missing-binary → Skipped advisory naming the binary and remedy
+
+**Notes for review:**
+- One additional match arm was needed beyond the spec's two listed sites: `verifier_tests.rs`'s `python_verifier_handles_missing_ruff` test had an exhaustive match on `VerifierResult` that now includes `Skipped(_)`. Handled by treating it as acceptable (ruff may not be installed on CI).
+- The `Skipped` arm in `mod.rs` does NOT touch `recent_verifier_error_counts` — the no-strike guarantee is structural (only `Checked` pushes to that vector).
+
+**End-to-end verification:** N/A — the verifier is an internal loop component with no CLI entrypoint. The missing-binary path is covered by the pure `spawn_failure_not_found_is_skipped_naming_remedy` unit test and the loop advisory by `loop_surfaces_skipped_verifier_as_advisory`. Optional manual check: run the executor with `PATH=` against a `.rs` edit and observe `verifier skipped: cargo not found …`.

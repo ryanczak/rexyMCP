@@ -1116,6 +1116,37 @@ async fn verifier_failed_appends_notice_not_err() {
 }
 
 #[tokio::test]
+async fn loop_surfaces_skipped_verifier_as_advisory() {
+    let dir = TempDir::new().unwrap();
+    let client = MockAiClientScript::new(vec![
+        vec![write_call(&dir, "a.rs", "fn a() {}")],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![VerifierResult::Skipped(
+        "cargo not found on PATH — install the Rust toolchain via https://rustup.rs; \
+         incremental verification is disabled this run"
+            .into(),
+    )]);
+
+    let result = run_with_verifier(&dir, &client, &verifier, 8).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let second = &client.calls()[1].messages;
+    assert!(
+        second
+            .iter()
+            .any(|m| m.content.contains("verifier skipped:")),
+        "a skipped verifier should append a 'verifier skipped' advisory"
+    );
+    assert!(
+        second
+            .iter()
+            .any(|m| m.content.contains("cargo not found on PATH")),
+        "the advisory must name the missing binary"
+    );
+}
+
+#[tokio::test]
 async fn persistent_verifier_failure_trips_hard_fail() {
     let dir = TempDir::new().unwrap();
     let client = MockAiClientScript::new(vec![
