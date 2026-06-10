@@ -4,9 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none drafted — M13 phase-04 (`<think>` block formatting,
-item #6) is next, undrafted.** Draft it with `/rexymcp:architect next`. M13 is
-**not** at a milestone boundary — phases 04–08 remain `todo`.
+**Active phase:** **M13 phase-04 — `<think>`/`</think>` block formatting (item #6),
+drafted and ready to dispatch**
+([phase-04-think.md](milestones/M13-dashboard-polish/phase-04-think.md), `todo`).
+Dispatch it with `/rexymcp:dispatch phase-04`. M13 is **not** at a milestone
+boundary — phases 05–08 remain `todo` and undrafted.
+
+**M13 phase-04 — drafted** (2026-06-10): distinct dim-italic styling for
+`<think>…</think>` reasoning vs soft-white answer text in Completion bodies. Two
+mcp files (`highlight.rs` + `transcript.rs`): a pure `split_think_segments(raw)`
+literal-marker tokenizer (initial mode = think iff a `</think>` precedes any
+`<think>` — covers stripped-opening output; unterminated `<think>` → rest is
+think; `<thinking>` is **not** a marker) + a `completion_body_lines(raw)` renderer
+that reuses the existing `body_lines` indent/cap/overflow-marker shape so the
+**no-markers path is byte-identical** to today's `plain_body_lines`; the Completion
+arm of `record_lines` swaps to it. Greenfield — no `think` handling exists in
+`mcp/src/`. **Pinned negatives** (worked truth table in the doc): no-markers →
+byte-identical soft-white; `</think>`-only no-opening → still separates with the
+leading text as reasoning. No `SessionEvent`/config/`StatusSummary` change; no
+`Cargo.toml` (`Modifier` already in `ratatui` 0.30, `Modifier::BOLD` already used).
+Display-only per the M13 constraint. ~140 lines.
 
 **M13 phase-03 — done** (2026-06-10, approved_first_try): Activity line wrapping
 + tail-follow autoscroll over the **wrapped** count + right-edge scrollbar (items
