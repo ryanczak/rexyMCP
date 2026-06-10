@@ -4,37 +4,65 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **[phase-06b](milestones/M12-executor-tooling/phase-06b-task-tracking-gate.md)**
+**Active phase:** **[phase-06c](milestones/M12-executor-tooling/phase-06c-update-task-tool.md)**
 — drafted + activated 2026-06-09 (`/rexymcp:architect next`). Awaiting
-`/rexymcp:dispatch phase-06b`. M12 Arc B is complete (03/04/05 all done); Arc A
-substrate (06a) is done; the gate (06b) is now active.
+`/rexymcp:dispatch phase-06c`. M12 Arc B is complete (03/04/05 all done); Arc A
+substrate (06a) + gate (06b) are done; the model-facing flip tool (06c) is now
+active. 06c is the **last code phase before the dashboard panel (07)**.
 
-**phase-06b scope (active — M12 Arc A, gate plumbing):** put 06a's substrate
-behind a config kill-switch. Adds `[executor] task_tracking` (bool, **default
-on**, mirrors `[context] output_filter`'s shape but in `ExecutorConfig` with a
-`#[serde(default = "default_task_tracking")]` attr since that struct has no
-struct-level serde default), a new `pub task_tracking: bool` field on `LoopDeps`,
-wires the prod literal (`runner.rs:179` ← `inp.cfg.executor.task_tracking`), and
-wraps 06a's turn-0 seeding emit (`mod.rs:181-195`) in `if deps.task_tracking`. Off
-→ **zero** `TaskUpdate` events, byte-identical to pre-06a. Plus a one-line
-`rexymcp init` template doc. **Plumbing only** — the headline risk is the
-`LoopDeps`-literal churn (phase-08a/08d stall class): ~12 construction sites (1
-struct def + 1 prod + the `deps()` test helper + 9 standalone test literals, all
-ending in `governor: GovernorConfig::default(),` as the insertion anchor). Pinned
-**stall-proof recipe**: add the field + prod site + helper, then `cargo build` lets
-rustc enumerate the 9 remaining literals by line number (E0063) — don't hand-search
-the 3700-line test file. ~120 lines (~45 prod + ~75 test). E2E: the off-switch loop
-test + `rexymcp init` template grep. Executor target: Qwen/Qwen3.6-27B-FP8.
+**phase-06c scope (active — M12 Arc A, model-facing flips):** give the executor a
+`update_task` tool to flip a tracked task `pending → active → done`, and inject the
+task checklist + usage instructions into the system prompt, all gated by 06b's
+existing `task_tracking` flag (**no** `LoopDeps`/config churn — 06b did it all).
+**Design (the one decision pre-injected in the doc):** the `UpdateTask` tool owns
+the canonical live list in a `Mutex<Vec<Task>>` (seeded once at registry-build
+time, single Arc-shared instance → persists across turns); `execute` validates the
+`{id, state}`, flips in place, and returns `{id,title,state}` in `metadata`; the
+**loop** transcribes that metadata to a `SessionEvent::TaskUpdate` — copying the
+existing `OutputFiltered` metadata→event block verbatim (`mod.rs:697-717`), so the
+tool never needs the session log. Unknown id / bad state → advisory `ToolResult`
+error (model-visible, no emit). The router is **latent** (only registry helpers +
+tests consume `categorize`), so the new `Category::Meta` arm is low-risk. Change
+sites (no single mechanical wall — the 06b `LoopDeps` churn is gone): `pub mod
+tasks;` (expose for mcp) + new `tools/update_task.rs` + `tools/mod.rs` re-export +
+router/registry `Meta` arm + `prompt::task_section` + 2 loop hooks in
+`execute_phase` (append section to `system`; metadata-emit) + `build_registry`
+gains an `Option<Vec<Task>>` param (1 prod + 1 test call site). **Pinned A/B
+negative:** off → no `update_task` schema, no `# Task tracking` prompt section
+(byte-identical `Prompt` record), zero model-driven `TaskUpdate`. The 06b turn-0
+`pending` emit block (`mod.rs:185-201`) stays **byte-untouched**. ~300 lines (~190
+prod + ~110 test). E2E: the loop flip-emit integration test is the behavioral
+proof (no new CLI surface). Executor target: Qwen/Qwen3.6-27B-FP8.
 
-**06c (next to draft after 06b — split from the original 06b, 2026-06-09 with the
-user):** the model-facing flip tool (`update_task`) + its `router::categorize` arm
-+ `build_registry` registration + prompt injection of the task list/instructions,
-all gated by 06b's now-existing `task_tracking` flag (so 06c carries **no** further
-`LoopDeps` churn). The A/B *model-behavior* off-switch byte-identity (off → no flip
-tool, no prompt task section) is the pinned negative here. **Why the split:** the
-original combined 06b stacked two stall classes (the `LoopDeps` literal churn +
-new-tool/router/prompt wiring) in one weak-model session — same isolate-one-stall-
-class-per-phase medicine as the 06/06a-06b split.
+**07 (next to draft after 06c):** the dashboard `Tasks` panel (active/pending/done
+counts) above the Files panel, with Files height halved — the render half of Arc A.
+mcp-only (mirrors the M8 panel phases); reads the `TaskUpdate` JSONL 06a/06c emit.
+This is the **last M12 phase** → milestone close + retrospective after it lands.
+
+**Prior active-phase pointer (now done):**
+
+**phase-06b done** (2026-06-09, approved_first_try): M12 Arc A task-tracking
+**gate**. Added `[executor] task_tracking` (bool, default on, via
+`#[serde(default = "default_task_tracking")]` since `ExecutorConfig` has no
+struct-level serde default) + a `pub task_tracking: bool` field on `LoopDeps`,
+wired the prod literal (`runner.rs:200` ← `inp.cfg.executor.task_tracking`), wrapped
+06a's turn-0 seeding emit (`mod.rs:185-201`) in `if deps.task_tracking`, and
+documented the field in the `rexymcp init` template. Off → **zero** `TaskUpdate`
+events, byte-identical to pre-06a. **The headline risk — the `LoopDeps`
+struct-literal churn (phase-08a/08d stall class) — did NOT recur:** the executor
+cleanly traversed all 12 construction sites (1 struct + 1 prod + `deps()` helper + 9
+standalone test literals across `tests.rs` + 3 `ExecutorConfig` literals in
+`ai/mod.rs` + 1 in `health.rs`, the latter 4 from the *config*-field add) first-try
+via the pinned compiler-guided E0063 recipe. **710 executor + 293 mcp passed / 0
+failed / 2 ignored**, all four gates green on independent re-run; E2E reproduced
+(`rexymcp init` → generated `rexymcp.toml` carries `# task_tracking = true`). Gate
+verified load-bearing at review. 87-turn clean first-try with full bookkeeping
+(`feat:` commit `5ce7730`); approved `28e9e88`. **The 06b/06c split's intended
+payoff** — isolating the literal churn from the new-tool/router/prompt wiring (06c)
+worked exactly as the 06a/06b variant-wall split did. Cosmetic-only quirk: the
+Update Log self-stamps `2026-06-10` / "Claude (direct)" (the recurring local-LLM
+clock/identity quirk; phase-06's datetime injection fixes it once `rexymcp serve`
+is restarted — still pending).
 
 **Prior active-phase pointer (now done):**
 
