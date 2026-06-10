@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7, M9, M10, and M11 are fully implemented
-> and closed; M12 (executor tooling) is active. M8 (live session dashboard) is implemented but
+> **Status:** Living design doc. M1–M7 and M9–M12 are fully implemented
+> and closed; M13 (dashboard polish) is active. M8 (live session dashboard) is implemented but
 > open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
 > live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
@@ -681,7 +681,7 @@ The project plan. Each entry becomes a milestone with its own
       `agent/prompt.rs`). Pure integer date arithmetic — no date dependency, no
       real wall-clock read, so it stays deterministic under test.
 
-12. **M12 — Executor Tooling** *(in progress, kicked off 2026-06-09)*. Net-new
+12. **M12 — Executor Tooling** *(done, 2026-06-10; 7 phase-docs / 9 dispatches, all approved, zero takeovers)*. Net-new
     executor capability aimed at
     making a weak local model more effective and more efficient. Each item below
     is an **intervention whose value is measurable against the scorecard** —
@@ -754,3 +754,41 @@ The project plan. Each entry becomes a milestone with its own
     create one); no full LSP client until measurement justifies the effort; no new
     cloud/network tooling (the executor stays offline — see "No internal cloud
     escalation").
+
+13. **M13 — Dashboard Polish** *(in progress, kicked off 2026-06-10)*. The live
+    dashboard (M8 wireframe + the M10 Reclaim and M12 Tasks panels) is functional
+    but visually rough; this milestone makes it presentable. **Pure presentation
+    layer — `mcp/src/dashboard/` plus read-only additions to `mcp/src/status.rs`'s
+    `StatusSummary`/`summarize`.** No executor, loop, config, or `SessionEvent`
+    schema change: every event the panels render already exists in the JSONL feed;
+    M13 only changes how that feed is *displayed*. See
+    `docs/dev/milestones/M13-dashboard-polish/README.md`. Threads:
+
+    - **Legibility.** All low-contrast `Color::DarkGray` text is raised to
+      `Rgb(200,200,200)` (the contrast the Completion-body/plain-text path already
+      uses) so secondary text is readable. The Activity transcript gains word/line
+      **wrapping** (long lines no longer run off the panel edge) with a working
+      **tail-follow autoscroll** over the wrapped line count, and a position
+      **scrollbar**.
+
+    - **Activity completeness.** The transcript currently summarizes rather than
+      shows two captured-but-dropped payloads: **injected context** (the `Prompt`
+      record's full `rendered` text, today only a char count) and **tool-call
+      arguments** (the `Parsed` record's `tool_call.arguments`, today only the
+      name). Both are surfaced, reusing the existing body-truncation machinery, so
+      the panel shows what the model was actually sent and asked to run. `<think>`
+      reasoning blocks in Completion bodies are formatted distinctly from the
+      answer. Each event line gains a relative timestamp.
+
+    - **Panel polish.** The **Session** panel shows a session `duration:` (derived
+      from a new `started_at` capture in `summarize`) and a **full-width spinner**
+      carrying live `turn N · stage` status; the freshness `last update:` line moves
+      to the **Budget** panel. The **Tasks** panel shows named tasks with
+      checkbox/check glyphs (titles are already on the `TaskUpdate` event, currently
+      discarded) and a done/total progress gauge matching the context-gauge style.
+
+    **Non-goals (M13):** no new `SessionEvent` variants or schema changes (display
+    only); no executor/loop/governor/config changes; no interactivity beyond the
+    existing scroll/filter keys (the dashboard stays a monitoring view, not an
+    agent surface — see M8 Non-goals); no new dependencies (`ratatui` already
+    provides `Wrap`/`Scrollbar`).

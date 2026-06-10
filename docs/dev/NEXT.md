@@ -4,25 +4,49 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none.** 🎉 **M12 — Executor Tooling is complete** (7 phase-docs
-/ 9 dispatches, all approved, 2026-06-10 — see the
+**Active phase:** **M13 phase-01 — Legibility (dark-grey → `Rgb(200,200,200)`).**
+Drafted and `todo`
+([phase-01-contrast.md](milestones/M13-dashboard-polish/phase-01-contrast.md)).
+The milestone's lowest-risk shape: a grep-verified 7-site mechanical color swap in
+`mcp/src/dashboard/` (`render.rs`, `transcript.rs`, `highlight.rs`) with the target
+`Color::Rgb(200, 200, 200)` already present at two call sites (`transcript.rs:68`,
+`highlight.rs:145`) to copy. No new dep/event/config; the negative-case diff test
+(must NOT recolor `+`/`-` lines) proves the edit was surgical. Dispatch with
+`/rexymcp:dispatch phase-01`.
+
+**📌 M13 — Dashboard Polish kicked off (2026-06-10, with the user).** Milestone
+[README](milestones/M13-dashboard-polish/README.md) written; `architecture.md`
+§ Status #13 added + M12 marked done. **Locked scope: all 10 requested dashboard
+improvements + 4 enhancements (R1 scrollbar, R2 timestamps, R3 task gauge, R5
+spinner status), decomposed into 8 single-concern phases — pure presentation
+layer, `mcp/src/dashboard/` + read-only `StatusSummary`/`summarize` adds, NO
+`SessionEvent`/loop/config change.** This display-only constraint deliberately
+sidesteps both documented stall classes: no new-variant match-arm wall (no new
+`SessionEvent`), and `StatusSummary` is `Default`-built so field adds (duration in
+05, task list in 07) are a one-line struct add + one `summarize` assignment, not a
+literal cascade. **On-demand drafting:** only phase-01 is drafted; expand 02–08 via
+`/rexymcp:architect next` as they're dispatched. Phase map (items → phase): 01 #1 ·
+02 #2/#3 · 03 #8/#9/R1 · 04 #6 · 05 #4/#5 · 06 #10/R5 · 07 #7/R3 · 08 R2.
+
+**📌 Do before the first M13 dispatch (operational, still open):** **restart `rexymcp
+serve`** so the rebuilt binary picks up M11 phase-06's datetime injection — until
+then the executor keeps self-stamping hallucinated dates/identity in Update Logs
+(seen across all of M12; cosmetic, machine records are correct).
+
+**📌 Carried from M12 (not M13 scope):** the deferred cleanup sweep (two prod
+`eprintln!` at `server.rs:426`/`:450`; stale `RUNAWAY_OUTPUT_BYTES` doc-comment in
+`read_file.rs:17`; symbols `format_references` truncation-note copy bug) — gather
+into a separate micro-phase if the user wants it. The `task_tracking` A/B is fully
+shipped; a scorecard analysis of on/off `bounces_to_approval` / `first_pass_rate`
+remains an option whenever the user wants to validate Arc A.
+
+**M12 — Executor Tooling is complete** 🎉 (7 phase-docs / 9 dispatches, all approved,
+2026-06-10 — see the
 [retrospective](milestones/M12-executor-tooling/README.md#retrospective--2026-06-10)).
 Zero escalations/takeovers across the milestone (first since M8); the 06a/06b/06c
 split isolated both documented stall classes and neither recurred. Two single-bounce
 phases (05, 06c), both the same class — production-path `unwrap`/`expect` vs
 STANDARDS §2.1 — now a **2-occurrence trend** (3 = fold; watch-item carried below).
-
-**Milestone boundary — awaiting human sign-off.** Per the architect discipline the
-next milestone (M13) is **not** drafted until the user kicks it off. The
-`task_tracking` A/B is now fully shipped (substrate → gate → flips → panel), so the
-scorecard can compare on/off runs on `bounces_to_approval` / `first_pass_rate` — an
-analysis pass or scorecard column to validate Arc A is a natural early-M13 candidate
-if the user wants it.
-
-**📌 Do before the next dispatch (operational, still open):** **restart `rexymcp
-serve`** so the rebuilt binary picks up phase-06's datetime injection — until then
-the executor keeps self-stamping hallucinated dates/identity in Update Logs (seen
-again on 05/06c/07; cosmetic, machine records are correct).
 
 **📌 M12 watch-item (held for a 3rd occurrence, do NOT fold yet):** the executor
 reaches for `.unwrap()` on locally-provable-safe values (a just-matched parse; a
