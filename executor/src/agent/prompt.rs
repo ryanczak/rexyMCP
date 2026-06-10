@@ -43,12 +43,26 @@ fn format_utc_date(now_ms: u64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// Format epoch-millis (UTC) as `HH:MM` (24-hour). The time-of-day is the
+/// remainder of the day in seconds; pairs with `format_utc_date` to give the
+/// model sub-day grounding without a date dependency.
+fn format_utc_time(now_ms: u64) -> String {
+    let secs_of_day = (now_ms / 1_000) % 86_400;
+    let hours = secs_of_day / 3_600;
+    let minutes = (secs_of_day % 3_600) / 60;
+    format!("{hours:02}:{minutes:02}")
+}
+
 /// The one-line temporal-grounding header prepended to the system prompt. The
 /// local model has no clock of its own; without this it stamps hallucinated
-/// dates in its Update Log. Built from the injected `clock`, never real
-/// wall-clock time, so it stays deterministic under test.
+/// dates and times in its Update Log. Built from the injected `clock`, never
+/// real wall-clock time, so it stays deterministic under test.
 pub fn datetime_header(now_ms: u64) -> String {
-    format!("Today's date is {} (UTC).\n\n", format_utc_date(now_ms))
+    format!(
+        "Today's date is {} {} (UTC).\n\n",
+        format_utc_date(now_ms),
+        format_utc_time(now_ms)
+    )
 }
 
 /// Render a task-tracking section for the system prompt.
@@ -109,9 +123,27 @@ mod tests {
     }
 
     #[test]
+    fn format_utc_time_formats_midnight() {
+        assert_eq!(format_utc_time(0), "00:00");
+        assert_eq!(format_utc_time(1_780_963_200_000), "00:00");
+    }
+
+    #[test]
+    fn format_utc_time_formats_midday() {
+        // 2026-06-09 13:45:30 UTC
+        assert_eq!(format_utc_time(1_781_012_730_000), "13:45");
+    }
+
+    #[test]
+    fn format_utc_time_formats_late_evening_boundary() {
+        // 2025-12-31 23:59:59 UTC
+        assert_eq!(format_utc_time(1_767_225_599_000), "23:59");
+    }
+
+    #[test]
     fn datetime_header_contains_grounding_line() {
         let header = datetime_header(1_780_963_200_000);
-        assert!(header.contains("Today's date is 2026-06-09 (UTC)."));
+        assert!(header.contains("Today's date is 2026-06-09 00:00 (UTC)."));
     }
 
     #[test]
