@@ -58,7 +58,7 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 format!("prompt ({} chars)", rendered.chars().count()),
                 Color::Rgb(200, 200, 200),
                 false,
-                None,
+                Some(plain_body_lines(rendered, Color::Rgb(200, 200, 200))),
             ),
             // LLM completions: soft white so the model's words read easily.
             SessionEvent::Completion { raw } => (
@@ -67,12 +67,23 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 false,
                 Some(plain_body_lines(raw, Color::Rgb(200, 200, 200))),
             ),
-            SessionEvent::Parsed { tool_call } => (
-                format!("→ call {}", tool_call.name),
-                Color::Blue,
-                false,
-                None,
-            ),
+            SessionEvent::Parsed { tool_call } => {
+                let body = match &tool_call.arguments {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::Object(m) if m.is_empty() => None,
+                    args => {
+                        let pretty =
+                            serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
+                        Some(plain_body_lines(&pretty, Color::Rgb(128, 128, 128)))
+                    }
+                };
+                (
+                    format!("→ call {}", tool_call.name),
+                    Color::Blue,
+                    false,
+                    body,
+                )
+            }
             SessionEvent::ParseFailed { failure } => (
                 format!("parse failed: {}", preview(&failure.feedback)),
                 Color::Red,
@@ -477,5 +488,120 @@ mod tests {
             },
         ));
         assert_eq!(lines[0].spans[0].style.fg, Some(Color::Rgb(200, 200, 200)));
+    }
+
+    #[test]
+    fn prompt_body_shows_rendered_text_soft_white() {
+        let lines = record_lines(&rec(
+            0,
+            0,
+            SessionEvent::Prompt {
+                rendered: "injected ctx".into(),
+            },
+        ));
+        // 1 header + at least 1 body line
+        assert!(
+            lines.len() >= 2,
+            "expected header + body, got {} lines",
+            lines.len()
+        );
+        // Body line contains the rendered text and uses soft white
+        let body_line = &lines[1];
+        let text = format!("{}", body_line);
+        assert!(
+            text.contains("injected ctx"),
+            "body should contain rendered text: {text}"
+        );
+        assert_eq!(
+            body_line.spans[0].style.fg,
+            Some(Color::Rgb(200, 200, 200)),
+            "body span should be soft white"
+        );
+    }
+
+    #[test]
+    fn tool_call_args_render_dimmed() {
+        let parsed = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "read_file".into(),
+                arguments: serde_json::json!({ "path": "x.rs" }),
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let lines = record_lines(&rec(0, 0, parsed));
+        // 1 header + at least 1 body line
+        assert!(
+            lines.len() >= 2,
+            "expected header + body, got {} lines",
+            lines.len()
+        );
+        // Collect body text and check for arg key/value
+        let body_texts: Vec<String> = lines[1..].iter().map(|l| format!("{}", l)).collect();
+        let full_body = body_texts.join("\n");
+        assert!(
+            full_body.contains("path"),
+            "body should contain arg key: {full_body}"
+        );
+        assert!(
+            full_body.contains("x.rs"),
+            "body should contain arg value: {full_body}"
+        );
+        // First body span should be dim grey
+        assert_eq!(
+            lines[1].spans[0].style.fg,
+            Some(Color::Rgb(128, 128, 128)),
+            "body span should be dim grey"
+        );
+    }
+
+    #[test]
+    fn tool_call_empty_args_render_header_only() {
+        // Empty object
+        let parsed = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "read_file".into(),
+                arguments: serde_json::json!({}),
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let lines = record_lines(&rec(0, 0, parsed));
+        assert_eq!(
+            lines.len(),
+            1,
+            "empty-object args should render header only, got {} lines",
+            lines.len()
+        );
+
+        // Null arguments
+        let parsed_null = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "read_file".into(),
+                arguments: serde_json::Value::Null,
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let lines_null = record_lines(&rec(0, 0, parsed_null));
+        assert_eq!(
+            lines_null.len(),
+            1,
+            "null args should render header only, got {} lines",
+            lines_null.len()
+        );
+    }
+
+    #[test]
+    fn prompt_body_caps_long_text() {
+        let body: String = (0..TRANSCRIPT_CONTENT_MAX_LINES + 5)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let lines = record_lines(&rec(0, 0, SessionEvent::Prompt { rendered: body }));
+        // 1 header + TRANSCRIPT_CONTENT_MAX_LINES body + 1 overflow marker
+        assert_eq!(lines.len(), 1 + TRANSCRIPT_CONTENT_MAX_LINES + 1);
+        let last = format!("{}", lines[lines.len() - 1]);
+        assert!(
+            last.contains("more lines"),
+            "last line should be the overflow marker: {last}"
+        );
     }
 }

@@ -1,7 +1,7 @@
 # Phase 02: Activity — surface injected context + tool-call arguments
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** todo
+**Status:** review
 **Depends on:** none (phase-01 already recolored the two headers this phase adds bodies to)
 **Estimated diff:** ~20 lines prod + ~5 small tests
 **Tags:** language=rust, kind=feature, size=s
@@ -238,3 +238,53 @@ Do **not**:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 16:26 (started)
+
+**Executor:** Claude (executor)
+
+Implementing phase-02: surfacing `Prompt.rendered` and `Parsed.tool_call.arguments` as transcript bodies in `record_lines`.
+
+### Update — 2026-06-10 16:26 (complete)
+
+**Summary:** Added body content to `Prompt` and `Parsed` transcript records in `record_lines`. `Prompt.rendered` now renders as a soft-white body via `plain_body_lines`, matching the existing `Completion` body style. `Parsed.tool_call.arguments` renders as a dim grey body (`Rgb(128,128,128)`) when non-empty/non-null, and header-only when empty (`{}`) or `null`. Four unit tests added. No changes to `filter.rs`, `render.rs`, or any other file.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(check passed — no output)
+
+cargo build 2>&1 | tail -20
+(check passed — no output)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(check passed — no output)
+
+cargo test 2>&1 | tail -30
+test result: ok. 725 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Verification summary:** `cargo fmt --all --check` clean, `cargo build` clean, `cargo clippy` clean, `cargo test` 725 passed / 0 failed.
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact (TUI styling/layout has no headless render harness; consistent with prior dashboard-panel phases M8/M10/M12 and M13 phase-01). Verification is the pure-function `record_lines` assertions above plus the `cargo` gates.
+
+**Grep for spec-pinned literals:**
+- `grep -n "plain_body_lines(rendered, Color::Rgb(200, 200, 200))" mcp/src/dashboard/transcript.rs` → line 61 ✓
+- `grep -n "Color::Rgb(128, 128, 128)" mcp/src/dashboard/transcript.rs` → lines 77, 552 ✓
+
+**Files changed:**
+- `mcp/src/dashboard/transcript.rs` — added body to `Prompt` arm (soft white), added conditional body to `Parsed` arm (dim grey for non-empty args), added 4 unit tests
+
+**New tests:**
+- `prompt_body_shows_rendered_text_soft_white` in `mcp/src/dashboard/transcript.rs`
+- `tool_call_args_render_dimmed` in `mcp/src/dashboard/transcript.rs`
+- `tool_call_empty_args_render_header_only` in `mcp/src/dashboard/transcript.rs`
+- `prompt_body_caps_long_text` in `mcp/src/dashboard/transcript.rs`
+
+**Commits:**
+- `b7897ce` — feat: surface prompt text and tool-call arguments as transcript bodies
+
+**Notes for review:** None — implementation matches spec exactly. No deviations.
