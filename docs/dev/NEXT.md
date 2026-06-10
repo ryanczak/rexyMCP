@@ -4,11 +4,14 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-05 — session `duration:` + move `last update:` to
-Budget (items #4/#5), drafted and ready to dispatch**
-([phase-05-timing.md](milestones/M13-dashboard-polish/phase-05-timing.md), `todo`).
-Dispatch it with `/rexymcp:dispatch phase-05`. M13 is **not** at a milestone
-boundary — phases 06–08 remain `todo` and undrafted.
+**Active phase:** **none — M13 phase-05 approved (`done`, approved_first_try) on
+2026-06-10.** The next in-scope phase has not been selected yet. M13 is **not** at a
+milestone boundary — phases 06–08 remain `todo` and undrafted. Pick and draft the
+next one with `/rexymcp:architect next`.
+
+Last completed: **M13 phase-05** — session `duration:` line + `last update:` moved to
+Budget (items #4/#5)
+([phase-05-timing.md](milestones/M13-dashboard-polish/phase-05-timing.md), `done`).
 
 **M13 phase-05 — drafted** (2026-06-10): two header-panel timing lines. Three files
 (`status.rs` + `panels.rs` + `render.rs`): add `started_at: Option<u64>` to

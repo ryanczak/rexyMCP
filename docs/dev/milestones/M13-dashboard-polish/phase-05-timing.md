@@ -1,7 +1,7 @@
 # Phase 05: Session/Budget — session `duration:` + move `last update:` to Budget
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** none (independent of phases 01–04; touches the Session/Budget
 panels and `StatusSummary`, which those phases did not change)
 **Estimated diff:** ~120 lines (2 new pure helpers ~30, session_lines edit ~6,
@@ -415,3 +415,21 @@ $ grep -rn "last_update_line" mcp/src/dashboard/ | wc -l → 11 matches (def + i
 ```
 
 **Notes for review:** None — implementation matches spec exactly.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (Sonnet 4.5)
+- **Scope deviations:** none
+- **Calibration:** none
+
+**Re-run results (independent):** `cargo fmt --all --check` clean; `cargo build`
+zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` exit 0;
+`cargo test` 725 passed / 0 failed / 2 ignored. All 11 new/revised phase-05 tests
+present and green. The `dollars_saved_line` precedent was followed — `budget_lines`
+and `session_lines` signatures untouched, no call-site cascade. Production helpers
+(`session_duration_ms`, `last_update_line`) use `?`/`unwrap_or` only; no banned
+`unwrap`/`expect`/`panic`/`unsafe`/`TODO`/`#[allow]` in the touched files. The
+load-bearing `session_duration_ms_ended_uses_last_ts` test pins the frozen-on-end
+distinction (asserts `Some(4000)`, not `8000`) and is mutation-resistant.
