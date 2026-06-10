@@ -1,7 +1,7 @@
 # Phase 06c: Model-facing task flips — `update_task` tool + prompt injection
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** in-progress (bounced — see bugs/bug-06c-1.md)
 **Depends on:** phase-06a (substrate, done), phase-06b (gate, done)
 **Estimated diff:** ~300 lines (≈190 prod + ≈110 test)
 **Tags:** language=rust, kind=feature, size=m
