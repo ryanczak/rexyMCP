@@ -464,7 +464,7 @@ For Fixture PASS the digest is empty and `cargo_filter` output does not contain
 - `parse_test_failures_handles_bare_panic_without_left_right` in `output_filter.rs`
 
 **Commits:**
-- pending — one commit covering all changes
+- `e853479` — feat: add structured cargo test failure digest to output filter
 
 **Notes for review:**
 - The `—` (U+2014 EM DASH) separator between location and detail matches the spec
