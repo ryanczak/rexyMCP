@@ -874,6 +874,7 @@ fn event_kind(event: &SessionEvent) -> &'static str {
         SessionEvent::OutputFiltered { .. } => "output_filtered",
         SessionEvent::ReadEvicted { .. } => "read_evicted",
         SessionEvent::ReadDeduped { .. } => "read_deduped",
+        SessionEvent::TaskUpdate { .. } => "task_update",
     }
 }
 
@@ -3568,5 +3569,116 @@ async fn loop_does_not_dedupe_after_edit() {
     assert!(
         !has_read_deduped,
         "no ReadDeduped event should be logged when the file was edited between reads"
+    );
+}
+
+#[tokio::test]
+async fn loop_seeds_task_updates_from_spec() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc =
+        "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n3. **Third** — last\n";
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 8,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+    };
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let task_updates: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::TaskUpdate { .. }))
+        .collect();
+
+    assert_eq!(
+        task_updates.len(),
+        3,
+        "expected exactly 3 task_update records"
+    );
+
+    for (i, rec) in task_updates.iter().enumerate() {
+        if let SessionEvent::TaskUpdate { state, .. } = &rec.event {
+            assert_eq!(
+                *state,
+                crate::store::sessions::event::TaskState::Pending,
+                "task {} should be Pending",
+                i
+            );
+        } else {
+            panic!("expected TaskUpdate, got {:?}", rec.event);
+        }
+    }
+
+    assert_eq!(task_updates[0].turn, 0, "task updates should be at turn 0");
+}
+
+#[tokio::test]
+async fn loop_emits_no_task_updates_when_spec_absent() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc = "# No spec here\n\nSome random text.\n";
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 8,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+    };
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let task_updates: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::TaskUpdate { .. }))
+        .collect();
+
+    assert!(
+        task_updates.is_empty(),
+        "expected zero task_update records when no ## Spec section"
     );
 }

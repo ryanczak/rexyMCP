@@ -168,6 +168,12 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 false,
                 None,
             ),
+            SessionEvent::TaskUpdate { id, title, state } => (
+                format!("task {id} [{state:?}]: {title}"),
+                Color::Yellow,
+                false,
+                None,
+            ),
         };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);

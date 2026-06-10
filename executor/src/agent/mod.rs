@@ -15,6 +15,7 @@ pub mod verify;
 mod log;
 mod metrics;
 mod outcome;
+mod tasks;
 mod tools;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -176,6 +177,22 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             rendered: system.clone(),
         },
     );
+
+    // Task-tracking substrate (M12 Arc A / phase-06a): seed the TODO list from
+    // the phase doc's Spec and broadcast it as one `pending` TaskUpdate each.
+    for task in tasks::seed_from_spec(&input.phase_doc) {
+        log_event(
+            &log_handle,
+            &redactor,
+            deps.clock,
+            0,
+            SessionEvent::TaskUpdate {
+                id: task.id,
+                title: task.title,
+                state: task.state,
+            },
+        );
+    }
 
     loop {
         // Step 2 — budget: compact on overflow, give up if still over.

@@ -28,6 +28,7 @@ pub fn event_type_str(event: &SessionEvent) -> &'static str {
         SessionEvent::OutputFiltered { .. } => "output_filtered",
         SessionEvent::ReadEvicted { .. } => "read_evicted",
         SessionEvent::ReadDeduped { .. } => "read_deduped",
+        SessionEvent::TaskUpdate { .. } => "task_update",
     }
 }
 

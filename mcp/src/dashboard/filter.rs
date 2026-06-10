@@ -1,6 +1,6 @@
 use rexymcp_executor::store::sessions::event::SessionEvent;
 
-pub(crate) const FILTER_ITEM_COUNT: usize = 14;
+pub(crate) const FILTER_ITEM_COUNT: usize = 15;
 
 /// Per-event-type visibility toggles for the Activity pane.
 /// All enabled by default except `progress` (too noisy).
@@ -20,6 +20,7 @@ pub(crate) struct ActivityFilter {
     pub(crate) output_filtered: bool,
     pub(crate) read_evicted: bool,
     pub(crate) read_deduped: bool,
+    pub(crate) task_update: bool,
 }
 
 impl Default for ActivityFilter {
@@ -39,6 +40,7 @@ impl Default for ActivityFilter {
             output_filtered: true,
             read_evicted: true,
             read_deduped: true,
+            task_update: true,
         }
     }
 }
@@ -60,6 +62,7 @@ impl ActivityFilter {
             SessionEvent::OutputFiltered { .. } => self.output_filtered,
             SessionEvent::ReadEvicted { .. } => self.read_evicted,
             SessionEvent::ReadDeduped { .. } => self.read_deduped,
+            SessionEvent::TaskUpdate { .. } => self.task_update,
         }
     }
 
@@ -79,6 +82,7 @@ impl ActivityFilter {
             11 => self.output_filtered = !self.output_filtered,
             12 => self.read_evicted = !self.read_evicted,
             13 => self.read_deduped = !self.read_deduped,
+            14 => self.task_update = !self.task_update,
             _ => {}
         }
     }
@@ -99,6 +103,7 @@ impl ActivityFilter {
             11 => self.output_filtered,
             12 => self.read_evicted,
             13 => self.read_deduped,
+            14 => self.task_update,
             _ => false,
         }
     }
@@ -119,6 +124,7 @@ impl ActivityFilter {
             11 => "output filtered",
             12 => "read evicted",
             13 => "read deduped",
+            14 => "task update",
             _ => "?",
         }
     }
@@ -167,6 +173,7 @@ mod tests {
         assert!(f.output_filtered);
         assert!(f.read_evicted);
         assert!(f.read_deduped);
+        assert!(f.task_update);
     }
 
     #[test]

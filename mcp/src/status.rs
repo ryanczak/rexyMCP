@@ -8,7 +8,9 @@
 
 use std::path::{Path, PathBuf};
 
-use rexymcp_executor::store::sessions::event::{FileNumstat, SessionEvent, SessionRecord};
+use rexymcp_executor::store::sessions::event::{
+    FileNumstat, SessionEvent, SessionRecord, TaskState,
+};
 use rexymcp_executor::store::sessions::jsonl::read_session_log;
 use serde::Serialize;
 
@@ -74,6 +76,11 @@ pub struct StatusSummary {
     pub read_deduped_count: usize,
     /// Sum of `tokens_saved` across all `ReadDeduped` records.
     pub read_deduped_tokens: usize,
+    /// Tracked-task counts (M12 Arc A): total distinct task ids seen, and how
+    /// many are currently `Done` / `Active` (last-write-wins per id).
+    pub tasks_total: usize,
+    pub tasks_done: usize,
+    pub tasks_active: usize,
     /// Min/avg/max interval (ms) between consecutive records. Present when ≥2 intervals exist.
     pub update_interval_min_ms: Option<u64>,
     pub update_interval_avg_ms: Option<u64>,
@@ -93,6 +100,9 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
     let mut prev_rec_ts: Option<u64> = None;
     let mut update_intervals: Vec<u64> = Vec::new();
     let mut metrics_snapshots: Vec<(u64, u32)> = Vec::new();
+
+    let mut task_states: std::collections::HashMap<String, TaskState> =
+        std::collections::HashMap::new();
 
     for rec in records {
         if prev_rec_ts.is_some_and(|prev| rec.ts > prev) {
@@ -191,6 +201,9 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 summary.read_deduped_count += 1;
                 summary.read_deduped_tokens += *tokens_saved;
             }
+            SessionEvent::TaskUpdate { id, state, .. } => {
+                task_states.insert(id.clone(), *state);
+            }
             _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
     }
@@ -220,6 +233,16 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
         summary.tok_per_sec_max = tok_rates.iter().cloned().reduce(f64::max);
         summary.tok_per_sec_avg = Some(tok_rates.iter().sum::<f64>() / tok_rates.len() as f64);
     }
+
+    summary.tasks_total = task_states.len();
+    summary.tasks_done = task_states
+        .values()
+        .filter(|s| **s == TaskState::Done)
+        .count();
+    summary.tasks_active = task_states
+        .values()
+        .filter(|s| **s == TaskState::Active)
+        .count();
 
     summary
 }
@@ -297,6 +320,13 @@ pub fn format_status(summary: &StatusSummary, now_ms: u64) -> String {
             summary
                 .compaction_tokens_before
                 .saturating_sub(summary.compaction_tokens_after),
+        ));
+    }
+
+    if summary.tasks_total > 0 {
+        lines.push(format!(
+            "tasks: {}/{} done ({} active)",
+            summary.tasks_done, summary.tasks_total, summary.tasks_active
         ));
     }
 
@@ -467,6 +497,14 @@ mod tests {
         }
     }
 
+    fn task_update(id: &str, state: TaskState) -> SessionEvent {
+        SessionEvent::TaskUpdate {
+            id: id.into(),
+            title: "Test task".into(),
+            state,
+        }
+    }
+
     #[test]
     fn summarize_empty_log_is_all_none() {
         let s = summarize(&[]);
@@ -574,6 +612,53 @@ mod tests {
         let s = summarize(&recs);
         assert_eq!(s.read_deduped_count, 1);
         assert_eq!(s.read_deduped_tokens, 300);
+    }
+
+    #[test]
+    fn summarize_folds_task_states_last_write_wins() {
+        let recs = vec![
+            rec(100, 0, task_update("1", TaskState::Pending)),
+            rec(200, 1, task_update("2", TaskState::Pending)),
+            rec(300, 2, task_update("1", TaskState::Done)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.tasks_total, 2);
+        assert_eq!(s.tasks_done, 1);
+        assert_eq!(s.tasks_active, 0);
+    }
+
+    #[test]
+    fn summarize_no_tasks_when_absent() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, progress(1, "turn_start"))];
+        let s = summarize(&recs);
+        assert_eq!(s.tasks_total, 0);
+        assert_eq!(s.tasks_done, 0);
+        assert_eq!(s.tasks_active, 0);
+    }
+
+    #[test]
+    fn format_status_shows_tasks_line_when_present() {
+        let recs = vec![
+            rec(100, 0, task_update("1", TaskState::Pending)),
+            rec(200, 1, task_update("2", TaskState::Done)),
+        ];
+        let s = summarize(&recs);
+        let output = format_status(&s, 500);
+        assert!(
+            output.contains("tasks: 1/2 done"),
+            "expected tasks line in output, got: {output}"
+        );
+    }
+
+    #[test]
+    fn format_status_omits_tasks_line_when_absent() {
+        let recs = vec![rec(100, 0, start()), rec(200, 1, progress(1, "turn_start"))];
+        let s = summarize(&recs);
+        let output = format_status(&s, 500);
+        assert!(
+            !output.contains("tasks:"),
+            "expected no tasks line in output, got: {output}"
+        );
     }
 
     #[test]

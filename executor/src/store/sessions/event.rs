@@ -16,6 +16,15 @@ pub struct SessionRecord {
     pub event: SessionEvent,
 }
 
+/// State of one tracked task in the architect-seeded TODO list (M12 Arc A).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskState {
+    Pending,
+    Active,
+    Done,
+}
+
 /// Turn-cycle event kinds. Serialized with `event_type` discriminant so each
 /// JSONL line carries a tag the M5 query tools can grep for.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,5 +116,14 @@ pub enum SessionEvent {
         path: String,
         tokens_saved: usize,
         prior_turn: usize,
+    },
+    /// Emitted when a tracked task is seeded or changes state (M12 Arc A).
+    /// At seed time the loop emits one `pending` update per numbered Spec item;
+    /// 06b emits `active`/`done` as the executor flips them. Consumers
+    /// reconstruct current state per `id` with last-write-wins.
+    TaskUpdate {
+        id: String,
+        title: String,
+        state: TaskState,
     },
 }
