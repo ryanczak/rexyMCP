@@ -9,7 +9,7 @@ incremental code intelligence harvested cheaply from parsers already in the tree
 (A) architect-seeded structured task tracking gated for a clean A/B. Order: Arc 0
 (foundational), then **Arc B**, then Arc A.
 
-**Status:** in-progress
+**Status:** done (7 phase-docs / 9 dispatches, 2026-06-10 — see retrospective)
 
 **Depends on:** M1–M11 (all complete).
 
@@ -47,35 +47,38 @@ once.
 | 06a | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, pure Spec seeder, `rexymcp status` consumer (unconditional emit; no gate) ([phase-06a-task-substrate.md](phase-06a-task-substrate.md)) | done | feature | m |
 | 06b | Arc A — `[executor] task_tracking` gate: config + `LoopDeps` field gating 06a's seeding emit (the 9-site literal churn + A/B off-switch byte-identity) ([phase-06b-task-tracking-gate.md](phase-06b-task-tracking-gate.md)) | done | feature | s |
 | 06c | Arc A — model-facing flip tool (`update_task`) + `router::categorize` arm + prompt injection (gated by 06b's flag; no `LoopDeps` churn) ([phase-06c-update-task-tool.md](phase-06c-update-task-tool.md)) | done | feature | m |
-| 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) ([phase-07-tasks-panel.md](phase-07-tasks-panel.md)) | review | feature | s |
+| 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) ([phase-07-tasks-panel.md](phase-07-tasks-panel.md)) | done | feature | s |
 
 ## Exit criteria
 
-- [ ] When a verifier toolchain binary is **absent** (`cargo`/`tsc`/`ruff` not on
+- [x] When a verifier toolchain binary is **absent** (`cargo`/`tsc`/`ruff` not on
   PATH), the verifier returns a `Skipped` advisory naming the missing binary and
   the remedy — distinct from `Failed` (a genuine infra error) and from "the tool
   ran and found diagnostics" — and the loop surfaces it as a *skipped* (not
   *failed*) notice without accruing a verifier-persistence strike. A pinned test
   simulates the missing-binary path via the pure spawn-error classifier.
-- [ ] `rexymcp doctor` reports, per language, whether the Tier-0 command-set
+- [x] `rexymcp doctor` reports, per language, whether the Tier-0 command-set
   toolchain and the Tier-1 enhancer binaries are installed and on PATH, with a
   non-zero exit when a **required** (Tier-0) tool is missing.
-- [ ] `symbols` can return the **call sites / references** of a named symbol via
+- [x] `symbols` can return the **call sites / references** of a named symbol via
   tree-sitter (Rust + Python, the languages it already supports), with pinned
   negative cases (a same-named symbol in an unrelated scope must **not** match by
   bare substring).
-- [ ] The verifier surfaces rustc's machine-applicable `suggested_replacement`
+- [x] The verifier surfaces rustc's machine-applicable `suggested_replacement`
   spans (span + replacement text) to the model when present.
-- [ ] `cargo test` failures are parsed into structured expected-vs-actual records
+- [x] `cargo test` failures are parsed into structured expected-vs-actual records
   available to the verifier-retry loop.
-- [ ] `[executor] task_tracking` (**default on**) seeds a per-session task list
+- [x] `[executor] task_tracking` (**default on**) seeds a per-session task list
   from the phase doc's numbered Spec; the executor emits `SessionEvent::TaskUpdate`
   as it flips items pending → active → done and may append discovered sub-steps,
   but does **not** author the initial list. With the toggle **off**, behavior is
   byte-identical to pre-M12 so on/off runs are directly comparable on the scorecard.
-- [ ] The dashboard shows a `Tasks` panel (active/pending/done) above the Files
+  *(Append-discovered-sub-steps was deferred — see 06c Out of scope / § Non-goals;
+  the mandatory seed + flip + off-byte-identity all shipped. Re-open as a later
+  phase only if the scorecard data justifies it.)*
+- [x] The dashboard shows a `Tasks` panel (active/pending/done) above the Files
   panel, with the Files panel's height halved to make room.
-- [ ] All gates pass: `cargo fmt --all --check`, `cargo build` (zero warnings),
+- [x] All gates pass: `cargo fmt --all --check`, `cargo build` (zero warnings),
   `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`.
 
 ## Non-goals
@@ -168,4 +171,65 @@ construction sites) *and* a new model-facing tool + `router::categorize` arm +
 prompt injection. Same medicine as the 06/06a-06b split: isolate one stall class
 per phase. 06b is now ~120 lines of pure plumbing; 06c gets the field for free.
 
-<!-- retrospective written here after milestone close -->
+### Retrospective — 2026-06-10
+
+**Outcome:** all 9 dispatched phases landed and were approved (01, 02, 03, 04,
+06a, 06b, 07). Two phases bounced once each before approval (05, 06c). No
+escalation / session-takeover anywhere in M12 — every phase was carried to
+completion by the executor (Qwen/Qwen3.6-27B-FP8), the first milestone since M8
+with zero takeovers.
+
+**What worked — the split-by-stall-class discipline paid off.** The two documented
+hard-fail classes from the calibration history — the new-`SessionEvent`-variant
+exhaustive-match wall (M10 phase-03/04/06) and the cross-crate `LoopDeps`/struct-
+literal churn (phase-08a/08d) — **did not recur in M12**, because phase-06 was
+deliberately split 06a/06b/06c to isolate one stall class per session: 06a carried
+the `TaskUpdate` variant match-arm blast radius *without* the literal churn; 06b
+carried the `LoopDeps` 12-site literal churn *alone* (cleanly traversed first-try
+via the pinned compiler-guided E0063 recipe); 06c added the model-facing tool with
+*neither*. This is the strongest confirmation yet that the lever is **isolation +
+a complete pre-injected site-list**, not spec volume. 07 (the render half) was the
+lowest-risk shape in the milestone — purely additive on the read side, no new
+field/event/config — and landed first-try.
+
+**What bounced — both bounces were the same class: production-path `unwrap`/`expect`
+vs STANDARDS §2.1.**
+- **bug-05-1 (minor):** four `.unwrap()` in the new `parse_test_failures` prod path
+  (provably-safe but contract-violating); cleared on re-dispatch with idiomatic
+  `strip_prefix`/`split_once`/`if let`.
+- **bug-06c-1 (major):** a production `.lock().unwrap()` on the `update_task`
+  `Mutex`; cleared with the poison-tolerant `.lock().unwrap_or_else(|e| e.into_inner())`
+  idiom already established in `ai/mod.rs`/`jsonl.rs`.
+
+**Calibration (2 occurrences = a trend, NOT yet a fold — 3 is a fix per WORKFLOW
+§ Calibration):** the executor reaches for `.unwrap()` on values it can locally
+prove safe (a parse it just matched; a `Mutex` it owns), not noticing the §2.1 gate
+forbids `unwrap`/`expect` in prod regardless of provable safety. Both were caught at
+review and cleared in one re-dispatch each. **Watch-item for the next milestone, held
+for a 3rd occurrence:** consider a forward-looking gotcha in any phase doc whose code
+introduces a `Mutex`/lock or a hot parse path — "STANDARDS §2.1 forbids `.unwrap()`
+in production even when provably safe; for `Mutex` use the poison-tolerant
+`.lock().unwrap_or_else(|e| e.into_inner())` idiom (`ai/mod.rs`, `jsonl.rs`); for a
+parse use `strip_prefix`/`split_once`/`if let`." Do **not** fold into STANDARDS/
+WORKFLOW yet — the gate text already says this; the gap is the executor's
+application, and a 3rd occurrence is the threshold to act.
+
+**Process quirk (cosmetic, recurring across the whole milestone, no fold):** the
+executor self-stamps Update Logs with a hallucinated date/identity
+(`2026-06-10 00:00`, "claude-code"/"rexyMCP executor"). All *machine* records use
+the real injected clock; only model-authored prose is wrong. **Phase-06 (M11)
+already shipped the datetime injection that fixes this — it is blocked only on the
+operational `rexymcp serve` restart** (see NEXT.md § "Post-M11 operational
+follow-up"); do this before the next milestone's first dispatch and the quirk
+disappears.
+
+**Carried forward to whoever kicks off M13:**
+- The deferred cleanup sweep (NEXT.md): two `eprintln!` in prod at
+  `mcp/src/server.rs:426`/`:450`; the stale `RUNAWAY_OUTPUT_BYTES` doc-comment in
+  `read_file.rs:17`; the symbols `format_references` truncation-note copy bug (M12
+  phase-03 nit). None are M12-introduced; gather into a micro-phase.
+- The `task_tracking` A/B is now fully shipped (substrate → gate → flips → panel).
+  The scorecard can now compare on/off runs on `bounces_to_approval` /
+  `first_pass_rate` — the measurement that justified Arc A. No phase consumed that
+  data yet; an analysis pass (or a scorecard column) is a natural early M13 candidate
+  if the user wants to validate the intervention.

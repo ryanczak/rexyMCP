@@ -4,31 +4,55 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **[phase-07](milestones/M12-executor-tooling/phase-07-tasks-panel.md)**
-— drafted + activated 2026-06-10 (`/rexymcp:architect next`). Awaiting
-`/rexymcp:dispatch phase-07`. M12 Arc B is complete (03/04/05); Arc A is complete
-on the data side (substrate 06a + gate 06b + model-facing flips 06c all done). 07
-is the **render half** and the **last M12 phase** → milestone close + retrospective
-after it lands.
+**Active phase:** **none.** 🎉 **M12 — Executor Tooling is complete** (7 phase-docs
+/ 9 dispatches, all approved, 2026-06-10 — see the
+[retrospective](milestones/M12-executor-tooling/README.md#retrospective--2026-06-10)).
+Zero escalations/takeovers across the milestone (first since M8); the 06a/06b/06c
+split isolated both documented stall classes and neither recurred. Two single-bounce
+phases (05, 06c), both the same class — production-path `unwrap`/`expect` vs
+STANDARDS §2.1 — now a **2-occurrence trend** (3 = fold; watch-item carried below).
 
-**phase-07 scope (active — M12 Arc A, render half):** add a dashboard `Tasks` panel
-(active / pending / done counts) **above** the Files panel in the body's right
-column, halving the Files panel's height (50/50 vertical split of the existing 28%
-right column). **mcp-crate only, purely additive on the read side** — the data
-already flows: `StatusSummary.tasks_total/done/active` (`status.rs:79-83`) are
-already folded last-write-wins from the `TaskUpdate` events 06a/06c emit; this phase
-only *displays* them. Two files: `dashboard/panels.rs` gains a `tasks_lines(&summary)
--> Vec<Line>` builder mirroring `files_lines`/`reclaim_lines` (placeholder `(no tasks
-tracked yet)` when `tasks_total == 0`; else three lines `active`/`pending`/`done N/T`,
-**pending derived** as `total.saturating_sub(done+active)` — no stored field);
-`dashboard/render.rs` splits the right column vertically (`Layout::vertical([50,50])`)
-and renders `panel(" Tasks ", …)` over `panel(" Files ", …)`. **No** new struct
-field, event, config, or match-arm churn — the lowest-risk shape in M12. Tests:
-3 `tasks_lines_*` unit tests (empty placeholder + counts + pending-derivation,
-mutation-resistant on the `total≠pending` distinction); `render_dashboard` has no
-headless harness (TUI), so the layout wiring is compiler- + inspection-verified,
-consistent with prior dashboard-panel phases. ~120 lines (~70 prod + ~50 test).
-Executor target: Qwen/Qwen3.6-27B-FP8.
+**Milestone boundary — awaiting human sign-off.** Per the architect discipline the
+next milestone (M13) is **not** drafted until the user kicks it off. The
+`task_tracking` A/B is now fully shipped (substrate → gate → flips → panel), so the
+scorecard can compare on/off runs on `bounces_to_approval` / `first_pass_rate` — an
+analysis pass or scorecard column to validate Arc A is a natural early-M13 candidate
+if the user wants it.
+
+**📌 Do before the next dispatch (operational, still open):** **restart `rexymcp
+serve`** so the rebuilt binary picks up phase-06's datetime injection — until then
+the executor keeps self-stamping hallucinated dates/identity in Update Logs (seen
+again on 05/06c/07; cosmetic, machine records are correct).
+
+**📌 M12 watch-item (held for a 3rd occurrence, do NOT fold yet):** the executor
+reaches for `.unwrap()` on locally-provable-safe values (a just-matched parse; a
+`Mutex` it owns), missing that STANDARDS §2.1 forbids `unwrap`/`expect` in prod
+regardless. Both M12 instances cleared in one re-dispatch. If a 3rd lands, the fix
+is a forward-looking gotcha in any `Mutex`/lock or hot-parse phase doc (poison-
+tolerant `.lock().unwrap_or_else(|e| e.into_inner())` per `ai/mod.rs`/`jsonl.rs`;
+`strip_prefix`/`split_once`/`if let` for parses) — not a STANDARDS edit (the gate
+text already says it; the gap is application).
+
+**Prior active-phase pointer (now done):**
+
+**phase-07 done** (2026-06-10, approved_first_try): M12 Arc A render half — the
+dashboard `Tasks` panel (active/pending/done) above a half-height Files panel.
+mcp-only, two files: `dashboard/panels.rs` gained `tasks_lines(&summary)` (placeholder
+`(no tasks tracked yet)` when `tasks_total == 0`; else `active`/`pending`/`done N/T`,
+**pending derived** via `total.saturating_sub(done+active)` — no stored field);
+`dashboard/render.rs` split the right column `Layout::vertical([50,50])` into Tasks
+over Files. Purely additive on the read side (06a/06c already populate the
+`StatusSummary.tasks_*` counts); **no** new field/event/config/match-arm churn — the
+lowest-risk shape in M12. **722 executor + 298 mcp passed / 0 failed / 2 ignored**,
+all four gates green on independent re-run. 3 `tasks_lines_*` tests, mutation-resistant
+on the `total≠pending` distinction (`shows_counts` total=3→pending 1 vs
+`derives_pending` total=2/done=0/active=0→pending 2 catches a naive "render total as
+pending" impl). E2E declared N/A (TUI, no headless harness) — consistent with prior
+M8/M10 dashboard-panel phases. Clean 45-turn first-try with full bookkeeping (status
+flip + Update Log committed with the code per WORKFLOW); commit `47aee54` (feat);
+approved (this verdict). No new dep, no `status.rs` change. Cosmetic-only quirk: the
+Update Log self-stamps `2026-06-10 00:00` / "claude-code" (the recurring local-LLM
+clock/identity quirk; fixed once `rexymcp serve` is restarted — see above).
 
 **phase-06c done** (2026-06-10, approved_after_1): M12 Arc A model-facing flips —
 the `update_task` tool. The `UpdateTask` tool owns the canonical live list in a

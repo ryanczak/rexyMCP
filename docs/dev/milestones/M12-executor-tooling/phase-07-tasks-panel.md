@@ -1,7 +1,7 @@
 # Phase 07: Dashboard `Tasks` panel above Files
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (substrate, done), phase-06c (model-facing flips, done)
 **Estimated diff:** ~120 lines (≈70 prod + ≈50 test)
 **Tags:** language=rust, kind=feature, size=s
@@ -286,3 +286,19 @@ Added `tasks_lines` panel builder in `panels.rs`, split right column in `render.
 **Notes for review:**
 - Grep confirms literal landed: `grep "no tasks tracked" mcp/src/dashboard/panels.rs` → 2 matches (line 130 impl, line 569 test).
 - No change to `mcp/src/status.rs`; pending derived via `saturating_sub` as specified.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** none — `tasks_lines` + the 50/50 right-column split landed
+  exactly as specified; `status.rs` untouched, pending derived via `saturating_sub`,
+  no new field/event/config/match-arm churn.
+- **Calibration:** none. All four gates green on independent re-run (722 executor +
+  298 mcp, 0 failed, 2 ignored); the 3 `tasks_lines_*` tests are mutation-resistant
+  (the `total≠pending` distinction between `shows_counts` and `derives_pending`
+  catches a naive "render total as pending" impl). Cosmetic-only quirk (no fold):
+  the Update Log self-stamps `2026-06-10 00:00` / "claude-code" — the recurring
+  local-LLM clock/identity quirk pending the `rexymcp serve` restart for phase-06's
+  datetime injection.
