@@ -1,7 +1,7 @@
 # Phase 04: Surface rustc machine-applicable suggested-fix spans
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** none (additive enrichment of the existing Rust verifier path)
 **Estimated diff:** ~130 lines (≈45 production + ≈85 tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -435,3 +435,26 @@ test result: ok. 689 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 **Notes for review:** None. Implementation matches spec exactly.
 
 **Commit:** feat: surface rustc machine-applicable suggested-fix spans in verifier diagnostics
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — only `verifier.rs` (production) + `verifier_tests.rs`
+  (tests) touched; zero `Diagnostic { … }` literals modified; `Diagnostic`,
+  `DiagnosticSignature`, `signature()`, and `render_diagnostics` all unchanged
+  (the additive message-enrichment shape held, dodging the ~33-literal churn).
+- **Calibration:** none. Clean 34-turn first dispatch. All four gates re-run green
+  independently (fmt / build zero-warning / clippy / `689 passed, 0 failed, 2
+  ignored`). Spot-checked the two exclusion tests
+  (`cargo_line_excludes_has_placeholders_suggestion`,
+  `cargo_line_excludes_maybe_incorrect_suggestion`): both use exact `==`
+  assertions on the real Fixtures B/C, so a "surface everything" impl that dropped
+  the `!= Some("MachineApplicable")` guard would append a suffix and fail them —
+  mutation-resistant by construction. Production clean of
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`. The optional
+  `cargo_line_surfaces_multiple_suggestions` test was skipped (spec marked it
+  optional) — acceptable. Cosmetic-only quirk: the Update Log self-stamps
+  `00:00` / "rexyMCP executor" (the recurring local-LLM clock/identity quirk;
+  phase-06's datetime injection fixes it once `rexymcp serve` is restarted).
