@@ -1,7 +1,7 @@
 # Phase 04: Surface rustc machine-applicable suggested-fix spans
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none (additive enrichment of the existing Rust verifier path)
 **Estimated diff:** ~130 lines (≈45 production + ≈85 tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -400,3 +400,38 @@ toolchain-availability concern). No `docs/architecture.md` edit. No files outsid
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-09 00:00 (started)
+
+**Executor:** rexyMCP executor
+
+**Plan:** Add `collect_machine_suggestions` / `collect_suggestions_into` helpers to `verifier.rs`, enrich `parse_cargo_line` to append machine-applicable suggestions to the diagnostic `message`, add 4 tests to `verifier_tests.rs`.
+
+### Update — 2026-06-09 00:00 (complete)
+
+**Files changed:**
+- `executor/src/governor/verifier.rs` — added `collect_machine_suggestions` and `collect_suggestions_into` helpers; enriched `parse_cargo_line` to append suggestions to `text`.
+- `executor/src/governor/verifier_tests.rs` — added 4 tests: `cargo_line_surfaces_machine_applicable_suggestion`, `cargo_line_excludes_has_placeholders_suggestion`, `cargo_line_excludes_maybe_incorrect_suggestion`, `cargo_line_without_children_message_unchanged`.
+
+**Verification commands:**
+```
+$ cargo fmt --all --check
+(exit 0, no output)
+
+$ cargo build
+(exit 0, zero warnings)
+
+$ cargo clippy --all-targets --all-features -- -D warnings
+(exit 0, no warnings)
+
+$ cargo test
+test result: ok. 689 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Verification summary:** All four gates (fmt, build, clippy, test) passed clean. 689 tests passed including 4 new suggestion tests.
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact. Unit tests feed real verbatim rustc `--error-format=json` output to the real `parse_cargo_line`. Parsed message for Fixture A (MachineApplicable): `cannot borrow 'v' as mutable, as it is not declared as mutable\n  rustc suggests (machine-applicable): replace at line 2:9 with \`mut \` — consider changing this to be mutable`. Parsed message for Fixture B (HasPlaceholders): `mismatched types` (byte-identical to raw error, no suffix).
+
+**Notes for review:** None. Implementation matches spec exactly.
+
+**Commit:** feat: surface rustc machine-applicable suggested-fix spans in verifier diagnostics

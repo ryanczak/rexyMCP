@@ -117,6 +117,83 @@ fn parse_cargo_line_extracts_error_without_code() {
     assert_eq!(diag.line, 10);
 }
 
+// --- Machine-applicable suggestion tests ---
+
+#[test]
+fn cargo_line_surfaces_machine_applicable_suggestion() {
+    let line = r#"{"reason":"compiler-message","target":{"name":"bad"},"message":{"message":"cannot borrow `v` as mutable, as it is not declared as mutable","code":{"code":"E0596"},"level":"error","spans":[{"file_name":"src/main.rs","line_start":3,"column_start":5,"is_primary":true,"suggested_replacement":null,"suggestion_applicability":null}],"children":[{"message":"consider changing this to be mutable","code":null,"level":"help","spans":[{"file_name":"src/main.rs","line_start":2,"column_start":9,"is_primary":true,"suggested_replacement":"mut ","suggestion_applicability":"MachineApplicable"}],"children":[]}]}}"#;
+    let dir = tempfile::TempDir::new().unwrap();
+    let diag = parse_cargo_line(line, dir.path()).unwrap();
+
+    assert!(
+        diag.message.starts_with("cannot borrow"),
+        "original error must be preserved, got: {}",
+        diag.message
+    );
+    assert!(
+        diag.message.contains("mut"),
+        "suggestion replacement text must be present, got: {}",
+        diag.message
+    );
+    assert!(
+        diag.message.contains("line 2"),
+        "suggestion span location must be present, got: {}",
+        diag.message
+    );
+}
+
+#[test]
+fn cargo_line_excludes_has_placeholders_suggestion() {
+    let line = r#"{"reason":"compiler-message","target":{"name":"t"},"message":{"message":"mismatched types","code":{"code":"E0308"},"level":"error","spans":[{"file_name":"src/main.rs","line_start":1,"column_start":51,"is_primary":true,"suggested_replacement":null,"suggestion_applicability":null}],"children":[{"message":"expected type `i32`","code":null,"level":"note","spans":[],"children":[]},{"message":"consider using `Option::expect` to unwrap the `Option<i32>` value, panicking if the value is an `Option::None`","code":null,"level":"help","spans":[{"file_name":"src/main.rs","line_start":1,"column_start":52,"is_primary":true,"suggested_replacement":".expect(\"REASON\")","suggestion_applicability":"HasPlaceholders"}],"children":[]}]}}"#;
+    let dir = tempfile::TempDir::new().unwrap();
+    let diag = parse_cargo_line(line, dir.path()).unwrap();
+
+    assert_eq!(
+        diag.message, "mismatched types",
+        "HasPlaceholders suggestion must not be surfaced, got: {}",
+        diag.message
+    );
+}
+
+#[test]
+fn cargo_line_excludes_maybe_incorrect_suggestion() {
+    let line = r#"{"reason":"compiler-message","target":{"name":"t"},"message":{"message":"cannot find value `fou` in this scope","code":{"code":"E0425"},"level":"error","spans":[{"file_name":"src/main.rs","line_start":1,"column_start":31,"is_primary":true,"suggested_replacement":null,"suggestion_applicability":null}],"children":[{"message":"a local variable with a similar name exists","code":null,"level":"help","spans":[{"file_name":"src/main.rs","line_start":1,"column_start":31,"is_primary":true,"suggested_replacement":"foo","suggestion_applicability":"MaybeIncorrect"}],"children":[]}]}}"#;
+    let dir = tempfile::TempDir::new().unwrap();
+    let diag = parse_cargo_line(line, dir.path()).unwrap();
+
+    assert_eq!(
+        diag.message, "cannot find value `fou` in this scope",
+        "MaybeIncorrect suggestion must not be surfaced, got: {}",
+        diag.message
+    );
+}
+
+#[test]
+fn cargo_line_without_children_message_unchanged() {
+    let line = r#"{
+            "reason": "compiler-message",
+            "message": {
+                "message": "cannot find function `foo` in this scope",
+                "level": "error",
+                "code": { "code": "E0425", "explanation": "" },
+                "spans": [{
+                    "file_name": "src/lib.rs",
+                    "line_start": 3,
+                    "column_start": 5,
+                    "is_primary": true
+                }]
+            }
+        }"#;
+    let dir = tempfile::TempDir::new().unwrap();
+    let diag = parse_cargo_line(line, dir.path()).unwrap();
+
+    assert_eq!(
+        diag.message, "cannot find function `foo` in this scope",
+        "message must be byte-identical to raw error when no children present, got: {}",
+        diag.message
+    );
+}
+
 #[tokio::test]
 async fn verify_rust_returns_checked_with_errors_on_broken_code() {
     let dir = tempfile::TempDir::new().unwrap();

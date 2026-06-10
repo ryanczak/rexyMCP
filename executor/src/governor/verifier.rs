@@ -304,6 +304,56 @@ fn find_crate_root(start: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Collect rustc machine-applicable suggested fixes from a compiler `message`
+/// object. rustc attaches these to `help` child diagnostics whose spans carry a
+/// string `suggested_replacement` and `suggestion_applicability ==
+/// "MachineApplicable"`. Returns one model-facing line per suggestion. Only
+/// MachineApplicable is surfaced — MaybeIncorrect / HasPlaceholders /
+/// Unspecified are guesses and are excluded.
+fn collect_machine_suggestions(message: &serde_json::Value) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_suggestions_into(message, &mut out);
+    out
+}
+
+fn collect_suggestions_into(node: &serde_json::Value, out: &mut Vec<String>) {
+    let help = node.get("message").and_then(|m| m.as_str()).unwrap_or("");
+    if let Some(spans) = node.get("spans").and_then(|s| s.as_array()) {
+        for span in spans {
+            if span
+                .get("suggestion_applicability")
+                .and_then(|v| v.as_str())
+                != Some("MachineApplicable")
+            {
+                continue;
+            }
+            let Some(replacement) = span.get("suggested_replacement").and_then(|v| v.as_str())
+            else {
+                continue;
+            };
+            let line = span.get("line_start").and_then(|v| v.as_u64()).unwrap_or(0);
+            let loc = match span.get("column_start").and_then(|v| v.as_u64()) {
+                Some(col) => format!("line {line}:{col}"),
+                None => format!("line {line}"),
+            };
+            let rationale = if help.is_empty() {
+                String::new()
+            } else {
+                format!(" — {help}")
+            };
+            out.push(format!(
+                "rustc suggests (machine-applicable): replace at {loc} \
+                 with `{replacement}`{rationale}"
+            ));
+        }
+    }
+    if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+        for child in children {
+            collect_suggestions_into(child, out);
+        }
+    }
+}
+
 /// Parse a single line of `cargo check --message-format=json`
 /// stdout. Returns Some(Diagnostic) for error-level
 /// compiler-message lines that have a primary span;
@@ -325,7 +375,7 @@ fn parse_cargo_line(line: &str, crate_root: &Path) -> Option<Diagnostic> {
         return None;
     }
 
-    let text = message.get("message")?.as_str()?.to_string();
+    let mut text = message.get("message")?.as_str()?.to_string();
     let code = message
         .get("code")
         .and_then(|c| c.get("code"))
@@ -350,6 +400,12 @@ fn parse_cargo_line(line: &str, crate_root: &Path) -> Option<Diagnostic> {
 
     // Cargo's file_name is relative to the crate root.
     let path = crate_root.join(file_name);
+
+    // Append machine-applicable rustc suggestions to the message.
+    for suggestion in collect_machine_suggestions(message) {
+        text.push_str("\n  ");
+        text.push_str(&suggestion);
+    }
 
     Some(Diagnostic {
         path,
