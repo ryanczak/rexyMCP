@@ -101,6 +101,125 @@ pub fn compact_with_recovery(raw: &str, project_root: &Path) -> (String, bool) {
     (result, true)
 }
 
+/// One parsed test failure from a `---- <name> stdout ----` block.
+#[derive(Debug, PartialEq)]
+struct TestFailure {
+    /// Test path from the header, e.g. `tests::it_adds`.
+    name: String,
+    /// Source location from `panicked at <loc>:`, e.g. `src/lib.rs:6:20`.
+    location: Option<String>,
+    /// Distilled detail: assertion line plus `left`/`right` values, or the
+    /// custom message / panic string.
+    detail: String,
+}
+
+/// Parse libtest failure blocks from normalized `cargo test` output.
+/// Returns one `TestFailure` per `---- <name> stdout ----` block.
+fn parse_test_failures(normalized: &str) -> Vec<TestFailure> {
+    let mut failures = Vec::new();
+    let mut current: Option<TestFailure> = None;
+    let mut past_panic_line = false;
+
+    for line in normalized.lines() {
+        let trimmed = line.trim_start();
+
+        // Detect a new test-failure block header.
+        if trimmed.starts_with("---- ") && trimmed.ends_with(" stdout ----") {
+            // Flush any previous block.
+            if let Some(prev) = current.take() {
+                failures.push(prev);
+            }
+            let name = trimmed
+                .strip_prefix("---- ")
+                .unwrap() // starts_with guaranteed the prefix
+                .strip_suffix(" stdout ----")
+                .unwrap() // ends_with guaranteed the suffix
+                .to_string();
+            current = Some(TestFailure {
+                name,
+                location: None,
+                detail: String::new(),
+            });
+            past_panic_line = false;
+            continue;
+        }
+
+        // If we are not inside a block, skip.
+        let Some(ref mut failure) = current else {
+            continue;
+        };
+
+        // Block terminators: next header (handled above), `failures:`, or
+        // `test result:`.
+        if trimmed == "failures:" || trimmed.starts_with("test result:") {
+            failures.push(current.take().unwrap());
+            past_panic_line = false;
+            continue;
+        }
+
+        // Capture location from the `panicked at` line.
+        if !past_panic_line && trimmed.contains("panicked at ") {
+            let after = trimmed.split("panicked at ").nth(1).unwrap(); // contains guaranteed the substring
+            let loc = after.strip_suffix(':').unwrap_or(after).to_string();
+            failure.location = Some(loc);
+            past_panic_line = true;
+            continue;
+        }
+
+        // After the panic line, collect detail lines.
+        if past_panic_line {
+            // Skip `note:` lines and blank / collapsed-blank lines.
+            if trimmed.starts_with("note:") {
+                continue;
+            }
+            if trimmed.is_empty() || trimmed.starts_with(" (x") {
+                continue;
+            }
+            // Append with a separator if detail is non-empty.
+            if !failure.detail.is_empty() {
+                failure.detail.push_str(", ");
+            }
+            // Strip leading whitespace from detail lines (libtest indents
+            // `left:`/`right:`).
+            failure.detail.push_str(trimmed);
+        }
+    }
+
+    // Flush the last block if any.
+    if let Some(last) = current {
+        failures.push(last);
+    }
+
+    failures
+}
+
+/// Format a compact digest of test failures. Returns `""` when `failures` is
+/// empty.
+fn format_failure_digest(failures: &[TestFailure]) -> String {
+    if failures.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!("=== Test failures ({}) ===\n", failures.len()));
+    for f in failures {
+        out.push_str("test ");
+        out.push_str(&f.name);
+        out.push_str(" failed");
+        if let Some(ref loc) = f.location {
+            out.push_str(" at ");
+            out.push_str(loc);
+            out.push_str(" \u{2014} ");
+        } else {
+            out.push_str(" \u{2014} ");
+        }
+        out.push_str(&f.detail);
+        out.push('\n');
+    }
+    out.push('\n');
+    out
+}
+
 /// Returns `true` when `command` is a `cargo` invocation. Matches `cargo`
 /// standing alone or followed by a space (i.e. `cargo <subcommand>`). Leading
 /// whitespace is stripped. Does not match `echo cargo` or `CARGO_HOME=…`.
@@ -123,6 +242,7 @@ pub fn is_cargo_command(command: &str) -> bool {
 /// Returns `(body, truncated)`.
 pub fn cargo_filter(raw: &str, project_root: &Path) -> (String, bool) {
     let normalized = normalize(raw);
+    let digest = format_failure_digest(&parse_test_failures(&normalized));
     let mut kept = String::new();
     let mut last_was_blank = true; // suppress leading blank lines
 
@@ -155,15 +275,13 @@ pub fn cargo_filter(raw: &str, project_root: &Path) -> (String, bool) {
         format!("{kept}\n")
     };
 
-    // If filtering already brought output below the cap, return it directly.
-    let line_count = kept.lines().count();
-    if line_count <= LINE_CAP {
-        return (kept, false);
-    }
+    let (body, truncated) = if kept.lines().count() <= LINE_CAP {
+        (kept, false)
+    } else {
+        compact_with_recovery(&kept, project_root)
+    };
 
-    // Still over cap after filtering — write the full filtered output to a
-    // recovery file and return a head+tail view (reuses compact_with_recovery).
-    compact_with_recovery(&kept, project_root)
+    (format!("{digest}{body}"), truncated)
 }
 
 /// Returns `true` for lines that are pure cargo progress noise: passing tests,
@@ -624,5 +742,192 @@ test result: FAILED. 0 passed; 1 failed
         );
         // Generic filter does NOT drop "test ... ok" lines — they survive
         // because the generic filter doesn't know about cargo patterns.
+    }
+
+    // --- Test failure digest tests ---
+
+    const FIXTURE_FAIL: &str = r#"running 4 tests
+test tests::it_adds ... FAILED
+test tests::it_bools ... FAILED
+test tests::it_panics ... FAILED
+test tests::it_passes ... ok
+
+failures:
+
+---- tests::it_adds stdout ----
+
+thread 'tests::it_adds' (3787800) panicked at src/lib.rs:6:20:
+assertion `left == right` failed
+  left: 4
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tests::it_bools stdout ----
+
+thread 'tests::it_bools' (3787801) panicked at src/lib.rs:8:21:
+sum too small
+
+---- tests::it_panics stdout ----
+
+thread 'tests::it_panics' (3787802) panicked at src/lib.rs:10:22:
+boom 7
+
+
+failures:
+    tests::it_adds
+    tests::it_bools
+    tests::it_panics
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"#;
+
+    const FIXTURE_PASS: &str = r#"running 2 tests
+test tests::a ... ok
+test tests::b ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"#;
+
+    #[test]
+    fn parse_test_failures_extracts_all_failed_tests() {
+        let failures = parse_test_failures(FIXTURE_FAIL);
+        assert_eq!(failures.len(), 3);
+
+        let adds = &failures[0];
+        assert_eq!(adds.name, "tests::it_adds");
+        assert_eq!(adds.location, Some("src/lib.rs:6:20".into()));
+        assert!(
+            adds.detail.contains("left: 4") && adds.detail.contains("right: 5"),
+            "it_adds detail should contain left/right: {}",
+            adds.detail
+        );
+
+        let bools = &failures[1];
+        assert_eq!(bools.name, "tests::it_bools");
+        assert_eq!(bools.location, Some("src/lib.rs:8:21".into()));
+        assert!(
+            bools.detail.contains("sum too small"),
+            "it_bools detail: {}",
+            bools.detail
+        );
+
+        let panics = &failures[2];
+        assert_eq!(panics.name, "tests::it_panics");
+        assert_eq!(panics.location, Some("src/lib.rs:10:22".into()));
+        assert!(
+            panics.detail.contains("boom 7"),
+            "it_panics detail: {}",
+            panics.detail
+        );
+    }
+
+    #[test]
+    fn parse_test_failures_empty_on_passing_output() {
+        let failures = parse_test_failures(FIXTURE_PASS);
+        assert!(
+            failures.is_empty(),
+            "passing output should yield no failures"
+        );
+    }
+
+    #[test]
+    fn parse_test_failures_preserves_left_right_labels() {
+        let failures = parse_test_failures(FIXTURE_FAIL);
+        let adds = &failures[0];
+        assert!(
+            adds.detail.contains("left"),
+            "detail should contain 'left': {}",
+            adds.detail
+        );
+        assert!(
+            adds.detail.contains("right"),
+            "detail should contain 'right': {}",
+            adds.detail
+        );
+        assert!(
+            !adds.detail.contains("expected"),
+            "detail must not relabel to 'expected': {}",
+            adds.detail
+        );
+        assert!(
+            !adds.detail.contains("actual"),
+            "detail must not relabel to 'actual': {}",
+            adds.detail
+        );
+    }
+
+    #[test]
+    fn format_failure_digest_empty_for_no_failures() {
+        let digest = format_failure_digest(&[]);
+        assert_eq!(digest, "");
+    }
+
+    #[test]
+    fn cargo_filter_prepends_failure_digest() {
+        let dir = tempfile::tempdir().unwrap();
+        let (body, _truncated) = cargo_filter(FIXTURE_FAIL, dir.path());
+        assert!(
+            body.starts_with("=== Test failures (3) ==="),
+            "body should start with digest header: {}",
+            body
+        );
+        assert!(
+            body.contains("tests::it_adds"),
+            "digest should contain test name"
+        );
+        assert!(
+            body.contains("panicked at"),
+            "verbose failure blocks should still be present below the digest: {}",
+            body
+        );
+    }
+
+    #[test]
+    fn cargo_filter_no_digest_on_passing_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let (body, _truncated) = cargo_filter(FIXTURE_PASS, dir.path());
+        assert!(
+            !body.contains("=== Test failures"),
+            "passing output must not contain digest header: {}",
+            body
+        );
+        assert!(
+            body.contains("test result: ok."),
+            "passing test summary should be preserved: {}",
+            body
+        );
+    }
+
+    #[test]
+    fn parse_test_failures_handles_bare_panic_without_left_right() {
+        let fixture = r#"running 1 test
+test tests::bare_panic ... FAILED
+
+failures:
+
+---- tests::bare_panic stdout ----
+
+thread 'tests::bare_panic' (12345) panicked at src/lib.rs:42:5:
+something went wrong
+
+
+failures:
+    tests::bare_panic
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"#;
+
+        let failures = parse_test_failures(fixture);
+        assert_eq!(failures.len(), 1);
+        let f = &failures[0];
+        assert_eq!(f.name, "tests::bare_panic");
+        assert_eq!(f.location, Some("src/lib.rs:42:5".into()));
+        assert!(
+            f.detail.contains("something went wrong"),
+            "detail should contain panic message: {}",
+            f.detail
+        );
+        assert!(
+            !f.detail.contains("left") && !f.detail.contains("right"),
+            "no fabricated left/right: {}",
+            f.detail
+        );
     }
 }

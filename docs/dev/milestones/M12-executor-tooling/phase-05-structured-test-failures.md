@@ -1,7 +1,7 @@
 # Phase 05: Structured `cargo test` failure digest
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** none (additive enrichment of the existing M10 cargo output filter)
 **Estimated diff:** ~180 lines (≈80 production + ≈100 tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -395,3 +395,81 @@ No `docs/architecture.md` edit. No files outside
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 00:00 (progress)
+
+**Executor:** rexyMCP executor
+
+Added `TestFailure` struct, `parse_test_failures`, and `format_failure_digest` to
+`output_filter.rs`. Refactored `cargo_filter` to compute the digest from normalized
+output and prepend it to the returned body on all code paths. Added 7 new unit
+tests exercising the parser, formatter, and integrated `cargo_filter` behavior.
+
+### Update — 2026-06-10 00:00 (complete)
+
+**Summary:** Implemented structured `cargo test` failure digest as a prepend to the
+existing `cargo_filter` output. Added one module-private `TestFailure` struct, one
+pure parser (`parse_test_failures`), one pure formatter (`format_failure_digest`),
+and wired the digest into `cargo_filter` by refactoring its two early returns into a
+single tail return. No new public exports, no new dependencies, no changes to any
+other module or type.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean — no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.00s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.19s
+
+cargo test 2>&1 | tail -30
+test result: ok. 696 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.07s
+```
+
+**End-to-end verification:**
+
+N/A — phase ships no runtime-loadable CLI/binary artifact. The filter runs only
+inside a full `execute_phase` local-LLM loop. However, the unit tests feed real,
+verbatim `cargo test --color=never` output to the real `cargo_filter`. Digest
+produced for Fixture FAIL:
+
+```
+=== Test failures (3) ===
+test tests::it_adds failed at src/lib.rs:6:20 — assertion `left == right` failed, left: 4, right: 5
+test tests::it_bools failed at src/lib.rs:8:21 — sum too small
+test tests::it_panics failed at src/lib.rs:10:22 — boom 7
+```
+
+For Fixture PASS the digest is empty and `cargo_filter` output does not contain
+`=== Test failures` (byte-identical to pre-phase behavior).
+
+**Files changed:**
+- `executor/src/context/output_filter.rs` — added `TestFailure`, `parse_test_failures`, `format_failure_digest`; refactored `cargo_filter` to prepend digest; added 7 unit tests
+
+**New tests:**
+- `parse_test_failures_extracts_all_failed_tests` in `output_filter.rs`
+- `parse_test_failures_empty_on_passing_output` in `output_filter.rs`
+- `parse_test_failures_preserves_left_right_labels` in `output_filter.rs`
+- `format_failure_digest_empty_for_no_failures` in `output_filter.rs`
+- `cargo_filter_prepends_failure_digest` in `output_filter.rs`
+- `cargo_filter_no_digest_on_passing_output` in `output_filter.rs`
+- `parse_test_failures_handles_bare_panic_without_left_right` in `output_filter.rs`
+
+**Commits:**
+- pending — one commit covering all changes
+
+**Notes for review:**
+- The `—` (U+2014 EM DASH) separator between location and detail matches the spec
+  sketch. If a different separator is preferred, it's a one-character change in
+  `format_failure_digest`.
+- `cargo_filter` was refactored from two `return` sites to a single tail return
+  via an `if` binding `(body, truncated)`. This ensures the digest is prepended on
+  every path without code duplication.
