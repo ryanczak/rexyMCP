@@ -11,21 +11,6 @@ use super::highlight::{completion_body_lines, highlighted_body_lines, plain_body
 /// to full multi-line). Keeps one record = one line.
 pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 
-pub(crate) const SPINNER_FRAMES: &[&str] = &[
-    "🐕  🧠",
-    "  🐕  🧠",
-    "    🐕  🧠",
-    "      🐕 🧠",
-    "        🐕 🧠",
-    "         🐕🧠",
-    "       🧠🐕💨",
-    "     🧠🐕",
-    "   🧠🐕",
-    " 🧠🐕",
-    "🧠🐕",
-    "🐕",
-];
-
 /// Build all transcript lines for the given records, in chronological order.
 /// Filters records through `filter`. Returns a placeholder when all records are
 /// filtered out.

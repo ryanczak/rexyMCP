@@ -54,7 +54,7 @@ once.
 | 03 | Activity — line wrapping + tail-follow autoscroll over wrapped lines + scrollbar ([phase-03-wrapping.md](phase-03-wrapping.md)) | done | feature | m | #8, #9, R1 |
 | 04 | Activity — distinct `<think>`/`</think>` block formatting in Completion bodies ([phase-04-think.md](phase-04-think.md)) | done | feature | m | #6 |
 | 05 | Session/Budget — session `duration:` + move `last update:` to Budget (new `started_at` capture) ([phase-05-timing.md](phase-05-timing.md)) | done | feature | m | #4, #5 |
-| 06 | Session — full-width spinner carrying live `turn N · stage` status | todo | feature | m | #10, R5 |
+| 06 | Session — full-width spinner on its own bottom line ([phase-06-spinner.md](phase-06-spinner.md)) | review | feature | m | #10, R5 |
 | 07 | Tasks — named tasks with checkbox/check glyphs + done/total progress gauge | todo | feature | m | #7, R3 |
 | 08 | Activity — per-event relative timestamps | todo | feature | s | R2 |
 
@@ -76,7 +76,8 @@ status text; R4 — dim tool-call arguments — is folded into phase-02 as styli
       answer text.
 - [ ] The Session panel shows `duration:` (live-growing while running, fixed once
       ended); `last update:` appears in the Budget panel; the spinner spans the
-      Session panel width and carries `turn N · stage`.
+      Session panel width on its own bottom line, with the `turn N, stage X` line
+      directly above it (per the 2026-06-10 layout decision — see Notes).
 - [ ] The Tasks panel lists task names with `☑`/`☐`-style glyphs and a done/total
       gauge; counts remain correct.
 - [ ] Each Activity line carries a relative timestamp.
@@ -111,6 +112,16 @@ status text; R4 — dim tool-call arguments — is folded into phase-02 as styli
 - **On-demand drafting.** Only phase-01 is drafted at kickoff; later phases are
   drafted via `/rexymcp:architect next` as the user dispatches, so each spec is
   informed by the prior phase landing.
+
+### Phase-06 layout decision (2026-06-10, with the user)
+
+The spinner (#10/R5) is a **full-width line on its own bottom row** of the Session
+panel, with the `turn N, stage X` status text on the line **directly above** it
+(left-aligned with the rest of the panel) rather than inline on the spinner line. To
+make room, the header band grows one row (`Length(9)` → `Length(10)`); the body is
+`Constraint::Min(0)`, so the Activity panel and the Tasks/Files column each yield one
+row automatically. The fixed-window `SPINNER_FRAMES` walk is retired in favor of a
+width-aware dog that trots the full panel width.
 
 ### Pre-injection watch-items for the drafting architect
 

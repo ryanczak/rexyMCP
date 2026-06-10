@@ -9,7 +9,7 @@ use ratatui::{
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
     BudgetRates, budget_lines, dollars_saved_line, files_lines, last_update_line, panel,
-    reclaim_lines, session_lines, tasks_lines,
+    reclaim_lines, session_lines, spinner_line, tasks_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -126,7 +126,7 @@ pub(crate) fn render_dashboard(
     // Outer split: fixed-height header band + filling body.
     let total_wrapped;
     let [header, body] =
-        Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).areas::<2>(area);
+        Layout::vertical([Constraint::Length(10), Constraint::Min(0)]).areas::<2>(area);
 
     // Header band: Session · Budget · Compactions.
     // Budget uses Min(56) so the combined tok/s line
@@ -141,13 +141,12 @@ pub(crate) fn render_dashboard(
     ])
     .areas::<3>(header);
 
-    frame.render_widget(
-        panel(
-            " Session ",
-            session_lines(&data.summary, now_ms, state.spinner),
-        ),
-        session_area,
-    );
+    let mut session = session_lines(&data.summary, now_ms);
+    let session_inner_width = session_area.width.saturating_sub(2) as usize;
+    if let Some(line) = spinner_line(state.spinner, session_inner_width) {
+        session.push(line);
+    }
+    frame.render_widget(panel(" Session ", session), session_area);
     let mut budget = Vec::new();
     if let Some(line) = last_update_line(&data.summary, now_ms) {
         budget.push(line);

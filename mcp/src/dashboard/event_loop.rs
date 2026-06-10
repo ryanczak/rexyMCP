@@ -3,7 +3,6 @@ use std::path::Path;
 use super::filter::{FILTER_ITEM_COUNT, FilterState};
 use super::panels::BudgetRates;
 use super::render::{ViewState, clamp_scroll, render_dashboard};
-use super::transcript::SPINNER_FRAMES;
 use crate::dashboard::load_data;
 
 pub(crate) fn run_loop(
@@ -40,7 +39,7 @@ pub(crate) fn run_loop(
         prev_record_count = data.records.len();
         let spinner_active = data.summary.ended.is_none() && data.error.is_none();
         let spinner = if spinner_active {
-            Some(spinner_tick % SPINNER_FRAMES.len())
+            Some(spinner_tick)
         } else {
             None
         };

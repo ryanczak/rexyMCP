@@ -4,7 +4,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::dashboard::transcript::SPINNER_FRAMES;
 use crate::status::{self, StatusSummary};
 
 /// Total usable content width for a Files panel line (indent + path + space +
@@ -35,14 +34,10 @@ pub(crate) fn session_duration_ms(summary: &StatusSummary, now_ms: u64) -> Optio
     Some(end.saturating_sub(start))
 }
 
-/// Session panel: phase / session / model / state / turn / stage / freshness /
-/// optional spinner. `now_ms` is injected (unix millis) so the age line is
-/// testable. `spinner` is `Some(frame_index)` while the session is running.
-pub(crate) fn session_lines(
-    summary: &StatusSummary,
-    now_ms: u64,
-    spinner: Option<usize>,
-) -> Vec<Line<'static>> {
+/// Session panel: phase / session / model / state / turn / stage / freshness.
+/// `now_ms` is injected (unix millis) so the age line is testable.
+/// The spinner is composed externally in `render.rs` via `spinner_line`.
+pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     let phase = summary.phase.as_deref().unwrap_or("<unknown>");
@@ -82,12 +77,35 @@ pub(crate) fn session_lines(
         summary.latest_turn
     )));
 
-    if let Some(frame) = spinner {
-        let glyph = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
-        lines.push(Line::from(glyph.to_string()));
-    }
-
     lines
+}
+
+/// Display cells the spinner sprite occupies (one wide dog glyph). The dog's
+/// horizontal offset is bounded so `offset + SPRITE_CELLS <= width`, keeping the
+/// rendered line inside the panel.
+const SPRITE_CELLS: usize = 2;
+
+/// Full-width liveness spinner: a dog that trots back and forth across the Session
+/// panel. `spinner` is `Some(tick)` — a monotonic counter from the event loop —
+/// while the session runs, and `None` once it ends (→ `None`, no spinner line, same
+/// as today's ended behavior). `width` is the Session panel's inner width. The dog's
+/// offset is a triangle wave over `[0, width − SPRITE_CELLS]`, so the dog walks the
+/// full width and the line never exceeds it.
+///
+/// Char-count vs display-width caveat: the dog glyph is one code point but two
+/// display cells; `SPRITE_CELLS` budgets for that. Wide-glyph rounding may leave the
+/// line a cell short of the border — acceptable, matching `wrap_line`'s existing
+/// char-count approach.
+pub(crate) fn spinner_line(spinner: Option<usize>, width: usize) -> Option<Line<'static>> {
+    let tick = spinner?;
+    let span = width.saturating_sub(SPRITE_CELLS);
+    if span == 0 {
+        return Some(Line::from("🐕"));
+    }
+    let period = span * 2;
+    let phase = tick % period;
+    let offset = if phase <= span { phase } else { period - phase };
+    Some(Line::from(format!("{}🐕", " ".repeat(offset))))
 }
 
 /// Reclaim panel: compaction plus the three M10 per-lever reclaim sources.
@@ -344,7 +362,7 @@ mod tests {
             ended: None,
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 0, None);
+        let lines = session_lines(&summary, 0);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s == "phase: phase-02"));
         assert!(text.iter().any(|s| s == "session: abc"));
@@ -358,7 +376,7 @@ mod tests {
             ended: Some("complete".into()),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 0, None);
+        let lines = session_lines(&summary, 0);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("ended (complete)")));
     }
@@ -370,7 +388,7 @@ mod tests {
             latest_stage: Some("verify".into()),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 4000, None);
+        let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("turn 5")));
         assert!(text.iter().any(|s| s.contains("verify")));
@@ -383,7 +401,7 @@ mod tests {
             ended: None,
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 4000, None);
+        let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s == "duration: 3s"));
     }
@@ -391,7 +409,7 @@ mod tests {
     #[test]
     fn session_lines_omits_duration_when_no_started_at() {
         let summary = StatusSummary::default();
-        let lines = session_lines(&summary, 9999, None);
+        let lines = session_lines(&summary, 9999);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(!text.iter().any(|s| s.contains("duration:")));
     }
@@ -403,7 +421,7 @@ mod tests {
             update_interval_avg_ms: Some(500),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 4000, None);
+        let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(
             !text.iter().any(|s| s.contains("last update")),
@@ -411,33 +429,69 @@ mod tests {
         );
     }
 
+    // --- spinner_line tests ---
+
     #[test]
-    fn session_lines_shows_spinner_when_active() {
-        let summary = StatusSummary::default();
-        let lines = session_lines(&summary, 0, Some(0));
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert_eq!(text.last().unwrap(), "🐕  🧠");
+    fn spinner_line_none_when_ended() {
+        assert_eq!(spinner_line(None, 40), None);
     }
 
     #[test]
-    fn session_lines_spinner_cycles_frames() {
-        let summary = StatusSummary::default();
-        for (i, expected) in crate::dashboard::transcript::SPINNER_FRAMES
-            .iter()
-            .enumerate()
-        {
-            let lines = session_lines(&summary, 0, Some(i));
-            let last = format!("{}", lines.last().unwrap());
-            assert_eq!(last, *expected, "frame {i} mismatch");
+    fn spinner_line_starts_flush_left() {
+        let line = spinner_line(Some(0), 40).unwrap();
+        let text = format!("{line}");
+        assert!(text.contains('🐕'), "must contain dog: {text}");
+        assert_eq!(
+            text.chars().take_while(|c| *c == ' ').count(),
+            0,
+            "no leading spaces at tick 0: {text}"
+        );
+    }
+
+    #[test]
+    fn spinner_line_never_exceeds_width() {
+        let width = 20;
+        for tick in 0..200 {
+            let line = spinner_line(Some(tick), width).unwrap();
+            let text = format!("{line}");
+            let leading = text.chars().take_while(|c| *c == ' ').count();
+            assert!(
+                leading <= width.saturating_sub(SPRITE_CELLS),
+                "tick {tick}: leading spaces {leading} exceeds bound {} (width {width})",
+                width.saturating_sub(SPRITE_CELLS)
+            );
+        }
+        // Huge tick must also stay bounded.
+        let line = spinner_line(Some(999_999), width).unwrap();
+        let text = format!("{line}");
+        let leading = text.chars().take_while(|c| *c == ' ').count();
+        assert!(
+            leading <= width.saturating_sub(SPRITE_CELLS),
+            "huge tick: leading spaces {leading} exceeds bound"
+        );
+    }
+
+    #[test]
+    fn spinner_line_bounces_at_right_edge() {
+        let width = 5; // span = 3, period = 6
+        let expected_offsets = [0, 1, 2, 3, 2, 1, 0, 1];
+        for (i, &expected) in expected_offsets.iter().enumerate() {
+            let line = spinner_line(Some(i), width).unwrap();
+            let text = format!("{line}");
+            let leading = text.chars().take_while(|c| *c == ' ').count();
+            assert_eq!(
+                leading, expected,
+                "tick {i}: expected offset {expected}, got {leading}: {text}"
+            );
         }
     }
 
     #[test]
-    fn session_lines_omits_spinner_when_none() {
-        let summary = StatusSummary::default();
-        let lines = session_lines(&summary, 0, None);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(!text.iter().any(|s| s.contains("🐕")));
+    fn spinner_line_tiny_width_does_not_panic() {
+        let line = spinner_line(Some(7), 1);
+        assert!(line.is_some(), "must return Some even for tiny width");
+        let text = format!("{}", line.unwrap());
+        assert!(text.contains('🐕'), "must contain dog: {text}");
     }
 
     // --- session_duration_ms tests ---

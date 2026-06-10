@@ -4,10 +4,28 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none — M13 phase-05 approved (`done`, approved_first_try) on
-2026-06-10.** The next in-scope phase has not been selected yet. M13 is **not** at a
-milestone boundary — phases 06–08 remain `todo` and undrafted. Pick and draft the
-next one with `/rexymcp:architect next`.
+**Active phase:** **M13 phase-06 — Session full-width spinner** (`todo`, drafted
+2026-06-10, awaiting dispatch)
+([phase-06-spinner.md](milestones/M13-dashboard-polish/phase-06-spinner.md)).
+Dispatch with `/rexymcp:dispatch phase-06`. Phases 07–08 remain `todo` and undrafted.
+
+**M13 phase-06 — drafted** (2026-06-10): full-width spinner on its own bottom line of
+the Session panel (items #10/R5; layout decided with the user). The spinner moves
+**out** of `session_lines` into a new pure `spinner_line(spinner, width) -> Option<Line>`
+that `render.rs` **pushes** onto the Session vec (the
+`dollars_saved_line`/`last_update_line` precedent, + a `width` arg — the spinner is
+the only panel line that needs the panel width). A dog trots a **triangle-wave**
+offset across the full width, bounded so `offset + SPRITE_CELLS <= width` (pinned
+overflow negative `spinner_line_never_exceeds_width`, mutation-resistant vs a
+`tick % width`/unbounded impl). The `turn N, stage X` line stays **unchanged** on the
+line directly above. Header band `Length(9)` → `Length(10)` for the extra row; body is
+`Min(0)` so Activity/Tasks shrink one row **automatically** (no body edit). Drops the
+`spinner` param from `session_lines` — **10 call sites** (1 prod render + 9 panels.rs
+tests), all enumerated with line numbers (the bounded single-module churn-stall dodge:
+do all ten + one `cargo build`). Retires the fixed-window `SPINNER_FRAMES`
+(transcript.rs const + event_loop.rs now passes a **raw** tick, not `% FRAMES.len()`).
+**No `StatusSummary` field, no `SessionEvent`/config edit.** 4 source files
+(render/panels/event_loop/transcript). ~140 lines.
 
 Last completed: **M13 phase-05** — session `duration:` line + `last update:` moved to
 Budget (items #4/#5)
