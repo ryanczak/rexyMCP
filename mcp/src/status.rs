@@ -26,6 +26,9 @@ pub struct StatusSummary {
     pub files_changed: Vec<FileNumstat>,
     /// Timestamp (unix millis) of the most recent record — the last sign of life.
     pub last_ts: Option<u64>,
+    /// Timestamp (unix millis) of the *earliest* record — when the session began.
+    /// Symmetric with `last_ts`; drives the Session panel's `duration:` line.
+    pub started_at: Option<u64>,
     /// `Some(status)` once the loop wrote a `SessionEnd`; `None` while running.
     pub ended: Option<String>,
     /// Count of `ParseFailed` records seen so far.
@@ -112,6 +115,10 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
 
         summary.last_ts = Some(match summary.last_ts {
             Some(prev) => prev.max(rec.ts),
+            None => rec.ts,
+        });
+        summary.started_at = Some(match summary.started_at {
+            Some(prev) => prev.min(rec.ts),
             None => rec.ts,
         });
 
@@ -512,6 +519,15 @@ mod tests {
         assert_eq!(s.latest_turn, 0);
         assert_eq!(s.ended, None);
         assert_eq!(s.last_ts, None);
+        assert_eq!(s.started_at, None);
+    }
+
+    #[test]
+    fn summarize_captures_started_at() {
+        let recs = vec![rec(300, 1, progress(1, "tool_start")), rec(100, 0, start())];
+        let s = summarize(&recs);
+        assert_eq!(s.started_at, Some(100));
+        assert_eq!(s.last_ts, Some(300));
     }
 
     #[test]

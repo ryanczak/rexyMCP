@@ -4,26 +4,49 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-04 — `<think>`/`</think>` block formatting (item #6),
-drafted and ready to dispatch**
-([phase-04-think.md](milestones/M13-dashboard-polish/phase-04-think.md), `todo`).
-Dispatch it with `/rexymcp:dispatch phase-04`. M13 is **not** at a milestone
-boundary — phases 05–08 remain `todo` and undrafted.
+**Active phase:** **M13 phase-05 — session `duration:` + move `last update:` to
+Budget (items #4/#5), drafted and ready to dispatch**
+([phase-05-timing.md](milestones/M13-dashboard-polish/phase-05-timing.md), `todo`).
+Dispatch it with `/rexymcp:dispatch phase-05`. M13 is **not** at a milestone
+boundary — phases 06–08 remain `todo` and undrafted.
 
-**M13 phase-04 — drafted** (2026-06-10): distinct dim-italic styling for
-`<think>…</think>` reasoning vs soft-white answer text in Completion bodies. Two
+**M13 phase-05 — drafted** (2026-06-10): two header-panel timing lines. Three files
+(`status.rs` + `panels.rs` + `render.rs`): add `started_at: Option<u64>` to
+`StatusSummary` (earliest record ts, **symmetric** with the existing `last_ts` max-ts
+fold — one struct line + one `summarize` assignment, no production literal cascade) →
+a pure `session_duration_ms(summary, now_ms)` (live `now−start` while running,
+**frozen** `last_ts−start` once ended) drives a new Session-panel `duration:` line;
+the `last update:` block **moves out** of `session_lines` into a new pure
+`last_update_line(summary, now_ms) -> Option<Line>` that `render.rs` **prepends** to
+the Budget vec. **Deliberate stall-dodge:** the relocated line reuses the
+`dollars_saved_line` optional-line-pushed-in-render precedent so **no `now_ms` param
+is added to `budget_lines`** — its 9 test call sites + `session_lines`' signature stay
+untouched (no multi-site signature churn). **Pinned negatives:**
+`session_duration_ms_ended_uses_last_ts` (frozen-on-end, mutation-resistant vs a
+`now_ms` impl), `last_update_line_none_for_empty_log`, and a `session_lines`
+must-NOT-contain `last update:` (the line moved, not duplicated). CLI `format_status`
+explicitly **out of scope** (separate renderer, keeps its own `last update:`). No
+`SessionEvent`/config edit. ~120 lines.
+
+**M13 phase-04 — done** (2026-06-10, approved_first_try): distinct dim-italic styling
+for `<think>…</think>` reasoning vs soft-white answer text in Completion bodies. Two
 mcp files (`highlight.rs` + `transcript.rs`): a pure `split_think_segments(raw)`
 literal-marker tokenizer (initial mode = think iff a `</think>` precedes any
 `<think>` — covers stripped-opening output; unterminated `<think>` → rest is
 think; `<thinking>` is **not** a marker) + a `completion_body_lines(raw)` renderer
 that reuses the existing `body_lines` indent/cap/overflow-marker shape so the
 **no-markers path is byte-identical** to today's `plain_body_lines`; the Completion
-arm of `record_lines` swaps to it. Greenfield — no `think` handling exists in
-`mcp/src/`. **Pinned negatives** (worked truth table in the doc): no-markers →
-byte-identical soft-white; `</think>`-only no-opening → still separates with the
-leading text as reasoning. No `SessionEvent`/config/`StatusSummary` change; no
+arm of `record_lines` swaps to it. 9 tests; both README negatives covered +
+load-bearing (`completion_body_no_markers_matches_plain`,
+`split_think_segments_handles_no_opening_tag`); 725 executor pass, all four gates
+green on independent re-run. Clean 42-turn first-try; commits `ab1968a` (draft) +
+`a928355` (feat) + `da580f6` (approve)
+([phase-04-think.md](milestones/M13-dashboard-polish/phase-04-think.md)). No
 `Cargo.toml` (`Modifier` already in `ratatui` 0.30, `Modifier::BOLD` already used).
-Display-only per the M13 constraint. ~140 lines.
+Display-only per the M13 constraint. Cosmetic-only quirk: Update Log self-stamps
+"Claude (Sonnet 4.5)" / its own `cargo test` count — the recurring local-LLM
+identity/clock self-stamping quirk (executor target Qwen/Qwen3.6-27B-FP8; machine
+records correct; fixed once `rexymcp serve` is restarted — still pending).
 
 **M13 phase-03 — done** (2026-06-10, approved_first_try): Activity line wrapping
 + tail-follow autoscroll over the **wrapped** count + right-edge scrollbar (items

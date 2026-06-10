@@ -21,6 +21,20 @@ pub struct BudgetRates {
     pub output_per_mtok: f64,
 }
 
+/// Wall-clock session duration in ms: **live** (`now_ms − started_at`) while the
+/// session is running, **frozen** (`last_ts − started_at`) once it has ended.
+/// `None` for an empty log (no `started_at`). `saturating_sub` guards a clock that
+/// reads behind the first record.
+pub(crate) fn session_duration_ms(summary: &StatusSummary, now_ms: u64) -> Option<u64> {
+    let start = summary.started_at?;
+    let end = if summary.ended.is_some() {
+        summary.last_ts.unwrap_or(start)
+    } else {
+        now_ms
+    };
+    Some(end.saturating_sub(start))
+}
+
 /// Session panel: phase / session / model / state / turn / stage / freshness /
 /// optional spinner. `now_ms` is injected (unix millis) so the age line is
 /// testable. `spinner` is `Some(frame_index)` while the session is running.
@@ -55,24 +69,18 @@ pub(crate) fn session_lines(
             }),
     )));
 
+    if let Some(dur) = session_duration_ms(summary, now_ms) {
+        lines.push(Line::from(format!(
+            "duration: {}",
+            status::humanize_age(dur)
+        )));
+    }
+
     let stage = summary.latest_stage.as_deref().unwrap_or("<none>");
     lines.push(Line::from(format!(
         "turn {}, stage {stage}",
         summary.latest_turn
     )));
-
-    if let Some(ts) = summary.last_ts {
-        let age_ms = now_ms.saturating_sub(ts);
-        let age_str = status::humanize_age(age_ms);
-        let line = match summary.update_interval_avg_ms {
-            Some(avg) => format!(
-                "last update: {age_str} ago (avg: {})",
-                status::humanize_age(avg),
-            ),
-            None => format!("last update: {age_str} ago"),
-        };
-        lines.push(Line::from(line));
-    }
 
     if let Some(frame) = spinner {
         let glyph = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
@@ -299,6 +307,23 @@ pub(crate) fn dollars_saved_line(
     Some(Line::from(format!("$ saved: ${saved:.2}")))
 }
 
+/// "last update: …" freshness line for the Budget panel — the age of the most
+/// recent record, with the average update interval when enough records exist.
+/// `Some` whenever the session has at least one record (`last_ts`); `None` for an
+/// empty log. Mirrors the optional-line shape of `dollars_saved_line`.
+pub(crate) fn last_update_line(summary: &StatusSummary, now_ms: u64) -> Option<Line<'static>> {
+    let ts = summary.last_ts?;
+    let age_str = status::humanize_age(now_ms.saturating_sub(ts));
+    let line = match summary.update_interval_avg_ms {
+        Some(avg) => format!(
+            "last update: {age_str} ago (avg: {})",
+            status::humanize_age(avg),
+        ),
+        None => format!("last update: {age_str} ago"),
+    };
+    Some(Line::from(line))
+}
+
 /// Wrap lines in a bordered `Block` with the given title.
 pub(crate) fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph<'static> {
     Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title))
@@ -339,57 +364,51 @@ mod tests {
     }
 
     #[test]
-    fn session_lines_shows_turn_stage_and_age() {
+    fn session_lines_shows_turn_stage() {
         let summary = StatusSummary {
             latest_turn: 5,
             latest_stage: Some("verify".into()),
-            last_ts: Some(1000),
             ..StatusSummary::default()
         };
         let lines = session_lines(&summary, 4000, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("turn 5")));
         assert!(text.iter().any(|s| s.contains("verify")));
-        assert!(text.iter().any(|s| s.contains("3s ago")));
     }
 
     #[test]
-    fn session_lines_omits_age_when_no_ts() {
+    fn session_lines_shows_duration_while_running() {
         let summary = StatusSummary {
-            last_ts: None,
+            started_at: Some(1000),
+            ended: None,
             ..StatusSummary::default()
         };
+        let lines = session_lines(&summary, 4000, None);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s == "duration: 3s"));
+    }
+
+    #[test]
+    fn session_lines_omits_duration_when_no_started_at() {
+        let summary = StatusSummary::default();
         let lines = session_lines(&summary, 9999, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(!text.iter().any(|s| s.contains("last update")));
+        assert!(!text.iter().any(|s| s.contains("duration:")));
     }
 
     #[test]
-    fn session_lines_shows_update_interval_stats() {
+    fn session_lines_omits_last_update() {
         let summary = StatusSummary {
-            last_ts: Some(5000),
-            update_interval_avg_ms: Some(2000),
-            update_interval_max_ms: Some(3000),
-            update_interval_min_ms: Some(1000),
+            last_ts: Some(1000),
+            update_interval_avg_ms: Some(500),
             ..StatusSummary::default()
         };
-        let lines = session_lines(&summary, 5000, None);
+        let lines = session_lines(&summary, 4000, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
-        assert!(age_line.contains("avg:"), "expected avg in: {age_line}");
-    }
-
-    #[test]
-    fn session_lines_omits_interval_stats_without_enough_data() {
-        let summary = StatusSummary {
-            last_ts: Some(5000),
-            update_interval_avg_ms: None,
-            ..StatusSummary::default()
-        };
-        let lines = session_lines(&summary, 5000, None);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let age_line = text.iter().find(|s| s.contains("last update")).unwrap();
-        assert!(!age_line.contains("avg:"), "unexpected avg in: {age_line}");
+        assert!(
+            !text.iter().any(|s| s.contains("last update")),
+            "session_lines must NOT contain 'last update:' — it moved to Budget"
+        );
     }
 
     #[test]
@@ -419,6 +438,80 @@ mod tests {
         let lines = session_lines(&summary, 0, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(!text.iter().any(|s| s.contains("🐕")));
+    }
+
+    // --- session_duration_ms tests ---
+
+    #[test]
+    fn session_duration_ms_running_uses_now() {
+        let summary = StatusSummary {
+            started_at: Some(1000),
+            ended: None,
+            ..StatusSummary::default()
+        };
+        assert_eq!(session_duration_ms(&summary, 4000), Some(3000));
+    }
+
+    #[test]
+    fn session_duration_ms_ended_uses_last_ts() {
+        let summary = StatusSummary {
+            started_at: Some(1000),
+            last_ts: Some(5000),
+            ended: Some("complete".into()),
+            ..StatusSummary::default()
+        };
+        // ended: uses last_ts - started_at, NOT now_ms - started_at
+        assert_eq!(session_duration_ms(&summary, 9000), Some(4000));
+    }
+
+    #[test]
+    fn session_duration_ms_none_for_empty_log() {
+        assert_eq!(session_duration_ms(&StatusSummary::default(), 5000), None);
+    }
+
+    // --- last_update_line tests ---
+
+    #[test]
+    fn last_update_line_shows_age() {
+        let summary = StatusSummary {
+            last_ts: Some(1000),
+            ..StatusSummary::default()
+        };
+        let line = last_update_line(&summary, 4000);
+        assert!(line.is_some());
+        let text = format!("{}", line.unwrap());
+        assert!(text.contains("last update: 3s ago"));
+    }
+
+    #[test]
+    fn last_update_line_none_for_empty_log() {
+        assert_eq!(last_update_line(&StatusSummary::default(), 4000), None);
+    }
+
+    #[test]
+    fn last_update_line_shows_interval_stats() {
+        let summary = StatusSummary {
+            last_ts: Some(5000),
+            update_interval_avg_ms: Some(2000),
+            update_interval_max_ms: Some(3000),
+            update_interval_min_ms: Some(1000),
+            ..StatusSummary::default()
+        };
+        let line = last_update_line(&summary, 5000).unwrap();
+        let text = format!("{line}");
+        assert!(text.contains("avg:"), "expected avg in: {text}");
+    }
+
+    #[test]
+    fn last_update_line_omits_interval_stats_without_enough_data() {
+        let summary = StatusSummary {
+            last_ts: Some(5000),
+            update_interval_avg_ms: None,
+            ..StatusSummary::default()
+        };
+        let line = last_update_line(&summary, 5000).unwrap();
+        let text = format!("{line}");
+        assert!(!text.contains("avg:"), "unexpected avg in: {text}");
     }
 
     // --- files_lines tests ---

@@ -8,8 +8,8 @@ use ratatui::{
 
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
-    BudgetRates, budget_lines, dollars_saved_line, files_lines, panel, reclaim_lines,
-    session_lines, tasks_lines,
+    BudgetRates, budget_lines, dollars_saved_line, files_lines, last_update_line, panel,
+    reclaim_lines, session_lines, tasks_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -144,7 +144,11 @@ pub(crate) fn render_dashboard(
         ),
         session_area,
     );
-    let mut budget = budget_lines(&data.summary);
+    let mut budget = Vec::new();
+    if let Some(line) = last_update_line(&data.summary, now_ms) {
+        budget.push(line);
+    }
+    budget.extend(budget_lines(&data.summary));
     if let Some(line) = dollars_saved_line(&data.summary, rates) {
         budget.push(line);
     }

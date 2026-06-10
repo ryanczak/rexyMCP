@@ -53,7 +53,7 @@ once.
 | 02 | Activity — surface injected context (`Prompt.rendered`) + tool-call arguments (`Parsed.tool_call.arguments`) ([phase-02-payloads.md](phase-02-payloads.md)) | done | feature | s | #2, #3 |
 | 03 | Activity — line wrapping + tail-follow autoscroll over wrapped lines + scrollbar ([phase-03-wrapping.md](phase-03-wrapping.md)) | done | feature | m | #8, #9, R1 |
 | 04 | Activity — distinct `<think>`/`</think>` block formatting in Completion bodies ([phase-04-think.md](phase-04-think.md)) | done | feature | m | #6 |
-| 05 | Session/Budget — move `last update:` to Budget; add session `duration:` to Session (new `started_at` capture) | todo | feature | m | #4, #5 |
+| 05 | Session/Budget — session `duration:` + move `last update:` to Budget (new `started_at` capture) ([phase-05-timing.md](phase-05-timing.md)) | review | feature | m | #4, #5 |
 | 06 | Session — full-width spinner carrying live `turn N · stage` status | todo | feature | m | #10, R5 |
 | 07 | Tasks — named tasks with checkbox/check glyphs + done/total progress gauge | todo | feature | m | #7, R3 |
 | 08 | Activity — per-event relative timestamps | todo | feature | s | R2 |
