@@ -1,7 +1,7 @@
 # Phase 04: Surface rustc machine-applicable suggested-fix spans
 
 **Milestone:** M12 — Executor Tooling
-**Status:** in-progress
+**Status:** review
 **Depends on:** none (additive enrichment of the existing Rust verifier path)
 **Estimated diff:** ~130 lines (≈45 production + ≈85 tests)
 **Tags:** language=rust, kind=feature, size=s
