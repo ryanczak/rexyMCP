@@ -1,7 +1,7 @@
 # Phase 06b: Task-tracking gate — `[executor] task_tracking` + `LoopDeps` field
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (done)
 **Estimated diff:** ~120 lines (≈45 prod + ≈75 test)
 **Tags:** language=rust, kind=feature, size=s
@@ -392,3 +392,38 @@ mcp/src/init.rs:15:# task_tracking = true            # seed + track a per-sessio
 - `5ce7730` — `feat: add [executor] task_tracking config gate for task-tracking substrate`
 
 **Notes for review:** None — clean implementation, no deviations from spec.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** **The `LoopDeps` literal-churn stall class did NOT recur** —
+  the 06b/06c split (isolating the ~12-site struct-literal churn from the
+  new-tool/router/prompt wiring) paid off exactly as designed. The executor
+  cleanly traversed all 12 construction sites (1 struct + 1 prod + `deps()`
+  helper + 9 standalone test literals across `tests.rs`/`ai/mod.rs`/`health.rs`)
+  first-try, 87 turns, full bookkeeping (status flip + Update Log + `feat:`
+  commit `5ce7730`). This is the **stall-proof compiler-guided recipe**
+  (add struct+prod+helper → `cargo build` enumerates the rest by E0063 line
+  number) landing first-try — the second M12 Arc A split (after 06a's variant
+  match-arm wall) to confirm the isolate-one-stall-class-per-phase medicine.
+  Note: pre-injection listed 9 standalone literals in `tests.rs`; the actual
+  blast radius was 9 in `tests.rs` + 3 in `ai/mod.rs` + 1 in `health.rs` (the
+  3 `ExecutorConfig` literals in `ai/mod.rs` + 1 in `health.rs` came from the
+  *config*-field add, distinct from the `LoopDeps` literals) — the executor
+  found them all compiler-guided regardless. **Cosmetic-only quirk:** the
+  Update Log self-stamps `2026-06-10` / "Claude (direct)" — the recurring
+  local-LLM clock/identity quirk (phase-06's datetime injection fixes it once
+  `rexymcp serve` is restarted; still pending).
+
+**Re-run at review (all gates green, independent):** `cargo fmt --all --check`
+clean; `cargo build` clean; `cargo clippy --all-targets --all-features -- -D
+warnings` clean; `cargo test` **710 executor + 293 mcp passed / 0 failed / 2
+ignored**. E2E reproduced against the real binary: `cargo run -p rexymcp --
+init --dir <tmp>` → generated `rexymcp.toml` carries the commented
+`# task_tracking = true` line. Gate verified load-bearing: production
+`runner.rs` reads `inp.cfg.executor.task_tracking` (not hardcoded), the loop
+wraps seeding in `if deps.task_tracking`, and the off-switch test
+(`d.task_tracking = false` → zero `task_update` records) is mutation-resistant.
