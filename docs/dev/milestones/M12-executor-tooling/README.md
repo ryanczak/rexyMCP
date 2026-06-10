@@ -47,7 +47,7 @@ once.
 | 06a | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, pure Spec seeder, `rexymcp status` consumer (unconditional emit; no gate) ([phase-06a-task-substrate.md](phase-06a-task-substrate.md)) | done | feature | m |
 | 06b | Arc A — `[executor] task_tracking` gate: config + `LoopDeps` field gating 06a's seeding emit (the 9-site literal churn + A/B off-switch byte-identity) ([phase-06b-task-tracking-gate.md](phase-06b-task-tracking-gate.md)) | done | feature | s |
 | 06c | Arc A — model-facing flip tool (`update_task`) + `router::categorize` arm + prompt injection (gated by 06b's flag; no `LoopDeps` churn) ([phase-06c-update-task-tool.md](phase-06c-update-task-tool.md)) | done | feature | m |
-| 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
+| 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) ([phase-07-tasks-panel.md](phase-07-tasks-panel.md)) | todo | feature | s |
 
 ## Exit criteria
 

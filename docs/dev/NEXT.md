@@ -4,40 +4,56 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **[phase-06c](milestones/M12-executor-tooling/phase-06c-update-task-tool.md)**
-— drafted + activated 2026-06-09 (`/rexymcp:architect next`). Awaiting
-`/rexymcp:dispatch phase-06c`. M12 Arc B is complete (03/04/05 all done); Arc A
-substrate (06a) + gate (06b) are done; the model-facing flip tool (06c) is now
-active. 06c is the **last code phase before the dashboard panel (07)**.
+**Active phase:** **[phase-07](milestones/M12-executor-tooling/phase-07-tasks-panel.md)**
+— drafted + activated 2026-06-10 (`/rexymcp:architect next`). Awaiting
+`/rexymcp:dispatch phase-07`. M12 Arc B is complete (03/04/05); Arc A is complete
+on the data side (substrate 06a + gate 06b + model-facing flips 06c all done). 07
+is the **render half** and the **last M12 phase** → milestone close + retrospective
+after it lands.
 
-**phase-06c scope (active — M12 Arc A, model-facing flips):** give the executor a
-`update_task` tool to flip a tracked task `pending → active → done`, and inject the
-task checklist + usage instructions into the system prompt, all gated by 06b's
-existing `task_tracking` flag (**no** `LoopDeps`/config churn — 06b did it all).
-**Design (the one decision pre-injected in the doc):** the `UpdateTask` tool owns
-the canonical live list in a `Mutex<Vec<Task>>` (seeded once at registry-build
-time, single Arc-shared instance → persists across turns); `execute` validates the
-`{id, state}`, flips in place, and returns `{id,title,state}` in `metadata`; the
-**loop** transcribes that metadata to a `SessionEvent::TaskUpdate` — copying the
-existing `OutputFiltered` metadata→event block verbatim (`mod.rs:697-717`), so the
-tool never needs the session log. Unknown id / bad state → advisory `ToolResult`
-error (model-visible, no emit). The router is **latent** (only registry helpers +
-tests consume `categorize`), so the new `Category::Meta` arm is low-risk. Change
-sites (no single mechanical wall — the 06b `LoopDeps` churn is gone): `pub mod
-tasks;` (expose for mcp) + new `tools/update_task.rs` + `tools/mod.rs` re-export +
-router/registry `Meta` arm + `prompt::task_section` + 2 loop hooks in
-`execute_phase` (append section to `system`; metadata-emit) + `build_registry`
-gains an `Option<Vec<Task>>` param (1 prod + 1 test call site). **Pinned A/B
-negative:** off → no `update_task` schema, no `# Task tracking` prompt section
-(byte-identical `Prompt` record), zero model-driven `TaskUpdate`. The 06b turn-0
-`pending` emit block (`mod.rs:185-201`) stays **byte-untouched**. ~300 lines (~190
-prod + ~110 test). E2E: the loop flip-emit integration test is the behavioral
-proof (no new CLI surface). Executor target: Qwen/Qwen3.6-27B-FP8.
+**phase-07 scope (active — M12 Arc A, render half):** add a dashboard `Tasks` panel
+(active / pending / done counts) **above** the Files panel in the body's right
+column, halving the Files panel's height (50/50 vertical split of the existing 28%
+right column). **mcp-crate only, purely additive on the read side** — the data
+already flows: `StatusSummary.tasks_total/done/active` (`status.rs:79-83`) are
+already folded last-write-wins from the `TaskUpdate` events 06a/06c emit; this phase
+only *displays* them. Two files: `dashboard/panels.rs` gains a `tasks_lines(&summary)
+-> Vec<Line>` builder mirroring `files_lines`/`reclaim_lines` (placeholder `(no tasks
+tracked yet)` when `tasks_total == 0`; else three lines `active`/`pending`/`done N/T`,
+**pending derived** as `total.saturating_sub(done+active)` — no stored field);
+`dashboard/render.rs` splits the right column vertically (`Layout::vertical([50,50])`)
+and renders `panel(" Tasks ", …)` over `panel(" Files ", …)`. **No** new struct
+field, event, config, or match-arm churn — the lowest-risk shape in M12. Tests:
+3 `tasks_lines_*` unit tests (empty placeholder + counts + pending-derivation,
+mutation-resistant on the `total≠pending` distinction); `render_dashboard` has no
+headless harness (TUI), so the layout wiring is compiler- + inspection-verified,
+consistent with prior dashboard-panel phases. ~120 lines (~70 prod + ~50 test).
+Executor target: Qwen/Qwen3.6-27B-FP8.
 
-**07 (next to draft after 06c):** the dashboard `Tasks` panel (active/pending/done
-counts) above the Files panel, with Files height halved — the render half of Arc A.
-mcp-only (mirrors the M8 panel phases); reads the `TaskUpdate` JSONL 06a/06c emit.
-This is the **last M12 phase** → milestone close + retrospective after it lands.
+**phase-06c done** (2026-06-10, approved_after_1): M12 Arc A model-facing flips —
+the `update_task` tool. The `UpdateTask` tool owns the canonical live list in a
+`Mutex<Vec<Task>>` (seeded once at registry-build, single Arc-shared instance →
+persists across turns); `execute` validates `{id, state}`, flips in place, returns
+`{id,title,state}` in `metadata`; the **loop** transcribes that metadata to a
+`SessionEvent::TaskUpdate` (copying the `OutputFiltered` metadata→event block), so
+the tool never needs the session log. `pub mod tasks` exposure + `tools/update_task.rs`
++ `tools/mod.rs` re-export + `router`/`registry` `Category::Meta` arm +
+`prompt::task_section` + 2 loop hooks + `build_registry` `Option<Vec<Task>>` param.
+Unknown id / bad state / malformed args → advisory `ToolResult` error (model-visible,
+no emit). **Pinned A/B negative held:** off → no `update_task` schema, no `# Task
+tracking` prompt section, zero model-driven `TaskUpdate`. **722 passed / 0 failed /
+2 ignored**, all four gates green. **One bounce —
+[bug-06c-1](milestones/M12-executor-tooling/bugs/bug-06c-1.md) (major):** the first
+dispatch left a production-path `.lock().unwrap()` in `update_task.rs:84` (STANDARDS
+§2.1 — no `unwrap` in prod); fixed with the poison-tolerant
+`.lock().unwrap_or_else(|e| e.into_inner())` idiom already established in
+`ai/mod.rs`/`jsonl.rs` (commit `2648cbb`). Otherwise spec-exact. Commits `5791b01`
+(feat) + `2648cbb` (fix); approved `c18c6fc`. **Calibration:** first `Mutex`-lock-
+unwrap bounce — a data point, not yet a trend (the poison-tolerant idiom exists in
+the tree; a forward-looking gotcha could pre-inject it on the next `Mutex`-touching
+phase). Cosmetic-only quirk: the Update Log self-stamps `2026-06-10` / "rexyMCP
+executor" (the recurring local-LLM clock/identity quirk; phase-06's datetime
+injection fixes it once `rexymcp serve` is restarted — still pending).
 
 **Prior active-phase pointer (now done):**
 
