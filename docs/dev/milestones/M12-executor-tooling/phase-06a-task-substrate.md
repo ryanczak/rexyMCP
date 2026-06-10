@@ -429,10 +429,9 @@ consumer added (`StatusSummary` task counts via a last-write-wins `HashMap` by
 id + a `tasks: D/T done (A active)` line). The non-exhaustive `_ =>` matches
 (`cap.rs`, `matches_tool_name_filter`, `aggregate_context_efficiency`) were left
 untouched, as specified. **Closeout note:** the executor produced all code and
-passed all four gates but did not fill this Update Log or commit; the architect
-filled the log and committed (the recurring local-LLM "code+gates done,
-bookkeeping skipped" pattern — see NEXT.md). No code changes were made at
-closeout; the diff is the executor's work verbatim.
+passed all four gates but did not fill this Update Log or commit; the session was
+interrupted by the user before the bookkeeping step and the architect closed out.
+No code changes were made at closeout; the diff is the executor's work verbatim.
 
 **Acceptance criteria:** all met (verified independently at review).
 
@@ -494,10 +493,8 @@ covered.
   wall was traversed completely without any `LoopDeps`/`PhaseInput`/config churn
   (the 06a/06b split's intended payoff), and the three non-exhaustive `_ =>`
   matches were correctly left untouched.
-- **Calibration:** recurring local-LLM bookkeeping gap — the executor completed
-  all code and passed all four gates but did not fill the Update Log or commit
-  (architect closed out, no code change). This is the same "code+gates done,
-  Update-Log/commit skipped" pattern noted on M12 phase-01/02/05 and the M8/M9
-  closeouts; no new fold. The split-by-concern thesis is reinforced: isolating
-  the variant match-arm wall from the `LoopDeps` literal churn let the weak model
-  clear the full 12-site blast radius first-try with zero stall.
+- **Calibration:** session interrupted by user before the executor reached the
+  bookkeeping step; architect closed out (no code change). Not a model failure.
+  The split-by-concern thesis is reinforced: isolating the variant match-arm wall
+  from the `LoopDeps` literal churn let the weak model clear the full 12-site
+  blast radius first-try with zero stall.
