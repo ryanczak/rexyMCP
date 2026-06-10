@@ -124,6 +124,24 @@ pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
+/// Tasks panel: active / pending / done counts, or a placeholder when none.
+pub(crate) fn tasks_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+    if summary.tasks_total == 0 {
+        return vec![Line::from("(no tasks tracked yet)")];
+    }
+    let pending = summary
+        .tasks_total
+        .saturating_sub(summary.tasks_done + summary.tasks_active);
+    vec![
+        Line::from(format!("active:  {}", summary.tasks_active)),
+        Line::from(format!("pending: {}", pending)),
+        Line::from(format!(
+            "done:    {}/{}",
+            summary.tasks_done, summary.tasks_total
+        )),
+    ]
+}
+
 /// Files panel: one line per changed file, or a placeholder when none.
 pub(crate) fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.files_changed.is_empty() {
@@ -539,6 +557,54 @@ mod tests {
             text[0]
         );
         assert!(text[0].contains("src/a.rs"));
+    }
+
+    // --- tasks_lines tests ---
+
+    #[test]
+    fn tasks_lines_empty_placeholder() {
+        let summary = StatusSummary::default();
+        let lines = tasks_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("no tasks tracked")));
+    }
+
+    #[test]
+    fn tasks_lines_shows_counts() {
+        let summary = StatusSummary {
+            tasks_total: 3,
+            tasks_done: 1,
+            tasks_active: 1,
+            ..StatusSummary::default()
+        };
+        let lines = tasks_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text.iter()
+                .any(|s| s.contains("active:") && s.contains("1"))
+        );
+        assert!(text.iter().any(|s| s.contains("pending: 1")));
+        assert!(
+            text.iter()
+                .any(|s| s.contains("done:") && s.contains("1/3"))
+        );
+    }
+
+    #[test]
+    fn tasks_lines_derives_pending() {
+        let summary = StatusSummary {
+            tasks_total: 2,
+            tasks_done: 0,
+            tasks_active: 0,
+            ..StatusSummary::default()
+        };
+        let lines = tasks_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("pending: 2")));
+        assert!(
+            text.iter()
+                .any(|s| s.contains("done:") && s.contains("0/2"))
+        );
     }
 
     // --- budget_lines tests ---

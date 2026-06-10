@@ -8,7 +8,8 @@ use ratatui::{
 
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
-    BudgetRates, budget_lines, dollars_saved_line, files_lines, panel, reclaim_lines, session_lines,
+    BudgetRates, budget_lines, dollars_saved_line, files_lines, panel, reclaim_lines,
+    session_lines, tasks_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -94,10 +95,13 @@ pub(crate) fn render_dashboard(
         compactions_area,
     );
 
-    // Body: Activity (wide-left) · Files (right).
-    let [activity_area, files_area] =
+    // Body: Activity (wide-left) · right column (Tasks over Files).
+    let [activity_area, right_area] =
         Layout::horizontal([Constraint::Percentage(72), Constraint::Percentage(28)])
             .areas::<2>(body);
+    let [tasks_area, files_area] =
+        Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .areas::<2>(right_area);
 
     let filter_state = &state.filter;
     if filter_state.open {
@@ -147,6 +151,7 @@ pub(crate) fn render_dashboard(
             activity_area,
         );
     }
+    frame.render_widget(panel(" Tasks ", tasks_lines(&data.summary)), tasks_area);
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
 }
 

@@ -1,7 +1,7 @@
 # Phase 07: Dashboard `Tasks` panel above Files
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a (substrate, done), phase-06c (model-facing flips, done)
 **Estimated diff:** ~120 lines (≈70 prod + ≈50 test)
 **Tags:** language=rust, kind=feature, size=s
@@ -255,3 +255,34 @@ Do **not**, in this phase:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 00:00 (started)
+
+**Executor:** claude-code
+
+Added `tasks_lines` panel builder in `panels.rs`, split right column in `render.rs` into Tasks-over-Files 50/50 vertical split, added 3 unit tests.
+
+### Update — 2026-06-10 00:00 (complete)
+
+**Executor:** claude-code
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed (clean)
+- `cargo build` — passed (zero new warnings)
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed (clean)
+- `cargo test` — passed (722 passed; 0 failed; 2 ignored)
+- `cargo test tasks_lines` — passed (3 passed)
+
+**Verification summary:** All four gates clean (fmt, build, clippy, test). Three `tasks_lines_*` unit tests pass.
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — added `tasks_lines` panel builder + 3 unit tests
+- `mcp/src/dashboard/render.rs` — split right column vertically (Tasks over Files, 50/50), render Tasks panel
+
+**Commit:** `feat: add Tasks panel to dashboard above Files`
+
+**End-to-end verification:** N/A — TUI layout change with no headlessly-observable runtime artifact. Behavioral surface fully exercised by `tasks_lines_*` unit tests (quoted `cargo test tasks_lines` output above).
+
+**Notes for review:**
+- Grep confirms literal landed: `grep "no tasks tracked" mcp/src/dashboard/panels.rs` → 2 matches (line 130 impl, line 569 test).
+- No change to `mcp/src/status.rs`; pending derived via `saturating_sub` as specified.
