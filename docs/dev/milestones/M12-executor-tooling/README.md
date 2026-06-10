@@ -45,7 +45,8 @@ once.
 | 04 | Arc B — surface rustc machine-applicable suggested-fix spans ([phase-04-suggested-fixes.md](phase-04-suggested-fixes.md)) | done | feature | s |
 | 05 | Arc B — structured `cargo test` failure digest ([phase-05-structured-test-failures.md](phase-05-structured-test-failures.md)) | done | feature | m |
 | 06a | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, pure Spec seeder, `rexymcp status` consumer (unconditional emit; no gate) ([phase-06a-task-substrate.md](phase-06a-task-substrate.md)) | done | feature | m |
-| 06b | Arc A — `[executor] task_tracking` gate + model-facing flip tool + prompt injection (the `LoopDeps`-field change + A/B off-switch) | todo | feature | m |
+| 06b | Arc A — `[executor] task_tracking` gate: config + `LoopDeps` field gating 06a's seeding emit (the 9-site literal churn + A/B off-switch byte-identity) ([phase-06b-task-tracking-gate.md](phase-06b-task-tracking-gate.md)) | todo | feature | s |
+| 06c | Arc A — model-facing flip tool (`update_task`) + `router::categorize` arm + prompt injection (gated by 06b's flag; no `LoopDeps` churn) | todo | feature | m |
 | 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
 
 ## Exit criteria
@@ -133,7 +134,9 @@ once.
 - The **off-switch byte-identity** requirement is a pinned negative case: a test
   must assert that with `task_tracking = false` no `TaskUpdate` event is emitted
   and the prompt/transcript are unchanged. **This lives in phase-06b** (where the
-  gate exists), not 06a.
+  gate exists), not 06a. The *event*-suppression half (no `TaskUpdate` when off)
+  is 06b's test; the *prompt*-suppression half (no task section when off) is 06c's
+  (06b adds no prompt change, so its off/on `Prompt` records are already identical).
 
 ### Phase-06 split decision (2026-06-09, drafting `/architect next`)
 
@@ -149,9 +152,20 @@ churn (phase-08a's 9-site `LoopDeps`/literal wall).
   match-arm wall **without** the struct-literal churn. Emitting unconditionally
   is harmless (additive log events + a status line; no model-facing change).
 - **06b** — adds the `[executor] task_tracking` gate (the `LoopDeps` field — the
-  9-site literal churn, pre-injectable as a complete site list), the model-facing
-  flip tool, and prompt injection. The gate wraps 06a's seeding and controls the
-  prompt/tool together, so the A/B off-switch (off → byte-identical model
-  behavior) is meaningful and testable here.
+  9-site literal churn, pre-injected as a complete site list + a compiler-guided
+  recipe) and wraps 06a's seeding emit behind it. **Plumbing only**, so the
+  literal-churn stall class is isolated into its own phase.
+- **06c** *(split from the original 06b, 2026-06-09 with the user)* — the
+  model-facing flip tool (`update_task`) + its `router::categorize` arm + prompt
+  injection, all gated by 06b's now-existing flag (so 06c carries **no** further
+  `LoopDeps` churn). The A/B *model-behavior* off-switch (off → byte-identical
+  prompt + no flip tool) is meaningful and testable here.
+
+**Why 06b was split into 06b/06c (2026-06-09, with the user):** the original
+combined 06b stacked two documented stall classes in one executor session — the
+`LoopDeps` struct-literal churn (phase-08a/08d: a new field touches ~12
+construction sites) *and* a new model-facing tool + `router::categorize` arm +
+prompt injection. Same medicine as the 06/06a-06b split: isolate one stall class
+per phase. 06b is now ~120 lines of pure plumbing; 06c gets the field for free.
 
 <!-- retrospective written here after milestone close -->

@@ -4,34 +4,63 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **[phase-06a](milestones/M12-executor-tooling/phase-06a-task-substrate.md)**
+**Active phase:** **[phase-06b](milestones/M12-executor-tooling/phase-06b-task-tracking-gate.md)**
 — drafted + activated 2026-06-09 (`/rexymcp:architect next`). Awaiting
-`/rexymcp:dispatch phase-06a`. M12 Arc B is complete (03/04/05 all done); Arc A
-(phases 06a/06b/07) is now in progress.
+`/rexymcp:dispatch phase-06b`. M12 Arc B is complete (03/04/05 all done); Arc A
+substrate (06a) is done; the gate (06b) is now active.
 
-**phase-06a scope (active — M12 Arc A, substrate):** the task-tracking
-**substrate**, deliberately split out of the original `l` phase-06 to isolate the
-new-`SessionEvent`-variant match-arm wall (M10 03/04/06 class) **without** the
-9-site `LoopDeps`-literal churn (phase-08a class). Adds `TaskState`
-(Pending/Active/Done) + `SessionEvent::TaskUpdate { id, title, state }` in
-`event.rs`; a new pure `executor/src/agent/tasks.rs` with `seed_from_spec(phase_doc)`
-that parses the **top-level** numbered `## Spec` items into `Pending` tasks (pinned
-negatives: indented sub-items, `1.5x`-style decimals, out-of-section lines, no-Spec
-→ empty; std-string parsing, **no `regex` dep**, no `unwrap` per bug-05-1); the loop
-emits one `pending` `TaskUpdate` per seeded item at turn 0 **unconditionally** (no
-config gate, **no `LoopDeps`/`PhaseInput` field** — that is 06b); plus the full
-variant blast radius (`filter.rs` 7 sites, `transcript.rs` `record_lines`,
-`log_query::event_type_str`, `agent/tests.rs` `event_kind`) and a `rexymcp status`
-consumer (`StatusSummary` task counts + a `tasks: D/T done (A active)` line,
-last-write-wins per id). The non-exhaustive `_ =>` matches (`cap.rs`,
-`matches_tool_name_filter`, `aggregate_context_efficiency`) stay untouched. ~330
-lines (~150 prod + ~180 test). E2E: `rexymcp status` over a hand-written
-`task_update` JSONL fixture shows the tasks line. Executor target: Qwen/Qwen3.6-27B-FP8.
+**phase-06b scope (active — M12 Arc A, gate plumbing):** put 06a's substrate
+behind a config kill-switch. Adds `[executor] task_tracking` (bool, **default
+on**, mirrors `[context] output_filter`'s shape but in `ExecutorConfig` with a
+`#[serde(default = "default_task_tracking")]` attr since that struct has no
+struct-level serde default), a new `pub task_tracking: bool` field on `LoopDeps`,
+wires the prod literal (`runner.rs:179` ← `inp.cfg.executor.task_tracking`), and
+wraps 06a's turn-0 seeding emit (`mod.rs:181-195`) in `if deps.task_tracking`. Off
+→ **zero** `TaskUpdate` events, byte-identical to pre-06a. Plus a one-line
+`rexymcp init` template doc. **Plumbing only** — the headline risk is the
+`LoopDeps`-literal churn (phase-08a/08d stall class): ~12 construction sites (1
+struct def + 1 prod + the `deps()` test helper + 9 standalone test literals, all
+ending in `governor: GovernorConfig::default(),` as the insertion anchor). Pinned
+**stall-proof recipe**: add the field + prod site + helper, then `cargo build` lets
+rustc enumerate the 9 remaining literals by line number (E0063) — don't hand-search
+the 3700-line test file. ~120 lines (~45 prod + ~75 test). E2E: the off-switch loop
+test + `rexymcp init` template grep. Executor target: Qwen/Qwen3.6-27B-FP8.
 
-**06b (next to draft after 06a):** the `[executor] task_tracking` gate (the
-`LoopDeps` field — pre-inject the 9-site literal list as pre-completed work, or add
-a test `LoopDeps` builder), the model-facing flip tool, prompt injection, and the
-A/B off-switch byte-identity negative test.
+**06c (next to draft after 06b — split from the original 06b, 2026-06-09 with the
+user):** the model-facing flip tool (`update_task`) + its `router::categorize` arm
++ `build_registry` registration + prompt injection of the task list/instructions,
+all gated by 06b's now-existing `task_tracking` flag (so 06c carries **no** further
+`LoopDeps` churn). The A/B *model-behavior* off-switch byte-identity (off → no flip
+tool, no prompt task section) is the pinned negative here. **Why the split:** the
+original combined 06b stacked two stall classes (the `LoopDeps` literal churn +
+new-tool/router/prompt wiring) in one weak-model session — same isolate-one-stall-
+class-per-phase medicine as the 06/06a-06b split.
+
+**Prior active-phase pointer (now done):**
+
+**phase-06a done** (2026-06-09, approved_first_try — architect closeout of
+bookkeeping): M12 Arc A task-tracking **substrate**. `TaskState` (Pending/Active/
+Done) + `SessionEvent::TaskUpdate { id, title, state }` in `event.rs`; a new pure
+`executor/src/agent/tasks.rs` `seed_from_spec(phase_doc)` parsing top-level numbered
+`## Spec` items into `Pending` tasks (std-string, **no `regex` dep**, no
+`unwrap`/`expect` per bug-05-1; pinned negatives: indented sub-items, `1.5x`
+decimals, out-of-section, no-Spec → empty); the loop emits one `pending`
+`TaskUpdate` per seeded item at turn 0 **unconditionally** (no gate — 06b adds it);
+the full new-variant match-arm blast radius landed exactly per the worked example
+(`filter.rs` 7 sites + `FILTER_ITEM_COUNT` 14→15, `transcript.rs::record_lines`,
+`log_query::event_type_str`, `agent/tests.rs::event_kind`); a `rexymcp status`
+consumer (`StatusSummary` task counts via last-write-wins `HashMap` + a
+`tasks: D/T done (A active)` line). The three non-exhaustive `_ =>` matches
+(`cap.rs`, `matches_tool_name_filter`, `aggregate_context_efficiency`) correctly
+left untouched. **706 passed / 0 failed / 2 ignored executor + 293 mcp**, all four
+gates green independently. E2E reproduced (`tasks: 1/2 done (0 active)` over a
+hand-written `task_update` JSONL fixture). Committed `4658633` (feat); approved
+`7583208`. **Clean traversal of the full 12-site variant blast radius first-try,
+zero stall — the 06a/06b split's intended payoff** (variant match-arm wall isolated
+from the `LoopDeps` literal churn). **Calibration:** the session was interrupted by
+the user before the executor reached the Update-Log/commit step; architect closed
+out the bookkeeping (no code change) — not a model failure (closeout note corrected
+in `d9408fd`).
 
 **Prior active-phase pointer (now done):**
 
