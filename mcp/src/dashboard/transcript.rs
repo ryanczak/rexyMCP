@@ -5,7 +5,7 @@ use ratatui::{
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 
 use super::filter::ActivityFilter;
-use super::highlight::{highlighted_body_lines, plain_body_lines};
+use super::highlight::{completion_body_lines, highlighted_body_lines, plain_body_lines};
 
 /// Max chars of free-text content shown per transcript line in 10a (10b expands
 /// to full multi-line). Keeps one record = one line.
@@ -60,12 +60,11 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 false,
                 Some(plain_body_lines(rendered, Color::Rgb(200, 200, 200))),
             ),
-            // LLM completions: soft white so the model's words read easily.
             SessionEvent::Completion { raw } => (
                 "completion:".to_string(),
                 Color::Reset,
                 false,
-                Some(plain_body_lines(raw, Color::Rgb(200, 200, 200))),
+                Some(completion_body_lines(raw)),
             ),
             SessionEvent::Parsed { tool_call } => {
                 let body = match &tool_call.arguments {
@@ -603,5 +602,52 @@ mod tests {
             last.contains("more lines"),
             "last line should be the overflow marker: {last}"
         );
+    }
+
+    #[test]
+    fn completion_record_styles_think_block() {
+        let ev = SessionEvent::Completion {
+            raw: "<think>reasoning here</think>the answer".into(),
+        };
+        let lines = record_lines(&rec(0, 0, ev));
+
+        // Header line.
+        let header = format!("{}", lines[0]);
+        assert!(header.contains("completion:"));
+
+        // Body lines (skip header).
+        let body = &lines[1..];
+        let think_line = body
+            .iter()
+            .find(|l| format!("{l}").contains("reasoning here"))
+            .expect("should have a line containing 'reasoning here'");
+        assert_eq!(
+            think_line.spans[0].style.fg,
+            Some(Color::Rgb(128, 128, 128)),
+            "think line should be dim grey"
+        );
+
+        let answer_line = body
+            .iter()
+            .find(|l| format!("{l}").contains("the answer"))
+            .expect("should have a line containing 'the answer'");
+        assert_eq!(
+            answer_line.spans[0].style.fg,
+            Some(Color::Rgb(200, 200, 200)),
+            "answer line should be soft white"
+        );
+
+        // Markers should not appear in any body line.
+        for line in body {
+            let text = format!("{line}");
+            assert!(
+                !text.contains("<think>"),
+                "marker should be removed: {text}"
+            );
+            assert!(
+                !text.contains("</think>"),
+                "marker should be removed: {text}"
+            );
+        }
     }
 }

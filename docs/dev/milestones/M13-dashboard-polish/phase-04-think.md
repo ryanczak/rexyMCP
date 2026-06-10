@@ -1,7 +1,7 @@
 # Phase 04: Activity — distinct `<think>`/`</think>` block formatting in Completion bodies
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** todo
+**Status:** review
 **Depends on:** phase-02 (done) — phase-02 made the Completion body soft-white via
 `plain_body_lines`; this phase replaces that single call with a think-aware
 renderer. No code dependency beyond the same `record_lines` Completion arm.
@@ -417,3 +417,40 @@ Do **not**:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 17:43 (started)
+
+**Executor:** Claude (Sonnet 4.5)
+**Changes:** Implementing `split_think_segments` and `completion_body_lines` in `highlight.rs`, wiring into Completion arm in `transcript.rs`, adding 9 unit tests.
+
+### Update — 2026-06-10 17:43 (complete)
+
+**Summary:** Added think-aware completion body rendering with `<think>`/`</think>` segment splitting and distinct dim+italic styling for reasoning blocks.
+
+**Files changed:**
+- `mcp/src/dashboard/highlight.rs` — Added `Modifier` import, `split_think_segments()` helper, `completion_body_lines()` renderer, 8 unit tests.
+- `mcp/src/dashboard/transcript.rs` — Wired `completion_body_lines` into Completion arm, added `completion_record_styles_think_block` integration test.
+
+**Verification commands:**
+```
+cargo fmt --all --check: PASS (formatted)
+cargo build: PASS (zero warnings)
+cargo clippy --all-targets --all-features -- -D warnings: PASS
+cargo test: PASS (725 passed, 0 failed, 2 ignored)
+```
+
+**Grep for pinned literals:**
+```
+$ grep -r '<think>' mcp/src/dashboard/highlight.rs
+  const OPEN: &str = "<think>";
+  ... (8 matches across tests)
+$ grep -r '</think>' mcp/src/dashboard/highlight.rs
+  const CLOSE: &str = "</think>";
+  ... (6 matches across tests)
+```
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact (TUI rendering has no headless harness; consistent with prior dashboard-panel phases M8/M10/M12 and M13 phase-01/02/03). Verification is the pure-function `split_think_segments` / `completion_body_lines` assertions plus the `record_lines` integration test and the `cargo` gates.
+
+**Notes for review:** None — implementation follows the spec exactly.
+
+**Commit:** `feat: render <think>/</think> reasoning blocks dim+italic in transcript`

@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use ratatui::{
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
 use syntect::easy::HighlightLines;
@@ -211,6 +211,92 @@ pub(crate) fn body_lines(body: &str) -> Vec<String> {
     }
 }
 
+/// Split a completion `raw` body into ordered segments tagged with whether the
+/// text is reasoning (inside a `<think>…</think>` block). The literal `<think>` /
+/// `</think>` markers are matched exactly (no whitespace/case tolerance — a
+/// `<thinking>` is not a marker) and removed from the output. Empty segments are
+/// dropped. The initial mode is `think` when a `</think>` precedes any `<think>`
+/// (or there is a closing tag and no opening one), which covers models that emit
+/// a closing tag with the opening tag stripped; an unterminated `<think>` leaves
+/// the remainder in think mode.
+pub(crate) fn split_think_segments(raw: &str) -> Vec<(String, bool)> {
+    const OPEN: &str = "<think>";
+    const CLOSE: &str = "</think>";
+
+    let first_open = raw.find(OPEN);
+    let first_close = raw.find(CLOSE);
+    let mut in_think = match (first_open, first_close) {
+        (Some(o), Some(c)) => c < o,
+        (None, Some(_)) => true,
+        _ => false,
+    };
+
+    let mut segments: Vec<(String, bool)> = Vec::new();
+    let mut rest = raw;
+    loop {
+        let next_open = rest.find(OPEN);
+        let next_close = rest.find(CLOSE);
+        let (idx, marker_len, next_mode) = match (next_open, next_close) {
+            (Some(o), Some(c)) if o < c => (o, OPEN.len(), true),
+            (Some(_), Some(c)) => (c, CLOSE.len(), false),
+            (Some(o), None) => (o, OPEN.len(), true),
+            (None, Some(c)) => (c, CLOSE.len(), false),
+            (None, None) => {
+                if !rest.is_empty() {
+                    segments.push((rest.to_string(), in_think));
+                }
+                break;
+            }
+        };
+        let (before, after) = rest.split_at(idx);
+        if !before.is_empty() {
+            segments.push((before.to_string(), in_think));
+        }
+        in_think = next_mode;
+        rest = &after[marker_len..];
+    }
+    segments
+}
+
+/// Render a completion `raw` body, styling `<think>…</think>` reasoning distinctly
+/// (dim + italic) from the answer text (soft white). The per-record cap
+/// (`TRANSCRIPT_CONTENT_MAX_LINES`) and overflow marker apply across the whole
+/// body. With no think markers this is byte-identical to
+/// `plain_body_lines(raw, Color::Rgb(200, 200, 200))`.
+pub(crate) fn completion_body_lines(raw: &str) -> Vec<Line<'static>> {
+    let answer = Style::new().fg(Color::Rgb(200, 200, 200));
+    let think = Style::new()
+        .fg(Color::Rgb(128, 128, 128))
+        .add_modifier(Modifier::ITALIC);
+
+    let mut tagged: Vec<(String, bool)> = Vec::new();
+    for (text, is_think) in split_think_segments(raw) {
+        for line in text.split('\n') {
+            tagged.push((line.to_string(), is_think));
+        }
+    }
+
+    let total = tagged.len();
+    let mut result: Vec<Line<'static>> = tagged
+        .into_iter()
+        .take(TRANSCRIPT_CONTENT_MAX_LINES)
+        .map(|(text, is_think)| {
+            let style = if is_think { think } else { answer };
+            Line::from(Span::styled(format!("    {text}"), style))
+        })
+        .collect();
+    if total > TRANSCRIPT_CONTENT_MAX_LINES {
+        result.push(Line::from(Span::styled(
+            format!(
+                "    … ({} more lines)",
+                total - TRANSCRIPT_CONTENT_MAX_LINES
+            ),
+            answer,
+        )));
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,5 +443,138 @@ mod tests {
         assert_eq!(lines[2].spans[0].style.fg, Some(Color::Rgb(180, 242, 180)));
         // Removed line keeps red fg.
         assert_eq!(lines[3].spans[0].style.fg, Some(Color::Rgb(242, 180, 180)));
+    }
+
+    // --- split_think_segments / completion_body_lines tests ---
+
+    #[test]
+    fn split_think_segments_no_markers_is_single_answer() {
+        let segs = split_think_segments("plain answer");
+        assert_eq!(segs, vec![("plain answer".to_string(), false)]);
+    }
+
+    #[test]
+    fn split_think_segments_splits_open_and_close() {
+        let segs = split_think_segments("<think>reasoning</think>answer");
+        assert_eq!(
+            segs,
+            vec![
+                ("reasoning".to_string(), true),
+                ("answer".to_string(), false)
+            ]
+        );
+    }
+
+    #[test]
+    fn split_think_segments_handles_no_opening_tag() {
+        let segs = split_think_segments("reasoning</think> answer");
+        assert_eq!(
+            segs,
+            vec![
+                ("reasoning".to_string(), true),
+                (" answer".to_string(), false)
+            ]
+        );
+    }
+
+    #[test]
+    fn split_think_segments_handles_unterminated_open() {
+        let segs = split_think_segments("<think>reasoning");
+        assert_eq!(segs, vec![("reasoning".to_string(), true)]);
+    }
+
+    #[test]
+    fn split_think_segments_ignores_thinking_lookalike() {
+        let segs = split_think_segments("<thinking>");
+        assert_eq!(segs, vec![("<thinking>".to_string(), false)]);
+    }
+
+    #[test]
+    fn completion_body_no_markers_matches_plain() {
+        let raw = "a\nb\nc";
+        let think_lines = completion_body_lines(raw);
+        let plain_lines = plain_body_lines(raw, Color::Rgb(200, 200, 200));
+        assert_eq!(think_lines.len(), plain_lines.len(), "line count mismatch");
+        for (t, p) in think_lines.iter().zip(plain_lines.iter()) {
+            assert_eq!(format!("{t}"), format!("{p}"), "rendered text mismatch");
+            assert_eq!(
+                t.spans[0].style.fg, p.spans[0].style.fg,
+                "fg color mismatch"
+            );
+            assert_eq!(
+                t.spans[0].style.add_modifier, p.spans[0].style.add_modifier,
+                "modifier mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn completion_body_styles_think_distinct_from_answer() {
+        let lines = completion_body_lines("<think>why</think>final");
+        let think_line = lines
+            .iter()
+            .find(|l| format!("{l}").contains("why"))
+            .expect("should have a line containing 'why'");
+        assert_eq!(
+            think_line.spans[0].style.fg,
+            Some(Color::Rgb(128, 128, 128)),
+            "think line should be dim grey"
+        );
+        assert!(
+            think_line.spans[0]
+                .style
+                .add_modifier
+                .contains(Modifier::ITALIC),
+            "think line should be italic"
+        );
+
+        let answer_line = lines
+            .iter()
+            .find(|l| format!("{l}").contains("final"))
+            .expect("should have a line containing 'final'");
+        assert_eq!(
+            answer_line.spans[0].style.fg,
+            Some(Color::Rgb(200, 200, 200)),
+            "answer line should be soft white"
+        );
+        assert!(
+            !answer_line.spans[0]
+                .style
+                .add_modifier
+                .contains(Modifier::ITALIC),
+            "answer line should not be italic"
+        );
+
+        // Markers should not appear in rendered text.
+        for line in &lines {
+            let text = format!("{line}");
+            assert!(
+                !text.contains("<think>"),
+                "marker should be removed: {text}"
+            );
+            assert!(
+                !text.contains("</think>"),
+                "marker should be removed: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn completion_body_caps_with_overflow_marker() {
+        let raw: String = (0..TRANSCRIPT_CONTENT_MAX_LINES + 3)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let lines = completion_body_lines(&raw);
+        assert_eq!(
+            lines.len(),
+            TRANSCRIPT_CONTENT_MAX_LINES + 1,
+            "should be capped lines + overflow marker"
+        );
+        let last = format!("{}", lines[lines.len() - 1]);
+        assert!(
+            last.contains("more lines"),
+            "last line should be the overflow marker: {last}"
+        );
     }
 }
