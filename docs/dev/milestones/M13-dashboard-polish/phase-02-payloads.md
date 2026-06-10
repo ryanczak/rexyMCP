@@ -1,7 +1,7 @@
 # Phase 02: Activity — surface injected context + tool-call arguments
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** none (phase-01 already recolored the two headers this phase adds bodies to)
 **Estimated diff:** ~20 lines prod + ~5 small tests
 **Tags:** language=rust, kind=feature, size=s
@@ -288,3 +288,25 @@ test result: ok. 725 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 - `b7897ce` — feat: surface prompt text and tool-call arguments as transcript bodies
 
 **Notes for review:** None — implementation matches spec exactly. No deviations.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — both `record_lines` arms match the spec's worked
+  shape byte-for-byte (Prompt body `plain_body_lines(rendered, Rgb(200,200,200))`;
+  Parsed body dim `Rgb(128,128,128)` with the `Null`/empty-`Object` header-only
+  skip and the `unwrap_or_else(|_| args.to_string())` total fallback). `filter.rs`,
+  `render.rs`, and the scroll math are untouched (confirmed via `git show --stat`).
+- **Independent re-run:** `cargo fmt --all --check` clean, `cargo build` zero
+  warnings, `cargo clippy --all-targets --all-features -- -D warnings` clean,
+  `cargo test` **725 passed / 0 failed / 2 ignored**. The four new tests pass and
+  are mutation-resistant — `tool_call_args_render_dimmed` pins
+  `fg == Some(Rgb(128,128,128))` (proves the dim plain body, not the highlighted
+  path), and `tool_call_empty_args_render_header_only` pins exactly one line for
+  both `{}` and `null` (removing the empty-skip would make it 2 lines and fail).
+- **Calibration:** none on the code. Cosmetic-only quirk: the Update Log
+  self-stamps commit `b7897ce`, but the real commit is `1c06116` (the recurring
+  local-LLM self-stamping quirk — same class as the hallucinated date/identity;
+  machine records are correct). Resolved once `rexymcp serve` is restarted.
