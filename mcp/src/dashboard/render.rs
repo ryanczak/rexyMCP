@@ -69,28 +69,32 @@ pub(crate) fn wrap_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>
     rows
 }
 
-/// Wrap every line in `lines` to `width` characters (see `wrap_line`), prepending
-/// `indent` spaces to every emitted row (first and continuations). Content per row
-/// = `width - indent`; every row including continuations starts at the same column.
-pub(crate) fn wrap_lines(
+/// Wrap every line in `lines` to `width` characters with a hanging indent: the
+/// **first** row of each source line has no prefix (flush left); **continuation**
+/// rows get `continuation_indent` spaces prepended. Content width =
+/// `width − continuation_indent` for all rows so continuations fit within `width`.
+pub(crate) fn wrap_lines_hanging(
     lines: &[Line<'static>],
     width: usize,
-    indent: usize,
+    continuation_indent: usize,
 ) -> Vec<Line<'static>> {
-    let content_width = width.saturating_sub(indent);
+    let content_width = width.saturating_sub(continuation_indent);
     lines
         .iter()
         .flat_map(|l| {
-            wrap_line(l, content_width).into_iter().map(move |row| {
-                if indent == 0 {
-                    row
-                } else {
-                    let mut spans = Vec::with_capacity(row.spans.len() + 1);
-                    spans.push(Span::raw(" ".repeat(indent)));
-                    spans.extend(row.spans);
-                    Line::from(spans)
-                }
-            })
+            wrap_line(l, content_width)
+                .into_iter()
+                .enumerate()
+                .map(move |(i, row)| {
+                    if i == 0 || continuation_indent == 0 {
+                        row
+                    } else {
+                        let mut spans = Vec::with_capacity(row.spans.len() + 1);
+                        spans.push(Span::raw(" ".repeat(continuation_indent)));
+                        spans.extend(row.spans);
+                        Line::from(spans)
+                    }
+                })
         })
         .collect()
 }
@@ -167,8 +171,8 @@ pub(crate) fn render_dashboard(
             .areas::<2>(right_area);
 
     let filter_state = &state.filter;
-    // 4-char left indent on every row (first + continuations) and 4-char right gutter
-    // so text doesn't run flush to the panel border.
+    // Hanging indent: [tNN] header rows flush left, continuation rows indented 4 chars.
+    // 4-char right gutter so text doesn't run flush to the panel border.
     const INDENT: usize = 4;
     let inner_width = activity_area.width.saturating_sub(2) as usize;
     let wrap_width = inner_width.saturating_sub(4); // leaves 4-char right gutter
@@ -206,7 +210,7 @@ pub(crate) fn render_dashboard(
             ),
             activity_area,
         );
-        total_wrapped = wrap_lines(
+        total_wrapped = wrap_lines_hanging(
             &transcript_lines(&data.records, &filter_state.filter),
             wrap_width,
             INDENT,
@@ -214,7 +218,7 @@ pub(crate) fn render_dashboard(
         .len();
     } else {
         let transcript = transcript_lines(&data.records, &filter_state.filter);
-        let wrapped = wrap_lines(&transcript, wrap_width, INDENT);
+        let wrapped = wrap_lines_hanging(&transcript, wrap_width, INDENT);
         total_wrapped = wrapped.len();
         let viewport = activity_area.height.saturating_sub(2);
         let scroll = visible_offset(state.follow, state.offset, total_wrapped, viewport);
@@ -318,10 +322,10 @@ mod tests {
     }
 
     #[test]
-    fn wrap_lines_no_row_exceeds_width() {
+    fn wrap_lines_hanging_no_row_exceeds_width() {
         let lines = vec![Line::from("short"), Line::from("x".repeat(23))];
         let width = 10;
-        let wrapped = wrap_lines(&lines, width, 0);
+        let wrapped = wrap_lines_hanging(&lines, width, 0);
         for row in &wrapped {
             let char_count: usize = row.spans.iter().map(|s| s.content.chars().count()).sum();
             assert!(
@@ -332,9 +336,9 @@ mod tests {
     }
 
     #[test]
-    fn wrap_lines_total_drives_follow_offset() {
+    fn wrap_lines_hanging_total_drives_follow_offset() {
         let lines = vec![Line::from("hdr"), Line::from("x".repeat(25))];
-        let total = wrap_lines(&lines, 10, 0).len();
+        let total = wrap_lines_hanging(&lines, 10, 0).len();
         assert_eq!(total, 4); // "hdr" = 1 row, 25 chars at width 10 = 3 rows
         let viewport: u16 = 1;
         assert_eq!(visible_offset(true, 0, total, viewport), 3);
@@ -342,24 +346,40 @@ mod tests {
     }
 
     #[test]
-    fn wrap_lines_indent_prepended_to_every_row() {
-        // 14-wide with 4-char indent → content_width=10; a 25-char line wraps to 3 rows.
+    fn wrap_lines_hanging_first_row_has_no_indent() {
+        // 14-wide with 4-char continuation_indent → content_width=10; 25-char line wraps to 3 rows.
         let line = Line::from("x".repeat(25));
-        let rows = wrap_lines(&[line], 14, 4);
+        let rows = wrap_lines_hanging(&[line], 14, 4);
         assert_eq!(rows.len(), 3);
-        for row in &rows {
-            assert_eq!(
-                row.spans[0].content.as_ref(),
-                "    ",
-                "every row (first and continuations) must start with the indent"
-            );
-        }
-        // Width contracted by indent: 4 spaces + 10 'x's = 14 chars per row (fits in 14).
-        let char_count: usize = rows[0]
+        // Row 0: no indent prefix — first span is content, not spaces.
+        assert_ne!(
+            rows[0].spans[0].content.as_ref(),
+            "    ",
+            "first row must NOT start with the indent"
+        );
+        let first_content: usize = rows[0]
             .spans
             .iter()
             .map(|s| s.content.chars().count())
             .sum();
-        assert_eq!(char_count, 14);
+        assert_eq!(first_content, 10); // content_width only, no indent
+    }
+
+    #[test]
+    fn wrap_lines_hanging_continuations_are_indented() {
+        // Same setup: continuations (rows 1+) must start with the 4-space indent.
+        let line = Line::from("x".repeat(25));
+        let rows = wrap_lines_hanging(&[line], 14, 4);
+        assert_eq!(rows.len(), 3);
+        for row in &rows[1..] {
+            assert_eq!(
+                row.spans[0].content.as_ref(),
+                "    ",
+                "continuation rows must start with the indent"
+            );
+            let total: usize = row.spans.iter().map(|s| s.content.chars().count()).sum();
+            assert!(total <= 14, "continuation row exceeds 14 chars: {total}");
+            assert!(total > 4, "continuation row is indent-only: {total}");
+        }
     }
 }
