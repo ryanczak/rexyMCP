@@ -1,7 +1,7 @@
 # Phase 06c: Model-facing task flips — `update_task` tool + prompt injection
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a (substrate, done), phase-06b (gate, done)
 **Estimated diff:** ~300 lines (≈190 prod + ≈110 test)
 **Tags:** language=rust, kind=feature, size=m
@@ -416,3 +416,42 @@ Do **not**, in this phase:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Implemented the `update_task` tool, wired it into the loop via metadata→event emit, injected the `# Task tracking` prompt section (gated by `task_tracking`), and registered the tool in `build_registry` conditionally.
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — exposed `pub mod tasks`; appended `task_section` to system prompt; added metadata→`TaskUpdate` emit block after `OutputFiltered`
+- `executor/src/agent/prompt.rs` — added `task_section()` pure function + 2 unit tests
+- `executor/src/tools/update_task.rs` — new file: `UpdateTask` tool with `Mutex<Vec<Task>>` state, 6 unit tests
+- `executor/src/tools/mod.rs` — registered `update_task` module
+- `executor/src/tools/router.rs` — added `Category::Meta` + `categorize_update_task` test
+- `executor/src/tools/registry.rs` — added `Category::Meta` to ordering array
+- `executor/src/agent/tests.rs` — 3 integration tests (flip emit, prompt off, prompt on)
+- `mcp/src/runner.rs` — added `tasks` param to `build_registry`, conditional seed at call site, 2 new tests
+- `docs/dev/milestones/M12-executor-tooling/phase-06c-update-task-tool.md` — status `todo` → `review`
+- `docs/dev/milestones/M12-executor-tooling/README.md` — phase table row `todo` → `review`
+
+**Verification commands:**
+```
+cargo fmt --all --check: PASS
+cargo build: PASS (zero warnings)
+cargo clippy --all-targets --all-features -- -D warnings: PASS
+cargo test: 722 passed, 0 failed, 2 ignored
+```
+
+**Grep for pinned literal `# Task tracking`:**
+```
+$ grep -rn '# Task tracking' executor/src/
+executor/src/agent/prompt.rs:56:    let mut out = String::from("# Task tracking\n\n");
+executor/src/agent/prompt.rs:188:        assert!(section.contains("# Task tracking"));
+executor/src/agent/tests.rs:3896:                !rendered.contains("# Task tracking"),
+executor/src/agent/tests.rs:3922:            rendered.contains("# Task tracking") && rendered.contains("First task")
+```
+
+**End-to-end verification:** The loop test `loop_emits_task_update_when_model_flips_task` is the behavioral E2E — it drives the full tool → dispatch → success-metadata → loop emit → JSONL `task_update(active)` path with a `MockAiClient`. The on/off prompt-section difference is proven by the paired `loop_prompt_{includes,omits}_task_section_*` tests reading the real `Prompt` record. No new CLI artifact exists in this phase.
+
+**Notes for review:** None — implementation follows the spec exactly.

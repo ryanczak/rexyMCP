@@ -10,6 +10,8 @@ mod search;
 mod symbols;
 mod write_file;
 
+mod update_task;
+
 pub use bash::{Bash, bash, bash_with_filter, is_allowed_env_key};
 pub use find_files::{FindFiles, find_files};
 pub use patch::{Patch, patch};
@@ -18,4 +20,5 @@ pub use registry::{Tool, ToolRegistry, ToolResult};
 pub use router::{Category, categorize};
 pub use search::{Search, search};
 pub use symbols::{Symbols, symbols};
+pub use update_task::{UpdateTask, update_task};
 pub use write_file::{WriteFile, write_file};

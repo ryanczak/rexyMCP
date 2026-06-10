@@ -15,7 +15,7 @@ pub mod verify;
 mod log;
 mod metrics;
 mod outcome;
-mod tasks;
+pub mod tasks;
 mod tools;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -117,10 +117,16 @@ pub struct LoopDeps<'a> {
 /// surface as `Err`; model-visible outcomes (parse failures, unknown/failed
 /// tools) are fed back into the conversation and never error.
 pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<PhaseResult> {
+    let seeded: Vec<crate::agent::tasks::Task> = if deps.task_tracking {
+        tasks::seed_from_spec(&input.phase_doc)
+    } else {
+        Vec::new()
+    };
     let system = format!(
-        "{}{}",
+        "{}{}{}",
         prompt::datetime_header((deps.clock)()),
         prompt::assemble_system_prompt(deps.commands, &input.standards, &input.phase_doc),
+        prompt::task_section(&seeded),
     );
     let tools_opt = if deps.tools.is_empty() {
         None
@@ -712,6 +718,31 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     tokens_before: before as usize,
                     tokens_after: after as usize,
                     filter: filter.to_string(),
+                },
+            );
+        }
+
+        // Model-driven task flip (M12 Arc A / phase-06c): the update_task tool
+        // reports the flip in metadata; transcribe it to a TaskUpdate event.
+        if let Some(meta) = &tool_meta
+            && let Some(tu) = meta.get("task_update")
+            && let (Some(id), Some(title)) = (
+                tu.get("id").and_then(|v| v.as_str()),
+                tu.get("title").and_then(|v| v.as_str()),
+            )
+            && let Some(state) = tu.get("state").and_then(|v| {
+                serde_json::from_value::<crate::store::sessions::event::TaskState>(v.clone()).ok()
+            })
+        {
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::TaskUpdate {
+                    id: id.to_string(),
+                    title: title.to_string(),
+                    state,
                 },
             );
         }

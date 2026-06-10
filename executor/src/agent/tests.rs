@@ -3774,3 +3774,159 @@ async fn loop_still_seeds_task_updates_when_tracking_on() {
 
     assert_eq!(task_updates[0].turn, 0, "task updates should be at turn 0");
 }
+
+// ── 06c: model-facing task flips ────────────────────────────────────────
+
+/// Build a registry that includes `update_task` seeded from a spec doc.
+fn registry_with_update_task(scope: Scope, tasks: Vec<crate::agent::tasks::Task>) -> ToolRegistry {
+    let mut r = ToolRegistry::new();
+    r.register(read_file(scope.clone()));
+    r.register(write_file(scope.clone()));
+    r.register(patch(scope.clone()));
+    r.register(crate::tools::update_task(tasks));
+    r
+}
+
+#[tokio::test]
+async fn loop_emits_task_update_when_model_flips_task() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc = "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n";
+    let client = MockAiClientScript::new(vec![vec![native(
+        "update_task",
+        json!({ "id": "1", "state": "active" }),
+    )]]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let tasks = crate::agent::tasks::seed_from_spec(phase_doc);
+    let registry = registry_with_update_task(scope, tasks);
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 8,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+    };
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let active_updates: Vec<_> = recs
+        .iter()
+        .filter(|r| {
+            if let SessionEvent::TaskUpdate { state, .. } = &r.event {
+                *state != crate::store::sessions::event::TaskState::Pending
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    assert_eq!(
+        active_updates.len(),
+        1,
+        "expected exactly one model-driven task_update (active) beyond the turn-0 pending seeds"
+    );
+
+    if let SessionEvent::TaskUpdate { id, title, state } = &active_updates[0].event {
+        assert_eq!(id, "1");
+        assert_eq!(title, "First task");
+        assert_eq!(*state, crate::store::sessions::event::TaskState::Active);
+    } else {
+        panic!("expected TaskUpdate, got {:?}", active_updates[0].event);
+    }
+}
+
+#[tokio::test]
+async fn loop_prompt_omits_task_section_when_tracking_off() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc = "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n";
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let mut d = deps(&client, &registry, &budget, 8, dir.path());
+    d.task_tracking = false;
+
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let prompt_recs: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::Prompt { .. }))
+        .collect();
+
+    assert!(
+        !prompt_recs.is_empty(),
+        "expected at least one Prompt record"
+    );
+    for rec in prompt_recs {
+        if let SessionEvent::Prompt { rendered, .. } = &rec.event {
+            assert!(
+                !rendered.contains("# Task tracking"),
+                "system prompt must not contain '# Task tracking' when task_tracking is off"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn loop_prompt_includes_task_section_when_tracking_on() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc = "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n";
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let d = deps(&client, &registry, &budget, 8, dir.path());
+
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let prompt_recs: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::Prompt { .. }))
+        .collect();
+
+    assert!(
+        !prompt_recs.is_empty(),
+        "expected at least one Prompt record"
+    );
+    let has_task_section = prompt_recs.iter().any(|rec| {
+        if let SessionEvent::Prompt { rendered, .. } = &rec.event {
+            rendered.contains("# Task tracking") && rendered.contains("First task")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_task_section,
+        "system prompt must contain '# Task tracking' and seeded task titles when task_tracking is on"
+    );
+}

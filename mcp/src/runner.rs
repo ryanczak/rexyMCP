@@ -116,10 +116,11 @@ pub fn build_registry(
     scope: &Scope,
     bash_timeout_secs: u32,
     filter_output: bool,
+    tasks: Option<Vec<rexymcp_executor::agent::tasks::Task>>,
 ) -> (rexymcp_executor::tools::ToolRegistry, Vec<ToolSchema>) {
     let mut registry = rexymcp_executor::tools::ToolRegistry::new();
 
-    let tools: Vec<Arc<dyn tools::Tool>> = vec![
+    let mut tools: Vec<Arc<dyn tools::Tool>> = vec![
         tools::read_file(scope.clone()),
         tools::write_file(scope.clone()),
         tools::patch(scope.clone()),
@@ -128,6 +129,10 @@ pub fn build_registry(
         tools::symbols(scope.clone()),
         tools::bash_with_filter(scope.clone(), bash_timeout_secs, filter_output),
     ];
+
+    if let Some(t) = tasks {
+        tools.push(tools::update_task(t));
+    }
 
     for tool in &tools {
         registry.register(tool.clone());
@@ -158,7 +163,13 @@ async fn run_phase_with(
     let scope = Scope::new(inp.repo_path)
         .map_err(|e| rexymcp_executor::error::Error::Internal(format!("scope error: {}", e)))?;
 
-    let (registry, tool_schemas) = build_registry(&scope, 30, inp.cfg.context.output_filter);
+    let tasks = if inp.cfg.executor.task_tracking {
+        Some(rexymcp_executor::agent::tasks::seed_from_spec(&phase_doc))
+    } else {
+        None
+    };
+
+    let (registry, tool_schemas) = build_registry(&scope, 30, inp.cfg.context.output_filter, tasks);
 
     let budget = Budget::from_context(
         inp.cfg.budget.context_length,
@@ -374,7 +385,7 @@ mod tests {
     fn build_registry_has_seven_tools() {
         let dir = tempfile::tempdir().unwrap();
         let scope = Scope::new(dir.path()).unwrap();
-        let (_registry, schemas) = build_registry(&scope, 30, true);
+        let (_registry, schemas) = build_registry(&scope, 30, true, None);
 
         assert_eq!(schemas.len(), 7);
         let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();
@@ -393,6 +404,33 @@ mod tests {
 
         let rf = schemas.iter().find(|s| s.name == "read_file").unwrap();
         assert!(!rf.parameters.is_null());
+    }
+
+    #[test]
+    fn build_registry_includes_update_task_when_tasks_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let tasks = vec![rexymcp_executor::agent::tasks::Task {
+            id: "1".to_string(),
+            title: "Test task".to_string(),
+            state: rexymcp_executor::store::sessions::event::TaskState::Pending,
+        }];
+        let (_registry, schemas) = build_registry(&scope, 30, true, Some(tasks));
+
+        assert_eq!(schemas.len(), 8);
+        let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"update_task"));
+    }
+
+    #[test]
+    fn build_registry_excludes_update_task_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let scope = Scope::new(dir.path()).unwrap();
+        let (_registry, schemas) = build_registry(&scope, 30, true, None);
+
+        assert_eq!(schemas.len(), 7);
+        let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();
+        assert!(!names.contains(&"update_task"));
     }
 
     // --- run_phase_with integration test ---

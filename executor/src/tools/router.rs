@@ -7,6 +7,7 @@ pub enum Category {
     Write,
     Search,
     Run,
+    Meta,
 }
 
 /// Map a built-in tool name to its router category. `None` for an unknown name.
@@ -16,6 +17,7 @@ pub fn categorize(tool_name: &str) -> Option<Category> {
         "write_file" | "patch" => Category::Write,
         "search" | "find_files" => Category::Search,
         "bash" => Category::Run,
+        "update_task" => Category::Meta,
         _ => return None,
     })
 }
@@ -57,6 +59,11 @@ mod tests {
     #[test]
     fn categorize_bash() {
         assert_eq!(categorize("bash"), Some(Category::Run));
+    }
+
+    #[test]
+    fn categorize_update_task() {
+        assert_eq!(categorize("update_task"), Some(Category::Meta));
     }
 
     #[test]

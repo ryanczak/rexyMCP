@@ -1,4 +1,6 @@
+use crate::agent::tasks::Task;
 use crate::config::CommandConfig;
+use crate::store::sessions::event::TaskState;
 
 use super::contract;
 
@@ -47,6 +49,32 @@ fn format_utc_date(now_ms: u64) -> String {
 /// wall-clock time, so it stays deterministic under test.
 pub fn datetime_header(now_ms: u64) -> String {
     format!("Today's date is {} (UTC).\n\n", format_utc_date(now_ms))
+}
+
+/// Render a task-tracking section for the system prompt.
+/// Returns empty string when `tasks` is empty (off / no Spec).
+pub fn task_section(tasks: &[Task]) -> String {
+    if tasks.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("# Task tracking\n\n");
+    out.push_str(
+        "Use the `update_task` tool to record progress on each tracked task as you work.\n",
+    );
+    out.push_str("Set a task `active` when you start it and `done` when it is complete.\n");
+    out.push_str("Update tasks as you go — do not batch updates at the end.\n\n");
+
+    for task in tasks {
+        let state_str = match task.state {
+            TaskState::Pending => "pending",
+            TaskState::Active => "active",
+            TaskState::Done => "done",
+        };
+        out.push_str(&format!("- [{}] {} — {}\n", state_str, task.id, task.title));
+    }
+
+    out
 }
 
 #[cfg(test)]
@@ -151,5 +179,32 @@ mod tests {
             contract_pos < standards_pos && standards_pos < phase_pos,
             "expected contract < standards < phase, got {contract_pos}/{standards_pos}/{phase_pos}"
         );
+    }
+
+    #[test]
+    fn task_section_lists_tasks_with_state() {
+        let tasks = vec![
+            Task {
+                id: "1".to_string(),
+                title: "First task".to_string(),
+                state: TaskState::Pending,
+            },
+            Task {
+                id: "2".to_string(),
+                title: "Second task".to_string(),
+                state: TaskState::Active,
+            },
+        ];
+        let section = task_section(&tasks);
+        assert!(section.contains("# Task tracking"));
+        assert!(section.contains("First task"));
+        assert!(section.contains("Second task"));
+        assert!(section.contains("[pending] 1"));
+        assert!(section.contains("[active] 2"));
+    }
+
+    #[test]
+    fn task_section_empty_for_no_tasks() {
+        assert_eq!(task_section(&[]), "");
     }
 }

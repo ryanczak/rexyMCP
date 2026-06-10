@@ -74,6 +74,7 @@ impl ToolRegistry {
             Category::Write,
             Category::Search,
             Category::Run,
+            Category::Meta,
         ]
         .into_iter()
         .filter(|c| present.contains(c))
