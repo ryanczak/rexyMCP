@@ -69,9 +69,30 @@ pub(crate) fn wrap_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>
     rows
 }
 
-/// Wrap every line in `lines` to `width` characters (see `wrap_line`).
-pub(crate) fn wrap_lines(lines: &[Line<'static>], width: usize) -> Vec<Line<'static>> {
-    lines.iter().flat_map(|l| wrap_line(l, width)).collect()
+/// Wrap every line in `lines` to `width` characters (see `wrap_line`), prepending
+/// `indent` spaces to every emitted row (first and continuations). Content per row
+/// = `width - indent`; every row including continuations starts at the same column.
+pub(crate) fn wrap_lines(
+    lines: &[Line<'static>],
+    width: usize,
+    indent: usize,
+) -> Vec<Line<'static>> {
+    let content_width = width.saturating_sub(indent);
+    lines
+        .iter()
+        .flat_map(|l| {
+            wrap_line(l, content_width).into_iter().map(move |row| {
+                if indent == 0 {
+                    row
+                } else {
+                    let mut spans = Vec::with_capacity(row.spans.len() + 1);
+                    spans.push(Span::raw(" ".repeat(indent)));
+                    spans.extend(row.spans);
+                    Line::from(spans)
+                }
+            })
+        })
+        .collect()
 }
 
 /// Render the dashboard into a three-panel header band (Session · Budget ·
@@ -142,6 +163,12 @@ pub(crate) fn render_dashboard(
             .areas::<2>(right_area);
 
     let filter_state = &state.filter;
+    // 4-char left indent on every row (first + continuations) and 4-char right gutter
+    // so text doesn't run flush to the panel border.
+    const INDENT: usize = 4;
+    let inner_width = activity_area.width.saturating_sub(2) as usize;
+    let wrap_width = inner_width.saturating_sub(4); // leaves 4-char right gutter
+
     if filter_state.open {
         // Filter panel replaces the transcript while open.
         let mut filter_lines: Vec<Line<'static>> = (0..FILTER_ITEM_COUNT)
@@ -177,13 +204,13 @@ pub(crate) fn render_dashboard(
         );
         total_wrapped = wrap_lines(
             &transcript_lines(&data.records, &filter_state.filter),
-            activity_area.width.saturating_sub(2) as usize,
+            wrap_width,
+            INDENT,
         )
         .len();
     } else {
         let transcript = transcript_lines(&data.records, &filter_state.filter);
-        let inner_width = activity_area.width.saturating_sub(2) as usize;
-        let wrapped = wrap_lines(&transcript, inner_width);
+        let wrapped = wrap_lines(&transcript, wrap_width, INDENT);
         total_wrapped = wrapped.len();
         let viewport = activity_area.height.saturating_sub(2);
         let scroll = visible_offset(state.follow, state.offset, total_wrapped, viewport);
@@ -290,7 +317,7 @@ mod tests {
     fn wrap_lines_no_row_exceeds_width() {
         let lines = vec![Line::from("short"), Line::from("x".repeat(23))];
         let width = 10;
-        let wrapped = wrap_lines(&lines, width);
+        let wrapped = wrap_lines(&lines, width, 0);
         for row in &wrapped {
             let char_count: usize = row.spans.iter().map(|s| s.content.chars().count()).sum();
             assert!(
@@ -303,10 +330,32 @@ mod tests {
     #[test]
     fn wrap_lines_total_drives_follow_offset() {
         let lines = vec![Line::from("hdr"), Line::from("x".repeat(25))];
-        let total = wrap_lines(&lines, 10).len();
+        let total = wrap_lines(&lines, 10, 0).len();
         assert_eq!(total, 4); // "hdr" = 1 row, 25 chars at width 10 = 3 rows
         let viewport: u16 = 1;
         assert_eq!(visible_offset(true, 0, total, viewport), 3);
         assert_eq!(visible_offset(true, 0, lines.len(), viewport), 1);
+    }
+
+    #[test]
+    fn wrap_lines_indent_prepended_to_every_row() {
+        // 14-wide with 4-char indent → content_width=10; a 25-char line wraps to 3 rows.
+        let line = Line::from("x".repeat(25));
+        let rows = wrap_lines(&[line], 14, 4);
+        assert_eq!(rows.len(), 3);
+        for row in &rows {
+            assert_eq!(
+                row.spans[0].content.as_ref(),
+                "    ",
+                "every row (first and continuations) must start with the indent"
+            );
+        }
+        // Width contracted by indent: 4 spaces + 10 'x's = 14 chars per row (fits in 14).
+        let char_count: usize = rows[0]
+            .spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum();
+        assert_eq!(char_count, 14);
     }
 }
