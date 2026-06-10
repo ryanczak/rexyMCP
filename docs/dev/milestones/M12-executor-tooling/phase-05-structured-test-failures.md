@@ -1,7 +1,7 @@
 # Phase 05: Structured `cargo test` failure digest
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** in-progress (bounced — see [bug-05-1](bugs/bug-05-1.md))
 **Depends on:** none (additive enrichment of the existing M10 cargo output filter)
 **Estimated diff:** ~180 lines (≈80 production + ≈100 tests)
 **Tags:** language=rust, kind=feature, size=m
