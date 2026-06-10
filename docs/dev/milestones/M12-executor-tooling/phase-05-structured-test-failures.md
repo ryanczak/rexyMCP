@@ -1,7 +1,7 @@
 # Phase 05: Structured `cargo test` failure digest
 
 **Milestone:** M12 — Executor Tooling
-**Status:** in-progress (bounced — see [bug-05-1](bugs/bug-05-1.md))
+**Status:** review (re-dispatch — bug-05-1 `.unwrap()` fix applied)
 **Depends on:** none (additive enrichment of the existing M10 cargo output filter)
 **Estimated diff:** ~180 lines (≈80 production + ≈100 tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -473,3 +473,55 @@ For Fixture PASS the digest is empty and `cargo_filter` output does not contain
 - `cargo_filter` was refactored from two `return` sites to a single tail return
   via an `if` binding `(body, truncated)`. This ensures the digest is prepended on
   every path without code duplication.
+
+### Update — 2026-06-10 00:01 (complete — bug-05-1 re-dispatch)
+
+**Summary:** Fixed bug-05-1: replaced four `.unwrap()` calls in production code
+within `parse_test_failures` with idiomatic `if let` / `strip_prefix` /
+`strip_suffix` / `split_once` patterns. Zero `.unwrap()` remain in production
+paths (lines before `#[cfg(test)]`). All 696 tests pass unchanged.
+
+**Acceptance criteria:** all ticked. Bug-05-1 verification checklist satisfied:
+`grep -nE '\.unwrap\(' executor/src/context/output_filter.rs` shows zero matches
+in production paths (all 20 matches are in the `#[cfg(test)]` block at line 378+).
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean — no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.20s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.50s
+
+cargo test 2>&1 | tail -30
+test result: ok. 696 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+N/A — same as prior completion entry. Unit tests feed real verbatim `cargo test
+--color=never` output to the real `cargo_filter`. Digest for Fixture FAIL is
+unchanged. Fixture PASS digest is empty and output does not contain `=== Test
+failures`.
+
+**Files changed:**
+- `executor/src/context/output_filter.rs` — replaced 4 `.unwrap()` in
+  `parse_test_failures` with `if let` / `strip_prefix` / `strip_suffix` /
+  `split_once` patterns; behavior identical
+
+**Commits:**
+- `e853479` — feat: add structured cargo test failure digest to output filter
+- (this commit) — fix: remove `.unwrap()` calls from production path in `parse_test_failures`
+
+**Notes for review:**
+- Three sites were rewritten to `if let` patterns (header name extraction,
+  `current.take()` flush, `panicked at` location extraction). One site
+  (`strip_suffix(':')`) already used `.unwrap_or()` and was unaffected.
+- All 20 remaining `.unwrap()` calls are in the `#[cfg(test)]` block and are
+  exempt per STANDARDS.md §2.1.

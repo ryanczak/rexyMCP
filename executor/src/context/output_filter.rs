@@ -124,19 +124,16 @@ fn parse_test_failures(normalized: &str) -> Vec<TestFailure> {
         let trimmed = line.trim_start();
 
         // Detect a new test-failure block header.
-        if trimmed.starts_with("---- ") && trimmed.ends_with(" stdout ----") {
+        if let Some(name) = trimmed
+            .strip_prefix("---- ")
+            .and_then(|s| s.strip_suffix(" stdout ----"))
+        {
             // Flush any previous block.
             if let Some(prev) = current.take() {
                 failures.push(prev);
             }
-            let name = trimmed
-                .strip_prefix("---- ")
-                .unwrap() // starts_with guaranteed the prefix
-                .strip_suffix(" stdout ----")
-                .unwrap() // ends_with guaranteed the suffix
-                .to_string();
             current = Some(TestFailure {
-                name,
+                name: name.to_string(),
                 location: None,
                 detail: String::new(),
             });
@@ -152,16 +149,19 @@ fn parse_test_failures(normalized: &str) -> Vec<TestFailure> {
         // Block terminators: next header (handled above), `failures:`, or
         // `test result:`.
         if trimmed == "failures:" || trimmed.starts_with("test result:") {
-            failures.push(current.take().unwrap());
+            if let Some(prev) = current.take() {
+                failures.push(prev);
+            }
             past_panic_line = false;
             continue;
         }
 
         // Capture location from the `panicked at` line.
         if !past_panic_line && trimmed.contains("panicked at ") {
-            let after = trimmed.split("panicked at ").nth(1).unwrap(); // contains guaranteed the substring
-            let loc = after.strip_suffix(':').unwrap_or(after).to_string();
-            failure.location = Some(loc);
+            if let Some((_, after)) = trimmed.split_once("panicked at ") {
+                let loc = after.strip_suffix(':').unwrap_or(after).to_string();
+                failure.location = Some(loc);
+            }
             past_panic_line = true;
             continue;
         }
