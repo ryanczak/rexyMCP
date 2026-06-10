@@ -1,7 +1,7 @@
 # Phase 06a: Task-tracking substrate — `SessionEvent::TaskUpdate` + Spec seeding
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** done
 **Depends on:** phase-05 (done)
 **Estimated diff:** ~330 lines (≈150 prod + ≈180 test)
 **Tags:** language=rust, kind=feature, size=m
@@ -411,3 +411,93 @@ Do **not**, in this phase:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-09 (complete — architect closeout)
+
+**Summary:** Added the M12 Arc A task-tracking substrate. New `TaskState`
+(Pending/Active/Done) enum + `SessionEvent::TaskUpdate { id, title, state }`
+variant in `executor/src/store/sessions/event.rs`; a new pure
+`executor/src/agent/tasks.rs` with `seed_from_spec(phase_doc)` that parses the
+top-level numbered `## Spec` items into `Pending` tasks (std-string parsing, no
+`regex` dep, no `unwrap`/`expect` in the production path); the loop emits one
+`pending` `TaskUpdate` per seeded item at turn 0 unconditionally
+(`agent/mod.rs`, no `LoopDeps`/`PhaseInput`/config field). The full new-variant
+match-arm blast radius landed exactly per the worked example: `filter.rs` (7
+sites + `FILTER_ITEM_COUNT` 14→15), `transcript.rs::record_lines`,
+`log_query::event_type_str`, `agent/tests.rs::event_kind`. `rexymcp status`
+consumer added (`StatusSummary` task counts via a last-write-wins `HashMap` by
+id + a `tasks: D/T done (A active)` line). The non-exhaustive `_ =>` matches
+(`cap.rs`, `matches_tool_name_filter`, `aggregate_context_efficiency`) were left
+untouched, as specified. **Closeout note:** the executor produced all code and
+passed all four gates but did not fill this Update Log or commit; the architect
+filled the log and committed (the recurring local-LLM "code+gates done,
+bookkeeping skipped" pattern — see NEXT.md). No code changes were made at
+closeout; the diff is the executor's work verbatim.
+
+**Acceptance criteria:** all met (verified independently at review).
+
+**Commands (re-run independently at review):**
+
+```
+cargo fmt --all --check          → clean (exit 0)
+cargo build                      → Finished, zero warnings (exit 0)
+cargo clippy --all-targets --all-features -- -D warnings → clean (exit 0)
+cargo test                       → 706 passed / 0 failed / 2 ignored (executor)
+                                   293 passed / 0 failed (mcp)
+```
+
+**End-to-end verification:** `rexymcp status` over a hand-written fixture
+(`.rexymcp/sessions/session-phase-99-x.jsonl` = `session_start` + two
+`task_update` records, one `pending`/one `done`):
+
+```
+phase: phase-99  session: phase-99-x
+model: qwen
+state: running
+turn 0, stage <none>
+last update: 494738h02m ago
+tasks: 1/2 done (0 active)
+```
+
+The `tasks: 1/2 done (0 active)` line renders exactly as specified.
+
+**Files changed:**
+- `executor/src/store/sessions/event.rs` — `TaskState` enum + `TaskUpdate` variant.
+- `executor/src/agent/tasks.rs` (new) — pure `seed_from_spec` + helpers.
+- `executor/src/agent/mod.rs` — `mod tasks;` + seed-and-emit at turn 0.
+- `executor/src/agent/tests.rs` — `event_kind` arm + 2 loop integration tests.
+- `mcp/src/dashboard/filter.rs` — 7 filter sites + count 14→15.
+- `mcp/src/dashboard/transcript.rs` — `record_lines` arm.
+- `mcp/src/log_query.rs` — `event_type_str` arm.
+- `mcp/src/status.rs` — `StatusSummary` task fields + summarize fold + status line.
+
+**New tests:** `seeds_top_level_numbered_items`,
+`seeds_bold_title_strips_to_bold_span`, `seeds_plain_title_keeps_whole_remainder`,
+`ignores_indented_sub_items`, `ignores_decimal_like_numbers`,
+`ignores_items_outside_spec_section`, `empty_when_no_spec_section`,
+`parses_multi_digit_ids` (all in `agent/tasks.rs`);
+`loop_seeds_task_updates_from_spec`, `loop_emits_no_task_updates_when_spec_absent`
+(in `agent/tests.rs`); `summarize_folds_task_states_last_write_wins`,
+`summarize_no_tasks_when_absent`, `format_status_shows_tasks_line_when_present`,
+`format_status_omits_tasks_line_when_absent` (in `status.rs`); extended
+`filter_default_disables_progress`.
+
+**Notes for review:** none — clean, in-scope, all pinned positives/negatives
+covered.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_first_try (architect closeout of bookkeeping)
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — every Spec task landed, the new-variant match-arm
+  wall was traversed completely without any `LoopDeps`/`PhaseInput`/config churn
+  (the 06a/06b split's intended payoff), and the three non-exhaustive `_ =>`
+  matches were correctly left untouched.
+- **Calibration:** recurring local-LLM bookkeeping gap — the executor completed
+  all code and passed all four gates but did not fill the Update Log or commit
+  (architect closed out, no code change). This is the same "code+gates done,
+  Update-Log/commit skipped" pattern noted on M12 phase-01/02/05 and the M8/M9
+  closeouts; no new fold. The split-by-concern thesis is reinforced: isolating
+  the variant match-arm wall from the `LoopDeps` literal churn let the weak model
+  clear the full 12-site blast radius first-try with zero stall.

@@ -44,7 +44,7 @@ once.
 | 03 | Arc B — find-references in `symbols` (tree-sitter call-site search) ([phase-03-find-references.md](phase-03-find-references.md)) | done | feature | m |
 | 04 | Arc B — surface rustc machine-applicable suggested-fix spans ([phase-04-suggested-fixes.md](phase-04-suggested-fixes.md)) | done | feature | s |
 | 05 | Arc B — structured `cargo test` failure digest ([phase-05-structured-test-failures.md](phase-05-structured-test-failures.md)) | done | feature | m |
-| 06a | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, pure Spec seeder, `rexymcp status` consumer (unconditional emit; no gate) ([phase-06a-task-substrate.md](phase-06a-task-substrate.md)) | todo | feature | m |
+| 06a | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, pure Spec seeder, `rexymcp status` consumer (unconditional emit; no gate) ([phase-06a-task-substrate.md](phase-06a-task-substrate.md)) | done | feature | m |
 | 06b | Arc A — `[executor] task_tracking` gate + model-facing flip tool + prompt injection (the `LoopDeps`-field change + A/B off-switch) | todo | feature | m |
 | 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
 
