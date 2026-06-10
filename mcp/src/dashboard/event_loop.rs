@@ -19,6 +19,9 @@ pub(crate) fn run_loop(
     let mut follow = true;
     let mut spinner_tick: usize = 0;
     let mut filter_state = FilterState::default();
+    // Track record count so we can re-enable follow whenever new content arrives,
+    // regardless of whether the user previously scrolled away from the bottom.
+    let mut prev_record_count: usize = 0;
 
     loop {
         spinner_tick = spinner_tick.wrapping_add(1);
@@ -29,6 +32,12 @@ pub(crate) fn run_loop(
             .unwrap_or(0);
 
         let data = load_data(repo, session);
+        // New records arrived — snap back to the bottom so the live feed is always
+        // visible. This re-engages autoscroll even if the user previously scrolled up.
+        if data.records.len() > prev_record_count {
+            follow = true;
+        }
+        prev_record_count = data.records.len();
         let spinner_active = data.summary.ended.is_none() && data.error.is_none();
         let spinner = if spinner_active {
             Some(spinner_tick % SPINNER_FRAMES.len())
