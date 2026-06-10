@@ -1,7 +1,7 @@
 # Phase 04: Activity — distinct `<think>`/`</think>` block formatting in Completion bodies
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (done) — phase-02 made the Completion body soft-white via
 `plain_body_lines`; this phase replaces that single call with a think-aware
 renderer. No code dependency beyond the same `record_lines` Completion arm.
@@ -454,3 +454,29 @@ $ grep -r '</think>' mcp/src/dashboard/highlight.rs
 **Notes for review:** None — implementation follows the spec exactly.
 
 **Commit:** `feat: render <think>/</think> reasoning blocks dim+italic in transcript`
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — diff is exactly `highlight.rs` + `transcript.rs`
+  (plus this phase doc and the README row); no `Cargo.toml`, no
+  `filter.rs`/`render.rs`/`event_loop.rs`/`panels.rs`, no `SessionEvent`/config edit.
+- **Calibration:** none. Clean 42-turn first-try. All four gates re-run green
+  independently (fmt, build zero-warnings, clippy `-D warnings`, 725 executor +
+  full mcp suite). The two README-pinned negatives are both covered and
+  load-bearing: `completion_body_no_markers_matches_plain` asserts byte-identity
+  against `plain_body_lines` (rendered text + fg + modifier, so a stray italic or
+  color drift fails it), and `split_think_segments_handles_no_opening_tag` pins
+  the `</think>`-only → initial-think case. The cap test
+  (`record_lines_caps_long_content`) stays green unchanged — the new renderer
+  reuses `TRANSCRIPT_CONTENT_MAX_LINES` and the verbatim overflow marker. No
+  production `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`; the literal-marker
+  simplification is documented in the helper doc-comment per spec.
+
+  Cosmetic-only quirk (no fold): the Update Log self-stamps "Claude (Sonnet 4.5)"
+  and reports the executor's own `cargo test` as "725 passed" — the recurring
+  local-LLM identity/clock self-stamping quirk (the executor target is
+  Qwen/Qwen3.6-27B-FP8 per `rexymcp.toml`; machine records are correct; fixed for
+  future runs once `rexymcp serve` is restarted — still pending).
