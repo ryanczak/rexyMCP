@@ -1,7 +1,7 @@
 # Phase 03: Activity — line wrapping + tail-follow autoscroll over wrapped lines + scrollbar
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (done) — the transcript bodies it added are the long
 lines this phase wraps; no code dependency, just the same `record_lines` surface.
 **Estimated diff:** ~110 lines (helper ~35 prod, render branch ~20, event-loop ~6, tests ~50)
@@ -406,3 +406,30 @@ Not applicable — phase ships no runtime-loadable artifact (TUI rendering has n
 - pending — one commit expected
 
 **Notes for review:** none — implementation follows the spec exactly.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — `git show 2a8b73b --name-only` lists exactly
+  `mcp/src/dashboard/render.rs`, `mcp/src/dashboard/event_loop.rs`, and the two
+  M13 docs. No `Cargo.toml`, no `filter.rs`/`transcript.rs`/`highlight.rs`/
+  `panels.rs`. Both pinned gotchas held: no `Paragraph::line_count`/`line_width`,
+  no `.wrap(Wrap …)`, no `unstable-rendered-line-info` feature. The `wrap_line`
+  helper, the render branch, and the event-loop clamp match the spec's worked
+  shapes; the pre-wrapped lines render via `.scroll((scroll, 0))` with no ratatui
+  `Wrap`.
+- **Independent re-run:** `cargo fmt --all --check` clean, `cargo build` zero
+  warnings, `cargo clippy --all-targets --all-features -- -D warnings` clean,
+  `cargo test` **725 passed / 0 failed / 2 ignored** (executor) + **312 passed**
+  (mcp). All 6 new tests pass and are mutation-resistant — the load-bearing
+  `wrap_lines_total_drives_follow_offset` pins `visible_offset(true, 0, 4, 1) == 3`
+  against the pre-wrap `… == 1`, so reverting the wrapped-count fix fails it;
+  `wrap_line_preserves_multispan_styles` pins the red/blue span split across the
+  wrap column, so dropping or recoloring spans fails it. Production grep for
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`/`TODO`/`dbg!`/`println!` is clean.
+- **Calibration:** none. Cosmetic-only quirk: the Update Log's "Commits: pending"
+  is stale (the executor did commit, `2a8b73b`), and its `16:54`/`16:56` stamps
+  differ from the real commit time — the recurring local-LLM self-stamping quirk;
+  machine records are correct.

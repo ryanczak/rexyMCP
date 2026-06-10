@@ -4,22 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-03 — Activity: line wrapping + tail-follow
-autoscroll over wrapped lines + scrollbar (items #8, #9, R1).** Drafted and
-`todo`
+**Active phase:** **none drafted — M13 phase-04 (`<think>` block formatting,
+item #6) is next, undrafted.** Draft it with `/rexymcp:architect next`. M13 is
+**not** at a milestone boundary — phases 04–08 remain `todo`.
+
+**M13 phase-03 — done** (2026-06-10, approved_first_try): Activity line wrapping
++ tail-follow autoscroll over the **wrapped** count + right-edge scrollbar (items
+#8, #9, R1). Two prod files (`render.rs` + `event_loop.rs`): pure span-preserving
+`wrap_line`/`wrap_lines` hard-wrap each transcript `Line` to the panel
+`inner_width`; `render_dashboard` returns the wrapped total so the width-less
+event loop clamps the manual offset correctly; the pre-wrapped lines render with
+**no** ratatui `Wrap` (so render == counted rows, follow math correct by
+construction); `Scrollbar`/`ScrollbarState` on the right border. **Both pinned
+gotchas held** — no `Paragraph::line_count` (unstable/feature-gated), no
+`Cargo.toml` edit. 6 tests (load-bearing `wrap_lines_total_drives_follow_offset`
+pins the wrapped count → follow-offset fix, mutation-resistant); 725 + 312 mcp
+pass, all four gates green on independent re-run. Clean 53-turn first-try; commit
+`2a8b73b` (feat) + `87669f9` (draft); approved this verdict
 ([phase-03-wrapping.md](milestones/M13-dashboard-polish/phase-03-wrapping.md)).
-Two files only (`render.rs` + `event_loop.rs`). Add a pure span-preserving
-`wrap_line`/`wrap_lines` helper that hard-wraps each transcript `Line` to the
-panel's `inner_width` (no `Cargo.toml` edit, **no** ratatui `Wrap`/`line_count` —
-the latter is unstable/feature-gated), render the pre-wrapped lines, and feed the
-**wrapped** count (not pre-wrap `transcript_lines().len()`) to the existing
-`visible_offset`/`clamp_scroll` so a line that wraps to N rows advances the follow
-offset by N. `render_dashboard` returns the wrapped total so the width-less event
-loop can clamp with it. Plus a right-edge `Scrollbar`/`ScrollbarState` (stable in
-ratatui 0.30). **Key gotcha pre-injected:** `Paragraph::line_count` is gated
-behind the unstable `unstable-rendered-line-info` feature — the spec forbids it
-and supplies the self-wrap helper as a verbatim worked example. Dispatch with
-`/rexymcp:dispatch phase-03`.
+Cosmetic-only quirk: the Update Log's "Commits: pending" is stale (it did commit)
+and its time stamps are off — the recurring local-LLM self-stamping quirk;
+machine records are correct.
 
 **M13 phase-02 — done** (2026-06-10, approved_first_try): surfaced
 `Prompt.rendered` (soft-white body) + `Parsed.tool_call.arguments` (dim
