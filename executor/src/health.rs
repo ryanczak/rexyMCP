@@ -153,6 +153,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            task_tracking: true,
         };
         let health = check(&cfg).await;
         assert!(!health.reachable);

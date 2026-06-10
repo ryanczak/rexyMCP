@@ -248,6 +248,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            task_tracking: true,
         };
         let _c = make_client(&cfg);
     }
@@ -263,6 +264,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            task_tracking: true,
         };
         let _c = make_client(&cfg);
     }
@@ -278,6 +280,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            task_tracking: true,
         };
         let _c = make_client(&cfg);
     }

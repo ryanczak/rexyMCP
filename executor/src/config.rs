@@ -107,6 +107,12 @@ pub struct ExecutorConfig {
     /// Deterministic sampling seed sent on every chat request. `None` omits it.
     #[serde(default)]
     pub seed: Option<u64>,
+    /// Whether the loop seeds a per-session task list from the phase doc's
+    /// `## Spec` and emits `TaskUpdate` events as the executor flips state
+    /// (M12 Arc A). Default on; set false for a control run with no task
+    /// tracking (the seeding emit is byte-for-byte suppressed).
+    #[serde(default = "default_task_tracking")]
+    pub task_tracking: bool,
 }
 
 fn default_first_token_timeout_secs() -> u64 {
@@ -115,6 +121,10 @@ fn default_first_token_timeout_secs() -> u64 {
 
 fn default_stream_idle_timeout_secs() -> u64 {
     240
+}
+
+fn default_task_tracking() -> bool {
+    true
 }
 
 impl Default for ExecutorConfig {
@@ -128,6 +138,7 @@ impl Default for ExecutorConfig {
             stream_idle_timeout_secs: default_stream_idle_timeout_secs(),
             temperature: None,
             seed: None,
+            task_tracking: default_task_tracking(),
         }
     }
 }
@@ -660,5 +671,62 @@ runaway_output_bytes = 204800
         assert_eq!(cfg.governor.identical_call_threshold, 10);
         assert_eq!(cfg.governor.verifier_persistence_threshold, 8);
         assert_eq!(cfg.governor.runaway_output_bytes, 204800);
+    }
+
+    #[test]
+    fn executor_task_tracking_defaults_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert!(
+            cfg.executor.task_tracking,
+            "executor.task_tracking should default to true when absent"
+        );
+    }
+
+    #[test]
+    fn executor_task_tracking_can_be_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+task_tracking = false
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert!(
+            !cfg.executor.task_tracking,
+            "executor.task_tracking should be false when explicitly set"
+        );
     }
 }

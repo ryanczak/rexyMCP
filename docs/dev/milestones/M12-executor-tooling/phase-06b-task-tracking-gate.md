@@ -1,7 +1,7 @@
 # Phase 06b: Task-tracking gate — `[executor] task_tracking` + `LoopDeps` field
 
 **Milestone:** M12 — Executor Tooling
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06a (done)
 **Estimated diff:** ~120 lines (≈45 prod + ≈75 test)
 **Tags:** language=rust, kind=feature, size=s
@@ -318,3 +318,77 @@ Do **not**, in this phase:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 (progress)
+
+**Executor:** Claude (direct)
+
+Added `[executor] task_tracking` config field (default `true`), threaded it through `LoopDeps`, gated the 06a seed-and-emit block, and wired all 12 construction sites (1 struct, 1 production, 11 test). Added 4 tests: 2 config round-trip + 2 loop integration (off/on). Updated `rexymcp init` template with the commented config line.
+
+### Update — 2026-06-10 (complete)
+
+**Summary:** Implemented the `[executor] task_tracking` kill-switch for M12 Arc A's task-tracking substrate. Added a default-on bool to `ExecutorConfig`, a corresponding `LoopDeps` field, and gated the 06a seeding emit behind `if deps.task_tracking`. All 12 `LoopDeps` construction sites updated (compiler-guided for the 9 standalone test literals). Config field round-trips through TOML deserialization and the `rexymcp init` scaffolder.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean, exit 0)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.1s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.5s
+
+cargo test 2>&1 | tail -30
+test result: ok. 710 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+
+```
+$ cargo run -p rexymcp -- init --dir <tmpdir>
+wrote rexymcp.toml
+$ grep task_tracking <tmpdir>/rexymcp.toml
+# task_tracking = true            # seed + track a per-session task list from the phase Spec (M12)
+```
+
+The generated `rexymcp.toml` contains the documented `task_tracking` line as a commented default.
+
+**Grep for spec-pinned literal:**
+```
+$ grep -rn 'task_tracking' executor/src/config.rs mcp/src/init.rs executor/src/agent/mod.rs mcp/src/runner.rs
+executor/src/config.rs:113:    #[serde(default = "default_task_tracking")]
+executor/src/config.rs:114:    pub task_tracking: bool,
+executor/src/config.rs:127:fn default_task_tracking() -> bool {
+executor/src/config.rs:142:            task_tracking: default_task_tracking(),
+executor/src/agent/mod.rs:111:    pub task_tracking: bool,
+executor/src/agent/mod.rs:185:    if deps.task_tracking {
+mcp/src/runner.rs:198:        task_tracking: inp.cfg.executor.task_tracking,
+mcp/src/init.rs:15:# task_tracking = true            # seed + track a per-session task list from the phase Spec (M12)
+```
+
+**Files changed:**
+- `executor/src/config.rs` — added `task_tracking` field to `ExecutorConfig`, default helper, `Default` impl, 2 config tests
+- `executor/src/agent/mod.rs` — added `task_tracking` field to `LoopDeps`, gated the seed-and-emit block
+- `executor/src/agent/tests.rs` — added `task_tracking: true` to `deps()` helper + 9 standalone literals, 2 new integration tests
+- `executor/src/ai/mod.rs` — added `task_tracking: true` to 3 test `ExecutorConfig` literals
+- `executor/src/health.rs` — added `task_tracking: true` to 1 test `ExecutorConfig` literal
+- `mcp/src/runner.rs` — wired `task_tracking` from config to `LoopDeps` in production
+- `mcp/src/init.rs` — added commented `task_tracking` line to template
+- `docs/dev/milestones/M12-executor-tooling/phase-06b-task-tracking-gate.md` — status flip + Update Log
+- `docs/dev/milestones/M12-executor-tooling/README.md` — phase table status flip
+
+**New tests:**
+- `executor_task_tracking_defaults_on` in `executor/src/config.rs`
+- `executor_task_tracking_can_be_disabled` in `executor/src/config.rs`
+- `loop_emits_no_task_updates_when_tracking_off` in `executor/src/agent/tests.rs`
+- `loop_still_seeds_task_updates_when_tracking_on` in `executor/src/agent/tests.rs`
+
+**Commits:**
+- (pending) — `feat: add [executor] task_tracking config gate for task-tracking substrate`
+
+**Notes for review:** None — clean implementation, no deviations from spec.

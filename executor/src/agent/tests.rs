@@ -101,6 +101,7 @@ fn deps<'a>(
         progress: None,
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     }
 }
 
@@ -848,6 +849,7 @@ async fn injected_clock_sets_record_ts() {
         progress: None,
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     };
 
     execute_phase(&input(), d).await.unwrap();
@@ -968,6 +970,7 @@ async fn run_with_verifier(
         progress: None,
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     };
     execute_phase(&input(), d).await.unwrap()
 }
@@ -1634,6 +1637,7 @@ async fn run_full_with_context_window(
         progress: None,
         context_window,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     };
     execute_phase(&input(), d).await.unwrap()
 }
@@ -2388,6 +2392,7 @@ fn deps_with_progress_simple<'a>(
         progress: Some(capture),
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     }
 }
 
@@ -2461,6 +2466,7 @@ impl<'a> DepsBuilder<'a> {
             progress: Some(self.capture),
             context_window: None,
             governor: GovernorConfig::default(),
+            task_tracking: true,
         }
     }
 }
@@ -2646,6 +2652,7 @@ async fn callback_panic_is_not_caught() {
         progress: Some(&PanicCallback),
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     };
     execute_phase(&input(), d).await.unwrap();
 }
@@ -3405,6 +3412,7 @@ async fn loop_emits_output_filtered_event_for_filtered_bash() {
             progress: None,
             context_window: None,
             governor: GovernorConfig::default(),
+            task_tracking: true,
         },
     )
     .await
@@ -3601,6 +3609,7 @@ async fn loop_seeds_task_updates_from_spec() {
         progress: None,
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -3664,6 +3673,7 @@ async fn loop_emits_no_task_updates_when_spec_absent() {
         progress: None,
         context_window: None,
         governor: GovernorConfig::default(),
+        task_tracking: true,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -3681,4 +3691,86 @@ async fn loop_emits_no_task_updates_when_spec_absent() {
         task_updates.is_empty(),
         "expected zero task_update records when no ## Spec section"
     );
+}
+
+// ── 06b: task-tracking gate ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn loop_emits_no_task_updates_when_tracking_off() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc =
+        "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n3. **Third** — last\n";
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let _verifier = MockFileVerifier::new(vec![]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let mut d = deps(&client, &registry, &budget, 8, dir.path());
+    d.task_tracking = false;
+
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let task_updates: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::TaskUpdate { .. }))
+        .collect();
+
+    assert!(
+        task_updates.is_empty(),
+        "expected zero task_update records when task_tracking is off (got {})",
+        task_updates.len()
+    );
+}
+
+#[tokio::test]
+async fn loop_still_seeds_task_updates_when_tracking_on() {
+    let dir = TempDir::new().unwrap();
+    let phase_doc =
+        "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n3. **Third** — last\n";
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let _verifier = MockFileVerifier::new(vec![]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let d = deps(&client, &registry, &budget, 8, dir.path());
+
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let task_updates: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::TaskUpdate { .. }))
+        .collect();
+
+    assert_eq!(
+        task_updates.len(),
+        3,
+        "expected exactly 3 task_update records when task_tracking is on"
+    );
+
+    for (i, rec) in task_updates.iter().enumerate() {
+        if let SessionEvent::TaskUpdate { state, .. } = &rec.event {
+            assert_eq!(
+                *state,
+                crate::store::sessions::event::TaskState::Pending,
+                "task {} should be Pending",
+                i
+            );
+        } else {
+            panic!("expected TaskUpdate, got {:?}", rec.event);
+        }
+    }
+
+    assert_eq!(task_updates[0].turn, 0, "task updates should be at turn 0");
 }

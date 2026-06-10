@@ -106,6 +106,10 @@ pub struct LoopDeps<'a> {
     pub progress: Option<&'a dyn ProgressCallback>,
     /// Governor hard-fail thresholds — read from `[governor]` in rexymcp.toml.
     pub governor: GovernorConfig,
+    /// Whether to seed + emit the M12 Arc A task list. Read from
+    /// `[executor] task_tracking` (default true). Off → zero `TaskUpdate`
+    /// events, byte-identical to pre-06a behavior.
+    pub task_tracking: bool,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -178,20 +182,22 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         },
     );
 
-    // Task-tracking substrate (M12 Arc A / phase-06a): seed the TODO list from
-    // the phase doc's Spec and broadcast it as one `pending` TaskUpdate each.
-    for task in tasks::seed_from_spec(&input.phase_doc) {
-        log_event(
-            &log_handle,
-            &redactor,
-            deps.clock,
-            0,
-            SessionEvent::TaskUpdate {
-                id: task.id,
-                title: task.title,
-                state: task.state,
-            },
-        );
+    // Task-tracking substrate (M12 Arc A). Gated by [executor] task_tracking
+    // (06b): off → no seeding, byte-identical to pre-06a.
+    if deps.task_tracking {
+        for task in tasks::seed_from_spec(&input.phase_doc) {
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                0,
+                SessionEvent::TaskUpdate {
+                    id: task.id,
+                    title: task.title,
+                    state: task.state,
+                },
+            );
+        }
     }
 
     loop {

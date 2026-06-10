@@ -197,6 +197,7 @@ async fn run_phase_with(
         progress: inp.progress,
         context_window: inp.context_window,
         governor: inp.cfg.governor,
+        task_tracking: inp.cfg.executor.task_tracking,
     };
 
     agent::execute_phase(&input, deps).await

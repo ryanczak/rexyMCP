@@ -14,6 +14,7 @@ base_url = "http://localhost:1234/v1"
 # temperature = 0.2               # sampling temperature (omit for endpoint default)
 # first_token_timeout_secs = 600  # wait before first token in seconds (default 600)
 # stream_idle_timeout_secs = 240  # gap between tokens before timeout (default 240)
+# task_tracking = true            # seed + track a per-session task list from the phase Spec (M12)
 
 [budget]
 context_length = 32768            # model context window in tokens
