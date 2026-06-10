@@ -4,22 +4,32 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-02 — Activity: surface injected context
-(`Prompt.rendered`) + tool-call arguments (`Parsed.tool_call.arguments`).**
-Drafted and `todo`
-([phase-02-payloads.md](milestones/M13-dashboard-polish/phase-02-payloads.md)).
-Two additive arms in `transcript.rs::record_lines`: attach the prompt's
-`rendered` text as a soft-white body (copy the `Completion` arm's
-`plain_body_lines(.., Rgb(200,200,200))` shape) and the `Parsed` call's
-`arguments` JSON as a **dimmed** `Rgb(128,128,128)` body (item R4), header-only
-when args are `{}`/null. No filter/render/scroll/wrap change — the existing
-`prompt`/`tool call` toggles and the `body_lines` 20-line cap apply for free;
-wrapping is phase-03. Dispatch with `/rexymcp:dispatch phase-02`.
+**Active phase:** **M13 phase-03 — Activity: line wrapping + tail-follow
+autoscroll over wrapped lines + scrollbar (items #8, #9, R1).** Drafted and
+`todo`
+([phase-03-wrapping.md](milestones/M13-dashboard-polish/phase-03-wrapping.md)).
+Two files only (`render.rs` + `event_loop.rs`). Add a pure span-preserving
+`wrap_line`/`wrap_lines` helper that hard-wraps each transcript `Line` to the
+panel's `inner_width` (no `Cargo.toml` edit, **no** ratatui `Wrap`/`line_count` —
+the latter is unstable/feature-gated), render the pre-wrapped lines, and feed the
+**wrapped** count (not pre-wrap `transcript_lines().len()`) to the existing
+`visible_offset`/`clamp_scroll` so a line that wraps to N rows advances the follow
+offset by N. `render_dashboard` returns the wrapped total so the width-less event
+loop can clamp with it. Plus a right-edge `Scrollbar`/`ScrollbarState` (stable in
+ratatui 0.30). **Key gotcha pre-injected:** `Paragraph::line_count` is gated
+behind the unstable `unstable-rendered-line-info` feature — the spec forbids it
+and supplies the self-wrap helper as a verbatim worked example. Dispatch with
+`/rexymcp:dispatch phase-03`.
 
+**M13 phase-02 — done** (2026-06-10, approved_first_try): surfaced
+`Prompt.rendered` (soft-white body) + `Parsed.tool_call.arguments` (dim
+`Rgb(128,128,128)`, header-only on `{}`/null) as transcript bodies in
+`record_lines`; 4 tests; 725 pass. Commit `1c06116` (feat) + `f6ee6c3` (approve)
+([phase-02-payloads.md](milestones/M13-dashboard-polish/phase-02-payloads.md)).
 M13 phase-01 — Legibility (dark-grey → `Rgb(200,200,200)`) is **done** and
 approved (approved_first_try, 2026-06-10) —
 ([phase-01-contrast.md](milestones/M13-dashboard-polish/phase-01-contrast.md)).
-Phases 03–08 remain `todo` and undrafted; draft the next one on demand with
+Phases 04–08 remain `todo` and undrafted; draft the next one on demand with
 `/rexymcp:architect next`.
 
 **📌 M13 — Dashboard Polish kicked off (2026-06-10, with the user).** Milestone

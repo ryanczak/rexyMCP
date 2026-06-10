@@ -51,7 +51,7 @@ once.
 |---|---|---|---|---|---|
 | 01 | Legibility — raise all `Color::DarkGray` text to `Rgb(200,200,200)` ([phase-01-contrast.md](phase-01-contrast.md)) | done | feature | s | #1 |
 | 02 | Activity — surface injected context (`Prompt.rendered`) + tool-call arguments (`Parsed.tool_call.arguments`) ([phase-02-payloads.md](phase-02-payloads.md)) | done | feature | s | #2, #3 |
-| 03 | Activity — word/line wrapping + tail-follow autoscroll over wrapped lines + scrollbar | todo | feature | m | #8, #9, R1 |
+| 03 | Activity — line wrapping + tail-follow autoscroll over wrapped lines + scrollbar ([phase-03-wrapping.md](phase-03-wrapping.md)) | todo | feature | m | #8, #9, R1 |
 | 04 | Activity — distinct `<think>`/`</think>` block formatting in Completion bodies | todo | feature | m | #6 |
 | 05 | Session/Budget — move `last update:` to Budget; add session `duration:` to Session (new `started_at` capture) | todo | feature | m | #4, #5 |
 | 06 | Session — full-width spinner carrying live `turn N · stage` status | todo | feature | m | #10, R5 |
