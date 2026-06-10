@@ -44,7 +44,8 @@ once.
 | 03 | Arc B — find-references in `symbols` (tree-sitter call-site search) ([phase-03-find-references.md](phase-03-find-references.md)) | done | feature | m |
 | 04 | Arc B — surface rustc machine-applicable suggested-fix spans ([phase-04-suggested-fixes.md](phase-04-suggested-fixes.md)) | done | feature | s |
 | 05 | Arc B — structured `cargo test` failure digest ([phase-05-structured-test-failures.md](phase-05-structured-test-failures.md)) | done | feature | m |
-| 06 | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, Spec-seeded list, config-gated (`task_tracking`, default on) | todo | feature | l |
+| 06a | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, pure Spec seeder, `rexymcp status` consumer (unconditional emit; no gate) ([phase-06a-task-substrate.md](phase-06a-task-substrate.md)) | todo | feature | m |
+| 06b | Arc A — `[executor] task_tracking` gate + model-facing flip tool + prompt injection (the `LoopDeps`-field change + A/B off-switch) | todo | feature | m |
 | 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
 
 ## Exit criteria
@@ -129,8 +130,28 @@ once.
 - **Phase 01/02/03 reuse existing parsers** — quote the current `symbols`
   tree-sitter query shape and the verifier's cargo-JSON `Diagnostic` parsing as
   worked examples; do not say "follow the existing pattern."
-- The **off-switch byte-identity** requirement (phase 04) is a pinned negative
-  case: a test must assert that with `task_tracking = false` no `TaskUpdate` event
-  is emitted and the prompt/transcript are unchanged.
+- The **off-switch byte-identity** requirement is a pinned negative case: a test
+  must assert that with `task_tracking = false` no `TaskUpdate` event is emitted
+  and the prompt/transcript are unchanged. **This lives in phase-06b** (where the
+  gate exists), not 06a.
+
+### Phase-06 split decision (2026-06-09, drafting `/architect next`)
+
+The single `l` phase-06 was split into **06a / 06b** to isolate two stall-class
+risks the calibration history flags (NEXT.md): the new-`SessionEvent`-variant
+exhaustive-match wall (M10 phase-03/04/06) and the cross-crate struct-literal
+churn (phase-08a's 9-site `LoopDeps`/literal wall).
+
+- **06a (drafted)** — the `TaskUpdate` variant + the pure `seed_from_spec`
+  parser + the loop emitting one `pending` update per Spec item **unconditionally**
+  + a `rexymcp status` consumer. Its only *logic* is one pure parser; it adds
+  **no** `LoopDeps`/`PhaseInput`/config field, so it carries the variant
+  match-arm wall **without** the struct-literal churn. Emitting unconditionally
+  is harmless (additive log events + a status line; no model-facing change).
+- **06b** — adds the `[executor] task_tracking` gate (the `LoopDeps` field — the
+  9-site literal churn, pre-injectable as a complete site list), the model-facing
+  flip tool, and prompt injection. The gate wraps 06a's seeding and controls the
+  prompt/tool together, so the A/B off-switch (off → byte-identical model
+  behavior) is meaningful and testable here.
 
 <!-- retrospective written here after milestone close -->

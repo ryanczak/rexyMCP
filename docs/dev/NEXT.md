@@ -4,36 +4,34 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — phase-05 approved (approved_after_1, 2026-06-09).
-M12 Arc B is complete (03/04/05 all done); Arc A (phases 06–07) is next. Awaiting
-`/rexymcp:architect next` to draft + activate phase-06 (the `SessionEvent::TaskUpdate`
-substrate — see the README watch-item on its `dashboard/filter.rs` seven-arm wall).
+**Active phase:** **[phase-06a](milestones/M12-executor-tooling/phase-06a-task-substrate.md)**
+— drafted + activated 2026-06-09 (`/rexymcp:architect next`). Awaiting
+`/rexymcp:dispatch phase-06a`. M12 Arc B is complete (03/04/05 all done); Arc A
+(phases 06a/06b/07) is now in progress.
 
-**phase-05 scope (active — M12 Arc B):** distill `cargo test` failures into a
-compact **digest** prepended to the M10 cargo filter output. **Single-file,
-additive** — `executor/src/context/output_filter.rs` only. Adds a module-private
-`TestFailure { name, location, detail }` parse intermediate (no serde, not
-exported), a pure `parse_test_failures(normalized)` that reads libtest's
-`---- <name> stdout ----` / `thread '…' (<id>) panicked at <loc>:` / `left:`/
-`right:` blocks into one record per failed test, a pure
-`format_failure_digest(&[TestFailure])` (returns `""` when empty), and a
-**prepend hook in `cargo_filter`** (`(format!("{digest}{body}"), truncated)` on
-every return path; existing truncation/recovery behavior unchanged). The model
-sees `=== Test failures (N) ===` + one `test <name> failed at <loc> — <detail>`
-line per failure *before* the verbose blocks. **No new `ToolResult`/`SessionEvent`
-field, no new consumer** — the record's consumer (the model reading bash output)
-exists today; per WORKFLOW § "Derive intentionally" we add no dead structure
-(the M10 08a/08d churn lesson). **Pinned correctness boundaries:** `left`/`right`
-surfaced **verbatim** (no fabricated "expected/actual" relabel — arg-order
-unknowable); bare `assert!`/`panic!` surface the message, no invented left/right;
-**passing output → empty digest → byte-identical to today** (existing
-`cargo_filter_*`/`normalize_*`/`compact_*` tests green). **Two real, verbatim
-`cargo test --color=never` fixtures pre-injected** (FAIL: 3 failures exercising
-assert_eq/assert!-message/panic!; PASS: the pinned negative) — the live capture
-revealed the recent `(<threadid>)` token older Rust omits, so a Pre-flight pins
-"verify libtest format live, trust it over the sketch." ~7 new tests. No new dep,
-no shell-out (parses text the bash tool already captured), no `tsc`/`pytest`
-parsing. Executor target: Qwen/Qwen3.6-27B-FP8.
+**phase-06a scope (active — M12 Arc A, substrate):** the task-tracking
+**substrate**, deliberately split out of the original `l` phase-06 to isolate the
+new-`SessionEvent`-variant match-arm wall (M10 03/04/06 class) **without** the
+9-site `LoopDeps`-literal churn (phase-08a class). Adds `TaskState`
+(Pending/Active/Done) + `SessionEvent::TaskUpdate { id, title, state }` in
+`event.rs`; a new pure `executor/src/agent/tasks.rs` with `seed_from_spec(phase_doc)`
+that parses the **top-level** numbered `## Spec` items into `Pending` tasks (pinned
+negatives: indented sub-items, `1.5x`-style decimals, out-of-section lines, no-Spec
+→ empty; std-string parsing, **no `regex` dep**, no `unwrap` per bug-05-1); the loop
+emits one `pending` `TaskUpdate` per seeded item at turn 0 **unconditionally** (no
+config gate, **no `LoopDeps`/`PhaseInput` field** — that is 06b); plus the full
+variant blast radius (`filter.rs` 7 sites, `transcript.rs` `record_lines`,
+`log_query::event_type_str`, `agent/tests.rs` `event_kind`) and a `rexymcp status`
+consumer (`StatusSummary` task counts + a `tasks: D/T done (A active)` line,
+last-write-wins per id). The non-exhaustive `_ =>` matches (`cap.rs`,
+`matches_tool_name_filter`, `aggregate_context_efficiency`) stay untouched. ~330
+lines (~150 prod + ~180 test). E2E: `rexymcp status` over a hand-written
+`task_update` JSONL fixture shows the tasks line. Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**06b (next to draft after 06a):** the `[executor] task_tracking` gate (the
+`LoopDeps` field — pre-inject the 9-site literal list as pre-completed work, or add
+a test `LoopDeps` builder), the model-facing flip tool, prompt injection, and the
+A/B off-switch byte-identity negative test.
 
 **Prior active-phase pointer (now done):**
 
