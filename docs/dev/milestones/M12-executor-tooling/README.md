@@ -43,7 +43,7 @@ once.
 | 02 | Arc 0 — `rexymcp doctor` toolchain-availability command ([phase-02-doctor.md](phase-02-doctor.md)) | done | feature | m |
 | 03 | Arc B — find-references in `symbols` (tree-sitter call-site search) ([phase-03-find-references.md](phase-03-find-references.md)) | done | feature | m |
 | 04 | Arc B — surface rustc machine-applicable suggested-fix spans ([phase-04-suggested-fixes.md](phase-04-suggested-fixes.md)) | done | feature | s |
-| 05 | Arc B — structured `cargo test` failure parsing (expected-vs-actual) | todo | feature | m |
+| 05 | Arc B — structured `cargo test` failure digest ([phase-05-structured-test-failures.md](phase-05-structured-test-failures.md)) | todo | feature | m |
 | 06 | Arc A — task-tracking substrate: `SessionEvent::TaskUpdate`, Spec-seeded list, config-gated (`task_tracking`, default on) | todo | feature | l |
 | 07 | Arc A — dashboard `Tasks` panel above Files (Files height halved) | todo | feature | m |
 

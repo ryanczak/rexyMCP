@@ -4,33 +4,64 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-04** — drafted + activated 2026-06-09, status `todo`,
-awaiting `/rexymcp:dispatch phase-04`
-([phase-04-suggested-fixes.md](milestones/M12-executor-tooling/phase-04-suggested-fixes.md)).
+**Active phase:** **phase-05** — drafted + activated 2026-06-09, status `todo`,
+awaiting `/rexymcp:dispatch phase-05`
+([phase-05-structured-test-failures.md](milestones/M12-executor-tooling/phase-05-structured-test-failures.md)).
 
-**phase-04 scope (active — M12 Arc B):** surface rustc's **machine-applicable**
-`suggested_replacement` spans to the model. **Single-file, additive** —
-`executor/src/governor/verifier.rs` only. Adds a private recursive
-`collect_machine_suggestions(message)` helper that walks a rustc diagnostic's
-`children` for `help` spans carrying a string `suggested_replacement` +
-`suggestion_applicability == "MachineApplicable"`, and **appends** one
+**phase-05 scope (active — M12 Arc B):** distill `cargo test` failures into a
+compact **digest** prepended to the M10 cargo filter output. **Single-file,
+additive** — `executor/src/context/output_filter.rs` only. Adds a module-private
+`TestFailure { name, location, detail }` parse intermediate (no serde, not
+exported), a pure `parse_test_failures(normalized)` that reads libtest's
+`---- <name> stdout ----` / `thread '…' (<id>) panicked at <loc>:` / `left:`/
+`right:` blocks into one record per failed test, a pure
+`format_failure_digest(&[TestFailure])` (returns `""` when empty), and a
+**prepend hook in `cargo_filter`** (`(format!("{digest}{body}"), truncated)` on
+every return path; existing truncation/recovery behavior unchanged). The model
+sees `=== Test failures (N) ===` + one `test <name> failed at <loc> — <detail>`
+line per failure *before* the verbose blocks. **No new `ToolResult`/`SessionEvent`
+field, no new consumer** — the record's consumer (the model reading bash output)
+exists today; per WORKFLOW § "Derive intentionally" we add no dead structure
+(the M10 08a/08d churn lesson). **Pinned correctness boundaries:** `left`/`right`
+surfaced **verbatim** (no fabricated "expected/actual" relabel — arg-order
+unknowable); bare `assert!`/`panic!` surface the message, no invented left/right;
+**passing output → empty digest → byte-identical to today** (existing
+`cargo_filter_*`/`normalize_*`/`compact_*` tests green). **Two real, verbatim
+`cargo test --color=never` fixtures pre-injected** (FAIL: 3 failures exercising
+assert_eq/assert!-message/panic!; PASS: the pinned negative) — the live capture
+revealed the recent `(<threadid>)` token older Rust omits, so a Pre-flight pins
+"verify libtest format live, trust it over the sketch." ~7 new tests. No new dep,
+no shell-out (parses text the bash tool already captured), no `tsc`/`pytest`
+parsing. Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
+
+**phase-04 approved 2026-06-09 (approved_first_try).**
+
+**phase-04 done** (2026-06-09, approved_first_try): M12 Arc B's second
+code-intelligence win — surfaced rustc's **machine-applicable**
+`suggested_replacement` spans to the model. Single-file, additive
+(`executor/src/governor/verifier.rs`, +57/-1 prod). Private recursive
+`collect_machine_suggestions`/`collect_suggestions_into` walk a rustc
+diagnostic's `children` for `help` spans carrying a string `suggested_replacement`
++ `suggestion_applicability == "MachineApplicable"`, and **append** one
 `rustc suggests (machine-applicable): replace at line L:C with \`REPL\` — <help>`
-line per suggestion to the `Diagnostic.message` string inside `parse_cargo_line`.
-**No new `Diagnostic` field / no `Suggestion` struct** — that would break ~33
-`Diagnostic { … }` literals across 9 files in both crates (the M10 08a/08d
-struct-literal-churn stall class); message-enrichment touches one function,
-breaks zero literals, changes zero existing tests, and the suggestion flows to
-the retry message / briefing / JSONL for free (`render_diagnostics` unchanged).
-**Pinned correctness boundary:** only `MachineApplicable` is surfaced —
-`MaybeIncorrect` / `HasPlaceholders` / `Unspecified` / `null` are excluded
-(three **real, verbatim** rustc-JSON fixtures pre-injected: A=E0596 `mut `
-MachineApplicable → surfaced; B=E0308 `.expect("REASON")` HasPlaceholders →
-excluded; C=E0425 `foo` MaybeIncorrect → excluded). When no machine-applicable
-suggestion is present, `message` is byte-identical to today (existing parse tests
-green). ~4-5 new tests in `verifier_tests.rs`. No new dep, no shell-out (parses
-JSON already captured by the existing `cargo check`), no `SessionEvent`/dashboard
-touch. **Out of scope:** `tsc`/`ruff` suggestions, warning-level suggestions, the
-other Arc B phases. Executor target: Qwen/Qwen3.6-27B-FP8.
+line per suggestion to the `Diagnostic.message` inside `parse_cargo_line`. **No
+new `Diagnostic` field / no `Suggestion` struct** — the ~33-literal churn was
+dodged; `Diagnostic`/`DiagnosticSignature`/`signature()`/`render_diagnostics`
+byte-untouched; the suggestion flows to retry message / briefing / JSONL for free.
+**Pinned boundary held**: only `MachineApplicable` surfaced — the two exclusion
+tests use exact `==` on real Fixtures B (E0308 HasPlaceholders) / C (E0425
+MaybeIncorrect), mutation-resistant (a "surface everything" impl fails them);
+no-suggestion path byte-identical (existing parse tests green). 4 new tests in
+`verifier_tests.rs` over three real verbatim rustc-JSON fixtures. **689 passed /
+0 failed / 2 ignored**, all four gates re-run green independently; production
+clean of `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`. Clean **34-turn
+first-try** with full bookkeeping (status flip + Update Log + `feat:` commit
+`d02f40d`); approved `070928f`. No nits, no fold. No new dep. Cosmetic-only
+quirk: Update Log self-stamps `00:00`/"rexyMCP executor" (the recurring local-LLM
+clock/identity quirk; phase-06 datetime injection fixes it once `rexymcp serve`
+is restarted — still pending below).
 
 **Prior active-phase pointer (now done):**
 
