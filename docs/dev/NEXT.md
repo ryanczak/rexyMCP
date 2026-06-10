@@ -4,15 +4,11 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-01 — Legibility (dark-grey → `Rgb(200,200,200)`).**
-Drafted and `todo`
+**Active phase:** **none.** M13 phase-01 — Legibility (dark-grey →
+`Rgb(200,200,200)`) is **done** and approved (approved_first_try, 2026-06-10) —
 ([phase-01-contrast.md](milestones/M13-dashboard-polish/phase-01-contrast.md)).
-The milestone's lowest-risk shape: a grep-verified 7-site mechanical color swap in
-`mcp/src/dashboard/` (`render.rs`, `transcript.rs`, `highlight.rs`) with the target
-`Color::Rgb(200, 200, 200)` already present at two call sites (`transcript.rs:68`,
-`highlight.rs:145`) to copy. No new dep/event/config; the negative-case diff test
-(must NOT recolor `+`/`-` lines) proves the edit was surgical. Dispatch with
-`/rexymcp:dispatch phase-01`.
+Phases 02–08 remain `todo` and undrafted; draft the next one on demand with
+`/rexymcp:architect next`.
 
 **📌 M13 — Dashboard Polish kicked off (2026-06-10, with the user).** Milestone
 [README](milestones/M13-dashboard-polish/README.md) written; `architecture.md`

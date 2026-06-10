@@ -1,7 +1,7 @@
 # Phase 01: Legibility — raise dark-grey dashboard text to `Rgb(200,200,200)`
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~15 lines prod + ~4 small tests
 **Tags:** language=rust, kind=feature, size=s
@@ -190,6 +190,26 @@ at each site matches the two existing call sites; keep that shape.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor
+- **Scope deviations:** none
+- **Calibration:** none
+
+Re-ran all four gates independently: `cargo fmt --all --check`, `cargo build`
+(zero warnings), `cargo clippy --all-targets --all-features -- -D warnings`,
+and `cargo test` (725 passed, 0 failed, 2 ignored) — all green.
+`grep -rn "DarkGray" mcp/src/` returns zero matches. The diff is surgical:
+exactly the seven listed sites in `render.rs`/`transcript.rs`/`highlight.rs`,
+each `Color::DarkGray` → `Color::Rgb(200, 200, 200)`, no adjacent code touched.
+The four added tests are real (assert on span `fg`, fail if reverted to
+`DarkGray`); `diff_context_line_uses_soft_white` carries the load-bearing
+negative — it pins that the `+`/`-` lines keep their green/red
+(`Rgb(180,242,180)`/`Rgb(242,180,180)`) and the hunk header stays `Cyan`,
+proving the recolor did not bleed into the diff add/remove styling.
 
 ### Update — 2026-06-10 00:00 (started)
 
