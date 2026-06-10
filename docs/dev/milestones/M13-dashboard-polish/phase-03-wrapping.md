@@ -1,7 +1,7 @@
 # Phase 03: Activity — line wrapping + tail-follow autoscroll over wrapped lines + scrollbar
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** todo
+**Status:** review
 **Depends on:** phase-02 (done) — the transcript bodies it added are the long
 lines this phase wraps; no code dependency, just the same `record_lines` surface.
 **Estimated diff:** ~110 lines (helper ~35 prod, render branch ~20, event-loop ~6, tests ~50)
@@ -355,3 +355,54 @@ Do **not**:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 16:54 (progress)
+
+Implementing wrap helpers, updating render_dashboard to return wrapped line count, adding scrollbar, updating event_loop clamp, and writing unit tests.
+
+### Update — 2026-06-10 16:56 (complete)
+
+**Summary:** Added `wrap_line` / `wrap_lines` pure helpers in `render.rs` that hard-wrap styled `Line`s to a given character width, preserving span styles by splitting spans at the wrap column. Updated `render_dashboard` to return `usize` (the wrapped line total), so the event loop can clamp the manual scroll offset against the correct wrapped count. Added a `Scrollbar` on the right edge of the Activity panel. Updated `event_loop.rs` to capture the returned wrapped total and removed the now-unused `transcript_lines` import. Six unit tests added covering all acceptance criteria.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.6s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp v0.1.0 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.7s
+
+cargo test 2>&1 | tail -30
+test result: ok. 725 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact (TUI rendering has no headless harness; consistent with prior dashboard-panel phases M8/M10/M12 and M13 phase-01/02). Verification is the pure-function `wrap_line` / `wrap_lines` / `visible_offset` assertions plus the `cargo` gates.
+
+**Files changed:**
+- `mcp/src/dashboard/render.rs` — added `wrap_line`/`wrap_lines` helpers, updated `render_dashboard` to return wrapped line count, added scrollbar rendering, added 6 unit tests
+- `mcp/src/dashboard/event_loop.rs` — capture wrapped total from render, clamp against it, removed unused `transcript_lines` import
+- `docs/dev/milestones/M13-dashboard-polish/phase-03-wrapping.md` — status flip to review, Update Log entries
+- `docs/dev/milestones/M13-dashboard-polish/README.md` — phase table row updated to review
+
+**New tests:**
+- `wrap_line_splits_long_line_into_rows` in `mcp/src/dashboard/render.rs`
+- `wrap_line_keeps_short_line_intact` in `mcp/src/dashboard/render.rs`
+- `wrap_line_zero_width_is_noop` in `mcp/src/dashboard/render.rs`
+- `wrap_line_preserves_multispan_styles` in `mcp/src/dashboard/render.rs`
+- `wrap_lines_no_row_exceeds_width` in `mcp/src/dashboard/render.rs`
+- `wrap_lines_total_drives_follow_offset` in `mcp/src/dashboard/render.rs`
+
+**Commits:**
+- pending — one commit expected
+
+**Notes for review:** none — implementation follows the spec exactly.

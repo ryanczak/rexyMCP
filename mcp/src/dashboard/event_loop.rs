@@ -3,7 +3,7 @@ use std::path::Path;
 use super::filter::{FILTER_ITEM_COUNT, FilterState};
 use super::panels::BudgetRates;
 use super::render::{ViewState, clamp_scroll, render_dashboard};
-use super::transcript::{SPINNER_FRAMES, transcript_lines};
+use super::transcript::SPINNER_FRAMES;
 use crate::dashboard::load_data;
 
 pub(crate) fn run_loop(
@@ -41,12 +41,11 @@ pub(crate) fn run_loop(
             spinner,
             filter: filter_state.clone(),
         };
-        terminal
-            .draw(|frame| render_dashboard(frame, frame.area(), &data, now_ms, &state, rates))?;
-        offset = clamp_scroll(
-            offset,
-            transcript_lines(&data.records, &filter_state.filter).len(),
-        );
+        let mut total_wrapped = 0usize;
+        terminal.draw(|frame| {
+            total_wrapped = render_dashboard(frame, frame.area(), &data, now_ms, &state, rates);
+        })?;
+        offset = clamp_scroll(offset, total_wrapped);
 
         if event::poll(Duration::from_millis(500))?
             && let Event::Key(key) = event::read()?
