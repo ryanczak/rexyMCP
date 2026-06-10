@@ -1,7 +1,7 @@
 # Phase 06c: Model-facing task flips — `update_task` tool + prompt injection
 
 **Milestone:** M12 — Executor Tooling
-**Status:** in-progress (bounced — see bugs/bug-06c-1.md)
+**Status:** review
 **Depends on:** phase-06a (substrate, done), phase-06b (gate, done)
 **Estimated diff:** ~300 lines (≈190 prod + ≈110 test)
 **Tags:** language=rust, kind=feature, size=m
@@ -455,3 +455,26 @@ executor/src/agent/tests.rs:3922:            rendered.contains("# Task tracking"
 **End-to-end verification:** The loop test `loop_emits_task_update_when_model_flips_task` is the behavioral E2E — it drives the full tool → dispatch → success-metadata → loop emit → JSONL `task_update(active)` path with a `MockAiClient`. The on/off prompt-section difference is proven by the paired `loop_prompt_{includes,omits}_task_section_*` tests reading the real `Prompt` record. No new CLI artifact exists in this phase.
 
 **Notes for review:** None — implementation follows the spec exactly.
+
+### Update — 2026-06-10 10:00 (fix — bug-06c-1)
+
+**Executor:** rexyMCP executor
+
+**Bug fixed:** `executor/src/tools/update_task.rs:84` had `.lock().unwrap()` in the production path, violating STANDARDS §2.1. Replaced with `.lock().unwrap_or_else(|e| e.into_inner())` following the existing poison-tolerant idiom established in `ai/mod.rs` and `jsonl.rs`.
+
+**Files changed:**
+- `executor/src/tools/update_task.rs` — `.lock().unwrap()` → `.lock().unwrap_or_else(|e| e.into_inner())`
+
+**Verification commands:**
+```
+cargo fmt --all --check: PASS
+cargo build: PASS (zero warnings)
+cargo clippy --all-targets --all-features -- -D warnings: PASS
+cargo test: 722 passed, 0 failed, 2 ignored
+```
+
+**Grep for unwrap/expect/panic in prod path:**
+```
+$ grep -nE '\.(unwrap|expect)\(|panic!\(' executor/src/tools/update_task.rs
+```
+All matches are inside `#[cfg(test)]` block (line 115+), zero in production code.

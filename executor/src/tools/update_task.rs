@@ -81,7 +81,7 @@ impl Tool for UpdateTask {
         };
 
         let (id, title, state_value) = {
-            let mut tasks = self.tasks.lock().unwrap();
+            let mut tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
             let task = match tasks.iter_mut().find(|t| t.id == parsed.id) {
                 Some(t) => t,
                 None => {
