@@ -1,7 +1,7 @@
 # Phase 06c: Model-facing task flips — `update_task` tool + prompt injection
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (substrate, done), phase-06b (gate, done)
 **Estimated diff:** ~300 lines (≈190 prod + ≈110 test)
 **Tags:** language=rust, kind=feature, size=m
@@ -478,3 +478,11 @@ cargo test: 722 passed, 0 failed, 2 ignored
 $ grep -nE '\.(unwrap|expect)\(|panic!\(' executor/src/tools/update_task.rs
 ```
 All matches are inside `#[cfg(test)]` block (line 115+), zero in production code.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-06c-1 — major: production-path `.lock().unwrap()`, fixed in commit 2648cbb)
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-FP8)
+- **Scope deviations:** none
+- **Calibration:** none (first `Mutex`-lock-unwrap bounce — a data point, not yet a trend; the poison-tolerant idiom is already established in `ai/mod.rs`/`jsonl.rs`)

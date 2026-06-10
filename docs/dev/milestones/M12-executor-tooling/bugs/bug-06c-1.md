@@ -1,8 +1,9 @@
 # Bug 1 on phase-06c: new `.lock().unwrap()` in production path violates STANDARDS §2.1
 
 **Severity:** major
-**Status:** open
+**Status:** verified
 **Filed:** 2026-06-09
+**Fixed:** 2026-06-10 (commit 2648cbb)
 
 ## What's wrong
 
