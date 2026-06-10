@@ -1,7 +1,7 @@
 # Phase 05: Structured `cargo test` failure digest
 
 **Milestone:** M12 — Executor Tooling
-**Status:** review (re-dispatch — bug-05-1 `.unwrap()` fix applied)
+**Status:** done
 **Depends on:** none (additive enrichment of the existing M10 cargo output filter)
 **Estimated diff:** ~180 lines (≈80 production + ≈100 tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -525,3 +525,33 @@ failures`.
   (`strip_suffix(':')`) already used `.unwrap_or()` and was unaffected.
 - All 20 remaining `.unwrap()` calls are in the `#[cfg(test)]` block and are
   exempt per STANDARDS.md §2.1.
+
+### Review verdict — 2026-06-09
+
+- **Verdict:** approved_after_1
+- **Bounces:** one ([bug-05-1](bugs/bug-05-1.md), minor) — four new `.unwrap()`
+  calls in the production `parse_test_failures` path; STANDARDS §2.1 permits only
+  `.expect("…")` with an invariant message. Provably-safe but a contract
+  violation against the project's enforced "production clean of unwrap/expect"
+  gate. Cleared on re-dispatch: the executor rewrote all four idiomatically
+  (`strip_prefix().and_then(strip_suffix)`, `if let Some = current.take()`,
+  `split_once`) — behavior byte-identical, 696 tests unchanged.
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. Single-file additive change as specified
+  (`output_filter.rs`): module-private `TestFailure`, pure `parse_test_failures`,
+  pure `format_failure_digest` (`""` when empty), prepend hook in `cargo_filter`.
+  No new public export, no new dep, no `SessionEvent`/struct-field churn.
+- **Verification at review:** all four gates re-run independently green (fmt
+  clean, build zero-warning, clippy `-D warnings` clean, 696 passed / 0 failed /
+  2 ignored). `grep` confirms zero `.unwrap()`/`.expect()`/`panic!` in production
+  paths (line 31's pre-existing `.expect("valid ANSI regex")` const form is the
+  only match before the test module). Digest for Fixture FAIL names all three
+  failures with locations + verbatim `left: 4`/`right: 5`; Fixture PASS produces
+  no `=== Test failures` header (pinned negative). Tests are mutation-resistant
+  (the `!contains("expected")`/`!contains("actual")` relabel guard and the
+  must-not-contain PASS negative).
+- **Calibration:** none new. The bounce was a clean single-issue catch-and-fix;
+  the `.unwrap()`-vs-`.expect()` distinction is already codified in STANDARDS
+  §2.1 / CLAUDE.md and needs no fold. The additive single-file shape again landed
+  the feature without the multi-site struct/match-arm churn that stalled earlier
+  milestones.

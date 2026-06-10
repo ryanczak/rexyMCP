@@ -4,9 +4,10 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-05** — drafted + activated 2026-06-09, status `todo`,
-awaiting `/rexymcp:dispatch phase-05`
-([phase-05-structured-test-failures.md](milestones/M12-executor-tooling/phase-05-structured-test-failures.md)).
+**Active phase:** **none** — phase-05 approved (approved_after_1, 2026-06-09).
+M12 Arc B is complete (03/04/05 all done); Arc A (phases 06–07) is next. Awaiting
+`/rexymcp:architect next` to draft + activate phase-06 (the `SessionEvent::TaskUpdate`
+substrate — see the README watch-item on its `dashboard/filter.rs` seven-arm wall).
 
 **phase-05 scope (active — M12 Arc B):** distill `cargo test` failures into a
 compact **digest** prepended to the M10 cargo filter output. **Single-file,
@@ -33,6 +34,40 @@ revealed the recent `(<threadid>)` token older Rust omits, so a Pre-flight pins
 "verify libtest format live, trust it over the sketch." ~7 new tests. No new dep,
 no shell-out (parses text the bash tool already captured), no `tsc`/`pytest`
 parsing. Executor target: Qwen/Qwen3.6-27B-FP8.
+
+**Prior active-phase pointer (now done):**
+
+**phase-05 done** (2026-06-09, approved_after_1): M12 Arc B's third
+code-intelligence win — a structured `cargo test` failure **digest** prepended to
+the M10 cargo filter output. Single-file, additive
+(`executor/src/context/output_filter.rs`, +325/-20 across both dispatches).
+Module-private `TestFailure { name, location, detail }` (no serde, not exported),
+pure `parse_test_failures` (walks libtest `---- <name> stdout ----` /
+`panicked at <loc>:` / `left:`/`right:` blocks → one record per failed test), pure
+`format_failure_digest` (`""` when empty → byte-identical PASS path), and a prepend
+hook in `cargo_filter` (`(format!("{digest}{body}"), truncated)` on the single tail
+return — the two early returns were folded into one). The model sees
+`=== Test failures (N) ===` + one `test <name> failed at <loc> — <detail>` line per
+failure before the verbose blocks. **Pinned boundaries held:** `left`/`right`
+surfaced **verbatim** (no fabricated expected/actual — the relabel guard asserts
+`!contains("expected")`); bare `assert!`/`panic!` surface the message with no
+invented left/right; PASS → empty digest → no `=== Test failures` header (pinned
+must-not-contain negative, mutation-resistant). 7 new tests over the two real
+verbatim `cargo test --color=never` fixtures (FAIL: assert_eq/assert!-msg/panic!;
+PASS). **696 passed / 0 failed / 2 ignored**, all four gates re-run green
+independently. No new dep, no shell-out, no new `SessionEvent`/struct-field churn.
+**One bounce — [bug-05-1](milestones/M12-executor-tooling/bugs/bug-05-1.md)
+(minor):** the first dispatch (clean 47-turn, commit `e853479`) introduced four
+new `.unwrap()` in the production `parse_test_failures` path; STANDARDS §2.1
+permits only `.expect("…")` with an invariant message. Provably-safe but a
+contract miss against the enforced "production clean of unwrap/expect" gate. The
+tests-and-everything-else were otherwise clean. Cleared on a 37-turn re-dispatch
+(commit `a2cdfc4`): all four rewritten idiomatically
+(`strip_prefix().and_then(strip_suffix)`, `if let Some = current.take()`,
+`split_once`), behavior byte-identical, 696 unchanged. Approved at review. Process
+quirk (cosmetic, no fold): the Update Log again self-stamps `00:00`/"rexyMCP
+executor" — the recurring local-LLM clock/identity quirk that phase-06's datetime
+injection addresses once `rexymcp serve` is restarted (still pending below).
 
 **Prior active-phase pointer (now done):**
 
