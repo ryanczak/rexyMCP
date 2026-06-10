@@ -1,7 +1,7 @@
 # Phase 01: Legibility — raise dark-grey dashboard text to `Rgb(200,200,200)`
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~15 lines prod + ~4 small tests
 **Tags:** language=rust, kind=feature, size=s
@@ -190,3 +190,33 @@ at each site matches the two existing call sites; keep that shape.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-10 00:00 (started)
+
+**Executor:** rexyMCP executor
+
+Replaced all seven `Color::DarkGray` sites in `mcp/src/dashboard/` with `Color::Rgb(200, 200, 200)`. Added four unit tests to lock the color change in.
+
+### Update — 2026-06-10 00:01 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Replaced all 7 `Color::DarkGray` uses with `Color::Rgb(200, 200, 200)` across `render.rs`, `transcript.rs`, and `highlight.rs`. Added 4 unit tests (`prompt_header_uses_soft_white`, `progress_header_uses_soft_white`, `metrics_header_uses_soft_white`, `diff_context_line_uses_soft_white`).
+
+**Files changed:**
+- `mcp/src/dashboard/render.rs` — filter-panel help footer color
+- `mcp/src/dashboard/transcript.rs` — Prompt/Progress/Metrics header colors + 3 tests
+- `mcp/src/dashboard/highlight.rs` — diff context line + 2 overflow markers + 1 test
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed
+- `cargo build` — passed, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo test` — 722 passed, 0 failed, 2 ignored
+- `grep -rn "DarkGray" mcp/src/` — zero matches (exit code 1)
+
+**Grep proof:** `grep -rn "DarkGray" mcp/src/` returned zero matches, confirming all 7 sites were replaced.
+
+**Notes for review:** None — mechanical find-and-replace, surgical, no adjacent code touched.
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact (TUI styling has no headless render harness; consistent with prior dashboard-panel phases M8/M10/M12). Verification is the four pure-function color assertions plus the grep acceptance check.

@@ -49,7 +49,7 @@ once.
 
 | Phase | Title | Status | Kind | Size | Items |
 |---|---|---|---|---|---|
-| 01 | Legibility — raise all `Color::DarkGray` text to `Rgb(200,200,200)` ([phase-01-contrast.md](phase-01-contrast.md)) | todo | feature | s | #1 |
+| 01 | Legibility — raise all `Color::DarkGray` text to `Rgb(200,200,200)` ([phase-01-contrast.md](phase-01-contrast.md)) | review | feature | s | #1 |
 | 02 | Activity — surface injected context (`Prompt.rendered`) + tool-call arguments (`Parsed.tool_call.arguments`) | todo | feature | m | #2, #3 |
 | 03 | Activity — word/line wrapping + tail-follow autoscroll over wrapped lines + scrollbar | todo | feature | m | #8, #9, R1 |
 | 04 | Activity — distinct `<think>`/`</think>` block formatting in Completion bodies | todo | feature | m | #6 |

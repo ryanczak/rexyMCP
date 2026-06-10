@@ -56,7 +56,7 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
             ),
             SessionEvent::Prompt { rendered } => (
                 format!("prompt ({} chars)", rendered.chars().count()),
-                Color::DarkGray,
+                Color::Rgb(200, 200, 200),
                 false,
                 None,
             ),
@@ -109,9 +109,12 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
             SessionEvent::HardFail { reason } => {
                 (format!("HARD FAIL: {reason}"), Color::Red, true, None)
             }
-            SessionEvent::Progress { stage, .. } => {
-                (format!("progress: {stage}"), Color::DarkGray, false, None)
-            }
+            SessionEvent::Progress { stage, .. } => (
+                format!("progress: {stage}"),
+                Color::Rgb(200, 200, 200),
+                false,
+                None,
+            ),
             SessionEvent::SessionEnd { status, turns } => (
                 format!("session end — {status} ({turns} turns)"),
                 Color::Cyan,
@@ -124,7 +127,7 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                 ..
             } => (
                 format!("metrics: {input_tokens} in / {output_tokens} out"),
-                Color::DarkGray,
+                Color::Rgb(200, 200, 200),
                 false,
                 None,
             ),
@@ -440,5 +443,39 @@ mod tests {
         ];
         let lines = transcript_lines(&records, &ActivityFilter::default());
         assert_eq!(lines.len(), 5);
+    }
+
+    #[test]
+    fn prompt_header_uses_soft_white() {
+        let lines = record_lines(&rec(
+            0,
+            0,
+            SessionEvent::Prompt {
+                rendered: "hi".into(),
+            },
+        ));
+        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Rgb(200, 200, 200)));
+    }
+
+    #[test]
+    fn progress_header_uses_soft_white() {
+        let lines = record_lines(&rec(0, 0, progress_event(0, "build")));
+        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Rgb(200, 200, 200)));
+    }
+
+    #[test]
+    fn metrics_header_uses_soft_white() {
+        let lines = record_lines(&rec(
+            0,
+            0,
+            SessionEvent::Metrics {
+                input_tokens: 10,
+                output_tokens: 5,
+                context_pct: 0.0,
+                context_used: 0,
+                context_window: 0,
+            },
+        ));
+        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Rgb(200, 200, 200)));
     }
 }

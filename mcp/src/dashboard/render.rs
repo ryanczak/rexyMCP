@@ -127,7 +127,7 @@ pub(crate) fn render_dashboard(
             .collect();
         filter_lines.push(Line::from(Span::styled(
             " ↑↓/jk move · space toggle · f/Esc close",
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(Color::Rgb(200, 200, 200)),
         )));
         frame.render_widget(
             Paragraph::new(filter_lines).block(

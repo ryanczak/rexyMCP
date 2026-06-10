@@ -116,7 +116,7 @@ fn diff_body_lines(content: &str) -> Vec<Line<'static>> {
         } else {
             Line::from(Span::styled(
                 format!("    {line}"),
-                Style::new().fg(Color::DarkGray),
+                Style::new().fg(Color::Rgb(200, 200, 200)),
             ))
         };
         result.push(rendered);
@@ -124,7 +124,7 @@ fn diff_body_lines(content: &str) -> Vec<Line<'static>> {
     if overflow > 0 {
         result.push(Line::from(Span::styled(
             format!("    … ({overflow} more lines)"),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(Color::Rgb(200, 200, 200)),
         )));
     }
     result
@@ -177,7 +177,7 @@ pub(crate) fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
     if overflow > 0 {
         result.push(Line::from(Span::styled(
             format!("    … ({overflow} more lines)"),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(Color::Rgb(200, 200, 200)),
         )));
     }
 
@@ -343,5 +343,19 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("+new")));
         assert!(text.iter().any(|s| s.contains("-old")));
+    }
+
+    #[test]
+    fn diff_context_line_uses_soft_white() {
+        let diff = "@@ -1,3 +1,3 @@\n context line\n+added\n-removed";
+        let lines = diff_body_lines(diff);
+        // Hunk header is Cyan.
+        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Cyan));
+        // Context line is soft white.
+        assert_eq!(lines[1].spans[0].style.fg, Some(Color::Rgb(200, 200, 200)));
+        // Added line keeps green fg.
+        assert_eq!(lines[2].spans[0].style.fg, Some(Color::Rgb(180, 242, 180)));
+        // Removed line keeps red fg.
+        assert_eq!(lines[3].spans[0].style.fg, Some(Color::Rgb(242, 180, 180)));
     }
 }
