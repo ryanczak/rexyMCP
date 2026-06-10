@@ -389,6 +389,6 @@ mcp/src/init.rs:15:# task_tracking = true            # seed + track a per-sessio
 - `loop_still_seeds_task_updates_when_tracking_on` in `executor/src/agent/tests.rs`
 
 **Commits:**
-- (pending) — `feat: add [executor] task_tracking config gate for task-tracking substrate`
+- `5ce7730` — `feat: add [executor] task_tracking config gate for task-tracking substrate`
 
 **Notes for review:** None — clean implementation, no deviations from spec.
