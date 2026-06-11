@@ -366,10 +366,15 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
             let cfg = Config::load_with_env(&config_path)?;
-            let rates = dashboard::BudgetRates {
-                input_per_mtok: cfg.dashboard.saved_input_per_mtok,
-                output_per_mtok: cfg.dashboard.saved_output_per_mtok,
-            };
+            let d = &cfg.dashboard;
+            let rates = d
+                .saved_model
+                .as_deref()
+                .and_then(dashboard::model_rates)
+                .unwrap_or(dashboard::BudgetRates {
+                    input_per_mtok: d.saved_input_per_mtok,
+                    output_per_mtok: d.saved_output_per_mtok,
+                });
             dashboard::run_dashboard(&repo, session.as_deref(), rates).unwrap_or_else(|e| {
                 eprintln!("dashboard error: {e}");
                 std::process::exit(1);

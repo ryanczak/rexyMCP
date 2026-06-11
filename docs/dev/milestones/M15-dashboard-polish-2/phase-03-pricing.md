@@ -1,6 +1,6 @@
 # Phase 03 — Model-aware `$ saved` pricing
 
-**Status:** todo
+**Status:** review
 **Milestone:** M15-dashboard-polish-2
 **Depends on:** phase-02 (done)
 
@@ -310,3 +310,28 @@ the dashboard's normal scope.
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 05:07 (started)
+
+**Executor:** Claude (Sonnet)
+
+Implementing `saved_model` config field with `model_rates` lookup, re-export, main.rs wiring, and init.rs template update.
+
+### Update — 2026-06-11 05:08 (complete)
+
+**All acceptance criteria met.**
+
+**Verification summary:** `cargo fmt --all --check` clean, `cargo build` clean, `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo test` 734 passed / 0 failed / 2 ignored.
+
+**Grep verification:** `saved_model` literal found in `config.rs`, `main.rs`, `init.rs` — all expected locations.
+
+**Files changed:**
+- `executor/src/config.rs` — added `saved_model: Option<String>`, removed `Copy` derive, updated doc comments
+- `mcp/src/dashboard/panels.rs` — added `model_rates()` function + 3 unit tests
+- `mcp/src/dashboard/mod.rs` — re-export `model_rates`
+- `mcp/src/main.rs` — use `model_rates` when `saved_model` is set, fall back to numeric rates
+- `mcp/src/init.rs` — updated `[dashboard]` template comment block
+
+**End-to-end verification:** N/A — requires running `rexymcp dashboard` against a live session with token metrics, which needs a session log file not available in the build environment. Unit tests cover all code paths including the `model_rates` lookup and fallback logic.
+
+**Notes for review:** None.

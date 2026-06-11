@@ -24,6 +24,36 @@ pub struct BudgetRates {
     pub output_per_mtok: f64,
 }
 
+/// Return hardcoded cloud baseline rates for a known Claude model name.
+/// Returns `None` for unrecognised names (caller falls back to configured rates).
+///
+/// Pricing as of 2026-06-04 ($/MTok input / $/MTok output):
+/// - Fable 5 / Mythos 5: $10.00 / $50.00
+/// - Opus 4.8 / 4.7 / 4.6: $5.00 / $25.00
+/// - Sonnet 4.6: $3.00 / $15.00
+/// - Haiku 4.5: $1.00 / $5.00
+pub fn model_rates(model: &str) -> Option<BudgetRates> {
+    match model {
+        "claude-fable-5" | "claude-mythos-5" => Some(BudgetRates {
+            input_per_mtok: 10.0,
+            output_per_mtok: 50.0,
+        }),
+        "claude-opus-4-8" | "claude-opus-4-7" | "claude-opus-4-6" => Some(BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+        }),
+        "claude-sonnet-4-6" => Some(BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+        }),
+        "claude-haiku-4-5" => Some(BudgetRates {
+            input_per_mtok: 1.0,
+            output_per_mtok: 5.0,
+        }),
+        _ => None,
+    }
+}
+
 /// Wall-clock session duration in ms: **live** (`now_ms − started_at`) while the
 /// session is running, **frozen** (`last_ts − started_at`) once it has ended.
 /// `None` for an empty log (no `started_at`). `saturating_sub` guards a clock that
@@ -1288,5 +1318,30 @@ mod tests {
         let line = dollars_saved_line(&summary, rates);
         assert!(line.is_some());
         assert_eq!(format!("{}", line.unwrap()), "$ saved: $10.50");
+    }
+
+    // --- model_rates tests ---
+
+    #[test]
+    fn model_rates_opus_48_returns_correct_pricing() {
+        let rates = model_rates("claude-opus-4-8").expect("opus-4-8 should have rates");
+        assert_eq!(rates.input_per_mtok, 5.0);
+        assert_eq!(rates.output_per_mtok, 25.0);
+    }
+
+    #[test]
+    fn model_rates_fable_5_returns_correct_pricing() {
+        let rates = model_rates("claude-fable-5").expect("fable-5 should have rates");
+        assert_eq!(rates.input_per_mtok, 10.0);
+        assert_eq!(rates.output_per_mtok, 50.0);
+    }
+
+    #[test]
+    fn model_rates_unknown_model_is_none() {
+        assert!(
+            model_rates("gpt-4").is_none(),
+            "unknown model should return None"
+        );
+        assert!(model_rates("").is_none(), "empty string should return None");
     }
 }

@@ -5,13 +5,20 @@ use crate::error::{Error, Result};
 
 /// Live-dashboard settings. The "$ saved" baseline: cloud $/million-tokens the
 /// local run is priced against. Default 0.0 → the dashboard shows "—" (unset).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DashboardConfig {
-    /// USD per million **input** tokens for the cloud baseline.
+    /// USD per million **input** tokens for the cloud baseline (used when
+    /// `saved_model` is not set or not recognised).
     pub saved_input_per_mtok: f64,
-    /// USD per million **output** tokens for the cloud baseline.
+    /// USD per million **output** tokens for the cloud baseline (used when
+    /// `saved_model` is not set or not recognised).
     pub saved_output_per_mtok: f64,
+    /// Optional Claude model name; when set and recognised, auto-fills
+    /// `saved_input_per_mtok` / `saved_output_per_mtok` with current pricing.
+    /// Recognised values: `claude-fable-5`, `claude-mythos-5`,
+    /// `claude-opus-4-8`/`4-7`/`4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`.
+    pub saved_model: Option<String>,
 }
 
 impl Default for DashboardConfig {
@@ -19,6 +26,7 @@ impl Default for DashboardConfig {
         Self {
             saved_input_per_mtok: 0.0,
             saved_output_per_mtok: 0.0,
+            saved_model: None,
         }
     }
 }
