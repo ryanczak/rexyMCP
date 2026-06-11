@@ -23,10 +23,8 @@ gates green on independent re-run; all grep acceptance criteria confirmed. Clean
 self-stamp quirk recurred (still pending the `rexymcp serve` restart).
 ([phase-02-cleanup-sweep.md](milestones/M14-cleanup/phase-02-cleanup-sweep.md)).
 
-**📌 Still open (operational, not a code change):** restart `rexymcp serve` so the
-rebuilt binary picks up M11 phase-06's datetime injection — until then the executor
-keeps self-stamping hallucinated dates/identity in Update Logs (cosmetic; machine
-records correct). Highest-value operational action before the next dispatch.
+**📌 Operational:** `rexymcp serve` restarted (2026-06-10) — M11 phase-06's datetime
+injection is now live. Executor Update-Log self-stamping should be resolved.
 
 **M14 phase-01 — done** (2026-06-10, approved_first_try): fixed the silent
 `seed_from_spec` failure that produced zero tasks for 6 of 8 M13 phases. Stop
