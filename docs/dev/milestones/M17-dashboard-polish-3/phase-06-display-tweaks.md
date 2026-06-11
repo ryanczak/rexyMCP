@@ -1,7 +1,7 @@
 # Phase 06: Dashboard display tweaks — layout, pan rate, label renames
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** phase-05 (no code overlap)
 **Estimated diff:** ~140 lines (panels.rs + render.rs + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -683,3 +683,29 @@ cargo test → 734 passed; 0 failed; 2 ignored
 **End-to-end verification:** N/A — no live dashboard session available; gate suite sufficient per phase doc.
 
 **Notes for review:** None — all changes match the spec exactly.
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — only `mcp/src/dashboard/panels.rs` and
+  `render.rs` touched (plus the phase-doc/README bookkeeping); no
+  `SessionEvent`, config, or `Cargo.toml` change.
+- **Calibration:** none. Clean 91-turn first-try. All six spec items
+  (§1 `Min(52)` · §2 `t * 3 / 4` + active-only pan · §3 `Savings:` · §4
+  Context→Usage migration to `reclaim_lines` · §5 `" Context "` title · §6
+  full-width `tasks_gauge_line(done, total, width)`) match the spec verbatim;
+  `GAUGE_CELLS`/`TASK_SCROLL_DELAY` removed; the `reclaim_lines` "(No reclaim
+  yet)" empty-guard preserved. All four gates green on independent re-run
+  (fmt/build/clippy clean; **734 executor + 374 mcp** pass, 2 ignored).
+  Production paths clean of `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`
+  (all five `.expect()` hits are in the test module, ≥ line 504). New tests
+  mutation-resistant: `tasks_gauge_line_fills_panel_width` (asserts
+  `chars().count() == 40` — fails any fixed-cell impl) and
+  `tasks_lines_non_active_tasks_do_not_pan` (done/pending frozen across ticks,
+  active pans). E2E is a TUI render — N/A per the established dashboard-panel
+  precedent; the unit tests render the real `Line`/`Span` output. The
+  local-LLM Update-Log identity self-stamp ("By: executor") is cosmetic; the
+  date is correct (`2026-06-11`). **M17 phase-07 remains in scope — do not
+  close M17.**
