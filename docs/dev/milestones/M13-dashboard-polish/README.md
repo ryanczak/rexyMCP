@@ -54,7 +54,7 @@ once.
 | 03 | Activity — line wrapping + tail-follow autoscroll over wrapped lines + scrollbar ([phase-03-wrapping.md](phase-03-wrapping.md)) | done | feature | m | #8, #9, R1 |
 | 04 | Activity — distinct `<think>`/`</think>` block formatting in Completion bodies ([phase-04-think.md](phase-04-think.md)) | done | feature | m | #6 |
 | 05 | Session/Budget — session `duration:` + move `last update:` to Budget (new `started_at` capture) ([phase-05-timing.md](phase-05-timing.md)) | done | feature | m | #4, #5 |
-| 06 | Session — full-width spinner on its own bottom line ([phase-06-spinner.md](phase-06-spinner.md)) | review | feature | m | #10, R5 |
+| 06 | Session — full-width spinner on its own bottom line ([phase-06-spinner.md](phase-06-spinner.md)) | done | feature | m | #10, R5 |
 | 07 | Tasks — named tasks with checkbox/check glyphs + done/total progress gauge | todo | feature | m | #7, R3 |
 | 08 | Activity — per-event relative timestamps | todo | feature | s | R2 |
 

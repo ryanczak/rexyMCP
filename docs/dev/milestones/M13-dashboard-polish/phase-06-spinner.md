@@ -1,7 +1,7 @@
 # Phase 06: Session — full-width spinner on its own bottom line
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** none for code (independent of phases 01–05; touches the Session
 panel layout, the spinner, and the header height — none of which 01–05 changed).
 Builds on the phase-05 "optional-line pushed in `render.rs`" pattern, copied here.
@@ -484,9 +484,33 @@ N/A — phase ships no runtime-loadable artifact (TUI rendering has no headless 
 - `session_lines_omits_spinner_when_none` in `panels.rs`
 
 **Commits:**
-- (pending) — `feat: full-width spinner on Session panel bottom line`
+- `002f148` — `feat: full-width spinner on Session panel bottom line`
 
 **Notes for review:**
 - `grep -rn "SPINNER_FRAMES" mcp/src` returned exit code 1 (zero matches) — confirmed fully retired.
 - `grep -rn "spinner_line" mcp/src` confirms the helper is defined in `panels.rs` and imported/used in `render.rs`.
 - One-line verification summary: `cargo fmt --all --check` clean, `cargo build` zero warnings, `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo test` 725 passed 0 failed, `grep SPINNER_FRAMES` zero matches.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (Update Log self-stamps "Claude (headless)" — the
+  recurring local-LLM identity self-stamping quirk; cosmetic, machine records correct).
+- **Scope deviations:** none in the source. Diff is exactly the four authorized files
+  (`panels.rs`, `render.rs`, `event_loop.rs`, `transcript.rs`); no `Cargo.toml`,
+  `status.rs`, `filter.rs`, `SessionEvent`, or config touched. The spinner moved out of
+  `session_lines` into the width-aware `spinner_line` helper pushed in `render.rs`
+  (phase-05 precedent), all ten `session_lines` call sites updated, `SPINNER_FRAMES`
+  retired, header grown `Length(9)`→`Length(10)` — spec-exact.
+- **Independent re-run:** all four gates green (`cargo fmt --all --check` clean,
+  `cargo build` zero warnings, `cargo clippy` clean, `cargo test` 725 passed / 0 failed
+  / 2 ignored). The 5 `spinner_line` tests pass; the load-bearing
+  `spinner_line_never_exceeds_width` (tick 0..200 + 999_999 ≤ width−SPRITE_CELLS) and
+  `spinner_line_bounces_at_right_edge` (pins the `0,1,2,3,2,1,0,1` triangle wave) are
+  mutation-resistant against an unbounded / `tick % width` / sawtooth offset.
+- **Calibration:** the executor committed (good — full bookkeeping first-try) but the
+  commit swept in the at-dispatch dirty tree: modified `docs/dev/NEXT.md` (architect's
+  activation edits) + the untracked phase doc. **2nd-plus occurrence of the
+  dirty-tree-at-dispatch pattern** (prior: M9/phase-01, M11/phase-03) — commit ambient
+  activation edits *before* dispatch next time. Cosmetic, no code impact.
