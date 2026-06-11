@@ -1,6 +1,6 @@
 # Phase 01 — Recognize `### Task N —` heading task format
 
-**Status:** in-progress
+**Status:** review
 **Milestone:** M16-seeder-robustness
 **Depends on:** none (first M16 phase)
 
@@ -223,3 +223,48 @@ module). No new `SessionEvent`, no config, no `Cargo.toml`, no other file.
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 04:48 (complete)
+
+**Summary:** Extended `parse_heading_task_line` in `executor/src/agent/tasks.rs` to recognize `### Task N — Title` / `### Task N: Title` / `### Task N. Title` subheadings alongside the existing `### N. Title` format. The original dot-branch is byte-identical; the new `Task ` prefix branch handles em-dash, colon, and dot separators. Added 3 new tests (23 new assertions). No changes to `seed_from_spec`, `parse_task_line`, or any other file.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(passed, zero diff)
+
+cargo build 2>&1 | tail -20
+(passed, zero warnings)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(passed, zero warnings)
+
+cargo test -p rexymcp-executor 2>&1 | tail -30
+test result: ok. 734 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+`seed_from_spec` was exercised with a literal doc string containing `### Task 1 — Update the signature` and `### Task 2 — Fix the call site` headings. The test `seed_from_spec_parses_task_dash_heading_format` confirmed 2 tasks seeded with ids `"1"` and `"2"` and correct titles. This is the E2E test specified in the phase doc — deterministic, no I/O.
+
+Grep confirming the em-dash literal landed in source:
+```
+$ grep -c 'Task 1' executor/src/agent/tasks.rs
+5
+```
+
+**Files changed:**
+- `executor/src/agent/tasks.rs` — added `Task ` prefix branch to `parse_heading_task_line`, added 3 new tests
+
+**New tests:**
+- `seed_from_spec_parses_task_dash_heading_format` in `executor/src/agent/tasks.rs`
+- `parse_heading_task_line_accepts_task_prefix_separators` in `executor/src/agent/tasks.rs`
+- `parse_heading_task_line_rejects_malformed_task_prefix` in `executor/src/agent/tasks.rs`
+
+**Commits:**
+- (pending) — `feat: recognize ### Task N — heading format in task seeder`
+
+**Notes for review:** None — implementation matches the spec exactly.

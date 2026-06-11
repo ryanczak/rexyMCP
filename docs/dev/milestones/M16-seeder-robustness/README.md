@@ -47,7 +47,7 @@ Per the 2026-06-10 decision (with the user), the fix is **both**:
 
 | # | Phase | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Recognize `### Task N —` heading task format ([phase-01-heading-task-formats.md](phase-01-heading-task-formats.md)) | in-progress | fix | xs |
+| 01 | Recognize `### Task N —` heading task format ([phase-01-heading-task-formats.md](phase-01-heading-task-formats.md)) | review | fix | xs |
 
 Phase 01 is the only in-scope M16 phase; it closes the milestone once approved.
 

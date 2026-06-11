@@ -86,10 +86,32 @@ fn extract_title(rest: &str) -> String {
     trimmed.trim_end().to_string()
 }
 
-/// Parse a `### N. Title` subheading as a task. Returns `None` for any other
-/// line shape.
+/// Parse a task subheading. Recognizes both `### N. Title` (dot, decimal-safe)
+/// and `### Task N — Title` / `### Task N: Title` / `### Task N. Title`
+/// (the architect's natural heading style). Returns `None` for any other shape.
 fn parse_heading_task_line(line: &str) -> Option<Task> {
     let rest = line.trim().strip_prefix("### ")?;
+
+    // `### Task N <sep> Title` where <sep> is em-dash, colon, or dot.
+    if let Some(after_task) = rest.strip_prefix("Task ") {
+        let (digits, title_part) = after_task.split_once(['\u{2014}', ':', '.'])?;
+        let digits = digits.trim();
+        let title = title_part.trim();
+        if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        if title.is_empty() {
+            return None;
+        }
+        return Some(Task {
+            id: digits.to_string(),
+            title: title.to_string(),
+            state: TaskState::Pending,
+        });
+    }
+
+    // `### N. Title` (unchanged — dot separator, whitespace-after-dot rejects
+    // decimals like `### 1.5x`).
     let (digits, title_part) = rest.split_once('.')?;
     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
@@ -231,5 +253,53 @@ mod tests {
         assert!(parse_heading_task_line("1. List item not heading").is_none());
         // Indented heading: .trim() strips leading space so this matches
         assert!(parse_heading_task_line("  ### 1. Indented").is_some());
+    }
+
+    #[test]
+    fn seed_from_spec_parses_task_dash_heading_format() {
+        let doc = "## Spec\n\n### Task 1 — Update the signature\n\nDetail.\n\n### Task 2 — Fix the call site\n\n## Acceptance criteria\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(
+            tasks.len(),
+            2,
+            "two ### Task N — headings should seed two tasks"
+        );
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "Update the signature");
+        assert_eq!(tasks[1].id, "2");
+        assert_eq!(tasks[1].title, "Fix the call site");
+        for t in &tasks {
+            assert_eq!(t.state, TaskState::Pending);
+        }
+    }
+
+    #[test]
+    fn parse_heading_task_line_accepts_task_prefix_separators() {
+        // em-dash, colon, dot separators all parse after the `Task N` prefix.
+        let dash = parse_heading_task_line("### Task 4 — Em dash title").unwrap();
+        assert_eq!(dash.id, "4");
+        assert_eq!(dash.title, "Em dash title");
+
+        let colon = parse_heading_task_line("### Task 5: Colon title").unwrap();
+        assert_eq!(colon.id, "5");
+        assert_eq!(colon.title, "Colon title");
+
+        let dot = parse_heading_task_line("### Task 6. Dot title").unwrap();
+        assert_eq!(dot.id, "6");
+        assert_eq!(dot.title, "Dot title");
+
+        // Multi-digit id after the Task prefix.
+        let ten = parse_heading_task_line("### Task 10 — Tenth").unwrap();
+        assert_eq!(ten.id, "10");
+    }
+
+    #[test]
+    fn parse_heading_task_line_rejects_malformed_task_prefix() {
+        // No separator after the number.
+        assert!(parse_heading_task_line("### Task 1 no separator").is_none());
+        // Empty title after the separator.
+        assert!(parse_heading_task_line("### Task 1 — ").is_none());
+        // Non-numeric "id".
+        assert!(parse_heading_task_line("### Task one — Title").is_none());
     }
 }
