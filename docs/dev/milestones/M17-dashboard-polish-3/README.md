@@ -48,7 +48,7 @@ syntax highlighting to cover Markdown and extension-detected source files.
 |----|-------|--------|------|------|
 | 01 | Move `last update:` under `duration:` + capitalize panel labels ([phase-01-labels.md](phase-01-labels.md)) | done | feat | xs |
 | 02 | Restore full-width dog-chasing-brain spinner ([phase-02-spinner.md](phase-02-spinner.md)) | done | feat | s |
-| 03 | `Milestone:` row in the Session panel ([phase-03-milestone.md](phase-03-milestone.md)) | todo | feat | s |
+| 03 | `Milestone:` row in the Session panel ([phase-03-milestone.md](phase-03-milestone.md)) | review | feat | s |
 | 04 | Scroll overflowing task titles ([phase-04-task-scroll.md](phase-04-task-scroll.md)) | todo | feat | m |
 | 05 | Markdown + extension-detected syntax highlighting ([phase-05-highlighting.md](phase-05-highlighting.md)) | todo | feat | m |
 

@@ -220,6 +220,14 @@ fn truncate_title(title: &str, max: usize) -> String {
     format!("{head}…")
 }
 
+/// "Milestone: <name>" line for the top of the Session panel. The name is
+/// `…`-truncated so the whole line (label + name) fits within `width` cells.
+pub(crate) fn milestone_line(name: &str, width: usize) -> Line<'static> {
+    const LABEL: &str = "Milestone: ";
+    let budget = width.saturating_sub(LABEL.chars().count());
+    Line::from(format!("{LABEL}{}", truncate_title(name, budget)))
+}
+
 /// Done/total progress gauge for the Tasks panel — a filled bar plus
 /// `done/total (pct%)`, colored by completion (progress-oriented: green = near/at
 /// done, neutral grey = no progress). Matches the Budget context-gauge *style*
@@ -653,6 +661,29 @@ mod tests {
             let s = format!("{}", line.unwrap());
             assert_eq!(s, "🐕🧠", "width={width}: expected dog+brain: {s:?}");
         }
+    }
+
+    // --- milestone_line tests ---
+
+    #[test]
+    fn milestone_line_prefixes_and_truncates() {
+        // Full name fits within width
+        let line = milestone_line("M15 — Dashboard Polish 2", 80);
+        let text = format!("{line}");
+        assert!(text.contains("Milestone: M15 — Dashboard Polish 2"));
+
+        // Narrow width truncates with ellipsis
+        let line = milestone_line("M15 — Dashboard Polish 2", 20);
+        let text = format!("{line}");
+        assert!(
+            text.contains('…'),
+            "narrow width should truncate with ellipsis: {text}"
+        );
+        assert!(
+            text.chars().count() <= 20,
+            "truncated line must fit within width: {} chars",
+            text.chars().count()
+        );
     }
 
     // --- session_duration_ms tests ---
