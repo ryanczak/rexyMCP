@@ -4,9 +4,11 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none drafted. M17 phase-05 is **done** (approved); **M17 phase-06
-(further dashboard UI) is planned with the user** but not yet drafted — do **not**
-close M17 at the phase-05 boundary. Draft phase-06 with `/rexymcp:architect next`.
+**Active phase:** `docs/dev/milestones/M17-dashboard-polish-3/phase-06-display-tweaks.md`
+
+M17 phase-06 and phase-07 are now **drafted** (2026-06-11). Phase-06 is the active
+phase; phase-07 follows it. Do **not** close M17 after phase-06 — phase-07 is still
+in scope.
 
 **M17 phase-05 — done** (2026-06-11, approved_first_try; commit `83bfc15` feat):
 two Activity-panel highlighting upgrades on the **existing syntect** path (no new

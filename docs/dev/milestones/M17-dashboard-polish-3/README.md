@@ -1,9 +1,12 @@
 # M17 — Dashboard Polish (Round 3)
 
-**Goal:** Six dashboard refinements — restore the dog-chasing-brain spinner at
+**Goal:** Eight dashboard refinements — restore the dog-chasing-brain spinner at
 full panel width, tidy the Session/Budget/Reclaim panel labels, surface the
-active milestone name, scroll overflowing task titles, and upgrade Activity-panel
-syntax highlighting to cover Markdown and extension-detected source files.
+active milestone name, scroll overflowing task titles, upgrade Activity-panel
+syntax highlighting to cover Markdown and extension-detected source files, plus
+three additional display tweaks (panel resizing, active-only pan, full-width
+gauge, Context-panel rename, Usage line migration) and savings-scope expansion
+(session + milestone + project).
 
 **Status:** in-progress
 
@@ -51,8 +54,8 @@ syntax highlighting to cover Markdown and extension-detected source files.
 | 03 | `Milestone:` row in the Session panel ([phase-03-milestone.md](phase-03-milestone.md)) | done | feat | s |
 | 04 | Scroll overflowing task titles ([phase-04-task-scroll.md](phase-04-task-scroll.md)) | done | feat | m |
 | 05 | Markdown + extension-detected syntax highlighting ([phase-05-highlighting.md](phase-05-highlighting.md)) | done | feat | m |
-
-Phase 05 is the last in-scope M17 phase; it closes the milestone once approved.
+| 06 | Layout, pan rate, label renames, Context panel ([phase-06-display-tweaks.md](phase-06-display-tweaks.md)) | todo | feat | m |
+| 07 | Savings scope — session + milestone + project ([phase-07-savings-scope.md](phase-07-savings-scope.md)) | todo | feat | m |
 
 ## Notes
 
