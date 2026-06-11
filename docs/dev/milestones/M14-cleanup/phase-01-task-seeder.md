@@ -1,6 +1,6 @@
 # M14 phase-01 — Fix task seeder: `### N.` headings + empty-spec warning
 
-**Status:** todo
+**Status:** review
 
 **Milestone:** [M14 — Cleanup](README.md)
 
@@ -491,3 +491,56 @@ rules otherwise prohibit them):
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 02:03 (started)
+
+**Executor:** rexyMCP executor LLM
+**Working on:** Spec tasks 1–3 (stop condition fix, heading parser, redundant call, empty-spec warning, WORKFLOW.md template)
+
+### Update — 2026-06-11 02:03 (complete)
+
+**All spec tasks implemented.**
+
+**Files changed:**
+- `executor/src/agent/tasks.rs` — stop condition `starts_with('#')` → `starts_with("## ")`, added `parse_heading_task_line`, both parsers chained in loop, 4 new unit tests
+- `executor/src/agent/mod.rs` — redundant `seed_from_spec(&input.phase_doc)` replaced with `&seeded`, empty-spec `SessionEvent::Progress` warning added
+- `executor/src/agent/tests.rs` — `mod_emits_progress_warning_when_task_tracking_on_and_no_tasks` integration test
+- `docs/dev/WORKFLOW.md` — `## Spec` template documents both list-item and subheading formats
+
+**Verification commands:**
+```
+cargo fmt --all --check → clean
+cargo build → zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test -p rexymcp-executor → 730 passed, 0 failed, 2 ignored
+```
+
+**Grep proof — `task_seeding` literal landed:**
+```
+executor/src/agent/mod.rs:215:                    stage: "task_seeding".to_string(),
+executor/src/agent/tests.rs:3961:            SessionEvent::Progress { turn: 0, stage, .. } if stage == "task_seeding"
+executor/src/agent/tests.rs:3966:        "expected a task_seeding Progress warning at turn 0"
+```
+
+**Grep proof — `parse_heading_task_line` literal landed:**
+```
+executor/src/agent/tasks.rs:29:            .or_else(|| parse_heading_task_line(line))
+executor/src/agent/tasks.rs:92:fn parse_heading_task_line(line: &str) -> Option<Task> {
+executor/src/agent/tasks.rs:225:        assert!(parse_heading_task_line("## Not a task heading").is_none());
+```
+
+**Acceptance criteria ticked:**
+- [x] `cargo test -p rexymcp-executor` passes (730 passed)
+- [x] `seed_from_spec_parses_heading_format_tasks` passes
+- [x] `seed_from_spec_stop_condition_does_not_fire_on_task_subheading` passes
+- [x] `seed_from_spec_mixed_formats` passes
+- [x] `mod_emits_progress_warning_when_task_tracking_on_and_no_tasks` passes
+- [x] Redundant `seed_from_spec(&input.phase_doc)` call gone; `&seeded` used
+- [x] `WORKFLOW.md` documents both formats
+- [x] All four gates pass
+- [x] No `unwrap()`/`expect()`/`panic!()` in new production paths
+- [x] No `TODO`/`FIXME`/`dbg!`/`println!`/commented-out code
+
+**End-to-end verification:** N/A — pure parser fix + turn-0 log event; integration test covers the observable warning.
+
+**Notes for review:** None — straightforward bugfix, no adaptations needed.

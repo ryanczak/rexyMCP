@@ -201,7 +201,16 @@ and line numbers. Quote the relevant code if short.>
 ## Spec
 
 Numbered tasks in execution order. Each names the exact file to edit and the
-change to make.
+change to make. Two formats are accepted by the task seeder and both populate
+the executor's Tasks panel:
+
+- **List item:** `N. **<Task name>** — in \`<path>\`, <change>.` — concise;
+  good when each task fits on one line.
+- **Subheading:** `### N. <Task name>` followed by detail paragraphs — good
+  when a task needs code examples or sub-steps.
+
+Both can coexist in the same `## Spec` section. The section ends at the next
+`## ` heading (two hashes + space).
 
 1. **<Task name>** — in `<path>`, <change>. <Why if non-obvious.>
 

@@ -21,11 +21,12 @@ pub fn seed_from_spec(phase_doc: &str) -> Vec<Task> {
     let mut tasks = Vec::new();
 
     for line in lines.iter().skip(spec_start + 1) {
-        // Stop at the next heading (trimmed line starts with '#')
-        if line.trim().starts_with('#') {
+        // Stop at the next section heading (two hashes + space) — `### N.`
+        // subheadings are task items, not section boundaries.
+        if line.trim().starts_with("## ") {
             break;
         }
-        if let Some(task) = parse_task_line(line) {
+        if let Some(task) = parse_task_line(line).or_else(|| parse_heading_task_line(line)) {
             tasks.push(task);
         }
     }
@@ -83,6 +84,24 @@ fn extract_title(rest: &str) -> String {
         return title.0.trim().to_string();
     }
     trimmed.trim_end().to_string()
+}
+
+/// Parse a `### N. Title` subheading as a task. Returns `None` for any other
+/// line shape.
+fn parse_heading_task_line(line: &str) -> Option<Task> {
+    let rest = line.trim().strip_prefix("### ")?;
+    let (digits, title_part) = rest.split_once('.')?;
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    if !title_part.starts_with(' ') && !title_part.starts_with('\t') {
+        return None;
+    }
+    Some(Task {
+        id: digits.to_string(),
+        title: title_part.trim().to_string(),
+        state: TaskState::Pending,
+    })
 }
 
 #[cfg(test)]
@@ -164,5 +183,53 @@ mod tests {
         assert_eq!(tasks[0].title, "Tenth item");
         assert_eq!(tasks[1].id, "11");
         assert_eq!(tasks[1].title, "Eleventh item");
+    }
+
+    #[test]
+    fn seed_from_spec_parses_heading_format_tasks() {
+        let doc = "## Spec\n\n### 1. Fix stop condition\n\nSome detail.\n\n### 2. Add parser\n\n## Acceptance criteria\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "Fix stop condition");
+        assert_eq!(tasks[1].id, "2");
+        assert_eq!(tasks[1].title, "Add parser");
+        for t in &tasks {
+            assert_eq!(t.state, TaskState::Pending);
+        }
+    }
+
+    #[test]
+    fn seed_from_spec_stop_condition_does_not_fire_on_task_subheading() {
+        let doc = "## Spec\n\n### 1. First\n\n### 2. Second\n\n## Other\n\n### 3. Not in spec\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(
+            tasks.len(),
+            2,
+            "### headings in ## Spec must not stop the scan"
+        );
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[1].id, "2");
+    }
+
+    #[test]
+    fn seed_from_spec_mixed_formats() {
+        let doc = "## Spec\n\n1. **List item task** — do this\n\n### 2. Heading item task\n\nSome detail.\n\n## Acceptance criteria\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "List item task");
+        assert_eq!(tasks[1].id, "2");
+        assert_eq!(tasks[1].title, "Heading item task");
+    }
+
+    #[test]
+    fn parse_heading_task_line_rejects_non_heading_lines() {
+        assert!(parse_heading_task_line("## Not a task heading").is_none());
+        assert!(parse_heading_task_line("#### 1. Too many hashes").is_none());
+        assert!(parse_heading_task_line("###1. No space after hashes").is_none());
+        assert!(parse_heading_task_line("1. List item not heading").is_none());
+        // Indented heading: .trim() strips leading space so this matches
+        assert!(parse_heading_task_line("  ### 1. Indented").is_some());
     }
 }

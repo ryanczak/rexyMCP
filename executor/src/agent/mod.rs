@@ -191,16 +191,33 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Task-tracking substrate (M12 Arc A). Gated by [executor] task_tracking
     // (06b): off → no seeding, byte-identical to pre-06a.
     if deps.task_tracking {
-        for task in tasks::seed_from_spec(&input.phase_doc) {
+        for task in &seeded {
             log_event(
                 &log_handle,
                 &redactor,
                 deps.clock,
                 0,
                 SessionEvent::TaskUpdate {
-                    id: task.id,
-                    title: task.title,
+                    id: task.id.clone(),
+                    title: task.title.clone(),
                     state: task.state,
+                },
+            );
+        }
+        if seeded.is_empty() {
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                0,
+                SessionEvent::Progress {
+                    turn: 0,
+                    stage: "task_seeding".to_string(),
+                    files_changed: vec![],
+                    message: "task tracking is on but 0 tasks were seeded \
+                        from ## Spec — no `N. ` list items or `### N.` \
+                        subheadings found; Tasks panel will be empty"
+                        .to_string(),
                 },
             );
         }

@@ -3930,3 +3930,44 @@ async fn loop_prompt_includes_task_section_when_tracking_on() {
         "system prompt must contain '# Task tracking' and seeded task titles when task_tracking is on"
     );
 }
+
+// ── M14-01: empty-spec warning ─────────────────────────────────────────
+
+#[tokio::test]
+async fn mod_emits_progress_warning_when_task_tracking_on_and_no_tasks() {
+    use crate::store::sessions::event::SessionEvent;
+
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Mock AI responds immediately with a final message (no tool calls)
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let budget = Budget::new(1_000_000);
+
+    let phase_doc =
+        "# Phase\n\n## Goal\n\nNo spec items here.\n\n## Acceptance criteria\n\n- [ ] passes\n";
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        ..input()
+    };
+    let d = deps(&client, &registry, &budget, 8, dir.path());
+
+    let _ = execute_phase(&input, d).await.unwrap();
+
+    let recs = records(dir.path());
+    let warning = recs.iter().find(|r| {
+        matches!(
+            &r.event,
+            SessionEvent::Progress { turn: 0, stage, .. } if stage == "task_seeding"
+        )
+    });
+    assert!(
+        warning.is_some(),
+        "expected a task_seeding Progress warning at turn 0"
+    );
+    if let Some(rec) = warning
+        && let SessionEvent::Progress { message, .. } = &rec.event
+    {
+        assert!(!message.is_empty(), "warning message must not be empty");
+    }
+}
