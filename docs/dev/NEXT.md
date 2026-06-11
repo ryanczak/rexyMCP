@@ -4,28 +4,48 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-06 — Session full-width spinner** (`todo`, drafted
-2026-06-10, awaiting dispatch)
-([phase-06-spinner.md](milestones/M13-dashboard-polish/phase-06-spinner.md)).
-Dispatch with `/rexymcp:dispatch phase-06`. Phases 07–08 remain `todo` and undrafted.
+**Active phase:** **M13 phase-07 — Tasks panel: named tasks + progress gauge** (`todo`,
+drafted 2026-06-10, awaiting dispatch)
+([phase-07-tasks.md](milestones/M13-dashboard-polish/phase-07-tasks.md)).
+Dispatch with `/rexymcp:dispatch phase-07`. Phase 08 (per-event timestamps) remains
+`todo` and undrafted.
 
-**M13 phase-06 — drafted** (2026-06-10): full-width spinner on its own bottom line of
-the Session panel (items #10/R5; layout decided with the user). The spinner moves
-**out** of `session_lines` into a new pure `spinner_line(spinner, width) -> Option<Line>`
-that `render.rs` **pushes** onto the Session vec (the
-`dollars_saved_line`/`last_update_line` precedent, + a `width` arg — the spinner is
-the only panel line that needs the panel width). A dog trots a **triangle-wave**
-offset across the full width, bounded so `offset + SPRITE_CELLS <= width` (pinned
-overflow negative `spinner_line_never_exceeds_width`, mutation-resistant vs a
-`tick % width`/unbounded impl). The `turn N, stage X` line stays **unchanged** on the
-line directly above. Header band `Length(9)` → `Length(10)` for the extra row; body is
-`Min(0)` so Activity/Tasks shrink one row **automatically** (no body edit). Drops the
-`spinner` param from `session_lines` — **10 call sites** (1 prod render + 9 panels.rs
-tests), all enumerated with line numbers (the bounded single-module churn-stall dodge:
-do all ten + one `cargo build`). Retires the fixed-window `SPINNER_FRAMES`
-(transcript.rs const + event_loop.rs now passes a **raw** tick, not `% FRAMES.len()`).
-**No `StatusSummary` field, no `SessionEvent`/config edit.** 4 source files
-(render/panels/event_loop/transcript). ~140 lines.
+**M13 phase-07 — drafted** (2026-06-10): the Tasks panel shows **named** tasks with
+checkbox glyphs (`☑` done / `▶` active / `☐` pending) over a **done/total progress
+gauge** (items #7/R3). Today the panel renders three bare count lines and `summarize`
+discards `TaskUpdate.title` into a count-only `HashMap`. Two files
+(`status.rs` + `dashboard/panels.rs`): `summarize` swaps the `HashMap<id,state>` for
+an **insertion-ordered `Vec<TaskRow>`** (id/title/state, last-write-wins per id) so
+titles + order are retained; the existing `tasks_total/done/active` counts are
+**derived from the vec** (identical results — all existing task tests pass unmodified;
+the stall-dodge is that `StatusSummary` is `Default`-built + mutated in `summarize`, so
+the new field is a **one-line add, no literal cascade**). `tasks_lines` rewritten to
+emit a gauge line + one `{glyph} {title}` line per task (title `…`-truncated to
+`TASK_TITLE_MAX`); new pure `tasks_gauge_line(done, total)` renders a `GAUGE_CELLS`-wide
+`█`/`░` bar + `done/total (pct%)`, colored **progress-oriented** (green ≥80% / yellow
+≥40% / grey else — a deliberate inversion of the context gauge's red floor, noted in the
+doc). The gauge matches the context-gauge **style** (a single colored `Line`), **not** a
+ratatui `Gauge` widget (would break the `Vec<Line>`→`panel()` composition — pinned out
+of scope). **No `render.rs`/`filter.rs`/`transcript.rs` edit** (`tasks_lines` signature
+unchanged), no `SessionEvent`/config/`Cargo.toml`. Load-bearing pins:
+`summarize_captures_task_titles_in_order` (title + first-seen order, mutation-resistant
+vs HashMap/`..`-drop) and `tasks_gauge_line_fraction_and_fill` (3/8 → "38%" + 4 `█`,
+mutation-resistant vs wrong divisor / floor fill). ~200 lines.
+
+Last completed: **M13 phase-06** — full-width Session-panel spinner on its own bottom
+line ([phase-06-spinner.md](milestones/M13-dashboard-polish/phase-06-spinner.md),
+`done`, approved_first_try, commit `002f148`/approve `9f7d0bb`).
+
+**M13 phase-06 — done** (2026-06-10, approved_first_try): the spinner moved **out** of
+`session_lines` into a width-aware `spinner_line(spinner, width) -> Option<Line>` pushed
+in `render.rs` (the `dollars_saved_line`/`last_update_line` precedent); a dog trots a
+triangle-wave offset bounded so `offset + SPRITE_CELLS <= width`. The `spinner` param was
+dropped from `session_lines` (all 10 call sites updated, clean), `SPINNER_FRAMES`
+retired, header band grown `Length(9)`→`Length(10)`. 725 executor pass, all four gates
+green; load-bearing `spinner_line_never_exceeds_width` + `spinner_line_bounces_at_right_edge`
+mutation-resistant. Clean first-try; commit `002f148` (feat). Calibration: 2nd-plus
+dirty-tree-at-dispatch (commit swept the at-dispatch NEXT.md/phase-doc edits) — commit
+ambient activation edits *before* dispatch next time.
 
 Last completed: **M13 phase-05** — session `duration:` line + `last update:` moved to
 Budget (items #4/#5)
