@@ -124,9 +124,12 @@ pub(crate) fn render_dashboard(
     }
 
     // Outer split: fixed-height header band + filling body.
+    // Height 11 = 2 border rows + up to 9 Session content rows (Milestone, Phase,
+    // Session, Model, State, Duration, last-update, Turn/stage, spinner). Budget and
+    // Reclaim share this height; the body (Activity · Tasks/Files) fills the rest.
     let total_wrapped;
     let [header, body] =
-        Layout::vertical([Constraint::Length(10), Constraint::Min(0)]).areas::<2>(area);
+        Layout::vertical([Constraint::Length(11), Constraint::Min(0)]).areas::<2>(area);
 
     // Header band: Session · Budget · Compactions.
     // Budget uses Min(56) so the combined tok/s line
