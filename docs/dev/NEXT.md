@@ -4,11 +4,35 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-07 — Tasks panel: named tasks + progress gauge** (`todo`,
+**Active phase:** **M13 phase-08 — Activity: per-event relative timestamps** (`todo`,
 drafted 2026-06-10, awaiting dispatch)
-([phase-07-tasks.md](milestones/M13-dashboard-polish/phase-07-tasks.md)).
-Dispatch with `/rexymcp:dispatch phase-07`. Phase 08 (per-event timestamps) remains
-`todo` and undrafted.
+([phase-08-timestamps.md](milestones/M13-dashboard-polish/phase-08-timestamps.md)).
+Dispatch with `/rexymcp:dispatch phase-08`. **This is the last M13 phase** — when it
+is approved, M13 is at a milestone boundary (human sign-off gate; write the
+retrospective, set this pointer to "none").
+
+**M13 phase-08 — drafted** (2026-06-10): each Activity transcript header gains a
+dim `[+3m12s]`-style **relative timestamp** (item R2), measured from the session's
+first record (`record.ts − records[0].ts`) and formatted by the **existing**
+`crate::status::humanize_age` (the Session-panel `duration:` formatter — buckets
+match). **Single production file** (`transcript.rs`): a tiny pure
+`relative_ts(ts, base_ts)` helper + a `transcript_lines` rewrite that prepends a
+`Color::Rgb(128,128,128)` timestamp span to each record's **header line only**
+(`lines.first_mut()`), bodies untouched. **Deliberate low-blast-radius shape:** the
+prefix is added one layer **up** from `record_lines`, so `record_lines(rec)`'s
+signature, its ~15 test call sites, and the header-color tests (which call
+`record_lines` directly and read `lines[0].spans[0]`) all stay green untouched.
+Relative-to-**start** (not `now_ms`) → stable per record, **no `render.rs` edit, no
+clock param**. Load-bearing pins:
+`transcript_lines_timestamp_relative_to_first_record_not_first_visible` (baseline is
+`records.first()`, computed **before** the filter — a hidden opening event must not
+reset the baseline to `+0s`) and `relative_ts_formats_offset_from_base` (`+0s` /
+`+5s` / `+3m12s` + saturating guard). No `SessionEvent`/config/`status.rs`-mutation/
+`Cargo.toml`. ~60 lines.
+
+Last completed: **M13 phase-07** — Tasks panel: named tasks with glyphs + done/total
+progress gauge ([phase-07-tasks.md](milestones/M13-dashboard-polish/phase-07-tasks.md),
+`done`, approved_first_try, commit `9e50f24`/approve `cef22df`).
 
 **M13 phase-07 — drafted** (2026-06-10): the Tasks panel shows **named** tasks with
 checkbox glyphs (`☑` done / `▶` active / `☐` pending) over a **done/total progress
