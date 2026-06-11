@@ -37,7 +37,7 @@ Activity transcript time-delta color to dull yellow.
 
 | # | Phase | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Move `last update:` to Session panel + dull yellow timestamps ([phase-01-layout-and-color.md](phase-01-layout-and-color.md)) | in-progress | feat | xs |
+| 01 | Move `last update:` to Session panel + dull yellow timestamps ([phase-01-layout-and-color.md](phase-01-layout-and-color.md)) | review | feat | xs |
 | 02 | Width-aware task title truncation ([phase-02-task-width.md](phase-02-task-width.md)) | todo | feat | xs |
 | 03 | Model-aware `$ saved` pricing ([phase-03-pricing.md](phase-03-pricing.md)) | todo | feat | s |
 

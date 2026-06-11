@@ -474,7 +474,7 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(
             !text.iter().any(|s| s.contains("last update")),
-            "session_lines must NOT contain 'last update:' — it moved to Budget"
+            "session_lines must NOT contain 'last update:' — pushed in render.rs, not by session_lines()"
         );
     }
 

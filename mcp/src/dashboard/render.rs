@@ -142,15 +142,15 @@ pub(crate) fn render_dashboard(
     .areas::<3>(header);
 
     let mut session = session_lines(&data.summary, now_ms);
+    if let Some(line) = last_update_line(&data.summary, now_ms) {
+        session.push(line);
+    }
     let session_inner_width = session_area.width.saturating_sub(2) as usize;
     if let Some(line) = spinner_line(state.spinner, session_inner_width) {
         session.push(line);
     }
     frame.render_widget(panel(" Session ", session), session_area);
     let mut budget = Vec::new();
-    if let Some(line) = last_update_line(&data.summary, now_ms) {
-        budget.push(line);
-    }
     budget.extend(budget_lines(&data.summary));
     if let Some(line) = dollars_saved_line(&data.summary, rates) {
         budget.push(line);

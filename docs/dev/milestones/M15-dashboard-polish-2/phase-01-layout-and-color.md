@@ -1,6 +1,6 @@
 # Phase 01 — Move `last update:` to Session panel + dull yellow timestamps
 
-**Status:** in-progress
+**Status:** review
 **Milestone:** M15-dashboard-polish-2
 **Depends on:** none (first M15 phase)
 
@@ -216,3 +216,45 @@ No config, no executor crate, no new `SessionEvent`, no `Cargo.toml`.
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 03:48 (complete)
+
+**Summary:** Moved `last_update_line` push from the budget vec to the session vec in `render.rs` (inserted after `session_lines()` output, before the spinner). Changed the `[+Xs]` timestamp span color in `transcript.rs` from dim grey `Rgb(128,128,128)` to dull yellow `Rgb(180,150,50)`. Updated the corresponding test name, assertion, and message. Updated the stale panic message in `session_lines_omits_last_update`. No new logic, no new functions.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+(no output — clean)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(no output — clean)
+
+cargo test 2>&1 | tail -30
+test result: ok. 731 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+E2E is N/A (TUI rendering — no headless harness, consistent with all prior dashboard phases).
+
+**Files changed:**
+- `mcp/src/dashboard/render.rs` — moved `last_update_line` push from budget vec to session vec
+- `mcp/src/dashboard/transcript.rs` — changed timestamp span color to dull yellow, updated test name/assertion/message
+- `mcp/src/dashboard/panels.rs` — updated stale panic message in `session_lines_omits_last_update`
+- `docs/dev/milestones/M15-dashboard-polish-2/phase-01-layout-and-color.md` — status → review, completion entry
+- `docs/dev/milestones/M15-dashboard-polish-2/README.md` — phase table row → review
+
+**New tests:** none (one test renamed and updated)
+
+**Commits:**
+- (pending) — feat(dashboard): move last_update to Session panel, dull yellow timestamps
+
+**Notes for review:** None — straight spec implementation, no deviations.
+
+**Grep verification:** `Rgb(180, 150, 50)` found at `transcript.rs:34` (production) and `transcript.rs:776` (test).

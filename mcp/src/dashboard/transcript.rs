@@ -31,7 +31,7 @@ pub(crate) fn transcript_lines(
                 let mut spans = Vec::with_capacity(header.spans.len() + 1);
                 spans.push(Span::styled(
                     format!("[{}] ", relative_ts(r.ts, base_ts)),
-                    Style::new().fg(Color::Rgb(128, 128, 128)),
+                    Style::new().fg(Color::Rgb(180, 150, 50)),
                 ));
                 spans.append(&mut header.spans);
                 *header = Line::from(spans);
@@ -765,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn transcript_lines_timestamp_span_is_dim_grey() {
+    fn transcript_lines_timestamp_span_is_dull_yellow() {
         let records = vec![rec(1000, 0, start_event())];
         let lines = transcript_lines(&records, &ActivityFilter::default());
         let header = &lines[0];
@@ -773,8 +773,8 @@ mod tests {
         // First span is the timestamp gutter
         assert_eq!(
             header.spans[0].style.fg,
-            Some(Color::Rgb(128, 128, 128)),
-            "timestamp span should be dim grey"
+            Some(Color::Rgb(180, 150, 50)),
+            "timestamp span should be dull yellow"
         );
         let ts_text = &header.spans[0].content;
         assert!(
