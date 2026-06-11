@@ -14,10 +14,7 @@ use rexymcp_executor::store::sessions::event::TaskState;
 /// how large the added/removed counts are.
 const FILE_LINE_MAX: usize = 28;
 
-/// Cells in the Tasks progress bar.
-const GAUGE_CELLS: usize = 10;
-
-/// Cloud-baseline $/Mtok rates for the Budget panel's "$ saved" line.
+/// Cloud-baseline $/Mtok rates for the Budget panel's "Savings:" line.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BudgetRates {
     pub input_per_mtok: f64,
@@ -172,6 +169,28 @@ pub(crate) fn spinner_line(spinner: Option<usize>, width: usize) -> Option<Line<
 pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
+    if let Some(pct) = summary.last_context_pct {
+        if pct == 0.0 {
+            lines.push(Line::from("Usage: — (unmeasured)"));
+        } else {
+            let pct_int = (pct * 100.0).round() as u32;
+            let color = if pct_int < 50 {
+                Color::Green
+            } else if pct_int < 80 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+            let label = match (summary.last_context_used, summary.last_context_window) {
+                (Some(used), Some(window)) if window > 0 => {
+                    format!("Usage: {pct_int}% ({used}/{window})")
+                }
+                _ => format!("Usage: {pct_int}%"),
+            };
+            lines.push(Line::from(Span::styled(label, Style::new().fg(color))));
+        }
+    }
+
     if summary.compaction_count > 0 {
         let before = summary.compaction_tokens_before;
         let after = summary.compaction_tokens_after;
@@ -232,18 +251,20 @@ pub(crate) fn milestone_line(name: &str, width: usize) -> Line<'static> {
 /// `done/total (pct%)`, colored by completion (progress-oriented: green = near/at
 /// done, neutral grey = no progress). Matches the Budget context-gauge *style*
 /// (a single colored text `Line`), not a ratatui `Gauge` widget.
-pub(crate) fn tasks_gauge_line(done: usize, total: usize) -> Line<'static> {
+pub(crate) fn tasks_gauge_line(done: usize, total: usize, width: usize) -> Line<'static> {
     let pct = if total == 0 {
         0
     } else {
         ((done as f64 / total as f64) * 100.0).round() as u32
     };
+    let suffix = format!(" {done}/{total} ({pct}%)");
+    let gauge_cells = width.saturating_sub(suffix.len()).max(1);
     let filled = if total == 0 {
         0
     } else {
-        (((done as f64 / total as f64) * GAUGE_CELLS as f64).round() as usize).min(GAUGE_CELLS)
+        (((done as f64 / total as f64) * gauge_cells as f64).round() as usize).min(gauge_cells)
     };
-    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(GAUGE_CELLS - filled));
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(gauge_cells - filled));
     let color = if pct >= 80 {
         Color::Green
     } else if pct >= 40 {
@@ -252,7 +273,7 @@ pub(crate) fn tasks_gauge_line(done: usize, total: usize) -> Line<'static> {
         Color::Rgb(200, 200, 200)
     };
     Line::from(Span::styled(
-        format!("{bar} {done}/{total} ({pct}%)"),
+        format!("{bar}{suffix}"),
         Style::new().fg(color),
     ))
 }
@@ -268,24 +289,32 @@ pub(crate) fn tasks_lines(
         return vec![Line::from("(no tasks tracked yet)")];
     }
     let title_max = width.saturating_sub(2); // 1 glyph cell + 1 space
-    let mut lines = vec![tasks_gauge_line(summary.tasks_done, summary.tasks_total)];
+    let mut lines = vec![tasks_gauge_line(
+        summary.tasks_done,
+        summary.tasks_total,
+        width,
+    )];
     for task in &summary.tasks {
         let (glyph, color) = match task.state {
             TaskState::Done => ("☑", Color::Green),
             TaskState::Active => ("▶", Color::Yellow),
             TaskState::Pending => ("☐", Color::Rgb(200, 200, 200)),
         };
+        let task_tick = if task.state == TaskState::Active {
+            tick
+        } else {
+            None
+        };
         lines.push(Line::from(vec![
             Span::styled(glyph, Style::new().fg(color)),
-            Span::raw(format!(" {}", scrolled_title(&task.title, title_max, tick))),
+            Span::raw(format!(
+                " {}",
+                scrolled_title(&task.title, title_max, task_tick)
+            )),
         ]));
     }
     lines
 }
-
-/// Loop ticks per one-character scroll advance (the tick clock runs at ~2 Hz;
-/// this slows the pan to a readable speed). The user may hand-tune later.
-const TASK_SCROLL_DELAY: usize = 2;
 
 /// Window of a task title to show within `max` chars. Titles that fit are
 /// returned whole. Overflowing titles pan **back and forth** (ping-pong) driven
@@ -300,7 +329,8 @@ fn scrolled_title(title: &str, max: usize, tick: Option<usize>) -> String {
     let start = match tick {
         Some(t) => {
             // Triangle wave over [0, overflow]: pan right, then back left.
-            let step = t / TASK_SCROLL_DELAY;
+            // 0.75 chars/tick (3 chars per 4 ticks).
+            let step = t * 3 / 4;
             let period = overflow * 2;
             let phase = step % period;
             if phase <= overflow {
@@ -419,28 +449,6 @@ pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         None => lines.push(Line::from("Tok/s: —")),
     }
 
-    if let Some(pct) = summary.last_context_pct {
-        if pct == 0.0 {
-            lines.push(Line::from("Context: — (unmeasured)"));
-        } else {
-            let pct_int = (pct * 100.0).round() as u32;
-            let color = if pct_int < 50 {
-                Color::Green
-            } else if pct_int < 80 {
-                Color::Yellow
-            } else {
-                Color::Red
-            };
-            let label = match (summary.last_context_used, summary.last_context_window) {
-                (Some(used), Some(window)) if window > 0 => {
-                    format!("Context: {pct_int}% ({used}/{window})")
-                }
-                _ => format!("Context: {pct_int}%"),
-            };
-            lines.push(Line::from(Span::styled(label, Style::new().fg(color))));
-        }
-    }
-
     lines
 }
 
@@ -455,9 +463,9 @@ fn dollars_saved(
         + (output_tokens as f64 / 1_000_000.0) * out_per_mtok
 }
 
-/// "$ saved" line for the Budget panel.
-/// Returns `None` when there are no metrics yet, `"$ saved: —"` when rates are
-/// unconfigured (both 0.0), and `"$ saved: $X.XX"` otherwise.
+/// "Savings:" line for the Budget panel.
+/// Returns `None` when there are no metrics yet, `"Savings: —"` when rates are
+/// unconfigured (both 0.0), and `"Savings: $X.XX"` otherwise.
 pub(crate) fn dollars_saved_line(
     summary: &StatusSummary,
     rates: BudgetRates,
@@ -465,10 +473,10 @@ pub(crate) fn dollars_saved_line(
     let in_tok = summary.last_input_tokens?;
     let out_tok = summary.last_output_tokens.unwrap_or(0);
     if rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0 {
-        return Some(Line::from("$ saved: —"));
+        return Some(Line::from("Savings: —"));
     }
     let saved = dollars_saved(in_tok, out_tok, rates.input_per_mtok, rates.output_per_mtok);
-    Some(Line::from(format!("$ saved: ${saved:.2}")))
+    Some(Line::from(format!("Savings: ${saved:.2}")))
 }
 
 /// "last update: …" freshness line for the Budget panel — the age of the most
@@ -1069,15 +1077,54 @@ mod tests {
     }
 
     #[test]
+    fn tasks_lines_non_active_tasks_do_not_pan() {
+        // 30-char title; title_max = 20, overflow = 10.
+        // At tick=4: step = 4*3/4 = 3, so Active window shifts to chars[3..23].
+        // Done/Pending receive tick=None → truncate_title → frozen at "abcdefghijklmnopqrst…".
+        let long = "abcdefghijklmnopqrstuvwxyzABCD".to_string(); // 30 distinct chars
+        let summary = StatusSummary {
+            tasks_total: 3,
+            tasks_done: 1,
+            tasks: vec![
+                crate::status::TaskRow {
+                    id: "a".into(),
+                    title: long.clone(),
+                    state: TaskState::Done,
+                },
+                crate::status::TaskRow {
+                    id: "b".into(),
+                    title: long.clone(),
+                    state: TaskState::Active,
+                },
+                crate::status::TaskRow {
+                    id: "c".into(),
+                    title: long.clone(),
+                    state: TaskState::Pending,
+                },
+            ],
+            ..StatusSummary::default()
+        };
+        let width = 22; // title_max = 20
+        let lines_0 = tasks_lines(&summary, width, Some(0));
+        let lines_4 = tasks_lines(&summary, width, Some(4));
+        let text_0: Vec<String> = lines_0.iter().map(|l| format!("{l}")).collect();
+        let text_4: Vec<String> = lines_4.iter().map(|l| format!("{l}")).collect();
+        // Index 0 = gauge, 1 = done task, 2 = active task, 3 = pending task.
+        assert_eq!(text_0[1], text_4[1], "done task must not pan");
+        assert_eq!(text_0[3], text_4[3], "pending task must not pan");
+        assert_ne!(text_0[2], text_4[2], "active task must pan at tick=4");
+    }
+
+    #[test]
     fn tasks_gauge_line_full_is_green_and_complete() {
-        let line = tasks_gauge_line(4, 4);
+        let line = tasks_gauge_line(4, 4, 40);
         let text = format!("{line}");
         assert!(text.contains("4/4"), "should contain fraction: {text}");
         assert!(text.contains("100%"), "should contain 100%%: {text}");
         assert_eq!(
             text.matches('█').count(),
-            10,
-            "should have 10 filled cells: {text}"
+            29,
+            "should have 29 filled cells: {text}"
         );
         assert_eq!(
             text.matches('░').count(),
@@ -1093,19 +1140,19 @@ mod tests {
 
     #[test]
     fn tasks_gauge_line_half() {
-        let line = tasks_gauge_line(1, 2);
+        let line = tasks_gauge_line(1, 2, 40);
         let text = format!("{line}");
         assert!(text.contains("1/2"), "should contain fraction: {text}");
         assert!(text.contains("50%"), "should contain 50%%: {text}");
         assert_eq!(
             text.matches('█').count(),
-            5,
-            "should have 5 filled cells: {text}"
+            15,
+            "should have 15 filled cells: {text}"
         );
         assert_eq!(
             text.matches('░').count(),
-            5,
-            "should have 5 empty cells: {text}"
+            15,
+            "should have 15 empty cells: {text}"
         );
         assert_eq!(
             line.spans[0].style.fg,
@@ -1116,7 +1163,7 @@ mod tests {
 
     #[test]
     fn tasks_gauge_line_zero_progress() {
-        let line = tasks_gauge_line(0, 5);
+        let line = tasks_gauge_line(0, 5, 40);
         let text = format!("{line}");
         assert!(text.contains("0/5"), "should contain fraction: {text}");
         assert!(text.contains("0%"), "should contain 0%%: {text}");
@@ -1127,8 +1174,8 @@ mod tests {
         );
         assert_eq!(
             text.matches('░').count(),
-            10,
-            "should have 10 empty cells: {text}"
+            31,
+            "should have 31 empty cells: {text}"
         );
         assert_eq!(
             line.spans[0].style.fg,
@@ -1139,7 +1186,7 @@ mod tests {
 
     #[test]
     fn tasks_gauge_line_fraction_and_fill() {
-        let line = tasks_gauge_line(3, 8);
+        let line = tasks_gauge_line(3, 8, 40);
         let text = format!("{line}");
         assert!(text.contains("3/8"), "should contain fraction: {text}");
         assert!(
@@ -1148,17 +1195,32 @@ mod tests {
         );
         assert_eq!(
             text.matches('█').count(),
-            4,
-            "should have 4 filled cells (round(3.75)): {text}"
+            11,
+            "should have 11 filled cells (round(11.25) at gauge_cells=30): {text}"
         );
     }
 
     #[test]
     fn tasks_gauge_line_zero_total_does_not_panic() {
-        let line = tasks_gauge_line(0, 0);
+        let line = tasks_gauge_line(0, 0, 40);
         let text = format!("{line}");
         assert!(text.contains("0/0"), "should contain 0/0: {text}");
         assert!(text.contains("0%"), "should contain 0%%: {text}");
+    }
+
+    #[test]
+    fn tasks_gauge_line_fills_panel_width() {
+        // pct = round(3/7*100) = 43; suffix = " 3/7 (43%)" = 10 chars;
+        // gauge_cells = 40-10 = 30; text.chars().count() = 30 + 10 = 40.
+        let width = 40;
+        let line = tasks_gauge_line(3, 7, width);
+        let text = format!("{line}");
+        assert_eq!(
+            text.chars().count(),
+            width,
+            "gauge line must fill panel width {width}: got {} chars in {text:?}",
+            text.chars().count()
+        );
     }
 
     // --- scrolled_title tests ---
@@ -1175,20 +1237,16 @@ mod tests {
         let max = 10;
         // tick = 0 → start 0 → "abcdefghij"
         assert_eq!(scrolled_title(FIXTURE, max, Some(0)), "abcdefghij");
-        // tick = TASK_SCROLL_DELAY * 3 → start 3 → "defghijklm"
-        assert_eq!(
-            scrolled_title(FIXTURE, max, Some(TASK_SCROLL_DELAY * 3)),
-            "defghijklm"
-        );
+        // tick = 4 → step = 4*3/4 = 3 → start 3 → "defghijklm"
+        assert_eq!(scrolled_title(FIXTURE, max, Some(4)), "defghijklm");
     }
 
     #[test]
     fn scrolled_title_ping_pongs() {
         let max = 10;
         let overflow = FIXTURE.len() - max; // 20
-        let period = overflow * 2 * TASK_SCROLL_DELAY;
         let mut starts = Vec::new();
-        for t in (0..period).step_by(TASK_SCROLL_DELAY) {
+        for t in 0..=200usize {
             let window = scrolled_title(FIXTURE, max, Some(t));
             let start = FIXTURE.find(&window).unwrap_or(0);
             starts.push(start);
@@ -1198,14 +1256,7 @@ mod tests {
             max_start, overflow,
             "max start ({max_start}) should equal overflow ({overflow})"
         );
-        // Sequence is non-monotonic (descends at some point).
-        let mut descends = false;
-        for w in starts.windows(2) {
-            if w[1] < w[0] {
-                descends = true;
-                break;
-            }
-        }
+        let descends = starts.windows(2).any(|w| w[1] < w[0]);
         assert!(descends, "ping-pong sequence must descend at some point");
     }
 
@@ -1236,7 +1287,7 @@ mod tests {
     // --- budget_lines tests ---
 
     #[test]
-    fn budget_lines_shows_tokens_and_context() {
+    fn budget_lines_shows_tokens() {
         let summary = StatusSummary {
             last_input_tokens: Some(1200),
             last_output_tokens: Some(340),
@@ -1247,59 +1298,12 @@ mod tests {
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("1200")));
         assert!(text.iter().any(|s| s.contains("340")));
-        assert!(text.iter().any(|s| s.contains("62%")));
-    }
-
-    #[test]
-    fn budget_lines_shows_context_used_and_window() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(1200),
-            last_output_tokens: Some(340),
-            last_context_pct: Some(0.68),
-            last_context_used: Some(31195),
-            last_context_window: Some(45875),
-            ..StatusSummary::default()
-        };
-        let lines = budget_lines(&summary);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let ctx_line = text.iter().find(|s| s.contains("Context:")).unwrap();
-        assert!(ctx_line.contains("68%"), "pct in: {ctx_line}");
-        assert!(ctx_line.contains("31195"), "used in: {ctx_line}");
-        assert!(ctx_line.contains("45875"), "window in: {ctx_line}");
-    }
-
-    #[test]
-    fn budget_lines_context_omits_fraction_when_window_zero() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(500),
-            last_output_tokens: Some(100),
-            last_context_pct: Some(0.50),
-            last_context_used: Some(0),
-            last_context_window: Some(0),
-            ..StatusSummary::default()
-        };
-        let lines = budget_lines(&summary);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let ctx_line = text.iter().find(|s| s.contains("Context:")).unwrap();
-        assert!(ctx_line.contains("50%"), "pct in: {ctx_line}");
         assert!(
-            !ctx_line.contains('/'),
-            "no fraction when window=0: {ctx_line}"
+            !text
+                .iter()
+                .any(|s| s.contains("Context:") || s.contains("Usage:")),
+            "context line must not appear in budget_lines"
         );
-    }
-
-    #[test]
-    fn budget_lines_unmeasured_when_zero_pct() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(10),
-            last_output_tokens: Some(5),
-            last_context_pct: Some(0.0),
-            ..StatusSummary::default()
-        };
-        let lines = budget_lines(&summary);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("unmeasured")));
-        assert!(!text.iter().any(|s| s.contains("0%")));
     }
 
     #[test]
@@ -1496,6 +1500,83 @@ mod tests {
         assert!(!text.iter().any(|s| s.contains("Dedupe:")));
     }
 
+    #[test]
+    fn reclaim_lines_shows_usage_when_context_pct_set() {
+        let summary = StatusSummary {
+            last_context_pct: Some(0.62),
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text.iter().any(|s| s.contains("Usage:")),
+            "Usage line must be present: {text:?}"
+        );
+        assert!(
+            text.iter().any(|s| s.contains("62%")),
+            "percentage must appear: {text:?}"
+        );
+    }
+
+    #[test]
+    fn reclaim_lines_usage_is_first_line() {
+        let summary = StatusSummary {
+            last_context_pct: Some(0.55),
+            compaction_count: 1,
+            compaction_tokens_before: 1000,
+            compaction_tokens_after: 600,
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let first = format!("{}", lines[0]);
+        assert!(
+            first.contains("Usage:"),
+            "Usage must be the first line; got: {first}"
+        );
+    }
+
+    #[test]
+    fn reclaim_lines_usage_color_red_when_high() {
+        let summary = StatusSummary {
+            last_context_pct: Some(0.85),
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        assert_eq!(
+            lines[0].spans[0].style.fg,
+            Some(Color::Red),
+            "pct >= 80 must render red"
+        );
+    }
+
+    #[test]
+    fn reclaim_lines_usage_shows_fraction_with_used_and_window() {
+        let summary = StatusSummary {
+            last_context_pct: Some(0.68),
+            last_context_used: Some(31195),
+            last_context_window: Some(45875),
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let usage_line = text.iter().find(|s| s.contains("Usage:")).unwrap();
+        assert!(usage_line.contains("68%"), "pct in: {usage_line}");
+        assert!(usage_line.contains("31195"), "used in: {usage_line}");
+        assert!(usage_line.contains("45875"), "window in: {usage_line}");
+    }
+
+    #[test]
+    fn reclaim_lines_usage_unmeasured_when_zero_pct() {
+        let summary = StatusSummary {
+            last_context_pct: Some(0.0),
+            ..StatusSummary::default()
+        };
+        let lines = reclaim_lines(&summary);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(text.iter().any(|s| s.contains("unmeasured")));
+        assert!(!text.iter().any(|s| s.contains("0%")));
+    }
+
     // --- dollars_saved tests ---
 
     #[test]
@@ -1523,7 +1604,7 @@ mod tests {
         let rates = BudgetRates::default();
         let line = dollars_saved_line(&summary, rates);
         assert!(line.is_some());
-        assert_eq!(format!("{}", line.unwrap()), "$ saved: —");
+        assert_eq!(format!("{}", line.unwrap()), "Savings: —");
     }
 
     #[test]
@@ -1539,7 +1620,7 @@ mod tests {
         };
         let line = dollars_saved_line(&summary, rates);
         assert!(line.is_some());
-        assert_eq!(format!("{}", line.unwrap()), "$ saved: $10.50");
+        assert_eq!(format!("{}", line.unwrap()), "Savings: $10.50");
     }
 
     // --- model_rates tests ---

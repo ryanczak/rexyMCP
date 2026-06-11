@@ -1,7 +1,7 @@
 # Phase 06: Dashboard display tweaks — layout, pan rate, label renames
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** todo
+**Status:** review
 **Depends on:** phase-05 (no code overlap)
 **Estimated diff:** ~140 lines (panels.rs + render.rs + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -627,3 +627,59 @@ If no live session is available, the gate suite is sufficient.
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 22:25 (started)
+
+**By:** executor
+
+Implementing all six dashboard display tweaks: layout constraint, pan rate, label renames, context→usage migration, panel rename, full-width gauge.
+
+### Update — 2026-06-11 22:25 (complete)
+
+**By:** executor
+
+**Summary:** All six display tweaks implemented — layout, pan rate, label renames, context→usage migration, panel rename, full-width gauge.
+
+**Acceptance criteria verified:**
+- [x] `cargo build` succeeds with zero warnings
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` passes
+- [x] `cargo fmt --all --check` passes
+- [x] `cargo test` passes (734 passed; 0 failed; 2 ignored)
+- [x] `render.rs` layout has `Constraint::Min(52)` for the Budget area
+- [x] `GAUGE_CELLS` and `TASK_SCROLL_DELAY` constants are gone from `panels.rs`
+- [x] `tasks_gauge_line` signature is `(done: usize, total: usize, width: usize)`
+- [x] `scrolled_title` formula is `t * 3 / 4` (no reference to `TASK_SCROLL_DELAY`)
+- [x] Budget panel (`budget_lines`) contains no "Context:" or "Usage:" text
+- [x] Context panel (`reclaim_lines`) emits "Usage:" as its first line when context pct is `Some`
+- [x] Panel title is `" Context "` (not `" Reclaim "`)
+- [x] `dollars_saved_line` emits `"Savings: —"` and `"Savings: $X.XX"`
+
+**Grep verification:**
+- `grep -c 'GAUGE_CELLS' panels.rs` → 0
+- `grep -c 'TASK_SCROLL_DELAY' panels.rs` → 0
+- `grep -n 'Constraint::Min(52)' render.rs` → 142
+- `grep -n '" Context "' render.rs` → 164
+- `grep -n 'Savings: —' panels.rs` → 3 matches (doc, impl, test)
+- `grep -n 'Usage:' panels.rs` → 3 production matches + test matches
+- `grep -n 't \* 3 / 4' panels.rs` → 333
+- `grep -n 'fn tasks_gauge_line(done: usize, total: usize, width: usize)' panels.rs` → 254
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — all 6 spec items (§1-§6)
+- `mcp/src/dashboard/render.rs` — §1 (Min 52), §5 (" Context " panel title)
+- `docs/dev/milestones/M17-dashboard-polish-3/phase-06-display-tweaks.md` — status flip + Update Log
+- `docs/dev/milestones/M17-dashboard-polish-3/README.md` — phase table status flip
+
+**Commit:** `feat: dashboard display tweaks — layout, pan rate, labels, context panel`
+
+**Verification commands:**
+```
+cargo fmt --all --check → 0
+cargo build → 0
+cargo clippy --all-targets --all-features -- -D warnings → 0
+cargo test → 734 passed; 0 failed; 2 ignored
+```
+
+**End-to-end verification:** N/A — no live dashboard session available; gate suite sufficient per phase doc.
+
+**Notes for review:** None — all changes match the spec exactly.
