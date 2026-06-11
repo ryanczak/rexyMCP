@@ -598,7 +598,7 @@ fn format_references(hits: &[RefHit], abs_root: &Path, name: &str, truncated: bo
 
     if truncated {
         output.push_str(&format!(
-            "\n[… truncated at {} references; narrow your path or add a kind filter to see more …]",
+            "\n[… truncated at {} references; narrow your path or raise `max_results` to see more …]",
             hits.len()
         ));
     }
@@ -1371,5 +1371,45 @@ mod tests {
             result.error
         );
         assert!(result.output.contains("foo();"));
+    }
+
+    #[tokio::test]
+    async fn references_truncation_note_omits_kind_filter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("src/lib.rs", "fn foo() { foo(); foo(); foo(); }\n")],
+        );
+
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "name": "foo",
+                "mode": "references",
+                "max_results": 1,
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        // Truncation fired (more than max_results refs exist).
+        assert!(
+            result.metadata.as_ref().unwrap()["truncated"]
+                .as_bool()
+                .unwrap()
+        );
+        let body = &result.output;
+        assert!(
+            body.contains("truncated at"),
+            "expected a truncation note, got: {body}"
+        );
+        assert!(
+            !body.contains("kind filter"),
+            "references-mode truncation note must not suggest the rejected `kind` filter: {body}"
+        );
+        assert!(
+            body.contains("max_results"),
+            "references-mode truncation note should point at `max_results`: {body}"
+        );
     }
 }

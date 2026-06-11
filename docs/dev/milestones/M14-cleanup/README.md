@@ -29,7 +29,7 @@
 | # | Phase | Status | Kind | Size |
 |---|---|---|---|---|
 | 01 | Fix task seeder: `### N.` headings + empty-spec warning ([phase-01-task-seeder.md](phase-01-task-seeder.md)) | done | bugfix | s |
-| 02 | Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug ([phase-02-cleanup-sweep.md](phase-02-cleanup-sweep.md)) | todo | chore | s |
+| 02 | Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug ([phase-02-cleanup-sweep.md](phase-02-cleanup-sweep.md)) | review | chore | s |
 
 Phase 02 is the last in-scope M14 phase; it closes the milestone once approved.
 

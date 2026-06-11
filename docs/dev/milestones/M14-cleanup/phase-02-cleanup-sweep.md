@@ -1,6 +1,6 @@
 # M14 phase-02 — Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug
 
-**Status:** todo
+**Status:** review
 
 **Milestone:** [M14 — Cleanup](README.md)
 
@@ -353,3 +353,36 @@ dependency, no `unsafe`, no protected-file edit.)
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 02:35 (started)
+
+**Executor:** Claude (executor)
+**Tasks:** 1 (remove `eprintln!`), 2 (fix stale doc-comment), 3 (fix references-mode truncation note)
+
+### Update — 2026-06-11 02:36 (complete)
+
+**Tasks completed:** 1, 2, 3
+
+**Files changed:**
+- `mcp/src/server.rs` — removed two `eprintln!` diagnostics; collapsed `Matched`/`NoSources` arms; trimmed progress-token comment
+- `executor/src/tools/read_file.rs` — fixed stale doc-comment referencing `RUNAWAY_OUTPUT_BYTES` → `runaway_output_bytes`
+- `executor/src/tools/symbols.rs` — fixed references-mode truncation note ("add a kind filter" → "raise `max_results`"); added test `references_truncation_note_omits_kind_filter`
+
+**Verification commands (all passed):**
+- `cargo fmt --all --check` — clean
+- `cargo build` — zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 731 passed, 0 failed, 2 ignored
+
+**Grep checks:**
+- `grep -n 'eprintln!' mcp/src/server.rs` → no matches (exit 1) ✓
+- `grep -n 'eprintln!' mcp/src/main.rs` → 6 matches (unchanged, out of scope) ✓
+- `grep -n 'eprintln!' mcp/src/init.rs` → 1 match (unchanged, out of scope) ✓
+- `grep -n 'RUNAWAY_OUTPUT_BYTES' executor/src/tools/read_file.rs` → no matches ✓
+- `grep -n 'runaway_output_bytes' executor/src/tools/read_file.rs` → 1 match at line 17 ✓
+- `grep -n 'truncated at.*references' executor/src/tools/symbols.rs` → line 601 contains `max_results` not `kind filter` ✓
+- `grep -n 'kind filter' executor/src/tools/symbols.rs` → only at line 174 (error message), 560 (definitions note), 1407 (test assertion) ✓
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable real artifact. Items 1–2 are a stderr-diagnostic removal and a doc-comment edit (no behavior change); item 3's model-visible truncation note is exercised end-to-end by the new unit test against the real `format_references`.
+
+**Notes for review:** None — straightforward cleanup, no adaptations needed.

@@ -14,7 +14,8 @@ use super::registry::{Tool, ToolResult};
 
 /// Maximum lines returned in a single read_file call. Callers needing more must
 /// use start_line/end_line to read in slices. Keeps output well below the
-/// governor's RUNAWAY_OUTPUT_BYTES (100 KB) threshold for typical source files.
+/// governor's `runaway_output_bytes` config (default 100 KB) for typical source
+/// files.
 const MAX_OUTPUT_LINES: usize = 500;
 
 #[derive(Deserialize)]
