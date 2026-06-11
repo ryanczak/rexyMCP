@@ -3,7 +3,7 @@
 **Goal:** Fix the silent task-seeder failure, fold the calibration lesson into
 `WORKFLOW.md`, and gather the deferred M12/M13 cleanup items into a single sweep.
 
-**Status:** in-progress
+**Status:** complete
 
 **Depends on:** M13 (complete)
 
@@ -29,7 +29,7 @@
 | # | Phase | Status | Kind | Size |
 |---|---|---|---|---|
 | 01 | Fix task seeder: `### N.` headings + empty-spec warning ([phase-01-task-seeder.md](phase-01-task-seeder.md)) | done | bugfix | s |
-| 02 | Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug ([phase-02-cleanup-sweep.md](phase-02-cleanup-sweep.md)) | review | chore | s |
+| 02 | Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug ([phase-02-cleanup-sweep.md](phase-02-cleanup-sweep.md)) | done | chore | s |
 
 Phase 02 is the last in-scope M14 phase; it closes the milestone once approved.
 
@@ -63,3 +63,33 @@ From M12 retrospective, not M13 scope:
 **Restart `rexymcp serve`** to activate M11 phase-06's datetime injection and end
 executor self-stamping in Update Logs. Open since M11; still the single
 highest-value operational action before the next dispatch.
+
+### Retrospective — 2026-06-10
+
+M14 closed **2/2 approved_first_try**, zero bounces, zero escalations.
+
+- **phase-01** (bugfix) fixed the silent `seed_from_spec` failure (stop condition
+  `## ` instead of `#`, plus a `### N. Title` heading parser) that had produced
+  zero tasks for 6 of 8 M13 phases, added a turn-0 empty-seed warning, and folded
+  the accepted-Spec-formats documentation into `WORKFLOW.md`. 5 new tests; clean
+  60-turn first-try (`4fb9324`).
+- **phase-02** (chore) gathered the three long-deferred M12/M13 cleanups into one
+  sweep: removed the two prod `eprintln!` in `server.rs`, fixed the stale
+  `RUNAWAY_OUTPUT_BYTES` doc-comment in `read_file.rs`, and fixed the
+  references-mode truncation-note copy bug in `symbols.rs` (with one mutation-
+  resistant negative test). 1 new test; clean 45-turn first-try (`784ee70`).
+
+**What worked.** Both phases were small, single-concern, and additive/removal-only
+— no new `SessionEvent` variant, no cross-crate struct-literal churn — so neither
+documented stall class (match-arm wall, ≥3-literal cascade) had any surface to
+trigger on. The phase-02 spec pinning *which* `eprintln!`/`kind filter` sites to
+leave alone (the `main.rs`/`init.rs` CLI output, the definitions-mode note) held
+exactly — no over-reach.
+
+**Carried forward (operational, still open).** The `rexymcp serve` restart to pick
+up M11 phase-06's datetime injection remains the one outstanding item — the
+cosmetic Update-Log clock/identity self-stamp recurred in both M14 phases
+(machine records correct). This is the only thing blocking clean Update-Log
+timestamps going forward; it is operational, not a code change.
+
+**No WORKFLOW folds.** No new calibration trends surfaced this milestone.

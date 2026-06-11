@@ -1,6 +1,6 @@
 # M14 phase-02 — Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug
 
-**Status:** review
+**Status:** done
 
 **Milestone:** [M14 — Cleanup](README.md)
 
@@ -386,3 +386,27 @@ dependency, no `unsafe`, no protected-file edit.)
 **End-to-end verification:** N/A — phase ships no runtime-loadable real artifact. Items 1–2 are a stderr-diagnostic removal and a doc-comment edit (no behavior change); item 3's model-visible truncation note is exercised end-to-end by the new unit test against the real `format_references`.
 
 **Notes for review:** None — straightforward cleanup, no adaptations needed.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — all three edits within the named files
+  (`mcp/src/server.rs`, `executor/src/tools/read_file.rs`,
+  `executor/src/tools/symbols.rs`); `main.rs`/`init.rs` `eprintln!` and the
+  definitions-mode `kind filter` note left untouched as specified.
+- **Verification:** all four gates re-run green independently (fmt clean, build
+  zero warnings, clippy clean, 731 passed / 0 failed / 2 ignored). All grep
+  acceptance criteria confirmed: no `eprintln!` in `server.rs`; `main.rs` (6) /
+  `init.rs` (1) unchanged; `RUNAWAY_OUTPUT_BYTES` gone, `runaway_output_bytes`
+  named at `read_file.rs:17`; references note (`symbols.rs:601`) points at
+  `max_results`, definitions note (`:560`) still says `kind filter`. New test
+  `references_truncation_note_omits_kind_filter` is mutation-resistant (asserts
+  both the negative — no `kind filter` — and the positive — `max_results`).
+  Commit `784ee70` (chore), clean tree, one conventional commit. Clean 45-turn
+  first-try.
+- **Calibration:** none new. The recurring cosmetic Update-Log self-stamp quirk
+  persisted (executor wrote "Claude (executor)" / `2026-06-11`; machine records
+  correct) — still pending the `rexymcp serve` restart, unchanged from prior
+  phases.

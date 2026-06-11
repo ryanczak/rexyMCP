@@ -4,17 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:**
-[M14 phase-02 — Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug](milestones/M14-cleanup/phase-02-cleanup-sweep.md)
-(`todo`) — gathers three long-deferred cleanups into one chore (closes M14):
-(1) remove the two diagnostic `eprintln!` in `mcp/src/server.rs` (the `NoSources`
-corroboration arm + the `progress_token` line; the `main.rs`/`init.rs` CLI
-`eprintln!` are legitimate and out of scope); (2) fix the stale
-`RUNAWAY_OUTPUT_BYTES` doc-comment in `read_file.rs:17` to name the live
-`runaway_output_bytes` config field; (3) fix the references-mode truncation note
-in `symbols.rs` `format_references` — it suggests the `kind` filter that
-references mode rejects, change to `max_results`. ~40 lines; one new negative
-test. See [M14 README](milestones/M14-cleanup/README.md).
+**Active phase:** none — **M14 — Cleanup is complete** (2/2 approved_first_try,
+2026-06-10; see the
+[retrospective](milestones/M14-cleanup/README.md#retrospective--2026-06-10)).
+The user kicks off the next milestone explicitly; draft its first phase with
+`/rexymcp:architect next` when ready.
+
+**M14 phase-02 — done** (2026-06-10, approved_first_try): the deferred M12/M13
+cleanup sweep — removed the two prod `eprintln!` in `mcp/src/server.rs` (collapsed
+`Matched`/`NoSources` into one no-op arm; trimmed the progress-token comment),
+fixed the stale `RUNAWAY_OUTPUT_BYTES` doc-comment in `read_file.rs:17` to name the
+live `runaway_output_bytes` config field, and fixed the references-mode
+truncation-note copy bug in `symbols.rs` `format_references` (`kind filter` →
+`max_results`; definitions-mode note left untouched). One mutation-resistant
+negative test (`references_truncation_note_omits_kind_filter`); 731 pass, all four
+gates green on independent re-run; all grep acceptance criteria confirmed. Clean
+45-turn first-try; commit `784ee70` (chore). The cosmetic Update-Log clock/identity
+self-stamp quirk recurred (still pending the `rexymcp serve` restart).
+([phase-02-cleanup-sweep.md](milestones/M14-cleanup/phase-02-cleanup-sweep.md)).
+
+**📌 Still open (operational, not a code change):** restart `rexymcp serve` so the
+rebuilt binary picks up M11 phase-06's datetime injection — until then the executor
+keeps self-stamping hallucinated dates/identity in Update Logs (cosmetic; machine
+records correct). Highest-value operational action before the next dispatch.
 
 **M14 phase-01 — done** (2026-06-10, approved_first_try): fixed the silent
 `seed_from_spec` failure that produced zero tasks for 6 of 8 M13 phases. Stop
