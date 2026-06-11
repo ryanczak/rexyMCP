@@ -4,18 +4,33 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M17 phase-03 —
-[phase-03-milestone.md](milestones/M17-dashboard-polish-3/phase-03-milestone.md)
-(`todo`, drafted, ready to dispatch). Show the active milestone's human-readable
-name as the **first** Session-panel line (`Milestone: M17 — Dashboard Polish 3`),
-derived from the milestone *directory* that holds the running phase's doc — no
-config field, no session event. Adds `milestone: Option<String>` to
-`DashboardData` (both `load_data` arms) + a `TempDir`-testable `resolve_milestone`
-(prefers the non-`done` match, falls back to highest-numbered) + `milestone_number`
-/ `phase_doc_is_done` / `format_milestone_name` / `capitalize_word` helpers in
-`mod.rs` + a pure `milestone_line` builder in `panels.rs` reusing `truncate_title`;
-composed in `render.rs` via the optional-line precedent (no `session_lines`
-signature change). s, ~160 lines. Dispatch with `/rexymcp:dispatch phase-03`.
+**Active phase:** M17 phase-04 —
+[phase-04-task-scroll.md](milestones/M17-dashboard-polish-3/phase-04-task-scroll.md)
+(`todo`, drafted, ready to dispatch). **Pan** an overflowing Tasks-panel title back
+and forth (ping-pong triangle wave) within the panel width so the whole name reads
+over time; titles that already fit don't move. Threads a third `tick: Option<usize>`
+arg (the live `state.spinner` clock) into `tasks_lines` and adds a pure
+`scrolled_title(title, max, tick)` helper (char-indexed window, `None`/fits →
+static `truncate_title`, so the existing static tests pass with `tick = None`).
+The signature change touches **6** call sites (1 prod `render.rs:249` + 5 test
+calls in `panels.rs`), all enumerated in the doc per the churn-stall calibration.
+~120 lines. **Pre-injection refreshed 2026-06-11** — phase-03's Milestone-row
+additions shifted every `panels.rs`/`render.rs` line number; the architecture
+references and the §3 call-site list now cite live numbers. Dispatch with
+`/rexymcp:dispatch phase-04`.
+
+**M17 phase-03 — done** (2026-06-11, approved_first_try; commit `c251062` feat /
+`635dab8` approve): added the `Milestone:` row as the **first** Session-panel line,
+its name derived from the milestone *directory* holding the running phase's doc —
+no config field, no `SessionEvent`. Added `milestone: Option<String>` to
+`DashboardData` + a `TempDir`-tested `resolve_milestone` (prefers the non-`done`
+match, falls back to highest-numbered) + `format_milestone_name`/`milestone_number`
+helpers in `mod.rs` + a pure `milestone_line` builder in `panels.rs` reusing
+`truncate_title`; composed in `render.rs` via the optional-line precedent so
+`session_lines`' signature (and its 8 test call sites) stayed untouched. 8 new
+tests (7 `mod.rs` + 1 `panels.rs`); 734 pass, all four gates green on independent
+re-run. Spec-exact, clean 64-turn first-try. No `session_lines` signature change,
+no `SessionEvent`/config/`Cargo.toml`.
 
 **M17 phase-02 — done** (2026-06-11, approved_first_try; commit `9d29eee` feat /
 `37c3898` approve): restored the dog-chasing-brain spinner as a **width-parametric**

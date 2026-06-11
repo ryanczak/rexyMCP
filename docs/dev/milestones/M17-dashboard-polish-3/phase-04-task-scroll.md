@@ -16,11 +16,11 @@ whole name is readable over time. Titles that already fit do not move.
 
 Read before starting:
 
-- `mcp/src/dashboard/panels.rs:226–246` — `tasks_lines(summary, width)` and the
+- `mcp/src/dashboard/panels.rs:262–280` — `tasks_lines(summary, width)` and the
   `truncate_title` call it uses today.
-- `mcp/src/dashboard/panels.rs:187–195` — `truncate_title` (the static
+- `mcp/src/dashboard/panels.rs:214–221` — `truncate_title` (the static
   fits/`…`-truncate path, reused for non-scrolling titles).
-- `mcp/src/dashboard/render.rs:245` — the **only** production call site:
+- `mcp/src/dashboard/render.rs:249` — the **only** production call site:
   `panel(" Tasks ", tasks_lines(&data.summary, tasks_inner_width))`.
 - `mcp/src/dashboard/render.rs` — `render_dashboard(…, state: &ViewState, …)`;
   `state.spinner: Option<usize>` is the per-loop tick (`Some` while running,
@@ -136,17 +136,17 @@ Span::raw(format!(" {}", scrolled_title(&task.title, title_max, tick))),
 The signature change touches **6** call sites. Update each by adding the new
 third argument. Enumerate them in one pass (compiler E0061 will list any missed):
 
-1. `render.rs:245` (production) — pass the live tick:
+1. `render.rs:249` (production) — pass the live tick:
    `tasks_lines(&data.summary, tasks_inner_width, state.spinner)`.
-2. `panels.rs` test `tasks_lines_empty_placeholder` (~line 791) —
+2. `panels.rs` test `tasks_lines_empty_placeholder` (~line 906) —
    `tasks_lines(&summary, 40, None)`.
-3. `panels.rs` test `tasks_lines_lists_named_tasks_with_glyphs` (~line 827) —
+3. `panels.rs` test `tasks_lines_lists_named_tasks_with_glyphs` (~line 942) —
    `tasks_lines(&summary, 40, None)`.
-4. `panels.rs` test `tasks_lines_truncates_long_title` (~line 876) —
+4. `panels.rs` test `tasks_lines_truncates_long_title` (~line 991) —
    `tasks_lines(&summary, 26, None)`.
-5. `panels.rs` test `tasks_lines_uses_full_panel_width` (~line 905) —
+5. `panels.rs` test `tasks_lines_uses_full_panel_width` (~line 1020) —
    `tasks_lines(&summary, 60, None)`.
-6. `panels.rs` test `tasks_lines_uses_full_panel_width` (~line 913, the second
+6. `panels.rs` test `tasks_lines_uses_full_panel_width` (~line 1028, the second
    call in the same test) — `tasks_lines(&summary, 28, None)`.
 
 Passing `None` preserves the static behavior those tests assert, so they keep
