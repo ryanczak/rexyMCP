@@ -4,14 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:**
-[M14 phase-01 — Fix task seeder: `### N.` headings + empty-spec warning](milestones/M14-cleanup/phase-01-task-seeder.md)
-(`todo`) — bugfix for the silent `seed_from_spec` failure that produced zero tasks
-for 6 of 8 M13 phases. Fix: change stop condition to `starts_with("## ")`, add
-`parse_heading_task_line` for `### N.` format, eliminate the redundant
-`seed_from_spec` call in `mod.rs`, emit a `Progress` warning at turn 0 when
-`task_tracking` is on but seeding yields nothing. Fold both accepted Spec formats
-into `WORKFLOW.md`. See [M14 README](milestones/M14-cleanup/README.md).
+**Active phase:** none — **M14 phase-02 (deferred cleanup sweep) is undrafted.**
+Draft it on demand with `/rexymcp:architect next` (prod `eprintln!` ×2 at
+`mcp/src/server.rs:426`/`:450`, stale `RUNAWAY_OUTPUT_BYTES` doc-comment in
+`read_file.rs:17`, `symbols` `format_references` copy bug). See
+[M14 README](milestones/M14-cleanup/README.md).
+
+**M14 phase-01 — done** (2026-06-10, approved_first_try): fixed the silent
+`seed_from_spec` failure that produced zero tasks for 6 of 8 M13 phases. Stop
+condition `starts_with('#')` → `starts_with("## ")` so `### N.` task-subheadings
+no longer terminate the scan; new `parse_heading_task_line` chained via `.or_else`
+for the `### N. Title` format; the redundant second `seed_from_spec(&input.phase_doc)`
+call in `mod.rs` replaced with iteration over `&seeded`; a turn-0
+`SessionEvent::Progress` warning (`stage = "task_seeding"`) when `task_tracking`
+is on but seeding yields nothing. `WORKFLOW.md` `## Spec` template now documents
+both list-item and subheading formats. 5 new tests (4 unit + 1 integration), all
+mutation-resistant; 730 executor + 344 mcp pass, all four gates green on
+independent re-run. Clean 60-turn first-try; commit `4fb9324` (fix). The
+recurring local-LLM Update-Log clock/identity self-stamp quirk persisted
+(cosmetic; machine records correct — still pending the `rexymcp serve` restart).
+([phase-01-task-seeder.md](milestones/M14-cleanup/phase-01-task-seeder.md)).
 
 **M13 — Dashboard Polish is complete** (8/8 approved_first_try, 2026-06-10; see the
 [retrospective](milestones/M13-dashboard-polish/README.md#retrospective--2026-06-10)).

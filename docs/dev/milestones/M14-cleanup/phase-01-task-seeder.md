@@ -1,6 +1,6 @@
 # M14 phase-01 — Fix task seeder: `### N.` headings + empty-spec warning
 
-**Status:** review
+**Status:** done
 
 **Milestone:** [M14 — Cleanup](README.md)
 
@@ -544,3 +544,27 @@ executor/src/agent/tasks.rs:225:        assert!(parse_heading_task_line("## Not 
 **End-to-end verification:** N/A — pure parser fix + turn-0 log event; integration test covers the observable warning.
 
 **Notes for review:** None — straightforward bugfix, no adaptations needed.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — touched only the authorized files (`tasks.rs`,
+  `mod.rs`, `tests.rs`, `WORKFLOW.md` `## Spec` template).
+- **Gates (independent re-run):** fmt clean · build zero warnings · clippy
+  clean · 730 executor + 344 mcp pass / 0 failed / 2 ignored.
+- **Verification:** stop condition now `starts_with("## ")`;
+  `parse_heading_task_line` chained via `.or_else`; the redundant
+  `seed_from_spec(&input.phase_doc)` call is gone (one call remains at
+  `mod.rs:121`), loop iterates `&seeded`; empty-spec `Progress` warning at
+  turn 0 (`stage = "task_seeding"`). All 5 new tests pass and are
+  mutation-resistant — `seed_from_spec_stop_condition_does_not_fire_on_task_subheading`
+  asserts 2 tasks where the old `starts_with('#')` would have seeded 0.
+  `WORKFLOW.md` `## Spec` template documents both list-item and subheading
+  formats. No `unwrap`/`expect`/`panic!`/`dbg!`/`println!`/`TODO` in the new
+  production paths.
+- **Calibration:** none. Cosmetic-only quirk: the executor's Update Log
+  self-stamps "2026-06-11 02:03" / "rexyMCP executor LLM" (the recurring
+  local-LLM clock/identity quirk; machine records correct — still pending the
+  `rexymcp serve` restart that activates M11 phase-06's datetime injection).
