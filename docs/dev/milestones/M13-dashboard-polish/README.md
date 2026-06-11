@@ -55,7 +55,7 @@ once.
 | 04 | Activity — distinct `<think>`/`</think>` block formatting in Completion bodies ([phase-04-think.md](phase-04-think.md)) | done | feature | m | #6 |
 | 05 | Session/Budget — session `duration:` + move `last update:` to Budget (new `started_at` capture) ([phase-05-timing.md](phase-05-timing.md)) | done | feature | m | #4, #5 |
 | 06 | Session — full-width spinner on its own bottom line ([phase-06-spinner.md](phase-06-spinner.md)) | done | feature | m | #10, R5 |
-| 07 | Tasks — named tasks with checkbox/check glyphs + done/total progress gauge ([phase-07-tasks.md](phase-07-tasks.md)) | todo | feature | m | #7, R3 |
+| 07 | Tasks — named tasks with checkbox/check glyphs + done/total progress gauge ([phase-07-tasks.md](phase-07-tasks.md)) | review | feature | m | #7, R3 |
 | 08 | Activity — per-event relative timestamps | todo | feature | s | R2 |
 
 The **Items** column maps each phase to the user's original request list (#1–#10)

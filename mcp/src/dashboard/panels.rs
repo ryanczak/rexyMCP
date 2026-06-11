@@ -5,6 +5,7 @@ use ratatui::{
 };
 
 use crate::status::{self, StatusSummary};
+use rexymcp_executor::store::sessions::event::TaskState;
 
 /// Total usable content width for a Files panel line (indent + path + space +
 /// numstat). Conservative for the 28%-wide panel at typical terminal widths.
@@ -12,6 +13,12 @@ use crate::status::{self, StatusSummary};
 /// so the total rendered line is always ≤ `FILE_LINE_MAX + 2` chars regardless of
 /// how large the added/removed counts are.
 const FILE_LINE_MAX: usize = 28;
+
+/// Max chars for a task title in the Tasks panel (narrow ~28%-width right column).
+const TASK_TITLE_MAX: usize = 24;
+
+/// Cells in the Tasks progress bar.
+const GAUGE_CELLS: usize = 10;
 
 /// Cloud-baseline $/Mtok rates for the Budget panel's "$ saved" line.
 #[derive(Debug, Clone, Copy, Default)]
@@ -150,22 +157,64 @@ pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
-/// Tasks panel: active / pending / done counts, or a placeholder when none.
+/// Truncate a task title to at most `max` chars, appending `…` when shortened.
+fn truncate_title(title: &str, max: usize) -> String {
+    if title.chars().count() <= max {
+        return title.to_string();
+    }
+    let keep = max.saturating_sub(1);
+    let head: String = title.chars().take(keep).collect();
+    format!("{head}…")
+}
+
+/// Done/total progress gauge for the Tasks panel — a filled bar plus
+/// `done/total (pct%)`, colored by completion (progress-oriented: green = near/at
+/// done, neutral grey = no progress). Matches the Budget context-gauge *style*
+/// (a single colored text `Line`), not a ratatui `Gauge` widget.
+pub(crate) fn tasks_gauge_line(done: usize, total: usize) -> Line<'static> {
+    let pct = if total == 0 {
+        0
+    } else {
+        ((done as f64 / total as f64) * 100.0).round() as u32
+    };
+    let filled = if total == 0 {
+        0
+    } else {
+        (((done as f64 / total as f64) * GAUGE_CELLS as f64).round() as usize).min(GAUGE_CELLS)
+    };
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(GAUGE_CELLS - filled));
+    let color = if pct >= 80 {
+        Color::Green
+    } else if pct >= 40 {
+        Color::Yellow
+    } else {
+        Color::Rgb(200, 200, 200)
+    };
+    Line::from(Span::styled(
+        format!("{bar} {done}/{total} ({pct}%)"),
+        Style::new().fg(color),
+    ))
+}
+
+/// Tasks panel: a done/total progress gauge over a list of named tasks, or a
+/// placeholder when none are tracked.
 pub(crate) fn tasks_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.tasks_total == 0 {
         return vec![Line::from("(no tasks tracked yet)")];
     }
-    let pending = summary
-        .tasks_total
-        .saturating_sub(summary.tasks_done + summary.tasks_active);
-    vec![
-        Line::from(format!("active:  {}", summary.tasks_active)),
-        Line::from(format!("pending: {}", pending)),
-        Line::from(format!(
-            "done:    {}/{}",
-            summary.tasks_done, summary.tasks_total
-        )),
-    ]
+    let mut lines = vec![tasks_gauge_line(summary.tasks_done, summary.tasks_total)];
+    for task in &summary.tasks {
+        let (glyph, color) = match task.state {
+            TaskState::Done => ("☑", Color::Green),
+            TaskState::Active => ("▶", Color::Yellow),
+            TaskState::Pending => ("☐", Color::Rgb(200, 200, 200)),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(glyph, Style::new().fg(color)),
+            Span::raw(format!(" {}", truncate_title(&task.title, TASK_TITLE_MAX))),
+        ]));
+    }
+    lines
 }
 
 /// Files panel: one line per changed file, or a placeholder when none.
@@ -714,44 +763,194 @@ mod tests {
         let lines = tasks_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no tasks tracked")));
+        // No gauge line when empty.
+        assert!(
+            text.iter().all(|s| !s.contains('/') && !s.contains('█')),
+            "empty placeholder must not contain gauge artifacts"
+        );
     }
 
     #[test]
-    fn tasks_lines_shows_counts() {
+    fn tasks_lines_lists_named_tasks_with_glyphs() {
+        use crate::status::TaskRow;
         let summary = StatusSummary {
             tasks_total: 3,
             tasks_done: 1,
             tasks_active: 1,
+            tasks: vec![
+                TaskRow {
+                    id: "1".into(),
+                    title: "Read config".into(),
+                    state: TaskState::Done,
+                },
+                TaskRow {
+                    id: "2".into(),
+                    title: "Write tests".into(),
+                    state: TaskState::Active,
+                },
+                TaskRow {
+                    id: "3".into(),
+                    title: "Refactor".into(),
+                    state: TaskState::Pending,
+                },
+            ],
             ..StatusSummary::default()
         };
         let lines = tasks_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        // First line is the gauge.
         assert!(
-            text.iter()
-                .any(|s| s.contains("active:") && s.contains("1"))
+            text[0].contains('/'),
+            "first line should be gauge with fraction: {}",
+            text[0]
         );
-        assert!(text.iter().any(|s| s.contains("pending: 1")));
+        // Task lines follow with glyphs.
         assert!(
             text.iter()
-                .any(|s| s.contains("done:") && s.contains("1/3"))
+                .any(|s| s.contains('☑') && s.contains("Read config")),
+            "done task should have check glyph: {text:?}"
+        );
+        assert!(
+            text.iter()
+                .any(|s| s.contains('▶') && s.contains("Write tests")),
+            "active task should have play glyph: {text:?}"
+        );
+        assert!(
+            text.iter()
+                .any(|s| s.contains('☐') && s.contains("Refactor")),
+            "pending task should have empty box glyph: {text:?}"
         );
     }
 
     #[test]
-    fn tasks_lines_derives_pending() {
+    fn tasks_lines_truncates_long_title() {
+        use crate::status::TaskRow;
+        let long_title = "This is a very long task title that should be truncated";
+        let short_title = "Short";
         let summary = StatusSummary {
             tasks_total: 2,
             tasks_done: 0,
             tasks_active: 0,
+            tasks: vec![
+                TaskRow {
+                    id: "1".into(),
+                    title: long_title.into(),
+                    state: TaskState::Pending,
+                },
+                TaskRow {
+                    id: "2".into(),
+                    title: short_title.into(),
+                    state: TaskState::Pending,
+                },
+            ],
             ..StatusSummary::default()
         };
         let lines = tasks_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("pending: 2")));
+        // Long title is truncated with ellipsis.
+        assert!(
+            text.iter().any(|s| s.contains('…')),
+            "long title line should contain ellipsis: {text:?}"
+        );
+        // Short title is not truncated (no ellipsis on that line).
         assert!(
             text.iter()
-                .any(|s| s.contains("done:") && s.contains("0/2"))
+                .any(|s| s.contains(short_title) && !s.contains('…')),
+            "short title line should not contain ellipsis: {text:?}"
         );
+    }
+
+    #[test]
+    fn tasks_gauge_line_full_is_green_and_complete() {
+        let line = tasks_gauge_line(4, 4);
+        let text = format!("{line}");
+        assert!(text.contains("4/4"), "should contain fraction: {text}");
+        assert!(text.contains("100%"), "should contain 100%%: {text}");
+        assert_eq!(
+            text.matches('█').count(),
+            10,
+            "should have 10 filled cells: {text}"
+        );
+        assert_eq!(
+            text.matches('░').count(),
+            0,
+            "should have 0 empty cells: {text}"
+        );
+        assert_eq!(
+            line.spans[0].style.fg,
+            Some(Color::Green),
+            "should be green"
+        );
+    }
+
+    #[test]
+    fn tasks_gauge_line_half() {
+        let line = tasks_gauge_line(1, 2);
+        let text = format!("{line}");
+        assert!(text.contains("1/2"), "should contain fraction: {text}");
+        assert!(text.contains("50%"), "should contain 50%%: {text}");
+        assert_eq!(
+            text.matches('█').count(),
+            5,
+            "should have 5 filled cells: {text}"
+        );
+        assert_eq!(
+            text.matches('░').count(),
+            5,
+            "should have 5 empty cells: {text}"
+        );
+        assert_eq!(
+            line.spans[0].style.fg,
+            Some(Color::Yellow),
+            "should be yellow"
+        );
+    }
+
+    #[test]
+    fn tasks_gauge_line_zero_progress() {
+        let line = tasks_gauge_line(0, 5);
+        let text = format!("{line}");
+        assert!(text.contains("0/5"), "should contain fraction: {text}");
+        assert!(text.contains("0%"), "should contain 0%%: {text}");
+        assert_eq!(
+            text.matches('█').count(),
+            0,
+            "should have 0 filled cells: {text}"
+        );
+        assert_eq!(
+            text.matches('░').count(),
+            10,
+            "should have 10 empty cells: {text}"
+        );
+        assert_eq!(
+            line.spans[0].style.fg,
+            Some(Color::Rgb(200, 200, 200)),
+            "should be grey"
+        );
+    }
+
+    #[test]
+    fn tasks_gauge_line_fraction_and_fill() {
+        let line = tasks_gauge_line(3, 8);
+        let text = format!("{line}");
+        assert!(text.contains("3/8"), "should contain fraction: {text}");
+        assert!(
+            text.contains("38%"),
+            "should contain 38%% (round(37.5)): {text}"
+        );
+        assert_eq!(
+            text.matches('█').count(),
+            4,
+            "should have 4 filled cells (round(3.75)): {text}"
+        );
+    }
+
+    #[test]
+    fn tasks_gauge_line_zero_total_does_not_panic() {
+        let line = tasks_gauge_line(0, 0);
+        let text = format!("{line}");
+        assert!(text.contains("0/0"), "should contain 0/0: {text}");
+        assert!(text.contains("0%"), "should contain 0%%: {text}");
     }
 
     // --- budget_lines tests ---

@@ -14,6 +14,16 @@ use rexymcp_executor::store::sessions::event::{
 use rexymcp_executor::store::sessions::jsonl::read_session_log;
 use serde::Serialize;
 
+/// One tracked task as last seen in the log (M12 Arc A), in first-seen order.
+/// The dashboard Tasks panel renders these by title + state; `summarize` keeps
+/// the vec insertion-ordered with last-write-wins on title and state per id.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskRow {
+    pub id: String,
+    pub title: String,
+    pub state: TaskState,
+}
+
 /// Distilled view of a session log, derived from its records.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct StatusSummary {
@@ -84,6 +94,10 @@ pub struct StatusSummary {
     pub tasks_total: usize,
     pub tasks_done: usize,
     pub tasks_active: usize,
+    /// Tracked tasks (M12 Arc A) in first-seen order, with titles — drives the
+    /// dashboard Tasks panel's named-task list. The `tasks_total/done/active`
+    /// counts above are derived from this vec.
+    pub tasks: Vec<TaskRow>,
     /// Min/avg/max interval (ms) between consecutive records. Present when ≥2 intervals exist.
     pub update_interval_min_ms: Option<u64>,
     pub update_interval_avg_ms: Option<u64>,
@@ -104,8 +118,7 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
     let mut update_intervals: Vec<u64> = Vec::new();
     let mut metrics_snapshots: Vec<(u64, u32)> = Vec::new();
 
-    let mut task_states: std::collections::HashMap<String, TaskState> =
-        std::collections::HashMap::new();
+    let mut tasks: Vec<TaskRow> = Vec::new();
 
     for rec in records {
         if prev_rec_ts.is_some_and(|prev| rec.ts > prev) {
@@ -208,8 +221,17 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
                 summary.read_deduped_count += 1;
                 summary.read_deduped_tokens += *tokens_saved;
             }
-            SessionEvent::TaskUpdate { id, state, .. } => {
-                task_states.insert(id.clone(), *state);
+            SessionEvent::TaskUpdate { id, title, state } => {
+                if let Some(row) = tasks.iter_mut().find(|r| &r.id == id) {
+                    row.title = title.clone();
+                    row.state = *state;
+                } else {
+                    tasks.push(TaskRow {
+                        id: id.clone(),
+                        title: title.clone(),
+                        state: *state,
+                    });
+                }
             }
             _ => {} // Prompt, Completion, Parsed remain intentionally unread
         }
@@ -241,15 +263,13 @@ pub fn summarize(records: &[SessionRecord]) -> StatusSummary {
         summary.tok_per_sec_avg = Some(tok_rates.iter().sum::<f64>() / tok_rates.len() as f64);
     }
 
-    summary.tasks_total = task_states.len();
-    summary.tasks_done = task_states
-        .values()
-        .filter(|s| **s == TaskState::Done)
+    summary.tasks_total = tasks.len();
+    summary.tasks_done = tasks.iter().filter(|r| r.state == TaskState::Done).count();
+    summary.tasks_active = tasks
+        .iter()
+        .filter(|r| r.state == TaskState::Active)
         .count();
-    summary.tasks_active = task_states
-        .values()
-        .filter(|s| **s == TaskState::Active)
-        .count();
+    summary.tasks = tasks;
 
     summary
 }
@@ -504,10 +524,10 @@ mod tests {
         }
     }
 
-    fn task_update(id: &str, state: TaskState) -> SessionEvent {
+    fn task_update(id: &str, title: &str, state: TaskState) -> SessionEvent {
         SessionEvent::TaskUpdate {
             id: id.into(),
-            title: "Test task".into(),
+            title: title.into(),
             state,
         }
     }
@@ -633,14 +653,31 @@ mod tests {
     #[test]
     fn summarize_folds_task_states_last_write_wins() {
         let recs = vec![
-            rec(100, 0, task_update("1", TaskState::Pending)),
-            rec(200, 1, task_update("2", TaskState::Pending)),
-            rec(300, 2, task_update("1", TaskState::Done)),
+            rec(100, 0, task_update("1", "Read config", TaskState::Pending)),
+            rec(200, 1, task_update("2", "Write tests", TaskState::Pending)),
+            rec(300, 2, task_update("1", "Read config", TaskState::Done)),
         ];
         let s = summarize(&recs);
         assert_eq!(s.tasks_total, 2);
         assert_eq!(s.tasks_done, 1);
         assert_eq!(s.tasks_active, 0);
+    }
+
+    #[test]
+    fn summarize_captures_task_titles_in_order() {
+        let recs = vec![
+            rec(100, 0, task_update("1", "Read config", TaskState::Pending)),
+            rec(200, 1, task_update("2", "Write tests", TaskState::Pending)),
+            rec(300, 2, task_update("1", "Read config", TaskState::Done)),
+        ];
+        let s = summarize(&recs);
+        assert_eq!(s.tasks.len(), 2);
+        assert_eq!(s.tasks[0].id, "1");
+        assert_eq!(s.tasks[0].title, "Read config");
+        assert_eq!(s.tasks[0].state, TaskState::Done);
+        assert_eq!(s.tasks[1].id, "2");
+        assert_eq!(s.tasks[1].title, "Write tests");
+        assert_eq!(s.tasks[1].state, TaskState::Pending);
     }
 
     #[test]
@@ -655,8 +692,8 @@ mod tests {
     #[test]
     fn format_status_shows_tasks_line_when_present() {
         let recs = vec![
-            rec(100, 0, task_update("1", TaskState::Pending)),
-            rec(200, 1, task_update("2", TaskState::Done)),
+            rec(100, 0, task_update("1", "T1", TaskState::Pending)),
+            rec(200, 1, task_update("2", "T2", TaskState::Done)),
         ];
         let s = summarize(&recs);
         let output = format_status(&s, 500);

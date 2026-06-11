@@ -1,7 +1,7 @@
 # Phase 07: Tasks — named tasks with glyphs + done/total progress gauge
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** todo
+**Status:** review
 **Depends on:** none for code (independent of phases 01–06; touches the Tasks panel
 builder and the `StatusSummary` task capture — neither changed by 01–06). The
 `TaskUpdate` substrate and the `tasks_total/done/active` counts already exist (M12
@@ -488,3 +488,63 @@ Do **not**:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 00:49 (complete)
+
+**Summary:** Implemented named tasks with checkbox glyphs and a done/total progress gauge in the Tasks panel. Replaced the count-only `HashMap` in `summarize` with an ordered `Vec<TaskRow>` that retains task titles and first-seen order. Rewrote `tasks_lines` to render a gauge line followed by `{glyph} {title}` lines per task, and added `tasks_gauge_line` matching the Budget context-gauge style (a single colored `Line`, not a ratatui `Gauge` widget). Gauge color is progress-oriented (green ≥80%, yellow ≥40%, grey else) — a deliberate inversion of the context gauge's usage-oriented coloring; noted in spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(clean — no output)
+
+cargo build 2>&1 | tail -20
+(clean — compiled successfully)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(clean — no warnings)
+
+cargo test 2>&1 | tail -30
+test result: ok. 725 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact (TUI rendering has no headless harness; consistent with prior dashboard-panel phases M8/M10/M12 and M13 phases 01–06). Verification is the `tasks_gauge_line`/`tasks_lines` pure-function assertions plus the `summarize` title-capture assertions and the `cargo` gates.
+
+**Grep for spec-pinned literals:**
+```
+$ grep -n '☑\|☐\|▶\|█\|░' mcp/src/dashboard/panels.rs | head -20
+185:    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(GAUGE_CELLS - filled));
+208:            TaskState::Done => ("☑", Color::Green),
+209:            TaskState::Active => ("▶", Color::Yellow),
+210:            TaskState::Pending => ("☐", Color::Rgb(200, 200, 200)),
+... (15 more matches in tests)
+```
+
+**Files changed:**
+- `mcp/src/status.rs` — added `TaskRow` struct, `tasks: Vec<TaskRow>` field on `StatusSummary`, replaced `HashMap` with ordered `Vec` in `summarize`, added `summarize_captures_task_titles_in_order` test, updated `task_update` helper to accept title
+- `mcp/src/dashboard/panels.rs` — added `TASK_TITLE_MAX`, `GAUGE_CELLS` consts, `truncate_title` helper, `tasks_gauge_line` helper, rewrote `tasks_lines`, replaced old count tests with named-task + gauge tests
+- `docs/dev/milestones/M13-dashboard-polish/README.md` — phase 07 row status `todo` → `review`
+- `docs/dev/milestones/M13-dashboard-polish/phase-07-tasks.md` — status `todo` → `review`, completion entry appended
+
+**New tests:**
+- `summarize_captures_task_titles_in_order` in `mcp/src/status.rs`
+- `tasks_lines_lists_named_tasks_with_glyphs` in `mcp/src/dashboard/panels.rs`
+- `tasks_lines_truncates_long_title` in `mcp/src/dashboard/panels.rs`
+- `tasks_gauge_line_full_is_green_and_complete` in `mcp/src/dashboard/panels.rs`
+- `tasks_gauge_line_half` in `mcp/src/dashboard/panels.rs`
+- `tasks_gauge_line_zero_progress` in `mcp/src/dashboard/panels.rs`
+- `tasks_gauge_line_fraction_and_fill` in `mcp/src/dashboard/panels.rs`
+- `tasks_gauge_line_zero_total_does_not_panic` in `mcp/src/dashboard/panels.rs`
+
+**Commits:**
+- (pending — one commit to be made)
+
+**Notes for review:**
+- Gauge color is **progress-oriented** (green = near/at done, grey = no progress), which is a deliberate inversion of the context gauge's **usage-oriented** colors (red = near full). This was intentional per the spec's color table — a freshly-seeded task list (0% done) is neutral, not alarming red.
+- `task_update` test helper in `status.rs` was changed from 2-arg `(id, state)` to 3-arg `(id, title, state)` to support the new title-capture test. All existing callers were updated.
+- Deleted `tasks_lines_shows_counts` and `tasks_lines_derives_pending` tests (old format), kept `tasks_lines_empty_placeholder` (unchanged behavior).
