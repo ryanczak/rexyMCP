@@ -20,10 +20,25 @@ pub(crate) fn transcript_lines(
 ) -> Vec<Line<'static>> {
     let visible: Vec<_> = records.iter().filter(|r| filter.allows(&r.event)).collect();
     if visible.is_empty() {
-        vec![Line::from("(no activity yet)")]
-    } else {
-        visible.iter().flat_map(|r| record_lines(r)).collect()
+        return vec![Line::from("(no activity yet)")];
     }
+    let base_ts = records.first().map(|r| r.ts).unwrap_or(0);
+    visible
+        .iter()
+        .flat_map(|r| {
+            let mut lines = record_lines(r);
+            if let Some(header) = lines.first_mut() {
+                let mut spans = Vec::with_capacity(header.spans.len() + 1);
+                spans.push(Span::styled(
+                    format!("[{}] ", relative_ts(r.ts, base_ts)),
+                    Style::new().fg(Color::Rgb(128, 128, 128)),
+                ));
+                spans.append(&mut header.spans);
+                *header = Line::from(spans);
+            }
+            lines
+        })
+        .collect()
 }
 
 /// Render one record as one or more transcript lines (header + optional body),
@@ -185,6 +200,18 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
     }
 
     lines
+}
+
+/// Relative timestamp for a transcript record: `+{humanized}` elapsed since the
+/// session's first record (`base_ts`). `+0s` at the baseline; `saturating_sub`
+/// guards a record that reads before the baseline (shouldn't happen — records are
+/// chronological — but stays panic-free). Reuses the Session-panel duration
+/// formatter so the buckets match (`5s` / `3m12s` / `1h04m`).
+fn relative_ts(ts: u64, base_ts: u64) -> String {
+    format!(
+        "+{}",
+        crate::status::humanize_age(ts.saturating_sub(base_ts))
+    )
 }
 
 /// Replace newlines/tabs with spaces and truncate to `TRANSCRIPT_PREVIEW_MAX`
@@ -634,5 +661,136 @@ mod tests {
                 "marker should be removed: {text}"
             );
         }
+    }
+
+    #[test]
+    fn relative_ts_formats_offset_from_base() {
+        assert_eq!(relative_ts(1000, 1000), "+0s");
+        assert_eq!(relative_ts(6000, 1000), "+5s");
+        assert_eq!(relative_ts(193_000, 1000), "+3m12s");
+        // saturating_sub guards underflow — no panic, no negative
+        assert_eq!(relative_ts(500, 1000), "+0s");
+    }
+
+    #[test]
+    fn transcript_lines_prefixes_relative_timestamp() {
+        let records = vec![
+            rec(1000, 0, start_event()),
+            rec(4000, 1, progress_event(1, "verify")),
+        ];
+        let filter = ActivityFilter {
+            progress: true,
+            ..Default::default()
+        };
+        let lines = transcript_lines(&records, &filter);
+
+        let first_header = format!("{}", lines[0]);
+        assert!(
+            first_header.contains("[+0s]"),
+            "first record should have [+0s]: {first_header}"
+        );
+        assert!(
+            first_header.contains("[t0]"),
+            "first record should have [t0]: {first_header}"
+        );
+
+        // Second record header is at index 1 (no body lines for session_start or progress)
+        let second_header = format!("{}", lines[1]);
+        assert!(
+            second_header.contains("[+3s]"),
+            "second record should have [+3s] (4000-1000=3000ms): {second_header}"
+        );
+        assert!(
+            second_header.contains("[t1]"),
+            "second record should have [t1]: {second_header}"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_timestamp_relative_to_first_record_not_first_visible() {
+        // First record (prompt) is filtered out, but baseline is still records[0].ts
+        let records = vec![
+            rec(
+                1000,
+                0,
+                SessionEvent::Prompt {
+                    rendered: "ctx".into(),
+                },
+            ),
+            rec(5000, 1, progress_event(1, "build")),
+        ];
+        let filter = ActivityFilter {
+            prompt: false,
+            progress: true,
+            ..Default::default()
+        };
+        let lines = transcript_lines(&records, &filter);
+        assert_eq!(lines.len(), 1, "only the progress record should be visible");
+        let header = format!("{}", lines[0]);
+        assert!(
+            header.contains("[+4s]"),
+            "visible record should show [+4s] (5000-1000), not [+0s]: {header}"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_timestamp_only_on_header_not_body() {
+        let records = vec![rec(
+            1000,
+            0,
+            SessionEvent::Completion {
+                raw: "alpha\nbeta".into(),
+            },
+        )];
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+
+        // Count how many lines contain the timestamp token
+        let ts_count = lines
+            .iter()
+            .filter(|l| format!("{l}").contains("[+0s]"))
+            .count();
+        assert_eq!(
+            ts_count, 1,
+            "exactly one line (the header) should contain [+0s], got {ts_count}"
+        );
+
+        // Body lines should not contain the timestamp
+        for line in &lines[1..] {
+            let text = format!("{line}");
+            assert!(
+                !text.contains("+0s"),
+                "body line should not contain timestamp: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn transcript_lines_timestamp_span_is_dim_grey() {
+        let records = vec![rec(1000, 0, start_event())];
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+        let header = &lines[0];
+
+        // First span is the timestamp gutter
+        assert_eq!(
+            header.spans[0].style.fg,
+            Some(Color::Rgb(128, 128, 128)),
+            "timestamp span should be dim grey"
+        );
+        let ts_text = &header.spans[0].content;
+        assert!(
+            ts_text.to_string().starts_with("["),
+            "timestamp span content should start with [: {ts_text}"
+        );
+        assert!(
+            ts_text.to_string().contains("+"),
+            "timestamp span content should contain +: {ts_text}"
+        );
+
+        // Second span is the original header text
+        let header_text = &header.spans[1].content;
+        assert!(
+            header_text.to_string().contains("[t0]"),
+            "second span should contain original header: {header_text}"
+        );
     }
 }
