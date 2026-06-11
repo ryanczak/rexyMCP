@@ -253,7 +253,7 @@ E2E is N/A (TUI rendering — no headless harness, consistent with all prior das
 **New tests:** none (one test renamed and updated)
 
 **Commits:**
-- (pending) — feat(dashboard): move last_update to Session panel, dull yellow timestamps
+- `77c3c27` — feat(dashboard): move last_update to Session panel, dull yellow timestamps
 
 **Notes for review:** None — straight spec implementation, no deviations.
 
