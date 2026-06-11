@@ -1,7 +1,7 @@
 # Phase 01: Move `last update:` under `duration:` + capitalize panel labels
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~40 lines (mostly string-literal edits)
 **Tags:** language=rust, kind=feature, size=xs
@@ -276,3 +276,34 @@ Grep for pinned literal `Last update:` in panels.rs: 8 matches across source and
 - (pending) — feat: move last update under duration and capitalize panel labels
 
 **Notes for review:** None. Straightforward cosmetic change, all tests pass.
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none
+
+Independent re-run of all four gates green: `cargo fmt --all --check` clean,
+`cargo build` zero warnings, `cargo clippy --all-targets --all-features -- -D
+warnings` clean, `cargo test` 734 executor + 349 mcp pass / 0 failed / 2
+ignored (mcp +1 for the new position test). Production `session_lines`
+(`panels.rs:74–117`) matches the spec byte-for-byte: `last_update_line` pushed
+between `Duration:` and `Turn`; every Session/Budget/Reclaim label capitalized;
+`Tokens in:` keeps its two-space alignment. `render.rs` dropped the duplicate
+`last_update_line` append and the now-unused import (no clippy unused-import
+warning). `$ saved:` left unchanged per spec (confirmed by the unchanged
+`dollars_saved` tests). No `unwrap`/`expect`/`panic!` in production paths — all
+grep hits fall inside the `#[cfg(test)]` block. The new
+`session_lines_places_last_update_under_duration` is mutation-resistant
+(asserts `Duration` idx < `Last update` idx < `Turn` idx; the old append-at-end
+behavior fails the before-`Turn` half), and `session_lines_omits_last_update`
+was correctly inverted to `session_lines_includes_last_update_when_ts_present`.
+E2E is the live TUI render (E2E-N/A per prior M13/M15 dashboard-panel
+precedent); unit tests pin both the line order and the label strings. Clean
+85-turn first-try; commit `2e75185` (feat). No `SessionEvent`/config/`Cargo.toml`
+change. The recurring local-LLM Update-Log clock/identity self-stamp did **not**
+recur (stamp `2026-06-11 16:42`, plausibly real — M11 phase-06 datetime
+injection is live post-restart). The stale `(pending)` commit line in the
+executor's Update Log is cosmetic — the `feat:` commit `2e75185` did land.

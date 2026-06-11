@@ -46,7 +46,7 @@ syntax highlighting to cover Markdown and extension-detected source files.
 
 | #  | Phase | Status | Kind | Size |
 |----|-------|--------|------|------|
-| 01 | Move `last update:` under `duration:` + capitalize panel labels ([phase-01-labels.md](phase-01-labels.md)) | review | feat | xs |
+| 01 | Move `last update:` under `duration:` + capitalize panel labels ([phase-01-labels.md](phase-01-labels.md)) | done | feat | xs |
 | 02 | Restore full-width dog-chasing-brain spinner ([phase-02-spinner.md](phase-02-spinner.md)) | todo | feat | s |
 | 03 | `Milestone:` row in the Session panel ([phase-03-milestone.md](phase-03-milestone.md)) | todo | feat | s |
 | 04 | Scroll overflowing task titles ([phase-04-task-scroll.md](phase-04-task-scroll.md)) | todo | feat | m |
