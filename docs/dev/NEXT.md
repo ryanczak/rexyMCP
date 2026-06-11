@@ -4,9 +4,31 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M16 phase-01 —
-[phase-01-heading-task-formats.md](milestones/M16-seeder-robustness/phase-01-heading-task-formats.md)
-(`in-progress`). Extend the task seeder to recognize `### Task N —` headings.
+**Active phase:** none. M16 is complete (1/1 approved_first_try, 2026-06-10).
+
+**M16 phase-01 — done** (2026-06-10, approved_first_try): extended
+`parse_heading_task_line` in `executor/src/agent/tasks.rs` to recognize
+`### Task N — Title` / `### Task N: Title` / `### Task N. Title` subheadings
+alongside the existing `### N. Title` format. Single production file, additive:
+a new `Task ` prefix branch (`strip_prefix("Task ")` →
+`split_once(['—', ':', '.'])` → trim/validate digits + non-empty title) sits
+*above* a byte-identical dot-branch, so all prior `tasks.rs` tests pass
+unmodified. 3 new tests (the E2E `seed_from_spec_parses_task_dash_heading_format`
+is mutation-resistant: seeds 0 pre-fix, 2 after). 734 pass, all four gates green
+on independent re-run; clean 35-turn first-try; commit `4157480` (feat) +
+approve. No `seed_from_spec`/`parse_task_line`/config/`Cargo.toml` change. The
+recurring local-LLM Update-Log clock/identity self-stamp quirk did **not** recur
+(stamp `2026-06-11 04:48`, plausibly real — M11 phase-06 datetime injection now
+appears live post-`rexymcp serve` restart). The seeder now accepts all three
+heading variants, closing the M13→M14→M15 format-drift gap. See the
+[M16 retrospective](milestones/M16-seeder-robustness/README.md#retrospective--2026-06-10).
+
+**📌 Pending next (user kicks off):** **M15 phase-03 — model-aware pricing**, the
+last M15 dashboard phase (its Spec was already reformatted to `### N.` headings
+at M16 kickoff, so it's seed-compatible). Also open: the `WORKFLOW.md`
+accepted-Spec-formats doc update to list `### Task N —` (architect + user, a
+contract-doc change per the talk-through-contract-doc-changes convention).
+Expand the next phase on demand with `/rexymcp:architect next`.
 
 **📌 M16 — Seeder Format Robustness kicked off (2026-06-10, with the user).**
 Diagnosed from session `6a2a3907`: M15 phase-02 seeded **zero tasks** because its

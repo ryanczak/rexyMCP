@@ -1,6 +1,6 @@
 # Phase 01 — Recognize `### Task N —` heading task format
 
-**Status:** review
+**Status:** done
 **Milestone:** M16-seeder-robustness
 **Depends on:** none (first M16 phase)
 
@@ -268,3 +268,28 @@ $ grep -c 'Task 1' executor/src/agent/tasks.rs
 - (pending) — `feat: recognize ### Task N — heading format in task seeder`
 
 **Notes for review:** None — implementation matches the spec exactly.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — single production file (`tasks.rs`), no
+  `seed_from_spec`/`parse_task_line` change, no config/`Cargo.toml`/other file.
+- **Re-run:** all four gates green independently (`cargo fmt --all --check`
+  clean; `cargo build`/`cargo clippy` zero warnings; `cargo test` 734 passed /
+  0 failed / 2 ignored).
+- **DoD:** production clean of `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]`
+  (the 4 `.unwrap()` are all in the `#[cfg(test)]` module); dot-branch byte-
+  unchanged (existing `### N.` + `### 1.5x`-rejection + non-heading-rejection
+  tests pass untouched); new branch correctly splits at the first of
+  em-dash/colon/dot and validates digits + non-empty title.
+- **Mutation-resistance:** `seed_from_spec_parses_task_dash_heading_format`
+  seeds 0 on the pre-fix parser and 2 after — pins the new behavior. The
+  malformed-prefix rejection test pins the digit/separator/empty-title guards.
+- **Commit:** `4157480` (`feat:`) bundled code + status flip + Update Log per
+  WORKFLOW.
+- **Calibration:** none. Clean 35-turn first-try; the recurring local-LLM
+  Update-Log clock/identity self-stamp quirk did **not** recur (entry stamped
+  `2026-06-11 04:48` — close to real; the `rexymcp serve` restart appears to
+  have taken effect).

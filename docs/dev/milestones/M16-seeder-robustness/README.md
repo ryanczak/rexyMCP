@@ -4,7 +4,7 @@
 heading style the architect naturally writes, in addition to the two formats it
 already parses (`N. Title` list items and `### N. Title` subheadings).
 
-**Status:** in-progress
+**Status:** complete (1/1 approved_first_try, 2026-06-10)
 
 **Depends on:** M14 (complete — added the `### N. Title` heading parser)
 
@@ -47,7 +47,7 @@ Per the 2026-06-10 decision (with the user), the fix is **both**:
 
 | # | Phase | Status | Kind | Size |
 |---|---|---|---|---|
-| 01 | Recognize `### Task N —` heading task format ([phase-01-heading-task-formats.md](phase-01-heading-task-formats.md)) | review | fix | xs |
+| 01 | Recognize `### Task N —` heading task format ([phase-01-heading-task-formats.md](phase-01-heading-task-formats.md)) | done | fix | xs |
 
 Phase 01 is the only in-scope M16 phase; it closes the milestone once approved.
 
@@ -56,7 +56,34 @@ Phase 01 is the only in-scope M16 phase; it closes the milestone once approved.
 ### Operational follow-up (architect, not executor)
 
 `WORKFLOW.md`'s "accepted Spec formats" documentation (added in M14 phase-01)
-should be updated to list the `### Task N —` format once this phase lands. That
-is a **contract-doc change** — the architect makes it with the user, not the
-executor (the executor cannot touch `WORKFLOW.md` per STANDARDS §5). Not in this
-phase's scope; flagged here for the milestone close.
+should be updated to list the `### Task N —` format now that this phase has
+landed. That is a **contract-doc change** — the architect makes it with the
+user, not the executor (the executor cannot touch `WORKFLOW.md` per STANDARDS
+§5). Not in this phase's scope; **still open** for the architect to action with
+the user (see the [talk-through-contract-doc-changes] convention).
+
+### Retrospective — 2026-06-10
+
+**Outcome:** complete in a single phase, **approved_first_try**, zero bounces,
+zero escalations. The narrowest milestone to date (one xs single-file `fix:`).
+
+**What worked:** the phase doc pre-supplied the exact replacement function body
+and the full test block, so the executor's job was a faithful transcription
+against a clear additive shape. The deliberate additive framing — new `Task `
+prefix branch *above* a byte-identical dot-branch — meant every prior `tasks.rs`
+test passed unmodified, and the only new risk surface was the new branch. Clean
+35-turn first-try.
+
+**Recurring-quirk watch:** the local-LLM Update-Log clock/identity self-stamp
+quirk (tracked across M11–M15) did **not** recur — the executor stamped
+`2026-06-11 04:48`, plausibly real, suggesting M11 phase-06's datetime injection
+is now live after the `rexymcp serve` restart. One data point; keep watching.
+
+**Convention half of the "Both" decision:** the code fix landed; the matching
+M15 phase-03 Spec reformat to `### N.` was already committed at M16 kickoff
+(`d3410c6`). The seeder now accepts all three heading variants
+(`N.` list-item, `### N.`, `### Task N — / : / .`), closing the M13→M14→M15
+format-drift gap. The remaining open item is the `WORKFLOW.md` accepted-formats
+doc update (architect + user, above).
+
+**Calibration:** none — no new stall classes, no fold.
