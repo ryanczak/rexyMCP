@@ -4,7 +4,21 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. M16 is complete (1/1 approved_first_try, 2026-06-10).
+**Active phase:** M15 phase-03 —
+[phase-03-pricing.md](milestones/M15-dashboard-polish-2/phase-03-pricing.md)
+(`todo`, fresh first dispatch). Model-aware `$ saved` pricing: add an optional
+`saved_model` field to `DashboardConfig` that auto-fills cloud-baseline rates for
+a recognized Claude model name (`claude-opus-4-8` → $5/$25/MTok, `claude-fable-5`
+→ $10/$50/MTok, etc.); numeric `saved_input_per_mtok`/`saved_output_per_mtok`
+override still works. The **last in-scope M15 phase** — closes the Dashboard
+Polish (Round 2) milestone once approved. Five files, ~40-line diff: one
+cross-crate `DashboardConfig` add (drops `Copy` since `Option<String>` isn't
+`Copy` — pinned gotcha) + a `model_rates` lookup in `panels.rs` + `mod.rs`
+re-export + `main.rs` wiring + `init.rs` template comment. No new `SessionEvent`,
+no `Cargo.toml`. Draft verified against live source at activation — `main.rs:369–
+372` and `init.rs:41–42` (the two exact-replacement targets) are byte-exact;
+phase-01/02 left phase-03's regions untouched. Dispatch with
+`/rexymcp:dispatch phase-03` (resolves to the M15 milestone path).
 
 **M16 phase-01 — done** (2026-06-10, approved_first_try): extended
 `parse_heading_task_line` in `executor/src/agent/tasks.rs` to recognize
@@ -23,12 +37,13 @@ appears live post-`rexymcp serve` restart). The seeder now accepts all three
 heading variants, closing the M13→M14→M15 format-drift gap. See the
 [M16 retrospective](milestones/M16-seeder-robustness/README.md#retrospective--2026-06-10).
 
-**📌 Pending next (user kicks off):** **M15 phase-03 — model-aware pricing**, the
-last M15 dashboard phase (its Spec was already reformatted to `### N.` headings
-at M16 kickoff, so it's seed-compatible). Also open: the `WORKFLOW.md`
-accepted-Spec-formats doc update to list `### Task N —` (architect + user, a
-contract-doc change per the talk-through-contract-doc-changes convention).
-Expand the next phase on demand with `/rexymcp:architect next`.
+**📌 Open contract-doc item (architect + user, not the executor):** the
+`WORKFLOW.md` accepted-Spec-formats documentation should be updated to list the
+`### Task N —` heading variant now that M16 phase-01 has landed. This is a
+contract-doc change to talk through with the user per the
+talk-through-contract-doc-changes convention; it is **not** in any phase's scope
+(the executor cannot touch `WORKFLOW.md` per STANDARDS §5). After M15 phase-03
+closes M15, the next milestone is a fresh human-gated kickoff.
 
 **📌 M16 — Seeder Format Robustness kicked off (2026-06-10, with the user).**
 Diagnosed from session `6a2a3907`: M15 phase-02 seeded **zero tasks** because its
