@@ -363,6 +363,6 @@ mcp/src/dashboard/panels.rs:0
 (Em-dash appears in format string and test assertions in mod.rs; panels.rs uses `milestone_line` which receives the pre-formatted name.)
 
 **Commits:**
-- (to be created below)
+- `c251062` — feat: add Milestone row to Session panel
 
 **Notes for review:** None. Implementation follows the spec exactly.
