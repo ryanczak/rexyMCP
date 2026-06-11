@@ -18,12 +18,13 @@ not a fixed set of frames.
 
 Read before starting:
 
-- `mcp/src/dashboard/panels.rs:117–143` — the current `spinner_line` and its
-  `SPRITE_CELLS` constant + char-count-vs-display-width caveat.
-- `mcp/src/dashboard/render.rs:148–151` — the single call site:
+- `mcp/src/dashboard/panels.rs:122–143` — the current `spinner_line` (fn at
+  `:137`) and its `SPRITE_CELLS` constant (`:124`) + char-count-vs-display-width
+  caveat.
+- `mcp/src/dashboard/render.rs:145–146` — the single call site:
   `spinner_line(state.spinner, session_inner_width)`, pushed onto the Session
   panel after the other lines.
-- `mcp/src/dashboard/event_loop.rs:19,26,40–45` — `spinner_tick` increments once
+- `mcp/src/dashboard/event_loop.rs:19,26,40–49` — `spinner_tick` increments once
   per ~500 ms loop; the loop passes `Some(tick)` while running, `None` once the
   session ends.
 

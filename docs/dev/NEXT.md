@@ -4,14 +4,22 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M17 phase-01 —
-[phase-01-labels.md](milestones/M17-dashboard-polish-3/phase-01-labels.md)
-(`todo`, fresh first dispatch). Move the Session panel's `last update:` line
-directly under `duration:` and capitalize every Session/Budget/Reclaim label
-(`Phase:`, `Tokens in:`, `Events:`; `$ saved:` stays — it's a symbol). The
-`last_update_line` call moves out of `render.rs` into `session_lines`; the rest
-is string-literal edits + test assertion bumps. xs, single-file-ish, no new dep.
-Dispatch with `/rexymcp:dispatch phase-01`.
+**Active phase:** M17 phase-02 —
+[phase-02-spinner.md](milestones/M17-dashboard-polish-3/phase-02-spinner.md)
+(`todo`, drafted, ready to dispatch). Restore the dog-chasing-brain spinner as a
+**width-parametric** chase: the dog closes on a right-pinned brain, catches it,
+then one `💨` overtake-burst frame before resetting; chase distance scales with
+`session_inner_width`. Single-function body rewrite of `spinner_line` in
+`panels.rs` (signature unchanged) + replace the 3 old single-dog triangle-wave
+tests with 6 chase tests. No `render.rs`/`event_loop.rs` edit, no new dep. s,
+single-file. Dispatch with `/rexymcp:dispatch phase-02`.
+
+**M17 phase-01 — done** (2026-06-11, approved_first_try; commit `7b905cb`): moved
+the Session panel's `last update:` line directly under `duration:` (the
+`last_update_line` call relocated out of `render.rs` into `session_lines`) and
+capitalized every Session/Budget/Reclaim label (`Phase:`, `Tokens in:`,
+`Events:`, …; `$ saved:` left as the symbol). String-literal edits + test
+assertion bumps, single concern. No `SessionEvent`/config/`Cargo.toml`.
 
 **📌 M17 — Dashboard Polish (Round 3) kicked off (2026-06-11, with the user).**
 Milestone [README](milestones/M17-dashboard-polish-3/README.md) written;
