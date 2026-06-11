@@ -4,21 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M15 phase-03 —
-[phase-03-pricing.md](milestones/M15-dashboard-polish-2/phase-03-pricing.md)
-(`todo`, fresh first dispatch). Model-aware `$ saved` pricing: add an optional
-`saved_model` field to `DashboardConfig` that auto-fills cloud-baseline rates for
-a recognized Claude model name (`claude-opus-4-8` → $5/$25/MTok, `claude-fable-5`
-→ $10/$50/MTok, etc.); numeric `saved_input_per_mtok`/`saved_output_per_mtok`
-override still works. The **last in-scope M15 phase** — closes the Dashboard
-Polish (Round 2) milestone once approved. Five files, ~40-line diff: one
-cross-crate `DashboardConfig` add (drops `Copy` since `Option<String>` isn't
-`Copy` — pinned gotcha) + a `model_rates` lookup in `panels.rs` + `mod.rs`
-re-export + `main.rs` wiring + `init.rs` template comment. No new `SessionEvent`,
-no `Cargo.toml`. Draft verified against live source at activation — `main.rs:369–
-372` and `init.rs:41–42` (the two exact-replacement targets) are byte-exact;
-phase-01/02 left phase-03's regions untouched. Dispatch with
-`/rexymcp:dispatch phase-03` (resolves to the M15 milestone path).
+**Active phase:** none. **M15 — Dashboard Polish (Round 2) is complete** (3/3
+approved_first_try, 2026-06-11; see the
+[retrospective](milestones/M15-dashboard-polish-2/README.md#retrospective--2026-06-11)).
+The next milestone is a fresh human-gated kickoff — run `/rexymcp:architect` to
+scope it.
+
+**M15 phase-03 — done** (2026-06-11, approved_first_try): model-aware `$ saved`
+pricing. Added `saved_model: Option<String>` to `DashboardConfig` (dropped `Copy`
+from the derive — the pinned `Option<String>`-isn't-`Copy` gotcha, traversed
+first-try) + a pure `model_rates(&str) -> Option<BudgetRates>` lookup in
+`panels.rs` (Fable/Mythos $10/$50, Opus 4.8/4.7/4.6 $5/$25, Sonnet 4.6 $3/$15,
+Haiku 4.5 $1/$5) + `mod.rs` re-export + a trivial `Option`-fallback wiring at
+`main.rs:369` + `init.rs` template comment. All five files match the spec
+byte-for-byte; existing config tests untouched. 3 mutation-resistant `model_rates`
+tests; 348 mcp + 734 executor pass, all four gates green on independent re-run.
+Reviewer extended the executor's E2E gap: the real binary parses a
+`[dashboard] saved_model` toml (load succeeds; only the expected `unreachable`
+health error fires), confirming the config-load half end-to-end; the full
+`$ saved` render is the TUI dashboard (E2E-N/A per prior dashboard-phase
+precedent). Clean 50-turn first-try; commit `38cc819` (feat) + approve. No new
+`SessionEvent`, no `Cargo.toml`. The cosmetic identity self-stamp persists ("Claude
+(Sonnet)"; executor is Qwen) but the **date is correct** (`2026-06-11`) — M11
+phase-06 datetime injection confirmed live post-restart.
 
 **M16 phase-01 — done** (2026-06-10, approved_first_try): extended
 `parse_heading_task_line` in `executor/src/agent/tasks.rs` to recognize

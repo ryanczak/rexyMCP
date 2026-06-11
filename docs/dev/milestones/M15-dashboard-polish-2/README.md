@@ -5,21 +5,21 @@ move the `last update:` line from the Budget panel to the Session panel; update
 `$ saved` with current model pricing (Opus 4.8 / Fable 5); and change the
 Activity transcript time-delta color to dull yellow.
 
-**Status:** in-progress
+**Status:** complete
 
 **Depends on:** M14 (complete)
 
 **Exit criteria:**
-- [ ] Task titles in the Tasks panel use all available panel width instead of
+- [x] Task titles in the Tasks panel use all available panel width instead of
       the hardcoded 24-char cap.
-- [ ] `last update:` appears in the Session panel (under the `duration:` line),
+- [x] `last update:` appears in the Session panel (under the `duration:` line),
       not in the Budget panel.
-- [ ] `$ saved` auto-fills rates for recognized Claude model names
+- [x] `$ saved` auto-fills rates for recognized Claude model names
       (`claude-opus-4-8` → $5/$25/MTok; `claude-fable-5` → $10/$50/MTok; etc.)
       via a new optional `saved_model` config field; numeric override still works.
-- [ ] Activity transcript time-delta spans (`[+0s]`, `[+5s]`, …) are rendered
+- [x] Activity transcript time-delta spans (`[+0s]`, `[+5s]`, …) are rendered
       in dull yellow (`Rgb(180, 150, 50)`) rather than dim grey.
-- [ ] All gates pass: `cargo fmt --all --check`, `cargo build` (zero warnings),
+- [x] All gates pass: `cargo fmt --all --check`, `cargo build` (zero warnings),
       `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`.
 
 ## Architecture references
@@ -39,7 +39,7 @@ Activity transcript time-delta color to dull yellow.
 |---|---|---|---|---|
 | 01 | Move `last update:` to Session panel + dull yellow timestamps ([phase-01-layout-and-color.md](phase-01-layout-and-color.md)) | done | feat | xs |
 | 02 | Width-aware task title truncation ([phase-02-task-width.md](phase-02-task-width.md)) | done | feat | xs |
-| 03 | Model-aware `$ saved` pricing ([phase-03-pricing.md](phase-03-pricing.md)) | review | feat | s |
+| 03 | Model-aware `$ saved` pricing ([phase-03-pricing.md](phase-03-pricing.md)) | done | feat | s |
 
 Phase 03 is the last in-scope M15 phase; it closes the milestone once approved.
 
@@ -79,3 +79,37 @@ is explicitly authorized in that phase doc. No new dependencies.
 | `claude-opus-4-8` / `claude-opus-4-7` / `claude-opus-4-6` | $5.00 | $25.00 |
 | `claude-sonnet-4-6` | $3.00 | $15.00 |
 | `claude-haiku-4-5` | $1.00 | $5.00 |
+
+### Retrospective — 2026-06-11
+
+**M15 — Dashboard Polish (Round 2) is complete: 3/3 phases approved_first_try,
+zero bounces, zero escalations.**
+
+- **Phase 01** (xs) — moved `last update:` to the Session panel + dull-yellow
+  `[+Xs]` timestamps; clean 43-turn first-try, commits `77c3c27`/`ef14d74`.
+- **Phase 02** (xs) — width-aware task-title truncation (dropped the hardcoded
+  `TASK_TITLE_MAX = 24`); clean 40-turn first-try, commit `1eced62`.
+- **Phase 03** (s) — model-aware `$ saved` pricing via an optional `saved_model`
+  config field; clean 50-turn first-try, commit `38cc819`.
+
+**What worked.** The display-only constraint that carried M13 forward held again:
+phases 01–02 touched only `mcp/src/dashboard/` (pure presentation, no config/event
+churn), and phase 03's single cross-crate change — `saved_model: Option<String>`
+on `DashboardConfig` — was deliberately shaped to dodge both documented stall
+classes. It added **no new variant** (no match-arm wall) and touched **one**
+non-`Default`-built struct literal region; the `Copy`-drop gotcha (pinned in the
+phase doc because `Option<String>` isn't `Copy`) was traversed first-try, and the
+`main.rs` wiring stayed a trivial `Option`-fallback expression. Three consecutive
+xs/xs/s phases landing first-try confirms the additive-shape lever continues to
+neutralize the mechanical-churn stall on small dashboard work.
+
+**Process.** The cosmetic local-LLM identity self-stamp persists (Update Logs read
+"Claude (Sonnet)"; executor is Qwen/Qwen3.6-27B-FP8) — but across M15 the
+**dates are correct** (`2026-06-11`), confirming the M11 phase-06 datetime
+injection is live post-`rexymcp serve` restart. Identity-label drift remains
+cosmetic; no fold.
+
+**Carried forward.** The open contract-doc item (documenting the `### Task N —`
+heading variant in `WORKFLOW.md`, landed by M16 phase-01) is a human-gated
+talk-through, not executor scope. With M15 closed, the next milestone is a fresh
+human-gated kickoff.

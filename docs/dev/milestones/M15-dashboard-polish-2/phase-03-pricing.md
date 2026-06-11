@@ -1,6 +1,6 @@
 # Phase 03 — Model-aware `$ saved` pricing
 
-**Status:** review
+**Status:** done
 **Milestone:** M15-dashboard-polish-2
 **Depends on:** phase-02 (done)
 
@@ -335,3 +335,24 @@ Implementing `saved_model` config field with `model_rates` lookup, re-export, ma
 **End-to-end verification:** N/A — requires running `rexymcp dashboard` against a live session with token metrics, which needs a session log file not available in the build environment. Unit tests cover all code paths including the `model_rates` lookup and fallback logic.
 
 **Notes for review:** None.
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none. Clean 50-turn first-try; all five files match the spec
+  byte-for-byte. Reviewer re-ran all four gates independently (348 mcp + 734
+  executor pass, 0 warnings) and extended the executor's E2E gap: the real
+  `rexymcp` binary parses a `[dashboard] saved_model = "claude-opus-4-8"` toml
+  (load succeeds; the only error is the expected `unreachable` health endpoint),
+  confirming the config-load half end-to-end against the real artifact. The full
+  `saved_model → rates → $ saved` render is the TUI dashboard (needs a live
+  session) — E2E-N/A consistent with prior M8/M10/M13/M15 dashboard-panel phases;
+  `model_rates` is unit-tested (3 mutation-resistant tests) and the `main.rs`
+  wiring is build-verified `Option`-fallback plumbing (no panic; `unwrap_or` over
+  an `Option<BudgetRates>`). The cosmetic identity self-stamp persists (Update Log
+  reads "Claude (Sonnet)"; executor is Qwen) but the **date is correct**
+  (`2026-06-11`) — the M11 phase-06 datetime injection is confirmed live
+  post-restart; identity-label drift remains cosmetic, no fold.
