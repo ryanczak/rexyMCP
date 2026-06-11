@@ -118,32 +118,54 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
     lines
 }
 
-/// Display cells the spinner sprite occupies (one wide dog glyph). The dog's
-/// horizontal offset is bounded so `offset + SPRITE_CELLS <= width`, keeping the
-/// rendered line inside the panel.
+const DOG: char = '🐕';
+const BRAIN: char = '🧠';
+const DASH: char = '💨';
+
+/// Display cells each emoji sprite occupies (one code point, two terminal cells).
 const SPRITE_CELLS: usize = 2;
 
-/// Full-width liveness spinner: a dog that trots back and forth across the Session
-/// panel. `spinner` is `Some(tick)` — a monotonic counter from the event loop —
-/// while the session runs, and `None` once it ends (→ `None`, no spinner line, same
-/// as today's ended behavior). `width` is the Session panel's inner width. The dog's
-/// offset is a triangle wave over `[0, width − SPRITE_CELLS]`, so the dog walks the
-/// full width and the line never exceeds it.
+/// Liveness spinner: a dog chasing its own brain across the Session panel. While
+/// the session runs, `spinner` is `Some(tick)` (a monotonic per-loop counter);
+/// once it ends, `None` (→ no spinner line). `width` is the panel inner width.
 ///
-/// Char-count vs display-width caveat: the dog glyph is one code point but two
-/// display cells; `SPRITE_CELLS` budgets for that. Wide-glyph rounding may leave the
-/// line a cell short of the border — acceptable, matching `wrap_line`'s existing
-/// char-count approach.
+/// One cycle: the dog walks left→right (`track + 1` steps) closing on the brain
+/// pinned at the right edge, catches it, then one overtake-burst frame
+/// (`🧠🐕💨`) before resetting. The chase distance scales with `width`.
+///
+/// Char-count vs display-width caveat (unchanged from the prior impl): each emoji
+/// is one `char` but two display cells; positions are computed in display cells so
+/// the rendered line is bounded by `width` cells, while its `chars().count()` is
+/// smaller. A wide-glyph terminal rounding may leave the line a cell short of the
+/// border — acceptable.
 pub(crate) fn spinner_line(spinner: Option<usize>, width: usize) -> Option<Line<'static>> {
     let tick = spinner?;
-    let span = width.saturating_sub(SPRITE_CELLS);
-    if span == 0 {
-        return Some(Line::from("🐕"));
+    // Reserve SPRITE_CELLS for the dog and SPRITE_CELLS for the brain so neither
+    // sprite runs past `width`. `track` is the range the dog's left edge sweeps.
+    let track = width.saturating_sub(SPRITE_CELLS * 2);
+    if track == 0 {
+        return Some(Line::from(format!("{DOG}{BRAIN}")));
     }
-    let period = span * 2;
+    let period = track + 2; // track+1 chase steps + 1 overtake-burst frame
     let phase = tick % period;
-    let offset = if phase <= span { phase } else { period - phase };
-    Some(Line::from(format!("{}🐕", " ".repeat(offset))))
+    if phase <= track {
+        // Chase: dog at `phase`; brain pinned so its right edge is the panel edge.
+        let dog_off = phase;
+        let brain_off = track + SPRITE_CELLS;
+        let gap = brain_off.saturating_sub(dog_off + SPRITE_CELLS);
+        Some(Line::from(format!(
+            "{}{DOG}{}{BRAIN}",
+            " ".repeat(dog_off),
+            " ".repeat(gap),
+        )))
+    } else {
+        // Overtake burst: brain, dog, dust — pinned to the right edge.
+        let lead = width.saturating_sub(SPRITE_CELLS * 3);
+        Some(Line::from(format!(
+            "{}{BRAIN}{DOG}{DASH}",
+            " ".repeat(lead)
+        )))
+    }
 }
 
 /// Reclaim panel: compaction plus the three M10 per-lever reclaim sources.
@@ -544,65 +566,93 @@ mod tests {
 
     #[test]
     fn spinner_line_none_when_ended() {
-        assert_eq!(spinner_line(None, 40), None);
+        assert!(spinner_line(None, 40).is_none());
     }
 
     #[test]
-    fn spinner_line_starts_flush_left() {
+    fn spinner_line_contains_dog_and_brain_during_chase() {
+        // tick 0 is in the chase phase (phase=0 <= track for width=40)
         let line = spinner_line(Some(0), 40).unwrap();
-        let text = format!("{line}");
-        assert!(text.contains('🐕'), "must contain dog: {text}");
-        assert_eq!(
-            text.chars().take_while(|c| *c == ' ').count(),
-            0,
-            "no leading spaces at tick 0: {text}"
+        let s = format!("{}", line);
+        assert!(s.contains('🐕'), "missing dog: {s}");
+        assert!(s.contains('🧠'), "missing brain: {s}");
+    }
+
+    #[test]
+    fn spinner_line_emits_overtake_burst_once_per_cycle() {
+        let width: usize = 40;
+        let track = width.saturating_sub(SPRITE_CELLS * 2);
+        let period = track + 2;
+        let mut burst_count = 0;
+        let mut burst_has_adjacent_brain_dog = false;
+        for tick in 0..period {
+            let line = spinner_line(Some(tick), width).unwrap();
+            let s = format!("{}", line);
+            if s.contains('💨') {
+                burst_count += 1;
+                assert!(
+                    s.contains("🧠🐕"),
+                    "burst frame missing adjacent brain+dog: {s}"
+                );
+                burst_has_adjacent_brain_dog = true;
+            }
+        }
+        assert_eq!(burst_count, 1, "expected exactly one burst frame per cycle");
+        assert!(
+            burst_has_adjacent_brain_dog,
+            "burst frame must contain 🧠🐕 adjacent"
+        );
+    }
+
+    #[test]
+    fn spinner_line_scales_with_width() {
+        // Count distinct dog offsets (leading space count) over a full cycle.
+        fn distinct_dog_offsets(width: usize) -> usize {
+            let track = width.saturating_sub(SPRITE_CELLS * 2);
+            let period = track + 2;
+            let mut offsets = std::collections::HashSet::new();
+            for tick in 0..period {
+                let line = spinner_line(Some(tick), width).unwrap();
+                let s = format!("{}", line);
+                let leading = s.len() - s.trim_start().len();
+                offsets.insert(leading);
+            }
+            offsets.len()
+        }
+        let offsets_w20 = distinct_dog_offsets(20);
+        let offsets_w60 = distinct_dog_offsets(60);
+        assert!(
+            offsets_w60 > offsets_w20,
+            "wider panel should have more distinct dog offsets (w20={offsets_w20}, w60={offsets_w60})"
         );
     }
 
     #[test]
     fn spinner_line_never_exceeds_width() {
-        let width = 20;
-        for tick in 0..200 {
-            let line = spinner_line(Some(tick), width).unwrap();
-            let text = format!("{line}");
-            let leading = text.chars().take_while(|c| *c == ' ').count();
-            assert!(
-                leading <= width.saturating_sub(SPRITE_CELLS),
-                "tick {tick}: leading spaces {leading} exceeds bound {} (width {width})",
-                width.saturating_sub(SPRITE_CELLS)
-            );
-        }
-        // Huge tick must also stay bounded.
-        let line = spinner_line(Some(999_999), width).unwrap();
-        let text = format!("{line}");
-        let leading = text.chars().take_while(|c| *c == ' ').count();
-        assert!(
-            leading <= width.saturating_sub(SPRITE_CELLS),
-            "huge tick: leading spaces {leading} exceeds bound"
-        );
-    }
-
-    #[test]
-    fn spinner_line_bounces_at_right_edge() {
-        let width = 5; // span = 3, period = 6
-        let expected_offsets = [0, 1, 2, 3, 2, 1, 0, 1];
-        for (i, &expected) in expected_offsets.iter().enumerate() {
-            let line = spinner_line(Some(i), width).unwrap();
-            let text = format!("{line}");
-            let leading = text.chars().take_while(|c| *c == ' ').count();
-            assert_eq!(
-                leading, expected,
-                "tick {i}: expected offset {expected}, got {leading}: {text}"
-            );
+        for &width in &[10_usize, 20, 40, 80] {
+            let track = width.saturating_sub(SPRITE_CELLS * 2);
+            let period = track + 2;
+            for tick in 0..period {
+                let line = spinner_line(Some(tick), width).unwrap();
+                let s = format!("{}", line);
+                let char_count = s.chars().count();
+                assert!(
+                    char_count <= width,
+                    "width={width} tick={tick}: char_count={char_count} exceeds width ({s:?})"
+                );
+            }
         }
     }
 
     #[test]
-    fn spinner_line_tiny_width_does_not_panic() {
-        let line = spinner_line(Some(7), 1);
-        assert!(line.is_some(), "must return Some even for tiny width");
-        let text = format!("{}", line.unwrap());
-        assert!(text.contains('🐕'), "must contain dog: {text}");
+    fn spinner_line_degenerate_narrow_width() {
+        // At width <= SPRITE_CELLS * 2, track == 0, so the line is "🐕🧠".
+        for &width in &[0_usize, 1, 2, 3, 4] {
+            let line = spinner_line(Some(0), width);
+            assert!(line.is_some(), "width={width}: expected Some");
+            let s = format!("{}", line.unwrap());
+            assert_eq!(s, "🐕🧠", "width={width}: expected dog+brain: {s:?}");
+        }
     }
 
     // --- session_duration_ms tests ---
