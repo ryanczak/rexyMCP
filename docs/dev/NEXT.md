@@ -4,11 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M14 phase-02 (deferred cleanup sweep) is undrafted.**
-Draft it on demand with `/rexymcp:architect next` (prod `eprintln!` ×2 at
-`mcp/src/server.rs:426`/`:450`, stale `RUNAWAY_OUTPUT_BYTES` doc-comment in
-`read_file.rs:17`, `symbols` `format_references` copy bug). See
-[M14 README](milestones/M14-cleanup/README.md).
+**Active phase:**
+[M14 phase-02 — Deferred cleanup sweep: prod `eprintln!`, stale doc-comment, `symbols` copy bug](milestones/M14-cleanup/phase-02-cleanup-sweep.md)
+(`todo`) — gathers three long-deferred cleanups into one chore (closes M14):
+(1) remove the two diagnostic `eprintln!` in `mcp/src/server.rs` (the `NoSources`
+corroboration arm + the `progress_token` line; the `main.rs`/`init.rs` CLI
+`eprintln!` are legitimate and out of scope); (2) fix the stale
+`RUNAWAY_OUTPUT_BYTES` doc-comment in `read_file.rs:17` to name the live
+`runaway_output_bytes` config field; (3) fix the references-mode truncation note
+in `symbols.rs` `format_references` — it suggests the `kind` filter that
+references mode rejects, change to `max_results`. ~40 lines; one new negative
+test. See [M14 README](milestones/M14-cleanup/README.md).
 
 **M14 phase-01 — done** (2026-06-10, approved_first_try): fixed the silent
 `seed_from_spec` failure that produced zero tasks for 6 of 8 M13 phases. Stop
