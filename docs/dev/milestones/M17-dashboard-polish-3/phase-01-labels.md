@@ -1,7 +1,7 @@
 # Phase 01: Move `last update:` under `duration:` + capitalize panel labels
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~40 lines (mostly string-literal edits)
 **Tags:** language=rust, kind=feature, size=xs
@@ -230,3 +230,49 @@ None. No new dependencies. No `docs/architecture.md` change.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 16:42 (progress)
+
+Executor started phase 01. Implementing `last update:` relocation into `session_lines` and capitalizing all Session/Budget/Reclaim panel labels.
+
+### Update — 2026-06-11 16:43 (complete)
+
+**Summary:** Moved `last_update_line` call from `render.rs` into `session_lines` in `panels.rs` (positioned between `Duration:` and `Turn` lines). Capitalized the first letter of every label in Session, Budget, and Reclaim panels per the spec table. `$ saved:` in `dollars_saved_line` left unchanged. Removed the now-unused `last_update_line` import from `render.rs`. Updated all affected test assertions to the new capitalized strings. Added `session_lines_places_last_update_under_duration` test to pin the new line order with index assertions. Inverted `session_lines_omits_last_update` to `session_lines_includes_last_update_when_ts_present`.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(checks clean, exit 0)
+
+cargo build 2>&1 | tail -20
+(compile clean, exit 0)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(lint clean, exit 0)
+
+cargo test 2>&1 | tail -30
+test result: ok. 734 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+E2E N/A — this is a TUI render; unit tests pin the line order (`session_lines_places_last_update_under_duration` asserts index ordering) and the label strings, consistent with prior dashboard-panel phases (M13/M15) that declared the live TUI render E2E-N/A.
+
+Grep for pinned literal `Last update:` in panels.rs: 8 matches across source and tests, confirming the literal landed correctly.
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — moved `last_update_line` into `session_lines`, capitalized all Session/Budget/Reclaim labels, updated all test assertions, added position-pinning test
+- `mcp/src/dashboard/render.rs` — removed `last_update_line` call and its import
+- `docs/dev/milestones/M17-dashboard-polish-3/phase-01-labels.md` — status flip to review + Update Log
+- `docs/dev/milestones/M17-dashboard-polish-3/README.md` — phase table row updated to review
+
+**New tests:**
+- `session_lines_places_last_update_under_duration` in `mcp/src/dashboard/panels.rs`
+
+**Commits:**
+- (pending) — feat: move last update under duration and capitalize panel labels
+
+**Notes for review:** None. Straightforward cosmetic change, all tests pass.

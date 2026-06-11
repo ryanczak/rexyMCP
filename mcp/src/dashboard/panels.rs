@@ -76,11 +76,11 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
 
     let phase = summary.phase.as_deref().unwrap_or("<unknown>");
     let session = summary.session_id.as_deref().unwrap_or("<unknown>");
-    lines.push(Line::from(format!("phase: {phase}")));
-    lines.push(Line::from(format!("session: {session}")));
+    lines.push(Line::from(format!("Phase: {phase}")));
+    lines.push(Line::from(format!("Session: {session}")));
 
     if let Some(model) = &summary.model {
-        lines.push(Line::from(format!("model: {model}")));
+        lines.push(Line::from(format!("Model: {model}")));
     }
 
     let state = match &summary.ended {
@@ -88,7 +88,7 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
         None => "running".to_string(),
     };
     lines.push(Line::from(Span::styled(
-        format!("state: {state}"),
+        format!("State: {state}"),
         Style::new()
             .add_modifier(ratatui::style::Modifier::BOLD)
             .fg(if summary.ended.is_some() {
@@ -100,14 +100,18 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
 
     if let Some(dur) = session_duration_ms(summary, now_ms) {
         lines.push(Line::from(format!(
-            "duration: {}",
+            "Duration: {}",
             status::humanize_age(dur)
         )));
     }
 
+    if let Some(line) = last_update_line(summary, now_ms) {
+        lines.push(line);
+    }
+
     let stage = summary.latest_stage.as_deref().unwrap_or("<none>");
     lines.push(Line::from(format!(
-        "turn {}, stage {stage}",
+        "Turn {}, stage {stage}",
         summary.latest_turn
     )));
 
@@ -149,37 +153,37 @@ pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.compaction_count > 0 {
         let before = summary.compaction_tokens_before;
         let after = summary.compaction_tokens_after;
-        lines.push(Line::from(format!("events: {}", summary.compaction_count)));
+        lines.push(Line::from(format!("Events: {}", summary.compaction_count)));
         lines.push(Line::from(format!(
-            "freed: {} tokens",
+            "Freed: {} tokens",
             before.saturating_sub(after)
         )));
         if after != 0 {
             let ratio = before as f64 / after as f64;
-            lines.push(Line::from(format!("ratio: {ratio:.1}x")));
+            lines.push(Line::from(format!("Ratio: {ratio:.1}x")));
         }
     }
     if summary.output_filtered_count > 0 {
         lines.push(Line::from(format!(
-            "filter: {} calls, {} freed",
+            "Filter: {} calls, {} freed",
             summary.output_filtered_count, summary.output_filtered_tokens
         )));
     }
     if summary.read_evicted_count > 0 {
         lines.push(Line::from(format!(
-            "evict: {} reads, {} freed",
+            "Evict: {} reads, {} freed",
             summary.read_evicted_count, summary.read_evicted_tokens
         )));
     }
     if summary.read_deduped_count > 0 {
         lines.push(Line::from(format!(
-            "dedupe: {} reads, {} saved",
+            "Dedupe: {} reads, {} saved",
             summary.read_deduped_count, summary.read_deduped_tokens
         )));
     }
 
     if lines.is_empty() {
-        return vec![Line::from("(no reclaim yet)")];
+        return vec![Line::from("(No reclaim yet)")];
     }
     lines
 }
@@ -318,14 +322,14 @@ pub(crate) fn tokens_per_sec(
 /// Budget panel: token counts and context-window gauge.
 pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.last_input_tokens.is_none() {
-        return vec![Line::from("(no metrics yet)")];
+        return vec![Line::from("(No metrics yet)")];
     }
 
     let in_toks = summary.last_input_tokens.unwrap_or(0);
     let out_toks = summary.last_output_tokens.unwrap_or(0);
     let mut lines = vec![
-        Line::from(format!("tokens in:  {in_toks}")),
-        Line::from(format!("tokens out: {out_toks}")),
+        Line::from(format!("Tokens in:  {in_toks}")),
+        Line::from(format!("Tokens out: {out_toks}")),
     ];
 
     match tokens_per_sec(
@@ -345,14 +349,14 @@ pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
                 }
                 _ => String::new(),
             };
-            lines.push(Line::from(format!("tok/s: {rate:.1}{stats}")));
+            lines.push(Line::from(format!("Tok/s: {rate:.1}{stats}")));
         }
-        None => lines.push(Line::from("tok/s: —")),
+        None => lines.push(Line::from("Tok/s: —")),
     }
 
     if let Some(pct) = summary.last_context_pct {
         if pct == 0.0 {
-            lines.push(Line::from("context: — (unmeasured)"));
+            lines.push(Line::from("Context: — (unmeasured)"));
         } else {
             let pct_int = (pct * 100.0).round() as u32;
             let color = if pct_int < 50 {
@@ -364,9 +368,9 @@ pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
             };
             let label = match (summary.last_context_used, summary.last_context_window) {
                 (Some(used), Some(window)) if window > 0 => {
-                    format!("context: {pct_int}% ({used}/{window})")
+                    format!("Context: {pct_int}% ({used}/{window})")
                 }
-                _ => format!("context: {pct_int}%"),
+                _ => format!("Context: {pct_int}%"),
             };
             lines.push(Line::from(Span::styled(label, Style::new().fg(color))));
         }
@@ -411,10 +415,10 @@ pub(crate) fn last_update_line(summary: &StatusSummary, now_ms: u64) -> Option<L
     let age_str = status::humanize_age(now_ms.saturating_sub(ts));
     let line = match summary.update_interval_avg_ms {
         Some(avg) => format!(
-            "last update: {age_str} ago (avg: {})",
+            "Last update: {age_str} ago (avg: {})",
             status::humanize_age(avg),
         ),
-        None => format!("last update: {age_str} ago"),
+        None => format!("Last update: {age_str} ago"),
     };
     Some(Line::from(line))
 }
@@ -441,8 +445,8 @@ mod tests {
         };
         let lines = session_lines(&summary, 0);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s == "phase: phase-02"));
-        assert!(text.iter().any(|s| s == "session: abc"));
+        assert!(text.iter().any(|s| s == "Phase: phase-02"));
+        assert!(text.iter().any(|s| s == "Session: abc"));
         assert!(text.iter().any(|s| s.contains("running")));
     }
 
@@ -467,7 +471,7 @@ mod tests {
         };
         let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("turn 5")));
+        assert!(text.iter().any(|s| s.contains("Turn 5")));
         assert!(text.iter().any(|s| s.contains("verify")));
     }
 
@@ -480,7 +484,7 @@ mod tests {
         };
         let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s == "duration: 3s"));
+        assert!(text.iter().any(|s| s == "Duration: 3s"));
     }
 
     #[test]
@@ -492,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn session_lines_omits_last_update() {
+    fn session_lines_includes_last_update_when_ts_present() {
         let summary = StatusSummary {
             last_ts: Some(1000),
             update_interval_avg_ms: Some(500),
@@ -501,8 +505,38 @@ mod tests {
         let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(
-            !text.iter().any(|s| s.contains("last update")),
-            "session_lines must NOT contain 'last update:' — pushed in render.rs, not by session_lines()"
+            text.iter().any(|s| s.contains("Last update:")),
+            "session_lines must contain 'Last update:' when last_ts is set, got: {text:?}",
+        );
+    }
+
+    #[test]
+    fn session_lines_places_last_update_under_duration() {
+        let summary = StatusSummary {
+            session_id: Some("abc".into()),
+            started_at: Some(0),
+            last_ts: Some(1000),
+            latest_turn: 2,
+            latest_stage: Some("plan".into()),
+            ..StatusSummary::default()
+        };
+        let lines = session_lines(&summary, 4000);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let dur_idx = text
+            .iter()
+            .position(|s| s.contains("Duration:"))
+            .expect("Duration: line missing");
+        let lu_idx = text
+            .iter()
+            .position(|s| s.contains("Last update:"))
+            .expect("Last update: line missing");
+        let turn_idx = text
+            .iter()
+            .position(|s| s.contains("Turn"))
+            .expect("Turn line missing");
+        assert!(
+            dur_idx < lu_idx && lu_idx < turn_idx,
+            "Last update: (idx {lu_idx}) must be after Duration: (idx {dur_idx}) and before Turn (idx {turn_idx}), got: {text:?}",
         );
     }
 
@@ -611,7 +645,7 @@ mod tests {
         let line = last_update_line(&summary, 4000);
         assert!(line.is_some());
         let text = format!("{}", line.unwrap());
-        assert!(text.contains("last update: 3s ago"));
+        assert!(text.contains("Last update: 3s ago"));
     }
 
     #[test]
@@ -1040,7 +1074,7 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let ctx_line = text.iter().find(|s| s.contains("context:")).unwrap();
+        let ctx_line = text.iter().find(|s| s.contains("Context:")).unwrap();
         assert!(ctx_line.contains("68%"), "pct in: {ctx_line}");
         assert!(ctx_line.contains("31195"), "used in: {ctx_line}");
         assert!(ctx_line.contains("45875"), "window in: {ctx_line}");
@@ -1058,7 +1092,7 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let ctx_line = text.iter().find(|s| s.contains("context:")).unwrap();
+        let ctx_line = text.iter().find(|s| s.contains("Context:")).unwrap();
         assert!(ctx_line.contains("50%"), "pct in: {ctx_line}");
         assert!(
             !ctx_line.contains('/'),
@@ -1085,7 +1119,7 @@ mod tests {
         let summary = StatusSummary::default();
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("no metrics")));
+        assert!(text.iter().any(|s| s.contains("No metrics")));
     }
 
     #[test]
@@ -1100,7 +1134,7 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("tok/s: 100.0")));
+        assert!(text.iter().any(|s| s.contains("Tok/s: 100.0")));
     }
 
     #[test]
@@ -1115,11 +1149,11 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s == "tok/s: —"));
+        assert!(text.iter().any(|s| s == "Tok/s: —"));
         assert!(
             !text
                 .iter()
-                .any(|s| s.starts_with("tok/s:") && s.contains('.'))
+                .any(|s| s.starts_with("Tok/s:") && s.contains('.'))
         );
     }
 
@@ -1138,7 +1172,7 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let stats_line = text.iter().find(|s| s.contains("tok/s:")).unwrap();
+        let stats_line = text.iter().find(|s| s.contains("Tok/s:")).unwrap();
         assert!(stats_line.contains("avg: 80.0"), "got: {stats_line}");
         assert!(stats_line.contains("max: 120.0"), "got: {stats_line}");
         assert!(stats_line.contains("min: 60.0"), "got: {stats_line}");
@@ -1198,7 +1232,7 @@ mod tests {
         let summary = StatusSummary::default();
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("no reclaim yet")));
+        assert!(text.iter().any(|s| s.contains("No reclaim yet")));
     }
 
     #[test]
@@ -1211,8 +1245,8 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("events: 2")));
-        assert!(text.iter().any(|s| s.contains("freed: 400")));
+        assert!(text.iter().any(|s| s.contains("Events: 2")));
+        assert!(text.iter().any(|s| s.contains("Freed: 400")));
         assert!(text.iter().any(|s| s.contains("1.7x")));
     }
 
@@ -1226,8 +1260,8 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("events: 1")));
-        assert!(text.iter().any(|s| s.contains("freed: 500")));
+        assert!(text.iter().any(|s| s.contains("Events: 1")));
+        assert!(text.iter().any(|s| s.contains("Freed: 500")));
         assert!(!text.iter().any(|s| s.contains("x")));
     }
 
@@ -1240,7 +1274,7 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("filter: 3 calls")));
+        assert!(text.iter().any(|s| s.contains("Filter: 3 calls")));
         assert!(text.iter().any(|s| s.contains("2048")));
     }
 
@@ -1255,8 +1289,8 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("evict: 2 reads")));
-        assert!(text.iter().any(|s| s.contains("dedupe: 1 reads")));
+        assert!(text.iter().any(|s| s.contains("Evict: 2 reads")));
+        assert!(text.iter().any(|s| s.contains("Dedupe: 1 reads")));
     }
 
     #[test]
@@ -1269,9 +1303,9 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(!text.iter().any(|s| s.contains("filter:")));
-        assert!(!text.iter().any(|s| s.contains("evict:")));
-        assert!(!text.iter().any(|s| s.contains("dedupe:")));
+        assert!(!text.iter().any(|s| s.contains("Filter:")));
+        assert!(!text.iter().any(|s| s.contains("Evict:")));
+        assert!(!text.iter().any(|s| s.contains("Dedupe:")));
     }
 
     // --- dollars_saved tests ---

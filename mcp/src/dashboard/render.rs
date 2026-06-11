@@ -8,8 +8,8 @@ use ratatui::{
 
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
-    BudgetRates, budget_lines, dollars_saved_line, files_lines, last_update_line, panel,
-    reclaim_lines, session_lines, spinner_line, tasks_lines,
+    BudgetRates, budget_lines, dollars_saved_line, files_lines, panel, reclaim_lines,
+    session_lines, spinner_line, tasks_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -142,9 +142,6 @@ pub(crate) fn render_dashboard(
     .areas::<3>(header);
 
     let mut session = session_lines(&data.summary, now_ms);
-    if let Some(line) = last_update_line(&data.summary, now_ms) {
-        session.push(line);
-    }
     let session_inner_width = session_area.width.saturating_sub(2) as usize;
     if let Some(line) = spinner_line(state.spinner, session_inner_width) {
         session.push(line);
