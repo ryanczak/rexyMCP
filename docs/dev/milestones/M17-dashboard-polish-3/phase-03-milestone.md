@@ -1,7 +1,7 @@
 # Phase 03: `Milestone:` row in the Session panel
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** phase-01
 **Estimated diff:** ~160 lines (resolver + formatter + line builder + tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -366,3 +366,23 @@ mcp/src/dashboard/panels.rs:0
 - `c251062` — feat: add Milestone row to Session panel
 
 **Notes for review:** None. Implementation follows the spec exactly.
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none. Clean 64-turn first-try. All four gates green on
+  independent re-run (fmt/build/clippy clean; 734 passed / 0 failed / 2 ignored).
+  Spec-exact: resolver + formatter + `milestone_line` + render composition match
+  the pinned shapes byte-for-byte; `session_lines`' signature untouched (composed
+  in `render.rs` via the optional-line precedent, so its 8 test call sites stayed
+  green). Production clean of `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]` (every
+  grep hit is in `#[cfg(test)]`). The mutation-resistant pin
+  `resolve_milestone_active_lower_number_wins` (M20-done vs M16-active → M16)
+  confirms the active filter actually runs. **Real-tree E2E:** of the 14 milestone
+  dirs holding a `phase-03-*.md`, only M17 is non-`done`, so
+  `resolve_milestone(repo, Some("phase-03"))` resolves uniquely to
+  `M17 — Dashboard Polish 3` — the expected first Session-panel line, verified
+  against the live filesystem, not just the `TempDir` fakes.
