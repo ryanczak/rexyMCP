@@ -1,7 +1,7 @@
 # Phase 04: Scroll overflowing task titles in the Tasks panel
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-02 (shares the `spinner` tick counter; no code overlap)
 **Estimated diff:** ~120 lines (scroll math + signature thread + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -127,9 +127,14 @@ Span::raw(format!(" {}", scrolled_title(&task.title, title_max, tick))),
 - Index by **chars**, not bytes (`title` may contain multibyte glyphs) — the
   reference uses a `Vec<char>` and slices it; keep that.
 - A non-scrolling title (fits, or `tick == None`) renders exactly as today via
-  `truncate_title` — so the existing static tests pass with `tick = None`.
+  `truncate_title` — so the existing static tests pass with `tick = None`. For an
+  **overflowing** title this means the frozen (`None`) window is the **ellipsized**
+  head (`max-1` chars + `…`), while a **scrolling** window (`tick = Some`) is a
+  **raw** `max`-char slice with no `…`. The two head windows differ deliberately;
+  both are pinned in the Test plan.
 - The window is always exactly `max` chars wide for an overflowing title, so the
-  line width stays stable as it pans (no reflow).
+  line width stays stable as it pans (no reflow). (`truncate_title` also yields
+  `max` display chars — `max-1` + the single `…` glyph.)
 
 ### 3. Update all `tasks_lines` call sites
 
@@ -162,33 +167,58 @@ passing unchanged otherwise.
       window is always exactly `title_max` chars wide.
 - [ ] The pan is ping-pong: it reaches the title's tail and returns to the head
       (does not jump/wrap discontinuously).
-- [ ] `tick = None` freezes an overflowing title at its head window.
+- [ ] `tick = None` freezes an overflowing title at its head window — the static
+      `truncate_title` form (`max-1` chars + `…`), matching today's behavior.
 - [ ] Char-indexed (a multibyte title does not panic or split a glyph).
 - [ ] All four gates pass on an independent re-run.
 
 ## Test plan
 
-In `panels.rs`'s test module:
+In `panels.rs`'s test module.
+
+**Fixture — use an all-distinct-character title for any test that recovers a
+window's start index by substring search.** A repeating fixture is what bounced
+the first dispatch: with `"012345678901234567890123456789"`, a 10-char window
+occurs at multiple indices, so `title.find(&window)` returns the *first* match
+and can never observe a start ≥ 10 — the ping-pong test then reads a max start of
+9 instead of `overflow = 20` and fails a correct impl. Pin a 30-distinct-char
+fixture so every 10-char window is unique:
+
+```rust
+const FIXTURE: &str = "abcdefghijklmnopqrstuvwxyzABCD"; // 30 distinct chars
+// max = 10 → overflow = 20; each 10-char window appears exactly once, so
+// FIXTURE.find(&window) recovers the true start index unambiguously.
+```
 
 - Keep the existing `tasks_lines_*` tests, adding `None` as the third arg.
   `tasks_lines_truncates_long_title` (width 26, `None`) still asserts the static
   `…` truncation — confirming the `tick = None` path equals today's behavior.
 - `scrolled_title_returns_whole_when_fits` — `scrolled_title("short", 20,
   Some(5))` == `"short"` (no movement).
-- `scrolled_title_pans_overflowing_title` — a title of 30 chars, `max = 10`:
-  assert the window at `tick = Some(0)` starts at the head, and at a later tick
-  (e.g. `Some(TASK_SCROLL_DELAY * 3)`) starts 3 chars in. Mutation-resistant: an
-  impl that ignores `tick` (always head) fails the later-tick assertion.
-- `scrolled_title_ping_pongs` — over a full `period` of ticks the start index
-  rises to `overflow` then falls back to 0 (assert the max start reached equals
-  `overflow` and the sequence is non-monotonic). Mutation-resistant vs a
-  wrap-around impl (which would jump `overflow → 0` discontinuously and never
-  produce the descending half).
-- `scrolled_title_frozen_when_tick_none` — overflowing title, `tick = None`,
-  start window is the head (== `truncate_title` head minus the `…`? — assert it
-  equals the first `max` chars).
+- `scrolled_title_pans_overflowing_title` — `FIXTURE`, `max = 10`. The **scrolling**
+  window is a raw `max`-char slice (no `…`): `tick = Some(0)` → `"abcdefghij"`
+  (start 0); `tick = Some(TASK_SCROLL_DELAY * 3)` → start 3 → `"defghijklm"`.
+  Mutation-resistant: an impl that ignores `tick` (always head) fails the
+  later-tick assertion.
+- `scrolled_title_ping_pongs` — `FIXTURE`, `max = 10`, `overflow = 20`. Collect the
+  recovered start index (`FIXTURE.find(&window)`) across a full period of ticks
+  (`0..overflow * 2 * TASK_SCROLL_DELAY` stepping by `TASK_SCROLL_DELAY`). Assert
+  the **max start reached equals `overflow`** (20 — the tail is reached) and the
+  sequence is **non-monotonic** (descends at some point). Mutation-resistant vs a
+  wrap-around impl (which jumps `overflow → 0` discontinuously and never produces
+  the descending half). **This passes only with the distinct `FIXTURE`** — see the
+  fixture note above.
+- `scrolled_title_frozen_when_tick_none` — overflowing `FIXTURE`, `tick = None`.
+  The **frozen** window uses `truncate_title`, so it is the **ellipsized** head
+  (`max-1` chars + `…`), *not* the raw first `max` chars: assert it equals
+  `truncate_title(FIXTURE, max)` == `"abcdefghi…"`. (This is the same static form
+  `tasks_lines_truncates_long_title` already asserts, and matches §2's
+  `None → truncate_title`. The scrolling head from `Some(0)` is the raw
+  `"abcdefghij"` — the two head windows differ deliberately; pin both.)
 - `scrolled_title_char_indexed_multibyte` — a title with multibyte chars (e.g.
-  `"日本語テスト"` repeated past `max`) does not panic and returns `max` chars.
+  `"日本語テスト"` repeated past `max`) does not panic and returns `max` chars. (A
+  repeated fixture is fine *here* — this test checks only char count + no panic,
+  it does not recover a start index.)
 
 ## End-to-end verification
 
@@ -215,3 +245,40 @@ None. No new dependencies. No `docs/architecture.md` change.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-06-11
+
+The first dispatch (session `phase-04-6a2b00fc`) **hard-failed on a transient
+backend decode error** (`BackendError: "error decoding response body"`) after 34
+turns — an infrastructure blip on the LLM endpoint, **not** a problem with your
+work. Your `scrolled_title` implementation logic was actually **correct** (the
+triangle-wave window reaches `overflow` and the early `Some(t) => t` unwrap is the
+right shape — keep that approach). The run left two **test-plan** defects that I
+have since fixed in this doc; re-implement against the corrected Spec/Test plan and
+you'll pass clean:
+
+1. **Frozen (`tick = None`) head window is the *ellipsized* `truncate_title` form**
+   (`max-1` chars + `…`), e.g. `"abcdefghi…"` — **not** the raw first `max` chars.
+   The prior test asserted `&title[..max]` and failed against §2's
+   `None → truncate_title`. The Test plan and acceptance criteria now state this
+   explicitly. A **scrolling** window (`tick = Some`) is still the raw `max`-char
+   slice with no `…` — the two head windows differ deliberately.
+2. **The ping-pong test must use an all-distinct-character fixture.** The prior run
+   used a repeating-digit title, so `title.find(&window)` returned the first match
+   and could never observe a start ≥ 10 — it read max-start 9 instead of
+   `overflow = 20` and failed a correct impl. Use the pinned
+   `FIXTURE = "abcdefghijklmnopqrstuvwxyzABCD"` (see the Test plan fixture note).
+
+Also: **run `cargo fmt --all` on the files you touch before reporting** — the prior
+render.rs call-site edit was left un-formatted (the multi-line `tasks_lines(...)`
+call rustfmt wants reflowed), which would fail the `{FORMAT_COMMAND}` gate. After
+the four gates pass, **stop and report** per STANDARDS §8 — do not keep editing.
+
+### Update — 2026-06-11 12:33 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the hard_fail was a transient backend decode error, but the run also
+exposed two architect-authored test-plan defects (a §2-vs-Test-plan contradiction
+on the frozen-head ellipsis, and a repeating-fixture that breaks `find`-based start
+recovery) that a bare retry would reproduce; refining the spec is the cheap fix and
+the executor's impl logic was already correct, so takeover is unwarranted.
