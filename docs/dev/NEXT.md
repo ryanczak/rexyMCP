@@ -100,13 +100,14 @@ appears live post-`rexymcp serve` restart). The seeder now accepts all three
 heading variants, closing the M13→M14→M15 format-drift gap. See the
 [M16 retrospective](milestones/M16-seeder-robustness/README.md#retrospective--2026-06-10).
 
-**📌 Open contract-doc item (architect + user, not the executor):** the
-`WORKFLOW.md` accepted-Spec-formats documentation should be updated to list the
-`### Task N —` heading variant now that M16 phase-01 has landed. This is a
-contract-doc change to talk through with the user per the
-talk-through-contract-doc-changes convention; it is **not** in any phase's scope
-(the executor cannot touch `WORKFLOW.md` per STANDARDS §5). After M15 phase-03
-closes M15, the next milestone is a fresh human-gated kickoff.
+**✅ Closed contract-doc item (2026-06-10, commit `2acd6e3`):** the
+`WORKFLOW.md` accepted-Spec-formats documentation now lists all three seeder
+formats — `N.` list-item, `### N.` numbered subheading, and `### Task N — / : / .`
+prefixed subheading — plus the "key updates by task number `N`, not the phase
+number" gotcha (the gap that left M15 phase-02 with zero seeded tasks). Folded in
+**both** `docs/dev/WORKFLOW.md` and the `plugin/templates/WORKFLOW.md` bootstrap
+template (the template had never even carried the M14 two-format docs). No open
+contract-doc items remain.
 
 **📌 M16 — Seeder Format Robustness kicked off (2026-06-10, with the user).**
 Diagnosed from session `6a2a3907`: M15 phase-02 seeded **zero tasks** because its
