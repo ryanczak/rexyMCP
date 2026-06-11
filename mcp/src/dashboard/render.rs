@@ -240,7 +240,11 @@ pub(crate) fn render_dashboard(
             &mut sb_state,
         );
     }
-    frame.render_widget(panel(" Tasks ", tasks_lines(&data.summary)), tasks_area);
+    let tasks_inner_width = tasks_area.width.saturating_sub(2) as usize;
+    frame.render_widget(
+        panel(" Tasks ", tasks_lines(&data.summary, tasks_inner_width)),
+        tasks_area,
+    );
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
     total_wrapped
 }

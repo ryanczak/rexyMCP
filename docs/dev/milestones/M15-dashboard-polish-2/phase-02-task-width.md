@@ -1,6 +1,6 @@
 # Phase 02 — Width-aware task title truncation
 
-**Status:** todo
+**Status:** review
 **Milestone:** M15-dashboard-polish-2
 **Depends on:** phase-01 (done)
 
@@ -262,5 +262,37 @@ no executor crate, no `SessionEvent`, no `Cargo.toml`.
 - Any change to `truncate_title` itself.
 
 ## Update Log
+
+### Update — 2026-06-11 04:26 (started)
+
+**Who:** executor
+
+**What:** Implementing width-aware task title truncation. Removing `TASK_TITLE_MAX` constant, adding `width: usize` param to `tasks_lines`, updating render.rs call site and 3 test call sites, adding mutation-resistant test.
+
+### Update — 2026-06-11 04:26 (complete)
+
+**Who:** executor
+
+**What:** All 4 spec tasks implemented. `TASK_TITLE_MAX` constant removed. `tasks_lines` now accepts `width: usize` and derives `title_max = width.saturating_sub(2)`. `render.rs` computes `tasks_inner_width` from `tasks_area`. Three existing test call sites updated. New mutation-resistant test `tasks_lines_uses_full_panel_width` added.
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — removed constant, updated `tasks_lines` signature/body, updated 3 test call sites, added new test
+- `mcp/src/dashboard/render.rs` — compute `tasks_inner_width` and pass to `tasks_lines`
+- `docs/dev/milestones/M15-dashboard-polish-2/phase-02-task-width.md` — status → review, update log
+- `docs/dev/milestones/M15-dashboard-polish-2/README.md` — phase table row → review
+
+**Verification commands:**
+- `cargo fmt --all` — passed (exit 0)
+- `cargo build` — passed (exit 0)
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed (exit 0)
+- `cargo test` — passed (731 passed, 0 failed, 2 ignored)
+
+**Verification summary:** All four gates clean — format, build, lint, test.
+
+**Grep proof:** `TASK_TITLE_MAX` has zero matches in `panels.rs` (confirmed deleted). `tasks_inner_width` present at `render.rs:243`. `tasks_lines_uses_full_panel_width` present at `panels.rs:862`. `saturating_sub(2)` present at `panels.rs:202`.
+
+**End-to-end verification:** N/A (TUI rendering — no headless harness, consistent with all prior dashboard phases).
+
+**Notes for review:** None — straightforward spec implementation, no adaptations needed.
 
 <!-- entries appended below this line -->

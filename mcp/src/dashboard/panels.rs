@@ -14,9 +14,6 @@ use rexymcp_executor::store::sessions::event::TaskState;
 /// how large the added/removed counts are.
 const FILE_LINE_MAX: usize = 28;
 
-/// Max chars for a task title in the Tasks panel (narrow ~28%-width right column).
-const TASK_TITLE_MAX: usize = 24;
-
 /// Cells in the Tasks progress bar.
 const GAUGE_CELLS: usize = 10;
 
@@ -198,10 +195,11 @@ pub(crate) fn tasks_gauge_line(done: usize, total: usize) -> Line<'static> {
 
 /// Tasks panel: a done/total progress gauge over a list of named tasks, or a
 /// placeholder when none are tracked.
-pub(crate) fn tasks_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+pub(crate) fn tasks_lines(summary: &StatusSummary, width: usize) -> Vec<Line<'static>> {
     if summary.tasks_total == 0 {
         return vec![Line::from("(no tasks tracked yet)")];
     }
+    let title_max = width.saturating_sub(2); // 1 glyph cell + 1 space
     let mut lines = vec![tasks_gauge_line(summary.tasks_done, summary.tasks_total)];
     for task in &summary.tasks {
         let (glyph, color) = match task.state {
@@ -211,7 +209,7 @@ pub(crate) fn tasks_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
         };
         lines.push(Line::from(vec![
             Span::styled(glyph, Style::new().fg(color)),
-            Span::raw(format!(" {}", truncate_title(&task.title, TASK_TITLE_MAX))),
+            Span::raw(format!(" {}", truncate_title(&task.title, title_max))),
         ]));
     }
     lines
@@ -760,7 +758,7 @@ mod tests {
     #[test]
     fn tasks_lines_empty_placeholder() {
         let summary = StatusSummary::default();
-        let lines = tasks_lines(&summary);
+        let lines = tasks_lines(&summary, 40);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no tasks tracked")));
         // No gauge line when empty.
@@ -796,7 +794,7 @@ mod tests {
             ],
             ..StatusSummary::default()
         };
-        let lines = tasks_lines(&summary);
+        let lines = tasks_lines(&summary, 40);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         // First line is the gauge.
         assert!(
@@ -845,7 +843,7 @@ mod tests {
             ],
             ..StatusSummary::default()
         };
-        let lines = tasks_lines(&summary);
+        let lines = tasks_lines(&summary, 26);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         // Long title is truncated with ellipsis.
         assert!(
@@ -857,6 +855,36 @@ mod tests {
             text.iter()
                 .any(|s| s.contains(short_title) && !s.contains('…')),
             "short title line should not contain ellipsis: {text:?}"
+        );
+    }
+
+    #[test]
+    fn tasks_lines_uses_full_panel_width() {
+        use crate::status::TaskRow;
+        let title_50 = "A".repeat(50);
+        let summary = StatusSummary {
+            tasks_total: 1,
+            tasks: vec![TaskRow {
+                id: "1".into(),
+                title: title_50.clone(),
+                state: TaskState::Pending,
+            }],
+            ..StatusSummary::default()
+        };
+        // width=60: title_max=58, 50-char title fits without truncation.
+        let lines = tasks_lines(&summary, 60);
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text.iter()
+                .any(|s| s.contains(&title_50) && !s.contains('…')),
+            "50-char title should not be truncated at width=60: {text:?}"
+        );
+        // width=28: title_max=26, 50-char title is truncated.
+        let lines_narrow = tasks_lines(&summary, 28);
+        let text_narrow: Vec<String> = lines_narrow.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            text_narrow.iter().any(|s| s.contains('…')),
+            "50-char title should be truncated at width=28: {text_narrow:?}"
         );
     }
 
