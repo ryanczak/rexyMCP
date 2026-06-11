@@ -21,7 +21,7 @@ Read before starting:
   session)`. `load_data` already has `repo: &Path` — the milestone scan uses it.
 - `mcp/src/dashboard/render.rs:144–152` — Session-panel assembly. After phase-01
   this block builds `session` from `session_lines` then pushes the spinner.
-- `mcp/src/dashboard/panels.rs:187–195` — `truncate_title`, the existing `…`
+- `mcp/src/dashboard/panels.rs:213–221` — `truncate_title`, the existing `…`
   truncation idiom to mirror.
 - `mcp/src/status.rs:31` — `StatusSummary.phase: Option<String>` (e.g.
   `Some("phase-03")`), the running phase id used to find the milestone.
@@ -187,7 +187,7 @@ pub(crate) fn milestone_line(name: &str, width: usize) -> Line<'static> {
 }
 ```
 
-Reuse the existing `truncate_title(title, max)` helper (panels.rs:188) — it
+Reuse the existing `truncate_title(title, max)` helper (panels.rs:214) — it
 appends `…` when the string exceeds `max` chars. Make `milestone_line`
 `pub(crate)` so `render.rs` can call it; `truncate_title` is already in scope
 within `panels.rs`.

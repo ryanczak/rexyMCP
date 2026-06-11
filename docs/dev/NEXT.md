@@ -4,15 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M17 phase-02 —
-[phase-02-spinner.md](milestones/M17-dashboard-polish-3/phase-02-spinner.md)
-(`todo`, drafted, ready to dispatch). Restore the dog-chasing-brain spinner as a
-**width-parametric** chase: the dog closes on a right-pinned brain, catches it,
-then one `💨` overtake-burst frame before resetting; chase distance scales with
-`session_inner_width`. Single-function body rewrite of `spinner_line` in
-`panels.rs` (signature unchanged) + replace the 3 old single-dog triangle-wave
-tests with 6 chase tests. No `render.rs`/`event_loop.rs` edit, no new dep. s,
-single-file. Dispatch with `/rexymcp:dispatch phase-02`.
+**Active phase:** M17 phase-03 —
+[phase-03-milestone.md](milestones/M17-dashboard-polish-3/phase-03-milestone.md)
+(`todo`, drafted, ready to dispatch). Show the active milestone's human-readable
+name as the **first** Session-panel line (`Milestone: M17 — Dashboard Polish 3`),
+derived from the milestone *directory* that holds the running phase's doc — no
+config field, no session event. Adds `milestone: Option<String>` to
+`DashboardData` (both `load_data` arms) + a `TempDir`-testable `resolve_milestone`
+(prefers the non-`done` match, falls back to highest-numbered) + `milestone_number`
+/ `phase_doc_is_done` / `format_milestone_name` / `capitalize_word` helpers in
+`mod.rs` + a pure `milestone_line` builder in `panels.rs` reusing `truncate_title`;
+composed in `render.rs` via the optional-line precedent (no `session_lines`
+signature change). s, ~160 lines. Dispatch with `/rexymcp:dispatch phase-03`.
+
+**M17 phase-02 — done** (2026-06-11, approved_first_try; commit `9d29eee` feat /
+`37c3898` approve): restored the dog-chasing-brain spinner as a **width-parametric**
+chase — dog closes on a right-pinned brain, catches it, one `💨` overtake-burst
+frame per cycle, chase distance scales with `session_inner_width`. Single-function
+body rewrite of `spinner_line` in `panels.rs` (signature unchanged); 5 old
+triangle-wave tests swapped for 6 chase tests, mutation-resistant on burst-once
+(`_emits_overtake_burst_once_per_cycle`) and width-parametric (`_scales_with_width`:
+57 distinct dog offsets at w60 vs 17 at w20). `render.rs`/`event_loop.rs`/`Cargo.toml`
+untouched per scope. All four gates green on independent re-run; 350 mcp + 734
+combined pass. Clean 42-turn first-try. No `SessionEvent`/config/`Cargo.toml`.
 
 **M17 phase-01 — done** (2026-06-11, approved_first_try; commit `7b905cb`): moved
 the Session panel's `last update:` line directly under `duration:` (the
