@@ -246,7 +246,10 @@ pub(crate) fn render_dashboard(
     }
     let tasks_inner_width = tasks_area.width.saturating_sub(2) as usize;
     frame.render_widget(
-        panel(" Tasks ", tasks_lines(&data.summary, tasks_inner_width)),
+        panel(
+            " Tasks ",
+            tasks_lines(&data.summary, tasks_inner_width, state.spinner),
+        ),
         tasks_area,
     );
     frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);

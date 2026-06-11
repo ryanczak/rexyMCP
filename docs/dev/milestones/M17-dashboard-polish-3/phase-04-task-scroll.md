@@ -1,7 +1,7 @@
 # Phase 04: Scroll overflowing task titles in the Tasks panel
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-02 (shares the `spinner` tick counter; no code overlap)
 **Estimated diff:** ~120 lines (scroll math + signature thread + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -282,3 +282,67 @@ exposed two architect-authored test-plan defects (a §2-vs-Test-plan contradicti
 on the frozen-head ellipsis, and a repeating-fixture that breaks `find`-based start
 recovery) that a bare retry would reproduce; refining the spec is the cheap fix and
 the executor's impl logic was already correct, so takeover is unwarranted.
+
+### Update — 2026-06-11 19:35 (complete)
+
+**Summary:** Implemented `scrolled_title` with ping-pong triangle-wave pan for
+overflowing task titles, threaded `tick: Option<usize>` through `tasks_lines`
+and all 6 call sites. The frozen (`None`) path delegates to `truncate_title` for
+the ellipsized head; the scrolling (`Some`) path returns a raw `max`-char slice.
+All 5 new unit tests pass.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+$ cargo fmt --all
+(no output — clean)
+
+$ cargo build 2>&1 | tail -20
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.74s
+
+$ cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.71s
+
+$ cargo test 2>&1 | tail -30
+test result: ok. 734 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+E2E-N/A — the pan is a live TUI animation; behavior is pinned via the
+`scrolled_title` unit tests (consistent with prior dashboard-panel phases).
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — added `scrolled_title` helper, `TASK_SCROLL_DELAY`
+  const, threaded `tick` into `tasks_lines`, updated 5 test call sites, added 5 new
+  unit tests
+- `mcp/src/dashboard/render.rs` — updated production call site to pass `state.spinner`
+- `docs/dev/milestones/M17-dashboard-polish-3/phase-04-task-scroll.md` — status
+  `in-progress` → `review`, appended completion entry
+- `docs/dev/milestones/M17-dashboard-polish-3/README.md` — phase table row
+  `in-progress` → `review`
+
+**New tests:**
+- `scrolled_title_returns_whole_when_fits` in `panels.rs`
+- `scrolled_title_pans_overflowing_title` in `panels.rs`
+- `scrolled_title_ping_pongs` in `panels.rs`
+- `scrolled_title_frozen_when_tick_none` in `panels.rs`
+- `scrolled_title_char_indexed_multibyte` in `panels.rs`
+
+**Commits:**
+- (pending — committing now)
+
+**Notes for review:**
+- `scrolled_title` uses `return truncate_title(title, max)` in the `None` arm of
+  the `match tick` to ensure the frozen window is the ellipsized form (`max-1` chars
+  + `…`), not the raw `max`-char slice. This differs from the spec sketch which had
+  `None => 0` followed by the slice — the spec notes explicitly require the frozen
+  path to delegate to `truncate_title`.
+- Grep proof: `grep -c 'TASK_SCROLL_DELAY' mcp/src/dashboard/panels.rs` → 6
+  (1 const + 1 usage in impl + 4 in tests).
+- Grep proof: `grep -c 'scrolled_title' mcp/src/dashboard/panels.rs` → 14
+  (1 fn def + 1 call in tasks_lines + 12 in tests).

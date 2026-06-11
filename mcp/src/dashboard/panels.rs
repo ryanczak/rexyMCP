@@ -259,7 +259,11 @@ pub(crate) fn tasks_gauge_line(done: usize, total: usize) -> Line<'static> {
 
 /// Tasks panel: a done/total progress gauge over a list of named tasks, or a
 /// placeholder when none are tracked.
-pub(crate) fn tasks_lines(summary: &StatusSummary, width: usize) -> Vec<Line<'static>> {
+pub(crate) fn tasks_lines(
+    summary: &StatusSummary,
+    width: usize,
+    tick: Option<usize>,
+) -> Vec<Line<'static>> {
     if summary.tasks_total == 0 {
         return vec![Line::from("(no tasks tracked yet)")];
     }
@@ -273,10 +277,41 @@ pub(crate) fn tasks_lines(summary: &StatusSummary, width: usize) -> Vec<Line<'st
         };
         lines.push(Line::from(vec![
             Span::styled(glyph, Style::new().fg(color)),
-            Span::raw(format!(" {}", truncate_title(&task.title, title_max))),
+            Span::raw(format!(" {}", scrolled_title(&task.title, title_max, tick))),
         ]));
     }
     lines
+}
+
+/// Loop ticks per one-character scroll advance (the tick clock runs at ~2 Hz;
+/// this slows the pan to a readable speed). The user may hand-tune later.
+const TASK_SCROLL_DELAY: usize = 2;
+
+/// Window of a task title to show within `max` chars. Titles that fit are
+/// returned whole. Overflowing titles pan **back and forth** (ping-pong) driven
+/// by `tick`: the visible window slides 0→overflow then overflow→0, repeating.
+/// `tick == None` (session ended) or a fitting title → the static head window.
+fn scrolled_title(title: &str, max: usize, tick: Option<usize>) -> String {
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() <= max || max == 0 {
+        return truncate_title(title, max);
+    }
+    let overflow = chars.len() - max;
+    let start = match tick {
+        Some(t) => {
+            // Triangle wave over [0, overflow]: pan right, then back left.
+            let step = t / TASK_SCROLL_DELAY;
+            let period = overflow * 2;
+            let phase = step % period;
+            if phase <= overflow {
+                phase
+            } else {
+                period - phase
+            }
+        }
+        None => return truncate_title(title, max),
+    };
+    chars[start..start + max].iter().collect()
 }
 
 /// Files panel: one line per changed file, or a placeholder when none.
@@ -903,7 +938,7 @@ mod tests {
     #[test]
     fn tasks_lines_empty_placeholder() {
         let summary = StatusSummary::default();
-        let lines = tasks_lines(&summary, 40);
+        let lines = tasks_lines(&summary, 40, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no tasks tracked")));
         // No gauge line when empty.
@@ -939,7 +974,7 @@ mod tests {
             ],
             ..StatusSummary::default()
         };
-        let lines = tasks_lines(&summary, 40);
+        let lines = tasks_lines(&summary, 40, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         // First line is the gauge.
         assert!(
@@ -988,7 +1023,7 @@ mod tests {
             ],
             ..StatusSummary::default()
         };
-        let lines = tasks_lines(&summary, 26);
+        let lines = tasks_lines(&summary, 26, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         // Long title is truncated with ellipsis.
         assert!(
@@ -1017,7 +1052,7 @@ mod tests {
             ..StatusSummary::default()
         };
         // width=60: title_max=58, 50-char title fits without truncation.
-        let lines = tasks_lines(&summary, 60);
+        let lines = tasks_lines(&summary, 60, None);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(
             text.iter()
@@ -1025,7 +1060,7 @@ mod tests {
             "50-char title should not be truncated at width=60: {text:?}"
         );
         // width=28: title_max=26, 50-char title is truncated.
-        let lines_narrow = tasks_lines(&summary, 28);
+        let lines_narrow = tasks_lines(&summary, 28, None);
         let text_narrow: Vec<String> = lines_narrow.iter().map(|l| format!("{l}")).collect();
         assert!(
             text_narrow.iter().any(|s| s.contains('…')),
@@ -1124,6 +1159,78 @@ mod tests {
         let text = format!("{line}");
         assert!(text.contains("0/0"), "should contain 0/0: {text}");
         assert!(text.contains("0%"), "should contain 0%%: {text}");
+    }
+
+    // --- scrolled_title tests ---
+
+    const FIXTURE: &str = "abcdefghijklmnopqrstuvwxyzABCD"; // 30 distinct chars
+
+    #[test]
+    fn scrolled_title_returns_whole_when_fits() {
+        assert_eq!(scrolled_title("short", 20, Some(5)), "short");
+    }
+
+    #[test]
+    fn scrolled_title_pans_overflowing_title() {
+        let max = 10;
+        // tick = 0 → start 0 → "abcdefghij"
+        assert_eq!(scrolled_title(FIXTURE, max, Some(0)), "abcdefghij");
+        // tick = TASK_SCROLL_DELAY * 3 → start 3 → "defghijklm"
+        assert_eq!(
+            scrolled_title(FIXTURE, max, Some(TASK_SCROLL_DELAY * 3)),
+            "defghijklm"
+        );
+    }
+
+    #[test]
+    fn scrolled_title_ping_pongs() {
+        let max = 10;
+        let overflow = FIXTURE.len() - max; // 20
+        let period = overflow * 2 * TASK_SCROLL_DELAY;
+        let mut starts = Vec::new();
+        for t in (0..period).step_by(TASK_SCROLL_DELAY) {
+            let window = scrolled_title(FIXTURE, max, Some(t));
+            let start = FIXTURE.find(&window).unwrap_or(0);
+            starts.push(start);
+        }
+        let max_start = *starts.iter().max().unwrap();
+        assert_eq!(
+            max_start, overflow,
+            "max start ({max_start}) should equal overflow ({overflow})"
+        );
+        // Sequence is non-monotonic (descends at some point).
+        let mut descends = false;
+        for w in starts.windows(2) {
+            if w[1] < w[0] {
+                descends = true;
+                break;
+            }
+        }
+        assert!(descends, "ping-pong sequence must descend at some point");
+    }
+
+    #[test]
+    fn scrolled_title_frozen_when_tick_none() {
+        let max = 10;
+        let frozen = scrolled_title(FIXTURE, max, None);
+        // Frozen uses truncate_title: max-1 chars + "…"
+        assert_eq!(frozen, truncate_title(FIXTURE, max));
+        assert_eq!(frozen, "abcdefghi…");
+        // Scrolling head (Some(0)) is the raw first `max` chars — no ellipsis.
+        assert_eq!(scrolled_title(FIXTURE, max, Some(0)), "abcdefghij");
+    }
+
+    #[test]
+    fn scrolled_title_char_indexed_multibyte() {
+        let title = "日本語テスト日本語テスト日本語テスト";
+        let max = 5;
+        let result = scrolled_title(title, max, Some(4));
+        let chars: Vec<char> = result.chars().collect();
+        assert_eq!(
+            chars.len(),
+            max,
+            "should return exactly max chars for multibyte title"
+        );
     }
 
     // --- budget_lines tests ---
