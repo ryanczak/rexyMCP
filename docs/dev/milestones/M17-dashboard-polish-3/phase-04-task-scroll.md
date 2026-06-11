@@ -1,7 +1,7 @@
 # Phase 04: Scroll overflowing task titles in the Tasks panel
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (shares the `spinner` tick counter; no code overlap)
 **Estimated diff:** ~120 lines (scroll math + signature thread + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -346,3 +346,24 @@ E2E-N/A — the pan is a live TUI animation; behavior is pinned via the
   (1 const + 1 usage in impl + 4 in tests).
 - Grep proof: `grep -c 'scrolled_title' mcp/src/dashboard/panels.rs` → 14
   (1 fn def + 1 call in tasks_lines + 12 in tests).
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none (the prior session's `hard_fail` was a transient backend
+  decode error, not a work defect — see the escalation note above; the
+  re-dispatch landed clean)
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — `tasks_lines` gained the `tick: Option<usize>`
+  third arg and all 6 call sites (1 prod `render.rs:251` + 5 test) were updated
+  in one pass; no `SessionEvent`/config/`Cargo.toml` change.
+- **Calibration:** none. All four gates green on independent re-run (`cargo fmt
+  --all --check` clean, `cargo build` zero warnings, clippy clean, 363 mcp + 734
+  executor pass). Production paths clean of `unwrap`/`expect`/`panic`/`unsafe`/
+  `#[allow]`. The `None` arm correctly delegates to `truncate_title` (ellipsized
+  head) per §2 of the refined Spec; the `Some` arm is the raw triangle-wave
+  window. The 5 new `scrolled_title` tests are mutation-resistant — the distinct
+  30-char `FIXTURE` recovers true start indices, and `scrolled_title_ping_pongs`
+  pins `max_start == overflow` (20) plus non-monotonicity (refutes a wrap-around
+  impl). E2E declared N/A (live TUI pan animation), consistent with prior
+  dashboard-panel phases.
