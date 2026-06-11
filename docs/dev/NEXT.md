@@ -4,20 +4,47 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M17 phase-04 —
-[phase-04-task-scroll.md](milestones/M17-dashboard-polish-3/phase-04-task-scroll.md)
-(`todo`, drafted, ready to dispatch). **Pan** an overflowing Tasks-panel title back
-and forth (ping-pong triangle wave) within the panel width so the whole name reads
-over time; titles that already fit don't move. Threads a third `tick: Option<usize>`
-arg (the live `state.spinner` clock) into `tasks_lines` and adds a pure
-`scrolled_title(title, max, tick)` helper (char-indexed window, `None`/fits →
-static `truncate_title`, so the existing static tests pass with `tick = None`).
-The signature change touches **6** call sites (1 prod `render.rs:249` + 5 test
-calls in `panels.rs`), all enumerated in the doc per the churn-stall calibration.
-~120 lines. **Pre-injection refreshed 2026-06-11** — phase-03's Milestone-row
-additions shifted every `panels.rs`/`render.rs` line number; the architecture
-references and the §3 call-site list now cite live numbers. Dispatch with
-`/rexymcp:dispatch phase-04`.
+**Active phase:** M17 phase-05 —
+[phase-05-highlighting.md](milestones/M17-dashboard-polish-3/phase-05-highlighting.md)
+(`todo`, drafted, ready to dispatch). The **last in-scope M17 phase** — it closes
+the milestone once approved. Two Activity-panel highlighting upgrades, both on the
+**existing syntect** path (no new dependency, no tree-sitter): (1) Markdown-highlight
+Completion **answer** text via a per-line `markdown_line` helper (`<think>` text
+stays dim-italic); (2) **extension-detected** grammar for `read_file` results —
+`highlighted_body_lines_for(content, path)` prefers the file extension's syntax and
+falls back to today's content `detect_syntax`. Low-churn shapes per the M10/M12
+churn calibration: `highlighted_body_lines(content)` and `record_lines(rec)` stay as
+zero-extra-arg **delegating wrappers** (`…_for(_, None)` / `…_with_lang(_, None)`),
+so their existing callers/tests are untouched; `transcript_lines` rewrites its
+`flat_map` to a `for` loop that threads the most-recent `read_file` `path` to the
+following `ToolResult`. ~200 lines. **Pre-injection verified current 2026-06-11**
+(architect `next`) — phase-04 touched only `panels.rs`/`render.rs`, so every line
+ref phase-05 cites (`Cargo.toml:21`, `highlight.rs:14/18/27/134/266`,
+`transcript.rs:17/47/67/103` + the `Parsed` arm at `:69`, `read_file.rs:35/47/66`)
+still resolves, and the `completion_body_no_markers_matches_plain` test the Spec
+tells the executor to replace lives at `highlight.rs:493`. Dispatch with
+`/rexymcp:dispatch phase-05`.
+
+**M17 phase-04 — done** (2026-06-11, approved_first_try; commit `f4bcf46` feat /
+`919d217` approve): **pan** overflowing Tasks-panel titles back and forth
+(ping-pong triangle wave) within the panel width so the whole name reads over time;
+fitting titles don't move. Added a pure `scrolled_title(title, max, tick)` helper +
+`TASK_SCROLL_DELAY` const in `panels.rs` and threaded a third `tick: Option<usize>`
+arg (the live `state.spinner` clock) through `tasks_lines` and all **6** call sites
+(1 prod `render.rs:251` + 5 test) in one pass — no churn stall. The frozen (`None`)
+path delegates to `truncate_title` (ellipsized head); the scrolling (`Some`) path is
+a raw char-indexed `max`-wide window. 5 new mutation-resistant tests (distinct 30-char
+`FIXTURE` recovers true start indices; `scrolled_title_ping_pongs` pins
+`max_start == overflow` + non-monotonicity, refuting a wrap-around impl); 363 mcp +
+734 executor pass, all four gates green on independent re-run. **Calibration:** the
+*first* dispatch (session `phase-04-6a2b00fc`) `hard_fail`ed on a **transient backend
+decode error** (`error decoding response body`) at turn 34 — infra blip, not a work
+defect; the executor's `scrolled_title` logic was already correct. The refined
+re-dispatch (per the escalate skill) also fixed two architect-authored **test-plan**
+defects the blip surfaced — a §2-vs-Test-plan contradiction on the frozen-head
+ellipsis, and a repeating-digit fixture that breaks `find`-based start recovery —
+both folded into the doc before re-dispatch; landed clean. No
+`SessionEvent`/config/`Cargo.toml` change.
 
 **M17 phase-03 — done** (2026-06-11, approved_first_try; commit `c251062` feat /
 `635dab8` approve): added the `Milestone:` row as the **first** Session-panel line,
