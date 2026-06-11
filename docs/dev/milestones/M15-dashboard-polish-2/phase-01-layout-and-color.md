@@ -1,6 +1,6 @@
 # Phase 01 — Move `last update:` to Session panel + dull yellow timestamps
 
-**Status:** review
+**Status:** done
 **Milestone:** M15-dashboard-polish-2
 **Depends on:** none (first M15 phase)
 
@@ -258,3 +258,19 @@ E2E is N/A (TUI rendering — no headless harness, consistent with all prior das
 **Notes for review:** None — straight spec implementation, no deviations.
 
 **Grep verification:** `Rgb(180, 150, 50)` found at `transcript.rs:34` (production) and `transcript.rs:776` (test).
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — all 4 spec tasks implemented exactly; the two
+  other `Rgb(128,128,128)` usages (`transcript.rs:76`/`:563`, tool-call-args
+  body color) correctly left untouched.
+- **Calibration:** none. Clean 43-turn first-try. Independent re-run of all
+  four gates green (731 passed, 0 failed, 2 ignored). The renamed test
+  `transcript_lines_timestamp_span_is_dull_yellow` is mutation-resistant
+  (reverting production to `Rgb(128,128,128)` fails the assertion). Two commits
+  (`77c3c27` feat + `ef14d74` docs SHA amendment) for one logical change —
+  acceptable. The cosmetic Update-Log clock self-stamp recurred (`2026-06-11`;
+  machine date 2026-06-10) — still pending the `rexymcp serve` restart.

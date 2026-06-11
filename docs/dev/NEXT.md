@@ -4,17 +4,30 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M15 phase-01 —
-[phase-01-layout-and-color.md](milestones/M15-dashboard-polish-2/phase-01-layout-and-color.md)
-(`in-progress`). Move `last update:` to Session panel + dull yellow Activity timestamps.
+**Active phase:** none — M15 phase-01 is `done` (approved_first_try, 2026-06-10).
+Draft phase-02 with `/rexymcp:architect next`, or dispatch it directly (it is
+already drafted at
+[phase-02-task-width.md](milestones/M15-dashboard-polish-2/phase-02-task-width.md),
+status `todo`).
+
+**M15 phase-01 — done** (2026-06-10, approved_first_try): moved the
+`last_update_line` push from the budget vec to the session vec in `render.rs`
+(after `session_lines()`, before the spinner) so `last update:` shows in the
+Session panel; changed the Activity `[+Xs]` timestamp span color from dim grey
+`Rgb(128,128,128)` to dull yellow `Rgb(180,150,50)` in `transcript.rs` (test
+renamed `transcript_lines_timestamp_span_is_dull_yellow`, mutation-resistant);
+updated the stale panic message in `session_lines_omits_last_update`. The two
+other `Rgb(128,128,128)` usages (tool-call-args body) correctly untouched. Clean
+43-turn first-try; 731 pass, all four gates green on independent re-run; commits
+`77c3c27` (feat) + `ef14d74` (docs). No `SessionEvent`/config/`Cargo.toml`.
 
 **📌 M15 — Dashboard Polish (Round 2) kicked off (2026-06-10, with the user).**
 Milestone [README](milestones/M15-dashboard-polish-2/README.md) written;
 `architecture.md` §Status updated (M13/M14 marked done, M15 entry added). **Three
-phases:** 01 cosmetic layout/color (xs) · 02 width-aware task titles (xs) · 03
-model-aware pricing (s). Pure display for phases 01–02; phase 03 adds one optional
-`String` field to `DashboardConfig`. No new `SessionEvent`, no new `Cargo.toml`
-dependency.
+phases:** 01 cosmetic layout/color (xs, done) · 02 width-aware task titles (xs) ·
+03 model-aware pricing (s). Pure display for phases 01–02; phase 03 adds one
+optional `String` field to `DashboardConfig`. No new `SessionEvent`, no new
+`Cargo.toml` dependency.
 
 **M14 — Cleanup is complete** (2/2 approved_first_try, 2026-06-10; see the
 [retrospective](milestones/M14-cleanup/README.md#retrospective--2026-06-10)).
