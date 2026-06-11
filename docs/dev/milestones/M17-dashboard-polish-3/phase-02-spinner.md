@@ -1,7 +1,7 @@
 # Phase 02: Restore the full-width dog-chasing-brain spinner
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** phase-01
 **Estimated diff:** ~70 lines (one function + its tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -257,3 +257,16 @@ E2E-N/A — the spinner is a live TUI animation; behavior is pinned via the six 
 **Grep check:** `grep '🐕' mcp/src/dashboard/panels.rs` — 5 matches confirming emoji literals landed correctly.
 
 **Notes for review:** None.
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — `render.rs`/`event_loop.rs`/`Cargo.toml` untouched
+  per the Out-of-scope list; `spinner_line` signature unchanged.
+- **Calibration:** none. Production code matches the reference impl byte-for-byte;
+  6 tests, mutation-resistant on burst-once (`_emits_overtake_burst_once_per_cycle`)
+  and width-parametric (`_scales_with_width`: 57 distinct dog offsets at w60 vs 17
+  at w20). All four gates green on independent re-run (fmt/build/clippy clean, 350
+  mcp + 734 combined pass).
