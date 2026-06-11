@@ -4,26 +4,34 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M17 phase-05 —
-[phase-05-highlighting.md](milestones/M17-dashboard-polish-3/phase-05-highlighting.md)
-(`todo`, drafted, ready to dispatch). The **last in-scope M17 phase** — it closes
-the milestone once approved. Two Activity-panel highlighting upgrades, both on the
-**existing syntect** path (no new dependency, no tree-sitter): (1) Markdown-highlight
-Completion **answer** text via a per-line `markdown_line` helper (`<think>` text
-stays dim-italic); (2) **extension-detected** grammar for `read_file` results —
-`highlighted_body_lines_for(content, path)` prefers the file extension's syntax and
-falls back to today's content `detect_syntax`. Low-churn shapes per the M10/M12
-churn calibration: `highlighted_body_lines(content)` and `record_lines(rec)` stay as
-zero-extra-arg **delegating wrappers** (`…_for(_, None)` / `…_with_lang(_, None)`),
-so their existing callers/tests are untouched; `transcript_lines` rewrites its
-`flat_map` to a `for` loop that threads the most-recent `read_file` `path` to the
-following `ToolResult`. ~200 lines. **Pre-injection verified current 2026-06-11**
-(architect `next`) — phase-04 touched only `panels.rs`/`render.rs`, so every line
-ref phase-05 cites (`Cargo.toml:21`, `highlight.rs:14/18/27/134/266`,
-`transcript.rs:17/47/67/103` + the `Parsed` arm at `:69`, `read_file.rs:35/47/66`)
-still resolves, and the `completion_body_no_markers_matches_plain` test the Spec
-tells the executor to replace lives at `highlight.rs:493`. Dispatch with
-`/rexymcp:dispatch phase-05`.
+**Active phase:** none drafted. M17 phase-05 is **done** (approved); **M17 phase-06
+(further dashboard UI) is planned with the user** but not yet drafted — do **not**
+close M17 at the phase-05 boundary. Draft phase-06 with `/rexymcp:architect next`.
+
+**M17 phase-05 — done** (2026-06-11, approved_first_try; commit `83bfc15` feat):
+two Activity-panel highlighting upgrades on the **existing syntect** path (no new
+dependency, no tree-sitter). (1) Markdown-highlight Completion **answer** text via a
+per-line `markdown_line` helper (`<think>` text stays dim-italic); (2)
+**extension-detected** grammar for `read_file` results —
+`highlighted_body_lines_for(content, path)` prefers the file extension's syntax,
+falling back to today's content `detect_syntax`. Low-churn shapes held per the
+M10/M12 churn calibration: `highlighted_body_lines(content)` and `record_lines(rec)`
+stayed as zero-extra-arg **delegating wrappers**, so their existing callers/tests are
+untouched; `transcript_lines` rewrote its `flat_map` to a `for` loop threading the
+most-recent `read_file` `path` to the following `ToolResult` (consumed after use,
+content-detection fallback if the `Parsed` call was filtered out). Clean **82-turn
+first-try**; all four gates green on independent re-run (fmt/build/clippy clean;
+**734 executor + 370 mcp** pass, 2 ignored). New tests mutation-resistant
+(`highlighted_body_lines_for_prefers_extension` distinguishes the extension path from
+the `detect_syntax` fallback; `transcript_lines_highlights_read_file_by_extension`
+pins the path-threading). The replaced `completion_body_no_markers_matches_plain`
+test became `completion_body_no_markers_preserves_content` (styling now differs,
+content preserved). No `Cargo.toml`/`SessionEvent`/`detect_syntax`-heuristic change.
+E2E is a TUI render (N/A per dashboard-panel precedent; unit tests render the real
+`Line`/`Span` output). Two cosmetic, semantically-identical departures from the
+spec's literal call shape were accepted (both delegate identically). The local-LLM
+Update-Log identity self-stamp ("Claude (Sonnet 4.5)") persists; **date correct**
+(`2026-06-11`).
 
 **M17 phase-04 — done** (2026-06-11, approved_first_try; commit `f4bcf46` feat /
 `919d217` approve): **pan** overflowing Tasks-panel titles back and forth

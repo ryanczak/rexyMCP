@@ -1,7 +1,7 @@
 # Phase 05: Markdown + extension-detected syntax highlighting
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** none (independent of 01–04; touches `transcript.rs` / `highlight.rs`)
 **Estimated diff:** ~200 lines (two highlight paths + record pairing + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -401,3 +401,11 @@ Literal confirmed present in `markdown_line`.
 **Notes for review:**
 - The `highlighted_body_lines` and `record_lines` functions are retained as thin delegates (to preserve existing callers/tests) and are now only used in the `None`/fallback path. They show as "never used" by the binary target but are exercised by tests — this is intentional per the spec's "preserves all current callers" requirement.
 - `markdown_line` creates a fresh `HighlightLines` per line, so fenced code blocks spanning multiple lines lose fence context — this is an accepted limitation per Out of Scope.
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-stamps "Claude (Sonnet 4.5)" — the recurring local-LLM identity quirk; machine records are correct)
+- **Scope deviations:** none. Two cosmetic, semantically-identical departures from the spec's literal form, both accepted: (a) the `ToolResult` arm uses `match path_hint { Some(p) => …_for(.., Some(p)), None => highlighted_body_lines(..) }` rather than always `…_for(.., path_hint)` (the `None` path delegates identically); (b) `transcript_lines` calls `record_lines(r)` on the no-hint branch rather than `record_lines_with_lang(r, None)` (delegates identically). Both keep the documented entry points exercised.
+- **Calibration:** none. Clean 82-turn first-try. All four gates green on independent re-run (fmt/build/clippy clean; **734 executor + 370 mcp** pass, 2 ignored). The pre-existing `unwrap_or_default()` at `highlight.rs:166` was moved verbatim per the spec's "move the existing highlight loop unchanged" instruction (confirmed present in parent `86c01f1`) — not a new STANDARDS §2.1 violation. Load-bearing tests confirmed mutation-resistant: `highlighted_body_lines_for_prefers_extension` distinguishes the extension path from the content fallback (`detect_syntax` does not catch `"x = 1"`, so an impl ignoring `path` renders plain and fails the `Some("a.py")` → >1-span assertion); `transcript_lines_highlights_read_file_by_extension` pins the path-threading end to end. E2E is a TUI render (no headless harness) — N/A per all prior M13/M15/M17 dashboard-panel precedent; the unit tests render the real `Line`/`Span` output. **Not the milestone close:** M17 phase-06 (further dashboard UI) is planned with the user — do not auto-close M17 at this boundary; `/rexymcp:architect next` drafts phase-06.
