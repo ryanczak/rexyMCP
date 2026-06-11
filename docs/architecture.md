@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 and M9–M12 are fully implemented
-> and closed; M13 (dashboard polish) is active. M8 (live session dashboard) is implemented but
+> **Status:** Living design doc. M1–M7 and M9–M14 are fully implemented
+> and closed; M15 (dashboard polish, round 2) is active. M8 (live session dashboard) is implemented but
 > open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
 > live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
@@ -792,3 +792,22 @@ The project plan. Each entry becomes a milestone with its own
     existing scroll/filter keys (the dashboard stays a monitoring view, not an
     agent surface — see M8 Non-goals); no new dependencies (`ratatui` already
     provides `Wrap`/`Scrollbar`).
+
+14. **M14 — Cleanup** *(complete, 2026-06-10)*. Fixed the silent task-seeder
+    failure (`seed_from_spec` stopping at `###` headings, producing zero tasks
+    for 6 of 8 M13 phases), added a turn-0 empty-seed warning, folded the fix
+    into `WORKFLOW.md`, and gathered the deferred M12/M13 cleanup items (two prod
+    `eprintln!` in `server.rs`, stale `RUNAWAY_OUTPUT_BYTES` doc-comment in
+    `read_file.rs`, `format_references` truncation-note copy bug in `symbols.rs`).
+    2/2 phases, both approved_first_try. See
+    `docs/dev/milestones/M14-cleanup/README.md`.
+
+15. **M15 — Dashboard Polish (Round 2)** *(in progress, kicked off 2026-06-10)*.
+    Four targeted fixes to the live dashboard: (1) task titles use full panel
+    width instead of a hardcoded 24-char cap; (2) `last update:` moves from the
+    Budget panel to the Session panel; (3) `$ saved` auto-fills rates for
+    recognised Claude model names via a new optional `saved_model` config field;
+    (4) Activity transcript time-delta spans render in dull yellow instead of dim
+    grey. Pure presentation layer for phases 01–02; phase 03 adds one optional
+    `String` field to `DashboardConfig`. No new `SessionEvent`, no new
+    dependencies. See `docs/dev/milestones/M15-dashboard-polish-2/README.md`.

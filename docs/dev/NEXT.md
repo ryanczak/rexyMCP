@@ -4,11 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M14 — Cleanup is complete** (2/2 approved_first_try,
-2026-06-10; see the
+**Active phase:** M15 phase-01 —
+[phase-01-layout-and-color.md](milestones/M15-dashboard-polish-2/phase-01-layout-and-color.md)
+(`in-progress`). Move `last update:` to Session panel + dull yellow Activity timestamps.
+
+**📌 M15 — Dashboard Polish (Round 2) kicked off (2026-06-10, with the user).**
+Milestone [README](milestones/M15-dashboard-polish-2/README.md) written;
+`architecture.md` §Status updated (M13/M14 marked done, M15 entry added). **Three
+phases:** 01 cosmetic layout/color (xs) · 02 width-aware task titles (xs) · 03
+model-aware pricing (s). Pure display for phases 01–02; phase 03 adds one optional
+`String` field to `DashboardConfig`. No new `SessionEvent`, no new `Cargo.toml`
+dependency.
+
+**M14 — Cleanup is complete** (2/2 approved_first_try, 2026-06-10; see the
 [retrospective](milestones/M14-cleanup/README.md#retrospective--2026-06-10)).
-The user kicks off the next milestone explicitly; draft its first phase with
-`/rexymcp:architect next` when ready.
 
 **M14 phase-02 — done** (2026-06-10, approved_first_try): the deferred M12/M13
 cleanup sweep — removed the two prod `eprintln!` in `mcp/src/server.rs` (collapsed
