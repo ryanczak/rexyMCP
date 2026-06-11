@@ -4,12 +4,39 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **M13 phase-08 — Activity: per-event relative timestamps** (`todo`,
-drafted 2026-06-10, awaiting dispatch)
+**Active phase:** **none** — M13 (Dashboard Polish) is **complete** (8/8
+approved_first_try, 2026-06-10; see the
+[retrospective](milestones/M13-dashboard-polish/README.md#retrospective--2026-06-10)).
+This is a **milestone boundary: human sign-off gate.** The next milestone (or a
+cleanup micro-phase) is kicked off explicitly by the user — the architect does not
+auto-advance. Candidates carried out of M13: (1) **restart `rexymcp serve`** to
+activate M11 phase-06's datetime injection (cosmetic self-stamping fix, still open);
+(2) the M12 deferred cleanup sweep (`eprintln!` ×2, stale doc-comment, `symbols`
+truncation-note copy bug); (3) optional `task_tracking` A/B scorecard analysis.
+
+**M13 phase-08 — done** (2026-06-10, approved_first_try): each Activity transcript
+header gained a dim `[+3m12s]`-style **relative timestamp** (item R2), measured from
+the session's first record (`record.ts − records[0].ts`) and formatted by the
+**existing** `crate::status::humanize_age`. **Single production file**
+(`transcript.rs`): a pure `relative_ts(ts, base_ts)` helper + a `transcript_lines`
+rewrite that prepends a `Color::Rgb(128,128,128)` timestamp span to each record's
+**header line only** (`lines.first_mut()`), bodies untouched. The prefix is added one
+layer **up** from `record_lines`, so its signature, ~15 test call sites, and the
+header-color tests stayed green untouched; relative-to-**start** (not `now_ms`) → no
+`render.rs` edit, no clock param. 5 new tests; 725 mcp+executor pass, all four gates
+green on independent re-run. Load-bearing tests confirmed mutation-resistant at review
+(`records.first()` → `visible.first()` mutation makes the baseline test fail `[+0s]`
+vs `[+4s]`). The dirty-tree-at-dispatch quirk did **not** recur — the draft was
+committed before dispatch. Clean 33-turn first-try; commit `14cc751` (feat) +
+`6457148` (draft) + approve. No `SessionEvent`/config/`Cargo.toml`. Cosmetic-only
+quirk: Update Log self-stamps "Claude (Sonnet 4.5)" / `01:22` (the recurring local-LLM
+identity/clock quirk; executor is Qwen/Qwen3.6-27B-FP8; fixed once `rexymcp serve` is
+restarted — still pending)
 ([phase-08-timestamps.md](milestones/M13-dashboard-polish/phase-08-timestamps.md)).
-Dispatch with `/rexymcp:dispatch phase-08`. **This is the last M13 phase** — when it
-is approved, M13 is at a milestone boundary (human sign-off gate; write the
-retrospective, set this pointer to "none").
+
+Last completed: **M13 phase-07** — Tasks panel: named tasks with glyphs + done/total
+progress gauge ([phase-07-tasks.md](milestones/M13-dashboard-polish/phase-07-tasks.md),
+`done`, approved_first_try, commit `9e50f24`/approve `cef22df`).
 
 **M13 phase-08 — drafted** (2026-06-10): each Activity transcript header gains a
 dim `[+3m12s]`-style **relative timestamp** (item R2), measured from the session's

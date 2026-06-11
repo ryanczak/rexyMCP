@@ -6,7 +6,7 @@ payloads (injected context, tool-call arguments, `<think>` blocks), and polish
 the Session/Budget/Tasks panels — without touching the executor, the loop, the
 config, or the `SessionEvent` schema.
 
-**Status:** in-progress
+**Status:** done
 
 **Depends on:** M8 (dashboard wireframe), M10 (Reclaim panel), M12 (Tasks panel)
 — all complete.
@@ -56,7 +56,7 @@ once.
 | 05 | Session/Budget — session `duration:` + move `last update:` to Budget (new `started_at` capture) ([phase-05-timing.md](phase-05-timing.md)) | done | feature | m | #4, #5 |
 | 06 | Session — full-width spinner on its own bottom line ([phase-06-spinner.md](phase-06-spinner.md)) | done | feature | m | #10, R5 |
 | 07 | Tasks — named tasks with checkbox/check glyphs + done/total progress gauge ([phase-07-tasks.md](phase-07-tasks.md)) | done | feature | m | #7, R3 |
-| 08 | Activity — per-event relative timestamps ([phase-08-timestamps.md](phase-08-timestamps.md)) | review | feature | s | R2 |
+| 08 | Activity — per-event relative timestamps ([phase-08-timestamps.md](phase-08-timestamps.md)) | done | feature | s | R2 |
 
 The **Items** column maps each phase to the user's original request list (#1–#10)
 and the agreed enhancements (R1 scrollbar, R2 timestamps, R3 task gauge, R5 spinner
@@ -160,3 +160,70 @@ micro-phase if/when the user wants it.
 `rexymcp serve` so the rebuilt binary picks up M11 phase-06's datetime injection,
 ending the executor's hallucinated-date self-stamping in Update Logs (cosmetic;
 machine records are correct).
+
+### Retrospective — 2026-06-10
+
+**M13 — Dashboard Polish is complete.** All **8 phases approved_first_try, zero
+bounces, zero escalations** (Qwen/Qwen3.6-27B-FP8 executor) — the cleanest milestone
+to date alongside M11. All 10 requested dashboard improvements (#1–#10) plus the four
+agreed enhancements (R1 scrollbar, R2 timestamps, R3 task gauge, R5 spinner) shipped.
+Every exit criterion is met.
+
+**What worked — the display-only constraint thesis held end to end.** The milestone's
+central bet (NEXT.md kickoff): confine M13 to the presentation layer
+(`mcp/src/dashboard/` + read-only `StatusSummary` adds), touching **no** `SessionEvent`
+variant, loop, governor, or config. This deliberately sidestepped both documented
+stall classes, and **neither recurred across all 8 phases**:
+
+- *The new-`SessionEvent`-variant exhaustive-match wall* was never approached — M13
+  added no variant. Phase-08 even surfaced an existing-but-unread field
+  (`SessionRecord.ts`) rather than adding one, the same move as phase-07 (`TaskUpdate.title`).
+- *The cross-crate `LoopDeps`/struct-literal churn* was avoided — the only struct
+  growth (05 `started_at`, 07 `tasks: Vec<TaskRow>`) landed on `Default`-built
+  `StatusSummary`, a one-line add + one `summarize` assignment each.
+
+**What worked — additive, one-layer-up shapes kept blast radius tiny.** The two phases
+that could have forced multi-site signature churn (06 dropping `spinner` from
+`session_lines`; 08 adding a timestamp to every header) were both speccable as
+*additive / one-layer-up* changes: 06 moved the spinner into a new `render.rs`-composed
+`spinner_line` (the `dollars_saved_line`/`last_update_line` precedent), and 08 prepended
+the timestamp in `transcript_lines` so `record_lines`'s signature and its ~15 test call
+sites stayed untouched. This is the WORKFLOW § "Prefer additive change shapes" guidance
+applied at draft time, and it paid off as cleanly as the M12 06a/06b/06c split did.
+
+**What worked — reuse over reinvention, pinned as worked examples.** Recurring wins:
+05/08 reused `humanize_age`; 07's gauge reused the context-gauge *style*; 02 reused
+`body_lines`/`preview` truncation; 04 reused the `body_lines` shape for byte-identical
+no-marker output. Each was pinned in the phase doc as a quoted worked example with a
+"do the same shape" instruction — the highest-leverage pre-injection form, and the
+through-line behind the first-try rate.
+
+**Calibration — no new folds.** Per WORKFLOW § Calibration (one occurrence is data,
+two a trend, three a fix), M13 surfaced no new recurring pattern warranting a
+STANDARDS/WORKFLOW edit:
+
+- *Dirty-tree-at-dispatch* (phase-03, phase-06 calibration notes) did **not** recur in
+  07 or 08 — the architect committed the draft *before* dispatch both times, and the
+  executor committed cleanly on its own. The existing lesson was simply applied; no
+  doc change needed.
+- *Local-LLM clock/identity self-stamping* in Update Logs persisted every phase
+  (cosmetic; machine records correct). This is **not** a doc fold — it is the known
+  operational item below: the fix (M11 phase-06's datetime injection) is already in the
+  binary and lands the moment `rexymcp serve` is restarted. **This restart never
+  happened during M13** and remains the one open operational follow-up.
+
+**Open items carried out of M13 (not M13 defects):**
+
+1. **Restart `rexymcp serve`** to activate M11 phase-06's datetime injection and end
+   the cosmetic self-stamping. Outstanding since M11; still the single highest-value
+   operational action.
+2. **The M12 deferred cleanup sweep** (two prod `eprintln!` at `server.rs:426`/`:450`;
+   stale `RUNAWAY_OUTPUT_BYTES` doc-comment in `read_file.rs:17`; the `symbols`
+   `format_references` truncation-note copy bug) remains ungathered — a candidate
+   micro-phase whenever the user wants it.
+3. **Optional A/B analysis** of `task_tracking` on/off (`bounces_to_approval` /
+   `first_pass_rate`) via the scorecard, available whenever the user wants to validate
+   M12 Arc A.
+
+**Next:** M13 is at a milestone boundary — a human sign-off gate. `NEXT.md` is set to
+"none". The user kicks off the next milestone (or a cleanup micro-phase) explicitly.

@@ -1,7 +1,7 @@
 # Phase 08: Activity — per-event relative timestamps
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** none for code (independent of phases 01–07; touches only the
 Activity transcript header builder). Phase-05 already established the
 "relative-to-session-start" timing idiom (`session_duration_ms` + `humanize_age`)
@@ -388,3 +388,30 @@ $ grep -n 'relative_ts' mcp/src/dashboard/transcript.rs
 **End-to-end verification:** N/A — phase ships no runtime-loadable artifact (consistent with prior M13 phases). Verification is the `relative_ts` / `transcript_lines` pure-function assertions plus cargo gates.
 
 **Notes for review:** None — implementation matches spec exactly. Clippy `field_reassign_with_default` lint was fixed by using struct update syntax in the test.
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — only `mcp/src/dashboard/transcript.rs` (plus this phase
+  doc + the README row) touched; no `render.rs`/`status.rs`/`panels.rs`/`filter.rs`/
+  `Cargo.toml`/`SessionEvent`/config edit. `record_lines`'s signature was correctly
+  left unchanged (the timestamp is added one layer up in `transcript_lines`), so its
+  call sites and the header-color tests stayed green.
+- **Calibration:** none. Clean 33-turn first-try with full bookkeeping (status flip +
+  Update Log + single `feat:` commit `14cc751`). All four gates re-run green
+  independently (725 mcp+executor pass, 0 failed, 2 ignored). Production clean of new
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]` (the `records.first().map(..).unwrap_or(0)`
+  is a safe Option default, unreachable as `None` given the empty-`visible` early
+  return). Load-bearing tests confirmed mutation-resistant at review: mutating the
+  baseline from `records.first()` → `visible.first()` made
+  `transcript_lines_timestamp_relative_to_first_record_not_first_visible` fail
+  (`[+0s]` instead of `[+4s]`), and `relative_ts_formats_offset_from_base` pins the
+  `+0s`/`+5s`/`+3m12s` buckets + saturating guard. The dirty-tree-at-dispatch quirk
+  (phase-06 calibration) did **not** recur — the draft was committed before dispatch,
+  so the executor committed cleanly on its own. E2E correctly declared N/A (TUI, no
+  headless harness). Cosmetic-only quirk: the Update Log self-stamps `2026-06-11 01:22`
+  / "Claude (Sonnet 4.5)" — the recurring local-LLM clock/identity quirk (machine
+  records correct; the executor is Qwen/Qwen3.6-27B-FP8; fixed once `rexymcp serve` is
+  restarted to pick up M11 phase-06's datetime injection — still pending).
