@@ -130,16 +130,23 @@ fn diff_body_lines(content: &str) -> Vec<Line<'static>> {
     result
 }
 
-/// Render `content` as indented, syntax-highlighted lines.
-pub(crate) fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
-    // Diff output is handled specially with background-color line highlighting.
+/// Render `content` as indented, syntax-highlighted lines. When `path` is
+/// `Some`, the file extension picks the grammar (falling back to content
+/// detection if the extension is unknown); when `None`, behavior is identical to
+/// the prior content-only path.
+pub(crate) fn highlighted_body_lines_for(content: &str, path: Option<&str>) -> Vec<Line<'static>> {
     if is_diff_content(content) {
         return diff_body_lines(content);
     }
 
     let ss = syntax_set();
 
-    let Some(syntax) = detect_syntax(content, ss) else {
+    let syntax = path
+        .and_then(ext_of)
+        .and_then(|ext| ss.find_syntax_by_extension(ext))
+        .or_else(|| detect_syntax(content, ss));
+
+    let Some(syntax) = syntax else {
         return body_lines(content)
             .into_iter()
             .map(|l| Line::from(Span::styled(l, Style::new().fg(Color::Rgb(200, 200, 200)))))
@@ -182,6 +189,18 @@ pub(crate) fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
     }
 
     result
+}
+
+/// Existing entry point, now a thin delegate (preserves all current callers).
+pub(crate) fn highlighted_body_lines(content: &str) -> Vec<Line<'static>> {
+    highlighted_body_lines_for(content, None)
+}
+
+/// File extension (without the dot) from a path, if any. `"a/b/foo.py"` → `"py"`.
+fn ext_of(path: &str) -> Option<&str> {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
 }
 
 /// Render `content` as indented lines, all in the same `color`.
@@ -258,11 +277,41 @@ pub(crate) fn split_think_segments(raw: &str) -> Vec<(String, bool)> {
     segments
 }
 
-/// Render a completion `raw` body, styling `<think>…</think>` reasoning distinctly
-/// (dim + italic) from the answer text (soft white). The per-record cap
-/// (`TRANSCRIPT_CONTENT_MAX_LINES`) and overflow marker apply across the whole
-/// body. With no think markers this is byte-identical to
-/// `plain_body_lines(raw, Color::Rgb(200, 200, 200))`.
+/// Highlight one line of Markdown into indented styled spans via syntect's
+/// markdown grammar. Falls back to a single soft-white span if the grammar is
+/// missing or highlighting fails (content is always preserved).
+fn markdown_line(text: &str) -> Line<'static> {
+    let answer = Style::new().fg(Color::Rgb(200, 200, 200));
+    let ss = syntax_set();
+    let Some(syntax) = ss.find_syntax_by_extension("md") else {
+        return Line::from(Span::styled(format!("    {text}"), answer));
+    };
+    let theme = &theme_set().themes["base16-ocean.dark"];
+    let mut h = HighlightLines::new(syntax, theme);
+    let line_nl = format!("{text}\n");
+    let Ok(ranges) = h.highlight_line(&line_nl, ss) else {
+        return Line::from(Span::styled(format!("    {text}"), answer));
+    };
+    let mut spans = vec![Span::raw("    ")];
+    for (style, t) in ranges {
+        let t = t.trim_end_matches('\n').to_string();
+        if t.is_empty() {
+            continue;
+        }
+        spans.push(Span::styled(
+            t,
+            Style::new().fg(Color::Rgb(
+                style.foreground.r,
+                style.foreground.g,
+                style.foreground.b,
+            )),
+        ));
+    }
+    Line::from(spans)
+}
+
+/// Render a Completion's raw text as indented lines. `<think>…</think>` reasoning
+/// blocks are dim-italic; answer text is Markdown-highlighted.
 pub(crate) fn completion_body_lines(raw: &str) -> Vec<Line<'static>> {
     let answer = Style::new().fg(Color::Rgb(200, 200, 200));
     let think = Style::new()
@@ -281,8 +330,11 @@ pub(crate) fn completion_body_lines(raw: &str) -> Vec<Line<'static>> {
         .into_iter()
         .take(TRANSCRIPT_CONTENT_MAX_LINES)
         .map(|(text, is_think)| {
-            let style = if is_think { think } else { answer };
-            Line::from(Span::styled(format!("    {text}"), style))
+            if is_think {
+                Line::from(Span::styled(format!("    {text}"), think))
+            } else {
+                markdown_line(&text)
+            }
         })
         .collect();
     if total > TRANSCRIPT_CONTENT_MAX_LINES {
@@ -490,26 +542,27 @@ mod tests {
     }
 
     #[test]
-    fn completion_body_no_markers_matches_plain() {
+    fn completion_body_no_markers_preserves_content() {
+        // Answer text is now Markdown-highlighted so styling differs from
+        // plain_body_lines, but content must be preserved.
         let raw = "a\nb\nc";
-        let think_lines = completion_body_lines(raw);
-        let plain_lines = plain_body_lines(raw, Color::Rgb(200, 200, 200));
-        assert_eq!(think_lines.len(), plain_lines.len(), "line count mismatch");
-        for (t, p) in think_lines.iter().zip(plain_lines.iter()) {
-            assert_eq!(format!("{t}"), format!("{p}"), "rendered text mismatch");
+        let lines = completion_body_lines(raw);
+        let raw_lines: Vec<&str> = raw.lines().collect();
+        assert_eq!(lines.len(), raw_lines.len(), "line count mismatch");
+        for (line, raw_line) in lines.iter().zip(raw_lines.iter()) {
+            let text = format!("{line}");
+            // Each line is indented with 4 spaces then the raw text
+            assert!(text.starts_with("    "), "line should be indented: {text}");
+            let stripped = text.strip_prefix("    ").unwrap_or(&text);
             assert_eq!(
-                t.spans[0].style.fg, p.spans[0].style.fg,
-                "fg color mismatch"
-            );
-            assert_eq!(
-                t.spans[0].style.add_modifier, p.spans[0].style.add_modifier,
-                "modifier mismatch"
+                stripped, *raw_line,
+                "content should be preserved: got {stripped}, expected {raw_line}"
             );
         }
     }
 
     #[test]
-    fn completion_body_styles_think_distinct_from_answer() {
+    fn completion_body_lines_keeps_think_dim() {
         let lines = completion_body_lines("<think>why</think>final");
         let think_line = lines
             .iter()
@@ -532,17 +585,21 @@ mod tests {
             .iter()
             .find(|l| format!("{l}").contains("final"))
             .expect("should have a line containing 'final'");
-        assert_eq!(
-            answer_line.spans[0].style.fg,
-            Some(Color::Rgb(200, 200, 200)),
-            "answer line should be soft white"
-        );
+        // Answer line is markdown-highlighted: first span is raw indent,
+        // subsequent spans carry syntax colors. At minimum the content
+        // spans exist and are not dim-italic.
         assert!(
-            !answer_line.spans[0]
+            answer_line.spans.len() >= 2,
+            "answer line should have indent + content spans, got {}",
+            answer_line.spans.len()
+        );
+        // The content span (second) should not be italic
+        assert!(
+            !answer_line.spans[1]
                 .style
                 .add_modifier
                 .contains(Modifier::ITALIC),
-            "answer line should not be italic"
+            "answer content span should not be italic"
         );
 
         // Markers should not appear in rendered text.
@@ -576,5 +633,89 @@ mod tests {
             last.contains("more lines"),
             "last line should be the overflow marker: {last}"
         );
+    }
+
+    #[test]
+    fn markdown_line_highlights_heading() {
+        let line = markdown_line("# Heading");
+        let text = format!("{line}");
+        // Content preserved (minus the 4-space indent)
+        let stripped = text.strip_prefix("    ").unwrap_or(&text);
+        assert_eq!(stripped, "# Heading", "content should be preserved: {text}");
+        // More than one span (indent + at least the heading marker styled apart)
+        assert!(
+            line.spans.len() > 1,
+            "heading should produce multiple spans (indent + styled content), got {}",
+            line.spans.len()
+        );
+    }
+
+    #[test]
+    fn completion_body_lines_highlights_answer_markdown() {
+        let lines = completion_body_lines("# Title\n\nbody");
+        // Find the title line
+        let title_line = lines
+            .iter()
+            .find(|l| format!("{l}").contains("# Title"))
+            .expect("should have a line with '# Title'");
+        // Title line should have >1 span (markdown highlighted)
+        assert!(
+            title_line.spans.len() > 1,
+            "title line should have markdown spans, got {}",
+            title_line.spans.len()
+        );
+    }
+
+    #[test]
+    fn highlighted_body_lines_for_prefers_extension() {
+        // With .py extension, Python grammar is used (multi-span)
+        let lines = highlighted_body_lines_for("x = 1\n", Some("a.py"));
+        let content_line = lines
+            .iter()
+            .find(|l| format!("{l}").contains("x = 1"))
+            .expect("should have a line with 'x = 1'");
+        assert!(
+            content_line.spans.len() > 1,
+            "Python-highlighted line should have multiple spans, got {}",
+            content_line.spans.len()
+        );
+
+        // Without extension, falls back to plain (single soft-white span per line)
+        let lines_plain = highlighted_body_lines_for("x = 1\n", None);
+        let plain_line = lines_plain
+            .iter()
+            .find(|l| format!("{l}").contains("x = 1"))
+            .expect("should have a line with 'x = 1'");
+        assert_eq!(
+            plain_line.spans.len(),
+            1,
+            "plain line should have a single soft-white span, got {}",
+            plain_line.spans.len()
+        );
+        assert_eq!(
+            plain_line.spans[0].style.fg,
+            Some(Color::Rgb(200, 200, 200)),
+            "plain content span should be soft white"
+        );
+    }
+
+    #[test]
+    fn highlighted_body_lines_for_unknown_ext_falls_back() {
+        // Unknown extension falls back to content detection (same as None)
+        let content = "x = 1\n";
+        let lines_ext = highlighted_body_lines_for(content, Some("a.xyz"));
+        let lines_none = highlighted_body_lines_for(content, None);
+        assert_eq!(
+            lines_ext.len(),
+            lines_none.len(),
+            "unknown ext should produce same line count as None"
+        );
+        for (e, n) in lines_ext.iter().zip(lines_none.iter()) {
+            assert_eq!(
+                format!("{e}"),
+                format!("{n}"),
+                "unknown ext should render identically to None"
+            );
+        }
     }
 }

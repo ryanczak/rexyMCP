@@ -1,7 +1,7 @@
 # Phase 05: Markdown + extension-detected syntax highlighting
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** todo
+**Status:** review
 **Depends on:** none (independent of 01–04; touches `transcript.rs` / `highlight.rs`)
 **Estimated diff:** ~200 lines (two highlight paths + record pairing + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -357,3 +357,47 @@ Do **not** add tree-sitter or any grammar crate.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-11 20:16 (started)
+
+**Executor:** Claude (Sonnet 4.5)
+**Tasks:** Implement Markdown highlighting for Completion answer text, extension-aware highlighting for `read_file` results, and thread `read_file` path through `transcript_lines`.
+
+### Update — 2026-06-11 20:20 (complete)
+
+**Summary:** Implemented both highlighting upgrades — Markdown for Completion answers and extension-detected language for `read_file` results — plus threaded the `read_file` path through `transcript_lines` to pair calls with their results.
+
+**Verification commands:**
+
+```
+$ cargo fmt --all --check
+(check: clean)
+
+$ cargo build 2>&1 | tail -20
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.01s
+
+$ cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -10
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.69s
+
+$ cargo test 2>&1 | tail -10
+test result: ok. 734 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**Verification summary:** `cargo fmt --all --check` clean, `cargo build` zero warnings, `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo test` 734 passed / 0 failed.
+
+**Files changed:**
+- `mcp/src/dashboard/highlight.rs` — added `markdown_line()`, `highlighted_body_lines_for()`, `ext_of()`; refactored `completion_body_lines` to route answer lines through `markdown_line`; refactored `highlighted_body_lines` to delegate to `highlighted_body_lines_for(content, None)`; updated tests for new behavior.
+- `mcp/src/dashboard/transcript.rs` — added `record_lines_with_lang()`; refactored `record_lines` to delegate; rewrote `transcript_lines` as a `for` loop threading `last_read_path` from `read_file` `Parsed` calls to matching `ToolResult`s; updated existing test for markdown-highlighted answer lines; added new tests for path threading and fallback.
+
+**End-to-end verification:** Unit tests pin the behavior for both Markdown highlighting and extension-driven grammar selection. A live dashboard session with a `read_file` of a `.py` file and a Markdown Completion is not available in the test environment; consistent with prior dashboard-panel phases, the hermetic tests serve as the verification artifact.
+
+**Grep for spec-pinned literals:**
+```
+$ grep -rn 'find_syntax_by_extension("md")' mcp/src/dashboard/highlight.rs
+285:    let Some(syntax) = ss.find_syntax_by_extension("md") else {
+```
+Literal confirmed present in `markdown_line`.
+
+**Notes for review:**
+- The `highlighted_body_lines` and `record_lines` functions are retained as thin delegates (to preserve existing callers/tests) and are now only used in the `None`/fallback path. They show as "never used" by the binary target but are exercised by tests — this is intentional per the spec's "preserves all current callers" requirement.
+- `markdown_line` creates a fresh `HighlightLines` per line, so fenced code blocks spanning multiple lines lose fence context — this is an accepted limitation per Out of Scope.

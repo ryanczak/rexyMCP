@@ -5,7 +5,9 @@ use ratatui::{
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 
 use super::filter::ActivityFilter;
-use super::highlight::{completion_body_lines, highlighted_body_lines, plain_body_lines};
+use super::highlight::{
+    completion_body_lines, highlighted_body_lines, highlighted_body_lines_for, plain_body_lines,
+};
 
 /// Max chars of free-text content shown per transcript line in 10a (10b expands
 /// to full multi-line). Keeps one record = one line.
@@ -23,28 +25,61 @@ pub(crate) fn transcript_lines(
         return vec![Line::from("(no activity yet)")];
     }
     let base_ts = records.first().map(|r| r.ts).unwrap_or(0);
-    visible
-        .iter()
-        .flat_map(|r| {
-            let mut lines = record_lines(r);
-            if let Some(header) = lines.first_mut() {
-                let mut spans = Vec::with_capacity(header.spans.len() + 1);
-                spans.push(Span::styled(
-                    format!("[{}] ", relative_ts(r.ts, base_ts)),
-                    Style::new().fg(Color::Rgb(180, 150, 50)),
-                ));
-                spans.append(&mut header.spans);
-                *header = Line::from(spans);
+    let mut out: Vec<Line<'static>> = Vec::new();
+    let mut last_read_path: Option<String> = None;
+    for r in &visible {
+        // Capture the path from a read_file call so the matching result can use it.
+        if let SessionEvent::Parsed { tool_call } = &r.event
+            && tool_call.name == "read_file"
+        {
+            last_read_path = tool_call
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+        let hint = match &r.event {
+            SessionEvent::ToolResult { name, .. } if name == "read_file" => {
+                last_read_path.as_deref()
             }
-            lines
-        })
-        .collect()
+            _ => None,
+        };
+        let mut lines = if let Some(h) = hint {
+            record_lines_with_lang(r, Some(h))
+        } else {
+            record_lines(r)
+        };
+        if matches!(&r.event, SessionEvent::ToolResult { name, .. } if name == "read_file") {
+            last_read_path = None; // consume it
+        }
+        // Prepend the relative-timestamp header span (unchanged logic).
+        if let Some(header) = lines.first_mut() {
+            let mut spans = Vec::with_capacity(header.spans.len() + 1);
+            spans.push(Span::styled(
+                format!("[{}] ", relative_ts(r.ts, base_ts)),
+                Style::new().fg(Color::Rgb(180, 150, 50)),
+            ));
+            spans.append(&mut header.spans);
+            *header = Line::from(spans);
+        }
+        out.extend(lines);
+    }
+    out
 }
 
 /// Render one record as one or more transcript lines (header + optional body),
 /// styled by event type. Completion and ToolResult expand their content across
 /// multiple lines; all other events are a single styled header line.
 pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
+    record_lines_with_lang(rec, None)
+}
+
+/// As `record_lines`, but a `read_file` `ToolResult` body is highlighted using
+/// the grammar for `path_hint`'s extension when provided.
+pub(crate) fn record_lines_with_lang(
+    rec: &SessionRecord,
+    path_hint: Option<&str>,
+) -> Vec<Line<'static>> {
     // (header_summary, header_color, bold, body_lines)
     let (summary, color, bold, body): (String, Color, bool, Option<Vec<Line<'static>>>) =
         match &rec.event {
@@ -100,7 +135,10 @@ pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
                     format!("tool {name} [{status}]"),
                     color,
                     false,
-                    Some(highlighted_body_lines(output_preview)),
+                    Some(match path_hint {
+                        Some(p) => highlighted_body_lines_for(output_preview, Some(p)),
+                        None => highlighted_body_lines(output_preview),
+                    }),
                 )
             }
             SessionEvent::Verify { diagnostics } => {
@@ -643,10 +681,19 @@ mod tests {
             .iter()
             .find(|l| format!("{l}").contains("the answer"))
             .expect("should have a line containing 'the answer'");
-        assert_eq!(
-            answer_line.spans[0].style.fg,
-            Some(Color::Rgb(200, 200, 200)),
-            "answer line should be soft white"
+        // Answer line is now markdown-highlighted: first span is raw indent,
+        // subsequent spans carry syntax colors.
+        assert!(
+            answer_line.spans.len() >= 2,
+            "answer line should have indent + content spans, got {}",
+            answer_line.spans.len()
+        );
+        assert!(
+            !answer_line.spans[1]
+                .style
+                .add_modifier
+                .contains(Modifier::ITALIC),
+            "answer content span should not be italic"
         );
 
         // Markers should not appear in any body line.
@@ -791,6 +838,92 @@ mod tests {
         assert!(
             header_text.to_string().contains("[t0]"),
             "second span should contain original header: {header_text}"
+        );
+    }
+
+    #[test]
+    fn record_lines_delegates_to_with_lang_none() {
+        let rec = rec(
+            0,
+            0,
+            SessionEvent::ToolResult {
+                name: "bash".to_string(),
+                succeeded: true,
+                output_preview: "echo hello".to_string(),
+            },
+        );
+        let lines = record_lines(&rec);
+        let lines_with_lang = record_lines_with_lang(&rec, None);
+        assert_eq!(
+            lines.len(),
+            lines_with_lang.len(),
+            "delegated call should produce same line count"
+        );
+        for (a, b) in lines.iter().zip(lines_with_lang.iter()) {
+            assert_eq!(
+                format!("{a}"),
+                format!("{b}"),
+                "delegated call should produce identical rendered text"
+            );
+        }
+    }
+
+    #[test]
+    fn transcript_lines_highlights_read_file_by_extension() {
+        let records = vec![
+            rec(
+                0,
+                0,
+                SessionEvent::Parsed {
+                    tool_call: rexymcp_executor::parser::ToolCall {
+                        name: "read_file".to_string(),
+                        arguments: serde_json::json!({"path": "foo.py"}),
+                        origin: rexymcp_executor::parser::Origin::Native,
+                    },
+                },
+            ),
+            rec(
+                1000,
+                0,
+                SessionEvent::ToolResult {
+                    name: "read_file".to_string(),
+                    succeeded: true,
+                    output_preview: "def f():\n    pass".to_string(),
+                },
+            ),
+        ];
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+
+        // Find the tool-result body lines (lines containing "def f()")
+        let code_line = lines
+            .iter()
+            .find(|l| format!("{l}").contains("def f()"))
+            .expect("should have a line with 'def f()'");
+
+        // With Python grammar, the code line should have multiple spans
+        assert!(
+            code_line.spans.len() > 1,
+            "Python-highlighted line should have multiple spans, got {}",
+            code_line.spans.len()
+        );
+    }
+
+    #[test]
+    fn transcript_lines_read_file_without_call_falls_back() {
+        let records = vec![rec(
+            0,
+            0,
+            SessionEvent::ToolResult {
+                name: "read_file".to_string(),
+                succeeded: true,
+                output_preview: "def f():\n    pass".to_string(),
+            },
+        )];
+        // Should not panic — falls back to content detection
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+        assert!(
+            lines.iter().any(|l| format!("{l}").contains("read_file")),
+            "should have a read_file tool result line"
         );
     }
 }
