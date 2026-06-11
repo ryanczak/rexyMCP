@@ -4,15 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **none** — M13 (Dashboard Polish) is **complete** (8/8
-approved_first_try, 2026-06-10; see the
+**Active phase:**
+[M14 phase-01 — Fix task seeder: `### N.` headings + empty-spec warning](milestones/M14-cleanup/phase-01-task-seeder.md)
+(`todo`) — bugfix for the silent `seed_from_spec` failure that produced zero tasks
+for 6 of 8 M13 phases. Fix: change stop condition to `starts_with("## ")`, add
+`parse_heading_task_line` for `### N.` format, eliminate the redundant
+`seed_from_spec` call in `mod.rs`, emit a `Progress` warning at turn 0 when
+`task_tracking` is on but seeding yields nothing. Fold both accepted Spec formats
+into `WORKFLOW.md`. See [M14 README](milestones/M14-cleanup/README.md).
+
+**M13 — Dashboard Polish is complete** (8/8 approved_first_try, 2026-06-10; see the
 [retrospective](milestones/M13-dashboard-polish/README.md#retrospective--2026-06-10)).
-This is a **milestone boundary: human sign-off gate.** The next milestone (or a
-cleanup micro-phase) is kicked off explicitly by the user — the architect does not
-auto-advance. Candidates carried out of M13: (1) **restart `rexymcp serve`** to
-activate M11 phase-06's datetime injection (cosmetic self-stamping fix, still open);
-(2) the M12 deferred cleanup sweep (`eprintln!` ×2, stale doc-comment, `symbols`
-truncation-note copy bug); (3) optional `task_tracking` A/B scorecard analysis.
 
 **M13 phase-08 — done** (2026-06-10, approved_first_try): each Activity transcript
 header gained a dim `[+3m12s]`-style **relative timestamp** (item R2), measured from
