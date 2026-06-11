@@ -4,11 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M15 phase-01 is `done` (approved_first_try, 2026-06-10).
-Draft phase-02 with `/rexymcp:architect next`, or dispatch it directly (it is
-already drafted at
-[phase-02-task-width.md](milestones/M15-dashboard-polish-2/phase-02-task-width.md),
-status `todo`).
+**Active phase:** none — M15 phase-02 is `done` (approved_first_try, 2026-06-10).
+Phase-03 (the last in-scope M15 phase) is already drafted at
+[phase-03-pricing.md](milestones/M15-dashboard-polish-2/phase-03-pricing.md),
+status `todo`; dispatch it directly with `/rexymcp:dispatch phase-03` or revisit
+the draft with `/rexymcp:architect next`.
+
+**M15 phase-02 — done** (2026-06-10, approved_first_try): width-aware task title
+truncation. Removed the hardcoded `TASK_TITLE_MAX = 24`; `tasks_lines` now takes
+a `width: usize` param and derives `title_max = width.saturating_sub(2)`;
+`render.rs` computes `tasks_area.width.saturating_sub(2) as usize`. 3 test call
+sites updated; new `tasks_lines_uses_full_panel_width` mutation-verified at review
+(hardcoding 24 fails the width=60 assertion). Clean 40-turn first-try; 731 pass,
+all four gates green on independent re-run; commit `1eced62`. No
+`SessionEvent`/config/`Cargo.toml`.
 
 **M15 phase-01 — done** (2026-06-10, approved_first_try): moved the
 `last_update_line` push from the budget vec to the session vec in `render.rs`

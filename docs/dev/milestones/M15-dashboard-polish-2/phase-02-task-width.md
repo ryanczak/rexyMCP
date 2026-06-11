@@ -1,6 +1,6 @@
 # Phase 02 — Width-aware task title truncation
 
-**Status:** review
+**Status:** done
 **Milestone:** M15-dashboard-polish-2
 **Depends on:** phase-01 (done)
 
@@ -296,3 +296,21 @@ no executor crate, no `SessionEvent`, no `Cargo.toml`.
 **Notes for review:** None — straightforward spec implementation, no adaptations needed.
 
 <!-- entries appended below this line -->
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — all 4 spec tasks implemented exactly;
+  `TASK_TITLE_MAX` removed, `tasks_lines(summary, width)` derives
+  `title_max = width.saturating_sub(2)`, `render.rs` passes
+  `tasks_area.width.saturating_sub(2) as usize`.
+- **Calibration:** none. Clean 40-turn first-try. Independent re-run of all four
+  gates green (731 pass, 0 failed, 2 ignored). The new
+  `tasks_lines_uses_full_panel_width` was **mutation-verified at review**:
+  hardcoding `title_max = 24` fails the width=60 no-truncation assertion
+  (`panels.rs:877`). Single conventional commit `1eced62`. No
+  `SessionEvent`/config/`Cargo.toml`. The cosmetic Update-Log clock self-stamp
+  recurred (`2026-06-11`; machine date 2026-06-10) — still pending the
+  `rexymcp serve` restart.
