@@ -4,11 +4,44 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. **M15 — Dashboard Polish (Round 2) is complete** (3/3
-approved_first_try, 2026-06-11; see the
-[retrospective](milestones/M15-dashboard-polish-2/README.md#retrospective--2026-06-11)).
-The next milestone is a fresh human-gated kickoff — run `/rexymcp:architect` to
-scope it.
+**Active phase:** M17 phase-01 —
+[phase-01-labels.md](milestones/M17-dashboard-polish-3/phase-01-labels.md)
+(`todo`, fresh first dispatch). Move the Session panel's `last update:` line
+directly under `duration:` and capitalize every Session/Budget/Reclaim label
+(`Phase:`, `Tokens in:`, `Events:`; `$ saved:` stays — it's a symbol). The
+`last_update_line` call moves out of `render.rs` into `session_lines`; the rest
+is string-literal edits + test assertion bumps. xs, single-file-ish, no new dep.
+Dispatch with `/rexymcp:dispatch phase-01`.
+
+**📌 M17 — Dashboard Polish (Round 3) kicked off (2026-06-11, with the user).**
+Milestone [README](milestones/M17-dashboard-polish-3/README.md) written;
+`architecture.md` §Status #17 added (M15/M16 marked done). **Six display-layer
+refinements across five phases:** 01 label move + capitalization (xs) · 02
+restore full-width dog-chasing-brain spinner (s) · 03 `Milestone:` row from the
+milestone directory name (s) · 04 pan overflowing task titles (m) · 05 Markdown +
+extension-detected highlighting (m). **No new `SessionEvent`, no new
+`Cargo.toml` dependency in any phase.**
+
+**Key design corrections made during drafting (read before dispatching 03/05):**
+- **Phase 05 is NOT tree-sitter.** The `mcp` crate already depends on **syntect**
+  (`mcp/Cargo.toml:21`); `highlight.rs` already highlights tool-result bodies.
+  Phase 05 *extends* the syntect path (Markdown for completions + extension-based
+  grammar selection for `read_file` results). The original tree-sitter plan was
+  dropped with the user once syntect was found — it would have been a
+  dependency-heavy regression. All five phase docs and the README reflect this.
+- **Phase 03 milestone source is the filesystem, not config.** The name is
+  derived from the milestone *directory* (`M15-dashboard-polish-2` → `M15 —
+  Dashboard Polish 2`) by scanning `docs/dev/milestones/` for the running phase's
+  doc — no `SessionEvent` or config field.
+- **Anti-stall shapes pinned:** phases 03 and 05 use low-churn shapes (compose in
+  `render.rs` / add a delegating wrapper) so they do **not** change
+  `session_lines` / `record_lines` signatures. Only **phase 04** changes a
+  signature (`tasks_lines` gains a `tick` param); its doc enumerates all 6 call
+  sites (1 prod + 5 test) to traverse in one pass per the M10/M12 churn-stall
+  calibration.
+
+On-demand drafting note: all five phase docs are already drafted (the user asked
+for the full milestone up front). Dispatch them in order; review-gate each.
 
 **M15 phase-03 — done** (2026-06-11, approved_first_try): model-aware `$ saved`
 pricing. Added `saved_model: Option<String>` to `DashboardConfig` (dropped `Copy`

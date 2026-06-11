@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 and M9–M14 are fully implemented
-> and closed; M15 (dashboard polish, round 2) is active. M8 (live session dashboard) is implemented but
+> **Status:** Living design doc. M1–M7 and M9–M16 are fully implemented
+> and closed; M17 (dashboard polish, round 3) is active. M8 (live session dashboard) is implemented but
 > open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
 > live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
@@ -802,22 +802,36 @@ The project plan. Each entry becomes a milestone with its own
     2/2 phases, both approved_first_try. See
     `docs/dev/milestones/M14-cleanup/README.md`.
 
-15. **M15 — Dashboard Polish (Round 2)** *(in progress, kicked off 2026-06-10)*.
-    Four targeted fixes to the live dashboard: (1) task titles use full panel
-    width instead of a hardcoded 24-char cap; (2) `last update:` moves from the
-    Budget panel to the Session panel; (3) `$ saved` auto-fills rates for
-    recognised Claude model names via a new optional `saved_model` config field;
-    (4) Activity transcript time-delta spans render in dull yellow instead of dim
-    grey. Pure presentation layer for phases 01–02; phase 03 adds one optional
-    `String` field to `DashboardConfig`. No new `SessionEvent`, no new
-    dependencies. See `docs/dev/milestones/M15-dashboard-polish-2/README.md`.
+15. **M15 — Dashboard Polish (Round 2)** *(done, 2026-06-11; 3/3
+    approved_first_try)*. Four targeted fixes to the live dashboard: (1) task
+    titles use full panel width instead of a hardcoded 24-char cap; (2) `last
+    update:` moves from the Budget panel to the Session panel; (3) `$ saved`
+    auto-fills rates for recognised Claude model names via a new optional
+    `saved_model` config field; (4) Activity transcript time-delta spans render
+    in dull yellow instead of dim grey. Pure presentation layer for phases
+    01–02; phase 03 adds one optional `String` field to `DashboardConfig`. No
+    new `SessionEvent`, no new dependencies. See
+    `docs/dev/milestones/M15-dashboard-polish-2/README.md`.
 
-16. **M16 — Seeder Format Robustness** *(in progress, kicked off 2026-06-10)*.
-    Extends the task seeder (`executor/src/agent/tasks.rs`) to recognize the
-    `### Task N — Title` heading style the architect naturally writes, in
-    addition to the `N. Title` list items and `### N. Title` subheadings M14
-    added. Closes the recurring empty-seed mismatch (M15 phase-02 seeded zero
-    tasks because its Spec used `### Task N —`; the `update_task` tool correctly
-    rejected the executor's improvised id). Single-file, additive — the existing
-    parse paths are untouched. See
-    `docs/dev/milestones/M16-seeder-robustness/README.md`.
+16. **M16 — Seeder Format Robustness** *(done, 2026-06-10; 1/1
+    approved_first_try)*. Extends the task seeder
+    (`executor/src/agent/tasks.rs`) to recognize the `### Task N — Title`
+    heading style the architect naturally writes, in addition to the `N. Title`
+    list items and `### N. Title` subheadings M14 added. Closes the recurring
+    empty-seed mismatch (M15 phase-02 seeded zero tasks because its Spec used
+    `### Task N —`; the `update_task` tool correctly rejected the executor's
+    improvised id). Single-file, additive — the existing parse paths are
+    untouched. See `docs/dev/milestones/M16-seeder-robustness/README.md`.
+
+17. **M17 — Dashboard Polish (Round 3)** *(in progress, kicked off 2026-06-11)*.
+    Six display-layer refinements to the live dashboard: (1) restore the
+    dog-chasing-brain spinner animation, parametric on Session-panel width;
+    (2) move `last update:` directly under `duration:` and capitalize every
+    Session/Budget/Reclaim label; (3) add a `Milestone:` row whose name is
+    derived from the milestone *directory* holding the running phase doc (no new
+    config/event); (4) pan overflowing Tasks-panel titles back and forth;
+    (5) upgrade Activity highlighting — Markdown for Completion bodies and
+    extension-detected grammars for `read_file` results, both built on the
+    crate's existing **syntect** dependency (tree-sitter was considered and
+    dropped). No new `SessionEvent` and no new dependency in any phase. See
+    `docs/dev/milestones/M17-dashboard-polish-3/README.md`.
