@@ -140,14 +140,23 @@ at milestone close.
   instead of just rejecting the turn.
 - **A full built-in toolset**, every operation scoped to the target-repo root:
   `read_file`, `write_file`, `patch` (anchored edits), `find_files`, `search`
-  (content grep), `symbols` (tree-sitter symbol extraction for Rust & Python),
-  and `bash`.
+  (content grep), `symbols` (tree-sitter symbol search and find-references for
+  Rust & Python), and `bash`.
 - **Security scope confinement** — file and shell operations cannot escape the
   target repository root. A read-before-edit rule keeps the model from blindly
   overwriting files it hasn't seen.
 - **A governor** that watches for repetition loops, repeated verifier failures,
   and context/turn-budget overflow, and a **verifier** that runs the project's
-  typecheck/build between edits and feeds diagnostics back for a retry.
+  typecheck/build between edits and feeds diagnostics back for a retry —
+  including rustc's machine-applicable suggested fixes and structured `cargo
+  test` failure digests, and degrading to a named advisory (rather than a
+  failure) when a toolchain binary is missing.
+- **Structured task tracking** — the loop seeds a per-session checklist from the
+  phase's numbered Spec and the executor checks tasks off (pending → active →
+  done) as it works; it tracks the list, it doesn't author it (decomposition
+  stays the architect's job). Catches dropped-subtask stalls and premature
+  completion, toggles via `[executor] task_tracking` for clean A/B measurement,
+  and shows live in the dashboard Tasks panel.
 - **Hard-fail briefings** — when the model is genuinely stuck, the loop stops
   and assembles a tight, structured briefing (one-line summary, working files,
   last attempt) and hands control back to Claude instead of burning the budget.
@@ -190,12 +199,17 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
 **The CLI (`rexymcp`)**
 
 - `rexymcp health` — connectivity check against the configured endpoint.
+- `rexymcp doctor` — verify the target toolchain is installed: the Tier-0
+  `[commands]` binaries (required — a missing one exits non-zero) and the Tier-1
+  verifier enhancers (`cargo` / `tsc` / `ruff`, advisory / fail-open). Human
+  table + `--json`.
 - `rexymcp run-phase` — run a single phase from the command line (returns the
   `PhaseResult` as JSON), no MCP client required.
 - `rexymcp serve` — start the MCP stdio server.
 - `rexymcp dashboard` — live full-screen TUI over the session JSONL: Session,
   Budget (tokens · context % · tok/s · $ saved), Reclaim (compaction + per-lever
-  Arc A/B sources), Activity transcript (scrollable full replay), and Files panels.
+  Arc A/B sources), Tasks (the phase's Spec-seeded TODO list, checked off live),
+  Activity transcript (scrollable full replay), and Files panels.
   Stays open and auto-follows new sessions. `--config` loads `[dashboard]` rates
   for the `$ saved` line.
 - `rexymcp status` — one-shot session summary (human or `--json`). Scriptable;

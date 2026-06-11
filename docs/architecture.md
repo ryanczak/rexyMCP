@@ -755,7 +755,7 @@ The project plan. Each entry becomes a milestone with its own
     cloud/network tooling (the executor stays offline — see "No internal cloud
     escalation").
 
-13. **M13 — Dashboard Polish** *(in progress, kicked off 2026-06-10)*. The live
+13. **M13 — Dashboard Polish** *(done, 2026-06-10; 8/8 approved_first_try)*. The live
     dashboard (M8 wireframe + the M10 Reclaim and M12 Tasks panels) is functional
     but visually rough; this milestone makes it presentable. **Pure presentation
     layer — `mcp/src/dashboard/` plus read-only additions to `mcp/src/status.rs`'s
