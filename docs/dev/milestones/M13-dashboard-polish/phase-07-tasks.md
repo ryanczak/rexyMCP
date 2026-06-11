@@ -1,7 +1,7 @@
 # Phase 07: Tasks — named tasks with glyphs + done/total progress gauge
 
 **Milestone:** M13 — Dashboard Polish
-**Status:** review
+**Status:** done
 **Depends on:** none for code (independent of phases 01–06; touches the Tasks panel
 builder and the `StatusSummary` task capture — neither changed by 01–06). The
 `TaskUpdate` substrate and the `tasks_total/done/active` counts already exist (M12
@@ -548,3 +548,25 @@ $ grep -n '☑\|☐\|▶\|█\|░' mcp/src/dashboard/panels.rs | head -20
 - Gauge color is **progress-oriented** (green = near/at done, grey = no progress), which is a deliberate inversion of the context gauge's **usage-oriented** colors (red = near full). This was intentional per the spec's color table — a freshly-seeded task list (0% done) is neutral, not alarming red.
 - `task_update` test helper in `status.rs` was changed from 2-arg `(id, state)` to 3-arg `(id, title, state)` to support the new title-capture test. All existing callers were updated.
 - Deleted `tasks_lines_shows_counts` and `tasks_lines_derives_pending` tests (old format), kept `tasks_lines_empty_placeholder` (unchanged behavior).
+
+### Review verdict — 2026-06-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — only `mcp/src/status.rs` + `mcp/src/dashboard/panels.rs`
+  (plus this phase doc + the README row) touched; no `render.rs`/`filter.rs`/
+  `transcript.rs`/`Cargo.toml`/`SessionEvent`/config edit, and `format_status`'s CLI
+  text path was correctly left alone.
+- **Calibration:** none. Clean 65-turn first-try with full bookkeeping (status flip +
+  Update Log + single `feat:` commit `9e50f24`). All four gates re-run green
+  independently (725 executor + 339 mcp pass, 0 failed). Production clean of new
+  `unwrap`/`expect`/`panic`/`unsafe`/`#[allow]` (the `status.rs:125`
+  `prev_rec_ts.unwrap()` is pre-existing and `is_some_and`-guarded; all flagged
+  `panels.rs` unwraps are test-only). Load-bearing tests confirmed mutation-resistant:
+  `tasks_gauge_line_fraction_and_fill` (3/8 → "38%" + 4 `█`; a `floor` fill or wrong
+  divisor fails) and `summarize_captures_task_titles_in_order` (pins first-seen order +
+  last-write-wins + title retention — a HashMap-backed or `..`-dropping impl fails it).
+  The progress-oriented gauge color inversion (vs the context gauge's red floor) is
+  intentional per spec and noted by the executor. E2E correctly declared N/A (TUI, no
+  headless harness — consistent with prior M8/M10/M12 + M13 dashboard-panel phases).
