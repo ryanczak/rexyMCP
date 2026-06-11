@@ -811,3 +811,13 @@ The project plan. Each entry becomes a milestone with its own
     grey. Pure presentation layer for phases 01–02; phase 03 adds one optional
     `String` field to `DashboardConfig`. No new `SessionEvent`, no new
     dependencies. See `docs/dev/milestones/M15-dashboard-polish-2/README.md`.
+
+16. **M16 — Seeder Format Robustness** *(in progress, kicked off 2026-06-10)*.
+    Extends the task seeder (`executor/src/agent/tasks.rs`) to recognize the
+    `### Task N — Title` heading style the architect naturally writes, in
+    addition to the `N. Title` list items and `### N. Title` subheadings M14
+    added. Closes the recurring empty-seed mismatch (M15 phase-02 seeded zero
+    tasks because its Spec used `### Task N —`; the `update_task` tool correctly
+    rejected the executor's improvised id). Single-file, additive — the existing
+    parse paths are untouched. See
+    `docs/dev/milestones/M16-seeder-robustness/README.md`.

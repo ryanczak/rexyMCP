@@ -90,7 +90,7 @@ pub use panels::BudgetRates;
 
 ## Spec
 
-### Task 1 — Add `saved_model` to `DashboardConfig` (`config.rs`)
+### 1. Add `saved_model` to `DashboardConfig` (`config.rs`)
 
 **Critical gotcha:** `String` is not `Copy`. Removing `Copy` from the derive
 is **required** — the compiler will reject `#[derive(Clone, Copy)]` the moment
@@ -132,7 +132,7 @@ impl Default for DashboardConfig {
 The struct has `#[serde(default)]` at the struct level, so existing `rexymcp.toml`
 files that omit `saved_model` will deserialize correctly with `None`.
 
-### Task 2 — Add `model_rates` lookup (`panels.rs`)
+### 2. Add `model_rates` lookup (`panels.rs`)
 
 Add a new public function after the `BudgetRates` struct definition
 (around `panels.rs:28`):
@@ -169,7 +169,7 @@ pub fn model_rates(model: &str) -> Option<BudgetRates> {
 }
 ```
 
-### Task 3 — Re-export `model_rates` from dashboard (`mod.rs`)
+### 3. Re-export `model_rates` from dashboard (`mod.rs`)
 
 At `mcp/src/dashboard/mod.rs`, after the existing `pub use panels::BudgetRates;`
 line (~line 19), add:
@@ -181,7 +181,7 @@ pub use panels::model_rates;
 This lets `main.rs` call `dashboard::model_rates(…)` matching the pattern
 already established for `dashboard::BudgetRates`.
 
-### Task 4 — Use `model_rates` in `BudgetRates` construction (`main.rs`)
+### 4. Use `model_rates` in `BudgetRates` construction (`main.rs`)
 
 Replace `main.rs:369–372`:
 
@@ -208,7 +208,7 @@ let rates = d
 accept it. If `saved_model` is `None`, or is `Some` but unrecognised, the numeric
 rates are used as before.
 
-### Task 5 — Update `init.rs` template
+### 5. Update `init.rs` template
 
 Replace `init.rs:41–42`:
 ```

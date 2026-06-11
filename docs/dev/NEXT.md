@@ -4,11 +4,31 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M15 phase-02 is `done` (approved_first_try, 2026-06-10).
-Phase-03 (the last in-scope M15 phase) is already drafted at
-[phase-03-pricing.md](milestones/M15-dashboard-polish-2/phase-03-pricing.md),
-status `todo`; dispatch it directly with `/rexymcp:dispatch phase-03` or revisit
-the draft with `/rexymcp:architect next`.
+**Active phase:** M16 phase-01 —
+[phase-01-heading-task-formats.md](milestones/M16-seeder-robustness/phase-01-heading-task-formats.md)
+(`in-progress`). Extend the task seeder to recognize `### Task N —` headings.
+
+**📌 M16 — Seeder Format Robustness kicked off (2026-06-10, with the user).**
+Diagnosed from session `6a2a3907`: M15 phase-02 seeded **zero tasks** because its
+`## Spec` used `### Task N — Title` headings, which the seeder doesn't parse
+(`parse_heading_task_line` only handles `### N. Title`). The turn-0 warning fired
+correctly; the executor improvised `update_task(id="02")` and the tool **correctly**
+rejected it (`no task with id "02"`) — the tool is **not** broken. Per the
+"Both" decision: (a) M16 phase-01 broadens the parser (code), and (b) M15
+phase-03's Spec was reformatted to `### N. Title` (convention). Milestone
+[README](milestones/M16-seeder-robustness/README.md) written; `architecture.md`
+§Status #16 added. **Pending after M16:** M15 phase-03 (model-aware pricing, the
+last M15 dashboard phase) — its Spec headings are now seed-compatible regardless
+of M16's landing.
+
+**M15 phase-02 — done** (2026-06-10, approved_first_try): width-aware task title
+truncation. Removed the hardcoded `TASK_TITLE_MAX = 24`; `tasks_lines` now takes
+a `width: usize` param and derives `title_max = width.saturating_sub(2)`;
+`render.rs` computes `tasks_area.width.saturating_sub(2) as usize`. 3 test call
+sites updated; new `tasks_lines_uses_full_panel_width` mutation-verified at review
+(hardcoding 24 fails the width=60 assertion). Clean 40-turn first-try; 731 pass,
+all four gates green on independent re-run; commit `1eced62`. No
+`SessionEvent`/config/`Cargo.toml`.
 
 **M15 phase-02 — done** (2026-06-10, approved_first_try): width-aware task title
 truncation. Removed the hardcoded `TASK_TITLE_MAX = 24`; `tasks_lines` now takes
