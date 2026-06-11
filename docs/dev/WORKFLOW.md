@@ -201,16 +201,23 @@ and line numbers. Quote the relevant code if short.>
 ## Spec
 
 Numbered tasks in execution order. Each names the exact file to edit and the
-change to make. Two formats are accepted by the task seeder and both populate
+change to make. Three formats are accepted by the task seeder and all populate
 the executor's Tasks panel:
 
 - **List item:** `N. **<Task name>** — in \`<path>\`, <change>.` — concise;
   good when each task fits on one line.
-- **Subheading:** `### N. <Task name>` followed by detail paragraphs — good
-  when a task needs code examples or sub-steps.
+- **Numbered subheading:** `### N. <Task name>` followed by detail paragraphs —
+  good when a task needs code examples or sub-steps.
+- **`Task`-prefixed subheading:** `### Task N — <Task name>` followed by detail
+  paragraphs — the same as the numbered subheading, written in the natural
+  "Task N" prose style. The separator after the number may be an em-dash
+  (`—`, U+2014), a colon (`:`), or a dot (`.`).
 
-Both can coexist in the same `## Spec` section. The section ends at the next
-`## ` heading (two hashes + space).
+All three can coexist in the same `## Spec` section. The seeder keys each task by
+its number `N`, so the executor's `update_task(id="N", …)` calls match the seeded
+ids — do **not** key updates by the phase number. The section ends at the next
+`## ` heading (two hashes + space). A decimal like `### 1.5x` is deliberately
+**not** seeded (it is not a task).
 
 1. **<Task name>** — in `<path>`, <change>. <Why if non-obvious.>
 
