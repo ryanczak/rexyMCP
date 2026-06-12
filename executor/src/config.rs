@@ -195,6 +195,18 @@ impl Default for BudgetConfig {
     }
 }
 
+fn expand_tilde(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    } else if s == "~" && let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home);
+    }
+    path
+}
+
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let mut config = Config::default();
@@ -205,6 +217,8 @@ impl Config {
                 toml::from_str(&content).map_err(|e| Error::Config(e.to_string()))?;
             config = loaded;
         }
+
+        config.telemetry.dir = config.telemetry.dir.map(expand_tilde);
 
         Ok(config)
     }
@@ -404,6 +418,35 @@ dir = "/var/lib/rexymcp"
 
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.telemetry.dir, Some(PathBuf::from("/var/lib/rexymcp")));
+    }
+
+    #[test]
+    fn telemetry_tilde_dir_expands_to_home() {
+        let home = std::env::var("HOME").expect("HOME must be set");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[telemetry]
+dir = "~/.rexymcp/telemetry"
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        let expected = PathBuf::from(&home).join(".rexymcp/telemetry");
+        assert_eq!(cfg.telemetry.dir, Some(expected));
     }
 
     #[test]
