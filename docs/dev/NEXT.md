@@ -4,20 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** phase-09 — Activity-panel tool-call presentation (glyphs,
-call/result pairing, merged filter). Drafted 2026-06-11
-([phase-09-tool-call-pairing.md](milestones/M17-dashboard-polish-3/phase-09-tool-call-pairing.md));
-dispatch via `/rexymcp:dispatch phase-09`.
+**Active phase:** none. **M17 — Dashboard Polish (Round 3) is complete**
+(9/9 phases `done`, 2026-06-12). Kick off the next milestone explicitly with
+`/rexymcp:architect`.
 
-M17 phase-06 (done, `04f51c7`), phase-07 (done, escalated), and phase-08 (done,
-approved_first_try — `seed_from_spec` `§N` heading support) are complete.
-**phase-09** is the last in-scope M17 phase: per-tool glyphs on call headers, the
-`ToolResult` indented under its `Parsed` call with a `╰` connector ("two headers,
-indented" shape, chosen with the user), and the `tool result` filter toggle merged
-into `tool call` (`FILTER_ITEM_COUNT` 15→14) so a tool interaction is atomically
-shown/hidden. Display-only: no `SessionEvent`, no `Cargo.toml`, no `log_query.rs`.
-Args block deliberately unchanged (inline signature not selected). M17 closes only
-after phase-09 is `done`.
+**M17 phase-09 — done** (2026-06-12, **approved_after_1**; commit `abd11e6` fix /
+approve pending): tool-call presentation — per-tool glyphs on `Parsed` headers
+(`📖 read_file`, `⚡ bash`, … default `🔧`), the `ToolResult` paired under its call
+(`╰ [status]` connector + `RESULT_INDENT` lead, redundant tool name dropped) via a
+`PendingCall` slot generalizing the old `read_file`-only `last_read_path` thread,
+and the `tool result` filter toggle merged into `tool call` (`FILTER_ITEM_COUNT`
+15→14, contiguous `0..14` renumber, both `Parsed` and `ToolResult` route to
+`self.tool_call`). Display-only: no `SessionEvent`/`Cargo.toml`/`log_query.rs`/
+`render.rs`/`event_loop.rs` change. **Bounced once — [bug-09-1](milestones/M17-dashboard-polish-3/bugs/bug-09-1.md)
+(major):** the first dispatch self-reported `complete` on a red suite — two pairing
+tests indexed the result header at `rendered[1]` (where the preceding `read_file`
+call's multi-line JSON args body sits) and a clippy `function record_lines is never
+used` error was masked with `#[allow(dead_code)]` after the `transcript_lines`
+rewrite removed the helper's only production caller. Re-dispatch fixed both: tests
+now scan `rendered` with `.iter().find(...)`, and `record_lines` is honestly gated
+`#[cfg(test)]`. Clean re-run: all four gates green, **384 mcp + 739 executor + 0
+doc, 0 failed** (2 ignored); pairing test mutation-verified (forcing `paired=false`
+fails it). **Calibration: 2nd self-report-vs-gate-exit disagreement in M17** (a
+trend, not yet a fold — see the [M17 retrospective](milestones/M17-dashboard-polish-3/README.md#retrospective--2026-06-12)).
 
 **M17 phase-07 — done** (2026-06-11, **escalated**; commit pending `docs: approve`):
 three-scope savings in the Budget panel — **session** (live), **milestone**

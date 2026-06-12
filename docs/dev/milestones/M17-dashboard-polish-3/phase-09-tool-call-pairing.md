@@ -1,7 +1,7 @@
 # Phase 09: Activity-panel tool-call presentation — glyphs, call/result pairing, merged filter
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** phase-05 (extension-detected highlighting — the `record_lines_with_lang` / `path_hint` plumbing this phase extends)
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -496,3 +496,42 @@ cargo test                     # 739 passed, 0 failed, 2 ignored
 **End-to-end verification:** N/A — phase ships no runtime-loadable artifact beyond the TUI render. The Activity panel is a ratatui dashboard with no headless harness (consistent with the M13/M15/M17 dashboard-panel precedent); the unit tests above render the real `Line`/`Span` output (`format!("{line}")`) and assert on it, which is the closest verifiable surface.
 
 **Notes for review:** None. Both defects from bug-09-1 are fixed; all gates pass.
+
+### Review verdict — 2026-06-12
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 — [bug-09-1](bugs/bug-09-1.md) (major), both defects fixed in the
+  re-dispatch (`abd11e6`): Defect A (two pairing tests indexed the result header at
+  `rendered[1]`, where the preceding `read_file` call's multi-line JSON args body
+  actually sits — now scan `rendered` with `.iter().find(...)` for the connector /
+  call-header text) and Defect B (`#[allow(dead_code)]` masking a `-D warnings`
+  dead-code error on `record_lines` after its only production caller was removed —
+  now honestly gated `#[cfg(test)]`).
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Independent re-run:** all four gates green — `cargo fmt --all --check` clean,
+  `cargo build` zero warnings, `cargo clippy --all-targets --all-features -- -D
+  warnings` clean, `cargo test` **384 mcp + 739 executor + 0 doc, 0 failed**
+  (2 ignored). filter.rs matches Spec task 1 byte-for-byte (`FILTER_ITEM_COUNT=14`,
+  `ToolResult` arm routes to `self.tool_call`, contiguous `0..14` renumber);
+  transcript.rs implements glyphs, `PendingCall` pairing, `RESULT_INDENT`, and the
+  `paired` parameter per the Spec. No new `unwrap`/`expect`/`panic`/`unsafe`/
+  `#[allow]`/`TODO` in production; the only `.expect()` additions are in test code.
+- **Mutation-check:** forcing `paired=false` in the `ToolResult` summary makes
+  `transcript_lines_pairs_call_and_result` fail (the `.find(|l| l.contains("╰ [ok]"))`
+  → `.expect()` panics), confirming the pairing test is load-bearing. Removing the
+  `#[cfg(test)]` gate (re-adding the bare fn) reproduces `function record_lines is
+  never used` under `-D warnings`, confirming Defect B's fix is the honest form.
+- **Scope deviations:** none. `record_lines` lost its `pub(crate)` and became
+  `#[cfg(test)]` — correct, since the `transcript_lines` rewrite removed its sole
+  production caller, making it a genuine test-only helper. No `log_query.rs` /
+  `render.rs` / `event_loop.rs` / `SessionEvent` / `Cargo.toml` change, as required.
+- **E2E:** N/A per the doc's End-to-end section — TUI render, no headless harness
+  (M13/M15/M17 dashboard-panel precedent); unit tests assert on the real
+  `format!("{line}")` output.
+- **Calibration:** **self-report vs gate-exit disagreement, 2nd in M17** (phase-07
+  was the 1st; phase-07 was an `escalated` takeover, this a clean bounce→re-dispatch).
+  Two occurrences = a **trend**, not yet a fold (WORKFLOW: one is data, two is a
+  trend, three is a fix). Both M17 instances were the executor returning `complete`
+  while `cargo test` was red. Watch for a 3rd; if it lands, fold a "the gate exit
+  code is authoritative — never report `complete` on a red `cargo test`" reminder
+  into the executor-facing reporting guidance (with user sign-off).

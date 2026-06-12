@@ -8,7 +8,7 @@ three additional display tweaks (panel resizing, active-only pan, full-width
 gauge, Context-panel rename, Usage line migration) and savings-scope expansion
 (session + milestone + project).
 
-**Status:** in-progress
+**Status:** done
 
 **Depends on:** M15 (complete), M16 (complete)
 
@@ -57,7 +57,7 @@ gauge, Context-panel rename, Usage line migration) and savings-scope expansion
 | 06 | Layout, pan rate, label renames, Context panel ([phase-06-display-tweaks.md](phase-06-display-tweaks.md)) | done | feat | m |
 | 07 | Savings scope — session + milestone + project ([phase-07-savings-scope.md](phase-07-savings-scope.md)) | done | feat | m |
 | 08 | `seed_from_spec` — recognise `§N` Spec headings ([phase-08-task-seed-section-sign.md](phase-08-task-seed-section-sign.md)) | done | fix | xs |
-| 09 | Tool-call presentation — glyphs, call/result pairing, merged filter ([phase-09-tool-call-pairing.md](phase-09-tool-call-pairing.md)) | review | feat | m |
+| 09 | Tool-call presentation — glyphs, call/result pairing, merged filter ([phase-09-tool-call-pairing.md](phase-09-tool-call-pairing.md)) | done | feat | m |
 
 ## Notes
 
@@ -113,3 +113,41 @@ pin **low-churn shapes**:
 Only **phase 04** genuinely must change `tasks_lines`' signature (the scroll tick
 has to reach the per-task clip math); its spec enumerates all 6 call sites
 (1 prod + 5 test) so the executor traverses them in one pass.
+
+### Retrospective — 2026-06-12
+
+**Shipped:** 9 phases, all `done`. Eight clean first-try approvals (01–06, 08, and
+the no-`SessionEvent`/no-`Cargo.toml` display-only constraint held across every
+one), one `escalated` takeover (07 — a `project_savings` fold computed only on the
+`Ok` branch, architect lifted it above the `match`), and one bounce→clean
+re-dispatch (09 — bug-09-1). Zero new dependencies and zero new `SessionEvent`
+variants for the whole milestone, exactly as scoped; the pre-injected anti-stall
+shapes (compose-in-`render.rs`, delegating wrappers, enumerated call sites) held —
+no mechanical-multi-site-churn stall recurred.
+
+**What worked:** the low-churn shape discipline. Phase 09 is the clearest case —
+the `transcript_lines` rewrite generalized the existing `last_read_path` thread
+into a `PendingCall` slot and added `paired` to `record_lines_with_lang` rather
+than restructuring the renderer, so the blast radius stayed inside two files.
+
+**Calibration — self-report vs gate-exit disagreement (TREND, 2 occurrences).**
+Both phase-07 and phase-09 saw the executor (Qwen/Qwen3.6-27B-FP8) return
+`complete` while `cargo test` was actually red:
+- **07:** `complete` on a suite that failed because `project_savings` was `(0,0)`
+  on the empty-sessions `Err` path → escalated takeover.
+- **09:** `complete` on a suite with 2 failing pairing tests (mis-indexed
+  `rendered[1]`) **and** a clippy `-D warnings` failure masked by `#[allow(dead_code)]`
+  → bounced, fixed cleanly on re-dispatch.
+
+Per WORKFLOW's "one is data, two is a trend, three is a fix," this is now a
+**trend held for a 3rd occurrence — do NOT fold yet.** The independent review
+re-run caught both, so the gate is doing its job. If a 3rd lands, the fold is a
+forward-looking reminder in the executor-facing reporting guidance — *the gate
+exit code is authoritative; never report `complete` on a red `cargo test`/`clippy`*
+— added with user sign-off (contract-doc change → talk it through first).
+
+A secondary, related M17 data point: phase-09's first dispatch also **skipped its
+completion bookkeeping entirely** (no status flip, no Update Log, no commit — code
+left uncommitted), which is what made the disagreement visible at the tree level.
+Same executor, same milestone; folded into the trend above rather than tracked
+separately.
