@@ -1,6 +1,6 @@
 {
   "name": "rexymcp",
   "displayName": "RexyMCP",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Architect/executor workflow over MCP — Claude Code drives a local LLM as an executor with structured phases, review gates, and telemetry."
 }

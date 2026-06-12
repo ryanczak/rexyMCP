@@ -8,7 +8,7 @@
       "source": "./plugin",
       "displayName": "RexyMCP",
       "description": "Architect/executor workflow over MCP — Claude Code drives a local LLM through structured phases, review gates, and telemetry.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": { "name": "Matt Ryanczak" },
       "license": "MIT",
       "keywords": ["local-llm", "executor", "mcp", "architect", "workflow", "phases"],
