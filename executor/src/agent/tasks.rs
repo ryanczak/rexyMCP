@@ -92,6 +92,25 @@ fn extract_title(rest: &str) -> String {
 fn parse_heading_task_line(line: &str) -> Option<Task> {
     let rest = line.trim().strip_prefix("### ")?;
 
+    // `### §N <sep> Title` where `§` is U+00A7 (SECTION SIGN) and <sep> is
+    // em-dash, colon, or dot — the architect's natural §-numbered section style.
+    if let Some(after_sign) = rest.strip_prefix('§') {
+        let (digits, title_part) = after_sign.split_once(['\u{2014}', ':', '.'])?;
+        let digits = digits.trim();
+        let title = title_part.trim();
+        if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        if title.is_empty() {
+            return None;
+        }
+        return Some(Task {
+            id: digits.to_string(),
+            title: title.to_string(),
+            state: TaskState::Pending,
+        });
+    }
+
     // `### Task N <sep> Title` where <sep> is em-dash, colon, or dot.
     if let Some(after_task) = rest.strip_prefix("Task ") {
         let (digits, title_part) = after_task.split_once(['\u{2014}', ':', '.'])?;
@@ -301,5 +320,70 @@ mod tests {
         assert!(parse_heading_task_line("### Task 1 — ").is_none());
         // Non-numeric "id".
         assert!(parse_heading_task_line("### Task one — Title").is_none());
+    }
+
+    #[test]
+    fn parse_heading_task_line_accepts_section_sign_separators() {
+        // em-dash (the architect's standard)
+        let dash = parse_heading_task_line("### §1 — Em dash title").unwrap();
+        assert_eq!(dash.id, "1");
+        assert_eq!(dash.title, "Em dash title");
+
+        // colon separator
+        let colon = parse_heading_task_line("### §2: Colon title").unwrap();
+        assert_eq!(colon.id, "2");
+        assert_eq!(colon.title, "Colon title");
+
+        // dot separator
+        let dot = parse_heading_task_line("### §3. Dot title").unwrap();
+        assert_eq!(dot.id, "3");
+        assert_eq!(dot.title, "Dot title");
+
+        // multi-digit section number
+        let ten = parse_heading_task_line("### §10 — Tenth").unwrap();
+        assert_eq!(ten.id, "10");
+        assert_eq!(ten.title, "Tenth");
+    }
+
+    #[test]
+    fn parse_heading_task_line_rejects_malformed_section_sign() {
+        // Empty title after separator.
+        assert!(parse_heading_task_line("### §1 — ").is_none());
+        // Non-numeric section number.
+        assert!(parse_heading_task_line("### §one — Title").is_none());
+        // No separator at all.
+        assert!(parse_heading_task_line("### §1 no separator").is_none());
+        // Empty section number (bare § with no digits).
+        assert!(parse_heading_task_line("### § — Title").is_none());
+    }
+
+    #[test]
+    fn seed_from_spec_parses_section_sign_headings() {
+        let doc = "\
+## Spec\n\
+\n\
+### §1 — Add phase_doc_path to PhaseInput\n\
+\n\
+Some detail.\n\
+\n\
+### §2 — Add phase_doc_path to PhaseRun\n\
+\n\
+More detail.\n\
+\n\
+### §3 — Thread telemetry_dir through the stack\n\
+\n\
+## Acceptance criteria\n";
+
+        let tasks = seed_from_spec(doc);
+        assert_eq!(tasks.len(), 3, "one task per §N heading: {tasks:?}");
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "Add phase_doc_path to PhaseInput");
+        assert_eq!(tasks[1].id, "2");
+        assert_eq!(tasks[1].title, "Add phase_doc_path to PhaseRun");
+        assert_eq!(tasks[2].id, "3");
+        assert_eq!(tasks[2].title, "Thread telemetry_dir through the stack");
+        for t in &tasks {
+            assert_eq!(t.state, TaskState::Pending);
+        }
     }
 }
