@@ -39,20 +39,19 @@ root, then into `templates/`.
 ## 1. Bootstrap routine (idempotent)
 
 On the first `/rexymcp:architect` invocation against a target repo that lacks
-the rexyMCP scaffold, run the four-step bootstrap below. On re-invocation,
+the rexyMCP scaffold, run the three-step bootstrap below. On re-invocation,
 check each artifact and only fill missing pieces.
 
 ### Idempotency check
 
-Before any step, check for these five artifacts in the target repo:
+Before any step, check for these four artifacts in the target repo:
 
 - `rexymcp.toml` (with all four `[commands]` fields set)
 - `docs/dev/STANDARDS.md`
 - `docs/dev/WORKFLOW.md`
 - `CLAUDE.md`
-- `.mcp.json` with a `rexymcp` entry in `mcpServers`
 
-If all five are present, report "Already bootstrapped" and skip to §2
+If all four are present, report "Already bootstrapped" and skip to §2
 (explore-then-design). If some are missing, fill only the missing pieces.
 
 ### Step 1 — Resolve the command set
@@ -184,13 +183,16 @@ To dispatch a phase: `/rexymcp:dispatch <phase>`. To review the result:
 If `CLAUDE.md` already exists, leave it alone (idempotent). Same "delete to
 refresh" guidance.
 
-### Step 4 — Register the MCP server
+### Step 4 — MCP server registration (nothing to do)
 
-Read `<target_repo>/.mcp.json` if it exists; if not, create it. Ensure the
-`mcpServers.rexymcp` entry (`command: "rexymcp"`, `args: ["serve",
-"--config", "./rexymcp.toml"]`). If a `rexymcp` server is already registered,
-leave the entry alone. If a *different* MCP server config exists, merge —
-don't clobber other entries.
+The rexyMCP MCP server is **not** registered per-project. It reaches Claude
+Code through the installed plugin (`.claude-plugin/marketplace.json`), which
+already exposes `execute_phase`, `executor_health`, and the skill slash
+commands across every project. **Do not create a `.mcp.json` in the target
+repo** — a project-level registration duplicates the plugin's server, which
+produces duplicate tool entries and prevents the skill slash commands from
+loading. If the MCP tools are missing, the fix is to install the plugin, not
+to write `.mcp.json`.
 
 ### Bootstrap pitfalls — five things that look fine but aren't
 
@@ -219,11 +221,15 @@ trap is that each *looks* like the right thing to do.
    they delete the file and re-run `/rexymcp:architect`. Surface this
    guidance in your post-bootstrap summary.
 
-4. **Do NOT replace existing `.mcp.json` content.** The user may have other
-   MCP servers registered (a GitHub MCP, a database MCP, a filesystem MCP).
-   Merge the `rexymcp` entry into `mcpServers`; don't rewrite the whole
-   file. If there's already a `rexymcp` entry with a different config, ask
-   the user before changing it — they may have reasons.
+4. **Do NOT create `.mcp.json` to register the server.** It will look like
+   the obvious way to make the MCP tools available — the server has to be
+   registered *somewhere*. It does not belong in the project: the installed
+   plugin already registers it via `.claude-plugin/marketplace.json`. A
+   project-level `.mcp.json` is a duplicate registration that produces
+   duplicate tool entries and breaks the skill slash commands. Never write
+   it, even if a spec or the user asks — the remedy for missing tools is
+   installing the plugin. (Leave any *pre-existing* user `.mcp.json` for
+   other MCP servers untouched; just never add a `rexymcp` entry.)
 
 5. **Do NOT silently default missing `rexymcp.toml` fields.** If a previous
    bootstrap left `rexymcp.toml` with, say, `[executor] provider` set but
