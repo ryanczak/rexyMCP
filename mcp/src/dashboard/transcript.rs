@@ -13,6 +13,31 @@ use super::highlight::{
 /// to full multi-line). Keeps one record = one line.
 pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 
+/// Width of the indent gutter for a paired tool-result header (matches the
+/// rendered width of a 2-cell emoji glyph plus its trailing space).
+pub(crate) const RESULT_INDENT: usize = 3;
+
+/// Glyph shown in front of a tool-call header for fast visual scanning.
+fn tool_glyph(name: &str) -> &'static str {
+    match name {
+        "read_file" => "📖",
+        "write_file" => "✏️",
+        "patch" => "🩹",
+        "bash" => "⚡",
+        "search" => "🔍",
+        "find_files" => "📁",
+        "symbols" => "🔗",
+        "update_task" => "✅",
+        _ => "🔧",
+    }
+}
+
+/// Tracks the most-recent tool call so a following result can be paired with it.
+struct PendingCall {
+    name: String,
+    path: Option<String>,
+}
+
 /// Build all transcript lines for the given records, in chronological order.
 /// Filters records through `filter`. Returns a placeholder when all records are
 /// filtered out.
@@ -26,35 +51,50 @@ pub(crate) fn transcript_lines(
     }
     let base_ts = records.first().map(|r| r.ts).unwrap_or(0);
     let mut out: Vec<Line<'static>> = Vec::new();
-    let mut last_read_path: Option<String> = None;
+    let mut pending: Option<PendingCall> = None;
     for r in &visible {
-        // Capture the path from a read_file call so the matching result can use it.
-        if let SessionEvent::Parsed { tool_call } = &r.event
-            && tool_call.name == "read_file"
-        {
-            last_read_path = tool_call
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
-        }
-        let hint = match &r.event {
-            SessionEvent::ToolResult { name, .. } if name == "read_file" => {
-                last_read_path.as_deref()
+        let mut lead: Option<Span<'static>> = None;
+        let mut paired = false;
+        let mut hint: Option<String> = None;
+        match &r.event {
+            SessionEvent::Parsed { tool_call } => {
+                let path = if tool_call.name == "read_file" {
+                    tool_call
+                        .arguments
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                } else {
+                    None
+                };
+                lead = Some(Span::raw(format!("{} ", tool_glyph(&tool_call.name))));
+                pending = Some(PendingCall {
+                    name: tool_call.name.clone(),
+                    path,
+                });
             }
-            _ => None,
-        };
-        let mut lines = if let Some(h) = hint {
-            record_lines_with_lang(r, Some(h))
-        } else {
-            record_lines(r)
-        };
-        if matches!(&r.event, SessionEvent::ToolResult { name, .. } if name == "read_file") {
-            last_read_path = None; // consume it
+            SessionEvent::ToolResult { name, .. } => {
+                if let Some(p) = &pending
+                    && &p.name == name
+                {
+                    paired = true;
+                    if name == "read_file" {
+                        hint = p.path.clone();
+                    }
+                    lead = Some(Span::raw(" ".repeat(RESULT_INDENT)));
+                }
+                pending = None;
+            }
+            _ => {}
         }
-        // Prepend the relative-timestamp header span (unchanged logic).
+
+        let mut lines = record_lines_with_lang(r, hint.as_deref(), paired);
+
         if let Some(header) = lines.first_mut() {
-            let mut spans = Vec::with_capacity(header.spans.len() + 1);
+            let mut spans = Vec::with_capacity(header.spans.len() + 2);
+            if let Some(lead) = lead {
+                spans.push(lead);
+            }
             spans.push(Span::styled(
                 format!("[{}] ", relative_ts(r.ts, base_ts)),
                 Style::new().fg(Color::Rgb(180, 150, 50)),
@@ -70,15 +110,19 @@ pub(crate) fn transcript_lines(
 /// Render one record as one or more transcript lines (header + optional body),
 /// styled by event type. Completion and ToolResult expand their content across
 /// multiple lines; all other events are a single styled header line.
-pub(crate) fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
-    record_lines_with_lang(rec, None)
+#[cfg(test)]
+fn record_lines(rec: &SessionRecord) -> Vec<Line<'static>> {
+    record_lines_with_lang(rec, None, false)
 }
 
 /// As `record_lines`, but a `read_file` `ToolResult` body is highlighted using
-/// the grammar for `path_hint`'s extension when provided.
+/// the grammar for `path_hint`'s extension when provided. When `paired` is
+/// `true`, the `ToolResult` header renders as a paired connector (`╰ [ok]`)
+/// instead of the standalone `tool {name} [{status}]` form.
 pub(crate) fn record_lines_with_lang(
     rec: &SessionRecord,
     path_hint: Option<&str>,
+    paired: bool,
 ) -> Vec<Line<'static>> {
     // (header_summary, header_color, bold, body_lines)
     let (summary, color, bold, body): (String, Color, bool, Option<Vec<Line<'static>>>) =
@@ -131,8 +175,13 @@ pub(crate) fn record_lines_with_lang(
             } => {
                 let status = if *succeeded { "ok" } else { "FAIL" };
                 let color = if *succeeded { Color::Green } else { Color::Red };
+                let summary = if paired {
+                    format!("╰ [{status}]")
+                } else {
+                    format!("tool {name} [{status}]")
+                };
                 (
-                    format!("tool {name} [{status}]"),
+                    summary,
                     color,
                     false,
                     Some(match path_hint {
@@ -853,7 +902,7 @@ mod tests {
             },
         );
         let lines = record_lines(&rec);
-        let lines_with_lang = record_lines_with_lang(&rec, None);
+        let lines_with_lang = record_lines_with_lang(&rec, None, false);
         assert_eq!(
             lines.len(),
             lines_with_lang.len(),
@@ -924,6 +973,144 @@ mod tests {
         assert!(
             lines.iter().any(|l| format!("{l}").contains("read_file")),
             "should have a read_file tool result line"
+        );
+    }
+
+    #[test]
+    fn tool_glyph_maps_known_and_default() {
+        assert_eq!(tool_glyph("read_file"), "📖");
+        assert_eq!(tool_glyph("bash"), "⚡");
+        assert_eq!(tool_glyph("update_task"), "✅");
+        assert_eq!(tool_glyph("nope"), "🔧");
+        // Distinct values — not a single-glyph impl
+        assert_ne!(tool_glyph("read_file"), tool_glyph("bash"));
+    }
+
+    #[test]
+    fn transcript_lines_pairs_call_and_result() {
+        let records = vec![
+            rec(
+                0,
+                0,
+                SessionEvent::Parsed {
+                    tool_call: rexymcp_executor::parser::ToolCall {
+                        name: "read_file".into(),
+                        arguments: serde_json::json!({"path": "foo.rs"}),
+                        origin: rexymcp_executor::parser::Origin::Native,
+                    },
+                },
+            ),
+            rec(
+                1,
+                0,
+                SessionEvent::ToolResult {
+                    name: "read_file".into(),
+                    succeeded: true,
+                    output_preview: "fn x(){}".into(),
+                },
+            ),
+        ];
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+        let rendered: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+
+        // The call header should contain the glyph and the call name
+        let call_header = rendered
+            .iter()
+            .find(|l| l.contains("→ call read_file"))
+            .expect("should have a call header line");
+        assert!(
+            call_header.contains("📖"),
+            "call header should contain read_file glyph: {call_header}"
+        );
+
+        // The result header should contain the paired connector and not the tool name
+        let result_header = rendered
+            .iter()
+            .find(|l| l.contains("╰ [ok]"))
+            .expect("should have a paired result header line");
+        assert!(
+            !result_header.contains("tool read_file"),
+            "result header should not contain 'tool read_file': {result_header}"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_orphan_result_is_standalone() {
+        let records = vec![rec(
+            0,
+            0,
+            SessionEvent::ToolResult {
+                name: "read_file".into(),
+                succeeded: true,
+                output_preview: "content".into(),
+            },
+        )];
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+        let rendered: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let header = &rendered[0];
+        assert!(
+            header.contains("tool read_file [ok]"),
+            "orphan result should render standalone: {header}"
+        );
+        assert!(
+            !header.contains("╰"),
+            "orphan result should not contain paired connector: {header}"
+        );
+    }
+
+    #[test]
+    fn transcript_lines_pairs_only_matching_name() {
+        let records = vec![
+            rec(
+                0,
+                0,
+                SessionEvent::Parsed {
+                    tool_call: rexymcp_executor::parser::ToolCall {
+                        name: "read_file".into(),
+                        arguments: serde_json::json!({"path": "foo.rs"}),
+                        origin: rexymcp_executor::parser::Origin::Native,
+                    },
+                },
+            ),
+            rec(
+                1,
+                0,
+                SessionEvent::ToolResult {
+                    name: "bash".into(),
+                    succeeded: false,
+                    output_preview: "error".into(),
+                },
+            ),
+        ];
+        let lines = transcript_lines(&records, &ActivityFilter::default());
+        let rendered: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        // The bash result should be standalone (names don't match)
+        let result_header = rendered
+            .iter()
+            .find(|l| l.contains("tool bash [FAIL]"))
+            .expect("should have a standalone bash result header line");
+        assert!(
+            !result_header.contains("╰"),
+            "mismatched result should not contain paired connector: {result_header}"
+        );
+    }
+
+    #[test]
+    fn record_lines_tool_result_unpaired_unchanged() {
+        let rec = rec(
+            0,
+            0,
+            SessionEvent::ToolResult {
+                name: "bash".into(),
+                succeeded: false,
+                output_preview: "error".into(),
+            },
+        );
+        let lines = record_lines(&rec);
+        let header = format!("{}", lines[0]);
+        assert!(
+            header.contains("tool bash [FAIL]"),
+            "unpaired result should render unchanged: {header}"
         );
     }
 }

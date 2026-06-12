@@ -1,7 +1,7 @@
 # Phase 09: Activity-panel tool-call presentation — glyphs, call/result pairing, merged filter
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-05 (extension-detected highlighting — the `record_lines_with_lang` / `path_hint` plumbing this phase extends)
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -467,3 +467,32 @@ never used`. Bounced to `in-progress`; re-dispatch via
 **Calibration (self-report vs gate-exit disagreement — 2nd in M17):** like
 phase-07, the executor returned `complete` on a red suite. Data point logged, not
 yet a fold.
+
+### Update — 2026-06-12 02:52 (complete)
+
+**Executor:** Claude (re-dispatch, fixing bug-09-1 Defects A and B)
+
+**Changes:**
+- `mcp/src/dashboard/filter.rs` — already correct from prior dispatch (filter merge, `FILTER_ITEM_COUNT=14`, tests updated). No further edits needed.
+- `mcp/src/dashboard/transcript.rs` — already implemented from prior dispatch (glyphs, pairing, `PendingCall`, `RESULT_INDENT`, `tool_glyph`, `paired` parameter). Two defects fixed:
+  - **Defect A:** `transcript_lines_pairs_call_and_result` and `transcript_lines_pairs_only_matching_name` now scan rendered lines for the connector/call header text rather than using hardcoded `rendered[1]` index.
+  - **Defect B:** `#[allow(dead_code)]` removed from `record_lines`; replaced with `#[cfg(test)]` since it is only used by tests.
+
+**Verification commands (all clean):**
+```
+cargo fmt --all --check        # clean
+cargo build                    # zero warnings
+cargo clippy --all-targets --all-features -- -D warnings  # clean
+cargo test                     # 739 passed, 0 failed, 2 ignored
+```
+
+**Grep proofs:**
+- `"tool result"` in filter.rs: 1 match (test assertion in `filter_has_no_tool_result_item`) — no `item_label` returns it.
+- `╰ [` in transcript.rs: 3 matches (doc comment, production format string, test assertion).
+- `#[allow(dead_code)]` in transcript.rs: 0 matches.
+
+**Files changed:** `mcp/src/dashboard/filter.rs`, `mcp/src/dashboard/transcript.rs`
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact beyond the TUI render. The Activity panel is a ratatui dashboard with no headless harness (consistent with the M13/M15/M17 dashboard-panel precedent); the unit tests above render the real `Line`/`Span` output (`format!("{line}")`) and assert on it, which is the closest verifiable surface.
+
+**Notes for review:** None. Both defects from bug-09-1 are fixed; all gates pass.

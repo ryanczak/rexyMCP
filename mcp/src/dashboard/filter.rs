@@ -1,6 +1,6 @@
 use rexymcp_executor::store::sessions::event::SessionEvent;
 
-pub(crate) const FILTER_ITEM_COUNT: usize = 15;
+pub(crate) const FILTER_ITEM_COUNT: usize = 14;
 
 /// Per-event-type visibility toggles for the Activity pane.
 /// All enabled by default except `progress` (too noisy).
@@ -11,7 +11,6 @@ pub(crate) struct ActivityFilter {
     pub(crate) completion: bool,
     pub(crate) tool_call: bool,
     pub(crate) parse_failed: bool,
-    pub(crate) tool_result: bool,
     pub(crate) verify: bool,
     pub(crate) hard_fail: bool,
     pub(crate) progress: bool,
@@ -31,7 +30,6 @@ impl Default for ActivityFilter {
             completion: true,
             tool_call: true,
             parse_failed: true,
-            tool_result: true,
             verify: true,
             hard_fail: true,
             progress: false,
@@ -53,7 +51,7 @@ impl ActivityFilter {
             SessionEvent::Completion { .. } => self.completion,
             SessionEvent::Parsed { .. } => self.tool_call,
             SessionEvent::ParseFailed { .. } => self.parse_failed,
-            SessionEvent::ToolResult { .. } => self.tool_result,
+            SessionEvent::ToolResult { .. } => self.tool_call,
             SessionEvent::Verify { .. } => self.verify,
             SessionEvent::HardFail { .. } => self.hard_fail,
             SessionEvent::Progress { .. } => self.progress,
@@ -73,16 +71,15 @@ impl ActivityFilter {
             2 => self.completion = !self.completion,
             3 => self.tool_call = !self.tool_call,
             4 => self.parse_failed = !self.parse_failed,
-            5 => self.tool_result = !self.tool_result,
-            6 => self.verify = !self.verify,
-            7 => self.hard_fail = !self.hard_fail,
-            8 => self.progress = !self.progress,
-            9 => self.metrics = !self.metrics,
-            10 => self.compaction = !self.compaction,
-            11 => self.output_filtered = !self.output_filtered,
-            12 => self.read_evicted = !self.read_evicted,
-            13 => self.read_deduped = !self.read_deduped,
-            14 => self.task_update = !self.task_update,
+            5 => self.verify = !self.verify,
+            6 => self.hard_fail = !self.hard_fail,
+            7 => self.progress = !self.progress,
+            8 => self.metrics = !self.metrics,
+            9 => self.compaction = !self.compaction,
+            10 => self.output_filtered = !self.output_filtered,
+            11 => self.read_evicted = !self.read_evicted,
+            12 => self.read_deduped = !self.read_deduped,
+            13 => self.task_update = !self.task_update,
             _ => {}
         }
     }
@@ -94,16 +91,15 @@ impl ActivityFilter {
             2 => self.completion,
             3 => self.tool_call,
             4 => self.parse_failed,
-            5 => self.tool_result,
-            6 => self.verify,
-            7 => self.hard_fail,
-            8 => self.progress,
-            9 => self.metrics,
-            10 => self.compaction,
-            11 => self.output_filtered,
-            12 => self.read_evicted,
-            13 => self.read_deduped,
-            14 => self.task_update,
+            5 => self.verify,
+            6 => self.hard_fail,
+            7 => self.progress,
+            8 => self.metrics,
+            9 => self.compaction,
+            10 => self.output_filtered,
+            11 => self.read_evicted,
+            12 => self.read_deduped,
+            13 => self.task_update,
             _ => false,
         }
     }
@@ -115,16 +111,15 @@ impl ActivityFilter {
             2 => "completion",
             3 => "tool call",
             4 => "parse fail",
-            5 => "tool result",
-            6 => "verify",
-            7 => "hard fail",
-            8 => "progress",
-            9 => "metrics",
-            10 => "compaction",
-            11 => "output filtered",
-            12 => "read evicted",
-            13 => "read deduped",
-            14 => "task update",
+            5 => "verify",
+            6 => "hard fail",
+            7 => "progress",
+            8 => "metrics",
+            9 => "compaction",
+            10 => "output filtered",
+            11 => "read evicted",
+            12 => "read deduped",
+            13 => "task update",
             _ => "?",
         }
     }
@@ -165,7 +160,6 @@ mod tests {
         assert!(f.completion);
         assert!(f.tool_call);
         assert!(f.parse_failed);
-        assert!(f.tool_result);
         assert!(f.verify);
         assert!(f.hard_fail);
         assert!(f.metrics);
@@ -197,9 +191,9 @@ mod tests {
     fn filter_toggle_flips_field() {
         let mut f = ActivityFilter::default();
         assert!(!f.progress);
-        f.toggle(8);
+        f.toggle(7); // progress is now index 7
         assert!(f.progress);
-        f.toggle(8);
+        f.toggle(7);
         assert!(!f.progress);
     }
 
@@ -217,5 +211,63 @@ mod tests {
         fs.cursor = 0;
         fs.cursor = (fs.cursor + FILTER_ITEM_COUNT - 1) % FILTER_ITEM_COUNT;
         assert_eq!(fs.cursor, FILTER_ITEM_COUNT - 1);
+    }
+
+    #[test]
+    fn filter_merges_tool_result_into_tool_call() {
+        let parsed = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "read_file".into(),
+                arguments: serde_json::json!({}),
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let result = SessionEvent::ToolResult {
+            name: "read_file".into(),
+            succeeded: true,
+            output_preview: "content".into(),
+        };
+
+        // With tool_call off, both Parsed and ToolResult are hidden
+        let f = ActivityFilter {
+            tool_call: false,
+            ..Default::default()
+        };
+        assert!(
+            !f.allows(&parsed),
+            "Parsed should be hidden when tool_call is false"
+        );
+        assert!(
+            !f.allows(&result),
+            "ToolResult should be hidden when tool_call is false"
+        );
+
+        // With tool_call on, both are shown
+        let f = ActivityFilter {
+            tool_call: true,
+            ..Default::default()
+        };
+        assert!(
+            f.allows(&parsed),
+            "Parsed should be shown when tool_call is true"
+        );
+        assert!(
+            f.allows(&result),
+            "ToolResult should be shown when tool_call is true"
+        );
+    }
+
+    #[test]
+    fn filter_has_no_tool_result_item() {
+        assert_eq!(FILTER_ITEM_COUNT, 14);
+        for i in 0..FILTER_ITEM_COUNT {
+            assert_ne!(
+                ActivityFilter::item_label(i),
+                "tool result",
+                "index {i} should not be 'tool result'"
+            );
+        }
+        assert_eq!(ActivityFilter::item_label(3), "tool call");
+        assert_eq!(ActivityFilter::item_label(7), "progress");
     }
 }

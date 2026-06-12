@@ -57,7 +57,7 @@ gauge, Context-panel rename, Usage line migration) and savings-scope expansion
 | 06 | Layout, pan rate, label renames, Context panel ([phase-06-display-tweaks.md](phase-06-display-tweaks.md)) | done | feat | m |
 | 07 | Savings scope — session + milestone + project ([phase-07-savings-scope.md](phase-07-savings-scope.md)) | done | feat | m |
 | 08 | `seed_from_spec` — recognise `§N` Spec headings ([phase-08-task-seed-section-sign.md](phase-08-task-seed-section-sign.md)) | done | fix | xs |
-| 09 | Tool-call presentation — glyphs, call/result pairing, merged filter ([phase-09-tool-call-pairing.md](phase-09-tool-call-pairing.md)) | in-progress | feat | m |
+| 09 | Tool-call presentation — glyphs, call/result pairing, merged filter ([phase-09-tool-call-pairing.md](phase-09-tool-call-pairing.md)) | review | feat | m |
 
 ## Notes
 
