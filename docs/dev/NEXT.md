@@ -4,13 +4,12 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — phase-08 (Activity-panel tool-call presentation) to be
-drafted via `/rexymcp:architect next`.
+**Active phase:** `docs/dev/milestones/M17-dashboard-polish-3/phase-08-task-seed-section-sign.md`
 
-M17 phase-06 (done, `04f51c7`) and phase-07 (done, escalated — see below) are
-complete. One more in-scope phase remains: **phase-08**, focused on improving the
-presentation of tool calls in the Activity panel. Do **not** close M17 — phase-08
-is still in scope and not yet drafted.
+M17 phase-06 (done, `04f51c7`) and phase-07 (done, escalated) are complete.
+Phase-08 is a micro-fix (`seed_from_spec` `§N` heading support, xs); phase-09
+will be the Activity-panel tool-call presentation work. Do **not** close M17 —
+phases 08 and 09 are still in scope.
 
 **M17 phase-07 — done** (2026-06-11, **escalated**; commit pending `docs: approve`):
 three-scope savings in the Budget panel — **session** (live), **milestone**
