@@ -207,6 +207,11 @@ async fn main() -> anyhow::Result<()> {
             let standards_path = repo.join("docs/dev/STANDARDS.md");
             let standards = std::fs::read_to_string(&standards_path).unwrap_or_default();
 
+            let project_id =
+                rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
+                    .ok()
+                    .and_then(|c| c.project.id);
+
             let result = runner::run_phase(&runner::RunPhaseConfig {
                 cfg: &cfg,
                 phase_doc_path: &phase_doc,
@@ -215,6 +220,7 @@ async fn main() -> anyhow::Result<()> {
                 model_override: model.as_deref(),
                 telemetry_dir: None,
                 progress: None,
+                project_id,
                 test_client: None,
             })
             .await?;
@@ -376,7 +382,10 @@ async fn main() -> anyhow::Result<()> {
                     output_per_mtok: d.saved_output_per_mtok,
                 });
             let telemetry_dir = cfg.telemetry.dir.as_deref();
-            dashboard::run_dashboard(&repo, session.as_deref(), rates, telemetry_dir)
+            let project_id = rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
+                .ok()
+                .and_then(|c| c.project.id);
+            dashboard::run_dashboard(&repo, session.as_deref(), rates, telemetry_dir, project_id)
                 .unwrap_or_else(|e| {
                     eprintln!("dashboard error: {e}");
                     std::process::exit(1);

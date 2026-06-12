@@ -143,6 +143,17 @@ pub struct PhaseRun {
     /// produced no reclaim/metrics events.
     #[serde(default)]
     pub context_efficiency: ContextEfficiency,
+    /// UUID from the target project's `[project] id` in `rexymcp.toml`. Used to
+    /// scope telemetry to a specific project regardless of filesystem path.
+    /// `None` for legacy records and projects that haven't run `rexymcp init`.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Milestone directory slug (e.g. `"M17-dashboard-polish-3"`) derived from
+    /// the phase doc path. Used for milestone-scoped savings queries without
+    /// relying on path substring matching.
+    /// `None` when the phase doc is not inside a milestone directory.
+    #[serde(default)]
+    pub milestone_id: Option<String>,
 }
 
 /// Append one `PhaseRun` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`,
@@ -361,6 +372,8 @@ mod tests {
             length_finish_rate: None,
             context_window: None,
             context_efficiency: Default::default(),
+            project_id: None,
+            milestone_id: None,
         }
     }
 

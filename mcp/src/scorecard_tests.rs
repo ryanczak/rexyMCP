@@ -35,6 +35,8 @@ fn make_run(
         length_finish_rate: None,
         context_window: None,
         context_efficiency: Default::default(),
+        project_id: None,
+        milestone_id: None,
     }
 }
 
@@ -422,6 +424,8 @@ fn make_run_with_settings(
         length_finish_rate,
         context_window: None,
         context_efficiency: Default::default(),
+        project_id: None,
+        milestone_id: None,
     }
 }
 

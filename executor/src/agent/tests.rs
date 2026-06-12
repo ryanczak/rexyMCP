@@ -34,6 +34,8 @@ fn input() -> PhaseInput {
         phase: PHASE_SLUG.to_string(),
         tags: vec!["rust".to_string(), "feature".to_string()],
         phase_doc_path: "docs/dev/milestones/M0-test/phase-01-test.md".to_string(),
+        project_id: None,
+        milestone_id: None,
     }
 }
 

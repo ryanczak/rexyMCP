@@ -127,6 +127,8 @@ pub(super) fn emit_phase_run(
             .then(|| metrics.length_finishes as f64 / metrics.total_finishes as f64),
         context_window: deps.context_window,
         context_efficiency,
+        project_id: input.project_id.clone(),
+        milestone_id: input.milestone_id.clone(),
     };
     let _ = telemetry::append(dir, &run);
 }

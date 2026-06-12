@@ -97,6 +97,10 @@ pub(crate) async fn execute_phase_inner_with_client(
 
     let telemetry_dir = cfg.telemetry.dir.as_deref();
 
+    let project_id = rexymcp_executor::config::Config::load(&repo_path.join("rexymcp.toml"))
+        .ok()
+        .and_then(|c| c.project.id);
+
     let result = runner::run_phase(&runner::RunPhaseConfig {
         cfg: &cfg,
         phase_doc_path: &phase_doc_path,
@@ -105,6 +109,7 @@ pub(crate) async fn execute_phase_inner_with_client(
         model_override: params.model.as_deref(),
         telemetry_dir,
         progress,
+        project_id,
         test_client,
     })
     .await

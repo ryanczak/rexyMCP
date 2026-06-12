@@ -72,6 +72,12 @@ pub struct PhaseInput {
     /// Full absolute path to the phase doc, recorded in `PhaseRun` for
     /// milestone-aware savings queries.
     pub phase_doc_path: String,
+    /// UUID from the target project's `[project] id` in `rexymcp.toml`.
+    /// `None` when the project has not been initialised with `rexymcp init`.
+    pub project_id: Option<String>,
+    /// Milestone directory slug (e.g. `"M17-dashboard-polish-3"`) derived from
+    /// the phase doc path. `None` when the phase doc is not under a milestone dir.
+    pub milestone_id: Option<String>,
 }
 
 /// The injected dependencies the loop drives — explicit, no globals. The `clock`

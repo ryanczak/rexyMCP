@@ -109,6 +109,21 @@ struct AssemblyInput<'a> {
     telemetry_dir: Option<&'a Path>,
     progress: Option<&'a dyn ProgressCallback>,
     context_window: Option<usize>,
+    project_id: Option<String>,
+}
+
+/// Derive the milestone directory slug from a phase-doc path.
+/// `…/milestones/M17-dashboard-polish-3/phase-09.md` → `Some("M17-dashboard-polish-3")`.
+/// Returns `None` when the immediate parent does not look like `M<n>-…`.
+fn milestone_id_from_path(path: &Path) -> Option<String> {
+    let dir_name = path.parent()?.file_name()?.to_str()?;
+    let rest = dir_name.strip_prefix('M')?;
+    let has_num = rest
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false);
+    if has_num { Some(dir_name.to_string()) } else { None }
 }
 
 /// Register the full built-in tool set and derive schemas.
@@ -184,6 +199,8 @@ async fn run_phase_with(
         phase,
         tags: fields.tags,
         phase_doc_path: inp.phase_doc_path.to_string_lossy().into_owned(),
+        project_id: inp.project_id.clone(),
+        milestone_id: milestone_id_from_path(inp.phase_doc_path),
     };
 
     let session_id = generate_session_id();
@@ -225,6 +242,8 @@ pub struct RunPhaseConfig<'a> {
     pub model_override: Option<&'a str>,
     pub telemetry_dir: Option<&'a Path>,
     pub progress: Option<&'a dyn ProgressCallback>,
+    /// UUID from the target project's `[project] id` in `rexymcp.toml`.
+    pub project_id: Option<String>,
     /// Inject a test client. `None` → production `OpenAiClient`.
     pub test_client: Option<&'a dyn AiClient>,
 }
@@ -278,6 +297,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         } else {
             None
         },
+        project_id: inp.project_id.clone(),
     };
 
     run_phase_with(&assembly, &seams).await
@@ -471,6 +491,7 @@ mod tests {
             telemetry_dir: None,
             progress: None,
             context_window: None,
+            project_id: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -516,6 +537,7 @@ mod tests {
             telemetry_dir: None,
             progress: None,
             context_window: None,
+            project_id: None,
         };
         let result = run_phase_with(&inp, &seams).await;
 

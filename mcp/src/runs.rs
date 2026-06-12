@@ -212,6 +212,8 @@ mod tests {
             length_finish_rate: None,
             context_window: None,
             context_efficiency: Default::default(),
+            project_id: None,
+            milestone_id: None,
         }
     }
 
@@ -252,6 +254,8 @@ mod tests {
             length_finish_rate: None,
             context_window: None,
             context_efficiency: Default::default(),
+            project_id: None,
+            milestone_id: None,
         }
     }
 

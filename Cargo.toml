@@ -28,3 +28,4 @@ tree-sitter-rust = "0.24"
 tree-sitter-python = "0.23"
 similar = "2"
 serde_yaml = "0.9"
+uuid = { version = "1", features = ["v4"] }
