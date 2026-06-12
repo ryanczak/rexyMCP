@@ -8,8 +8,8 @@ use ratatui::{
 
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
-    BudgetRates, budget_lines, dollars_saved_line, files_lines, milestone_line, panel,
-    reclaim_lines, session_lines, spinner_line, tasks_lines,
+    BudgetRates, budget_lines, files_lines, milestone_line, panel, reclaim_lines, savings_lines,
+    session_lines, spinner_line, tasks_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -156,9 +156,12 @@ pub(crate) fn render_dashboard(
     frame.render_widget(panel(" Session ", session), session_area);
     let mut budget = Vec::new();
     budget.extend(budget_lines(&data.summary));
-    if let Some(line) = dollars_saved_line(&data.summary, rates) {
-        budget.push(line);
-    }
+    budget.extend(savings_lines(
+        &data.summary,
+        rates,
+        data.milestone_savings,
+        data.project_savings,
+    ));
     frame.render_widget(panel(" Budget ", budget), budget_area);
     frame.render_widget(
         panel(" Context ", reclaim_lines(&data.summary)),

@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use rexymcp_executor::store::sessions::event::SessionRecord;
+use rexymcp_executor::store::telemetry::PhaseRun;
 
 use crate::status::{self, StatusSummary};
 
@@ -24,19 +25,61 @@ pub struct DashboardData {
     pub records: Vec<SessionRecord>,
     pub error: Option<String>,
     pub milestone: Option<String>,
+    /// Cumulative (input_tokens, output_tokens) from `PhaseRun` records whose
+    /// `phase_doc_path` belongs to the active milestone. `None` when telemetry
+    /// is absent, no phase is active, or no matching records exist.
+    pub milestone_savings: Option<(u32, u32)>,
+    /// Cumulative (input_tokens, output_tokens) from ALL `PhaseRun` records in
+    /// the telemetry file. `(0, 0)` when telemetry dir is not configured.
+    pub project_savings: (u32, u32),
 }
 
 /// Load the latest session data. Pure, testable.
-pub fn load_data(repo: &Path, session: Option<&str>) -> DashboardData {
+pub fn load_data(
+    repo: &Path,
+    session: Option<&str>,
+    telemetry_dir: Option<&Path>,
+) -> DashboardData {
+    // Phase runs are independent of session records — read them before the match
+    // so project_savings is always computed even when session loading fails.
+    let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
+    let project_savings = phase_runs.iter().fold((0u32, 0u32), |(i, o), r| {
+        (
+            i.saturating_add(r.tokens.input_tokens),
+            o.saturating_add(r.tokens.output_tokens),
+        )
+    });
+
     match status::load_records(repo, session) {
         Ok(records) => {
             let summary = status::summarize(&records);
             let milestone = resolve_milestone(repo, summary.phase.as_deref());
+            // Milestone savings requires the active phase id from session data.
+            let milestone_savings = resolve_milestone_dir(repo, summary.phase.as_deref())
+                .map(|milestone_dir| {
+                    phase_runs
+                        .iter()
+                        .filter(|r| {
+                            r.phase_doc_path
+                                .as_deref()
+                                .map(|p| p.contains(milestone_dir.as_str()))
+                                .unwrap_or(false)
+                        })
+                        .fold((0u32, 0u32), |(i, o), r| {
+                            (
+                                i.saturating_add(r.tokens.input_tokens),
+                                o.saturating_add(r.tokens.output_tokens),
+                            )
+                        })
+                })
+                .filter(|&(i, o)| i > 0 || o > 0);
             DashboardData {
                 summary,
                 records,
                 error: None,
                 milestone,
+                milestone_savings,
+                project_savings,
             }
         }
         Err(e) => DashboardData {
@@ -44,6 +87,8 @@ pub fn load_data(repo: &Path, session: Option<&str>) -> DashboardData {
             records: Vec::new(),
             error: Some(e),
             milestone: None,
+            milestone_savings: None,
+            project_savings,
         },
     }
 }
@@ -53,19 +98,32 @@ pub fn run_dashboard(
     repo: &Path,
     session: Option<&str>,
     rates: BudgetRates,
+    telemetry_dir: Option<&Path>,
 ) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
-    let result = event_loop::run_loop(&mut terminal, repo, session, rates);
+    let result = event_loop::run_loop(&mut terminal, repo, session, rates, telemetry_dir);
     ratatui::restore();
     result
 }
 
-/// Resolve the active milestone's display name from the running phase id by
-/// finding the milestone directory whose phase doc matches `phase-{id}-*.md`.
-/// Prefers the milestone whose matched phase doc is **not** `done` (the active
-/// one); falls back to the highest-numbered milestone with a match. `None` when
-/// `phase` is `None` or no milestone directory contains a matching phase doc.
-fn resolve_milestone(repo: &Path, phase: Option<&str>) -> Option<String> {
+/// Parse `<telemetry_dir>/phase_runs.jsonl`, returning one `PhaseRun` per
+/// valid line; silently skips empty lines and malformed JSON.
+fn read_phase_runs(telemetry_dir: &Path) -> Vec<PhaseRun> {
+    let path = telemetry_dir.join("phase_runs.jsonl");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect()
+}
+
+/// Returns the milestone **directory name** (e.g. `"M17-dashboard-polish-3"`)
+/// for the running phase, using the same candidate-selection rules as
+/// `resolve_milestone`. `None` when no matching milestone directory is found.
+fn resolve_milestone_dir(repo: &Path, phase: Option<&str>) -> Option<String> {
     let phase = phase?;
     let milestones = repo.join("docs/dev/milestones");
     let prefix = format!("{phase}-"); // e.g. "phase-03-"
@@ -110,7 +168,12 @@ fn resolve_milestone(repo: &Path, phase: Option<&str>) -> Option<String> {
         .filter(|(_, _, active)| *active)
         .max_by_key(|(num, _, _)| *num)
         .or_else(|| candidates.iter().max_by_key(|(num, _, _)| *num))
-        .map(|(_, dir, _)| format_milestone_name(dir))
+        .map(|(_, dir, _)| dir.clone())
+}
+
+/// Thin wrapper — same contract as before, unchanged external behaviour.
+fn resolve_milestone(repo: &Path, phase: Option<&str>) -> Option<String> {
+    resolve_milestone_dir(repo, phase).map(|dir| format_milestone_name(&dir))
 }
 
 /// Parse the leading `M<n>` milestone number from a directory name like
@@ -190,7 +253,7 @@ mod tests {
     #[test]
     fn load_data_returns_error_when_no_sessions_dir() {
         let dir = TempDir::new().unwrap();
-        let data = load_data(dir.path(), None);
+        let data = load_data(dir.path(), None, None);
         assert!(data.error.is_some());
         assert!(data.records.is_empty());
         assert!(data.summary.ended.is_none());
@@ -209,7 +272,7 @@ mod tests {
         );
         std::fs::write(&log, body).unwrap();
 
-        let data = load_data(dir.path(), None);
+        let data = load_data(dir.path(), None, None);
         assert!(data.error.is_none());
         assert!(!data.records.is_empty());
         assert_eq!(data.records.len(), 2);
@@ -219,7 +282,7 @@ mod tests {
     #[test]
     fn load_data_empty_records_on_error() {
         let dir = TempDir::new().unwrap();
-        let data = load_data(dir.path(), None);
+        let data = load_data(dir.path(), None, None);
         assert!(data.error.is_some());
         assert!(data.records.is_empty());
     }
@@ -237,10 +300,35 @@ mod tests {
         );
         std::fs::write(&log, body).unwrap();
 
-        let data = load_data(dir.path(), None);
+        let data = load_data(dir.path(), None, None);
         assert!(data.error.is_none());
         assert!(data.summary.phase.is_some());
         assert_eq!(data.summary.phase.as_deref(), Some("phase-01"));
+    }
+
+    #[test]
+    fn load_data_reads_project_savings_from_phase_runs() {
+        let dir = TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+        let run1 = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p1","tags":[],"status":"complete","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"input_tokens":1000,"output_tokens":500}}"#;
+        let run2 = r#"{"ts":2,"model":"t","generation_params":{},"phase_id":"p2","tags":[],"status":"complete","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"input_tokens":2000,"output_tokens":800}}"#;
+        let telemetry_dir = dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        std::fs::write(
+            telemetry_dir.join("phase_runs.jsonl"),
+            format!("{run1}\n{run2}\n"),
+        )
+        .unwrap();
+
+        let data = load_data(dir.path(), None, Some(&telemetry_dir));
+        assert_eq!(
+            data.project_savings,
+            (3000, 1300),
+            "project savings must sum all phase runs"
+        );
+        // No session phase id → no milestone match.
+        assert!(data.milestone_savings.is_none());
     }
 
     // --- milestone resolver + formatter tests ---

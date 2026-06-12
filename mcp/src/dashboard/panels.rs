@@ -463,20 +463,49 @@ fn dollars_saved(
         + (output_tokens as f64 / 1_000_000.0) * out_per_mtok
 }
 
-/// "Savings:" line for the Budget panel.
-/// Returns `None` when there are no metrics yet, `"Savings: —"` when rates are
-/// unconfigured (both 0.0), and `"Savings: $X.XX"` otherwise.
-pub(crate) fn dollars_saved_line(
+/// Budget-panel savings block. A `Savings` header followed by indented,
+/// value-aligned rows: `Session` (always, when session metrics exist), then
+/// `Milestone` and `Project` (each only when its token data is available).
+/// Dollar values are right-aligned so their decimals line up in a column.
+/// Returns empty when there are no session metrics yet — never a lone header.
+pub(crate) fn savings_lines(
     summary: &StatusSummary,
     rates: BudgetRates,
-) -> Option<Line<'static>> {
-    let in_tok = summary.last_input_tokens?;
+    milestone_tok: Option<(u32, u32)>,
+    project_tok: (u32, u32),
+) -> Vec<Line<'static>> {
+    let in_tok = match summary.last_input_tokens {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
     let out_tok = summary.last_output_tokens.unwrap_or(0);
-    if rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0 {
-        return Some(Line::from("Savings: —"));
+    let no_rates = rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0;
+
+    // Dollar value for a scope, or an em-dash when no rates are configured.
+    let value = |i: u32, o: u32| -> String {
+        if no_rates {
+            "—".to_string()
+        } else {
+            let saved = dollars_saved(i, o, rates.input_per_mtok, rates.output_per_mtok);
+            format!("${saved:.2}")
+        }
+    };
+    // Indented row: label padded left, value padded right (decimals align).
+    // `lw` covers the longest label ("Milestone:"); `vw` holds "$XXXX.XX".
+    let row = |label: &str, v: String| -> Line<'static> {
+        Line::from(format!("  {:<lw$}{:>vw$}", label, v, lw = 11, vw = 9))
+    };
+
+    let mut lines = vec![Line::from("Savings")];
+    lines.push(row("Session:", value(in_tok, out_tok)));
+    if let Some((m_in, m_out)) = milestone_tok {
+        lines.push(row("Milestone:", value(m_in, m_out)));
     }
-    let saved = dollars_saved(in_tok, out_tok, rates.input_per_mtok, rates.output_per_mtok);
-    Some(Line::from(format!("Savings: ${saved:.2}")))
+    let (p_in, p_out) = project_tok;
+    if p_in > 0 || p_out > 0 {
+        lines.push(row("Project:", value(p_in, p_out)));
+    }
+    lines
 }
 
 /// "last update: …" freshness line for the Budget panel — the age of the most
@@ -1577,38 +1606,56 @@ mod tests {
         assert!(!text.iter().any(|s| s.contains("0%")));
     }
 
-    // --- dollars_saved tests ---
+    // --- savings_lines tests ---
 
     #[test]
-    fn dollars_saved_computes_cost() {
-        assert_eq!(dollars_saved(1_000_000, 500_000, 3.0, 15.0), 10.5);
-    }
-
-    #[test]
-    fn dollars_saved_line_none_without_metrics() {
-        let summary = StatusSummary::default();
+    fn savings_lines_empty_without_session_metrics() {
         let rates = BudgetRates {
             input_per_mtok: 3.0,
             output_per_mtok: 15.0,
         };
-        assert!(dollars_saved_line(&summary, rates).is_none());
+        let result = savings_lines(&StatusSummary::default(), rates, None, (0, 0));
+        assert!(result.is_empty(), "no session tokens → no header, no lines");
     }
 
     #[test]
-    fn dollars_saved_line_dash_when_rates_unset() {
+    fn savings_lines_starts_with_header() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(500),
+            last_output_tokens: Some(100),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+        };
+        let lines = savings_lines(&summary, rates, None, (0, 0));
+        assert_eq!(
+            format!("{}", lines[0]),
+            "Savings",
+            "first line is the header"
+        );
+    }
+
+    #[test]
+    fn savings_lines_session_dash_when_rates_unset() {
         let summary = StatusSummary {
             last_input_tokens: Some(500),
             last_output_tokens: Some(100),
             ..StatusSummary::default()
         };
         let rates = BudgetRates::default();
-        let line = dollars_saved_line(&summary, rates);
-        assert!(line.is_some());
-        assert_eq!(format!("{}", line.unwrap()), "Savings: —");
+        let lines = savings_lines(&summary, rates, None, (0, 0));
+        let row = format!("{}", lines[1]);
+        assert!(row.starts_with("  Session:"), "session row: {row}");
+        assert!(
+            row.ends_with('—'),
+            "value is the em-dash when rates unset: {row}"
+        );
     }
 
     #[test]
-    fn dollars_saved_line_shows_dollars() {
+    fn savings_lines_session_shows_dollars() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1618,9 +1665,70 @@ mod tests {
             input_per_mtok: 3.0,
             output_per_mtok: 15.0,
         };
-        let line = dollars_saved_line(&summary, rates);
-        assert!(line.is_some());
-        assert_eq!(format!("{}", line.unwrap()), "Savings: $10.50");
+        let lines = savings_lines(&summary, rates, None, (0, 0));
+        // 1.0*3 + 0.5*15 = $10.50; right-aligned under the header.
+        assert_eq!(format!("{}", lines[1]), "  Session:      $10.50");
+        assert_eq!(lines.len(), 2, "header + session only");
+    }
+
+    #[test]
+    fn savings_lines_shows_milestone_when_provided() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+        };
+        let lines = savings_lines(&summary, rates, Some((1_000_000, 500_000)), (0, 0));
+        assert_eq!(
+            lines.len(),
+            3,
+            "header + session + milestone, no project (0,0)"
+        );
+        assert!(
+            format!("{}", lines[2]).contains("Milestone:"),
+            "{:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn savings_lines_shows_all_three_scopes_value_aligned() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(500_000),
+            last_output_tokens: Some(200_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+        };
+        let lines = savings_lines(
+            &summary,
+            rates,
+            Some((2_000_000, 800_000)),
+            (10_000_000, 4_000_000),
+        );
+        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert_eq!(
+            lines.len(),
+            4,
+            "header + session + milestone + project: {text:?}"
+        );
+        assert_eq!(text[0], "Savings");
+        assert!(text[1].contains("Session:"), "{}", text[1]);
+        assert!(text[2].contains("Milestone:"), "{}", text[2]);
+        assert!(text[3].contains("Project:"), "{}", text[3]);
+        // Alignment guarantee: all three scope rows share one width, so their
+        // right-aligned values land in the same column.
+        let widths: Vec<usize> = text[1..].iter().map(|s| s.chars().count()).collect();
+        assert!(
+            widths.iter().all(|&w| w == widths[0]),
+            "scope rows must be equal width for value alignment: {widths:?}"
+        );
     }
 
     // --- model_rates tests ---

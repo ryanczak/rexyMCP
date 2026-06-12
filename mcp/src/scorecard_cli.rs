@@ -103,6 +103,7 @@ mod tests {
             model: model.to_string(),
             generation_params: GenerationParams { temperature, seed },
             phase_id: "test".to_string(),
+            phase_doc_path: None,
             tags: vec!["rust".to_string()],
             status: "complete".to_string(),
             escalated: false,

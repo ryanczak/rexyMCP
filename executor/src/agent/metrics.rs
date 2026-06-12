@@ -106,6 +106,7 @@ pub(super) fn emit_phase_run(
         model: deps.model.to_string(),
         generation_params: deps.generation_params.clone(),
         phase_id: input.phase.clone(),
+        phase_doc_path: Some(input.phase_doc_path.clone()),
         tags: input.tags.clone(),
         status: status.to_string(),
         escalated: status != "complete",

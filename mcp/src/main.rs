@@ -375,10 +375,12 @@ async fn main() -> anyhow::Result<()> {
                     input_per_mtok: d.saved_input_per_mtok,
                     output_per_mtok: d.saved_output_per_mtok,
                 });
-            dashboard::run_dashboard(&repo, session.as_deref(), rates).unwrap_or_else(|e| {
-                eprintln!("dashboard error: {e}");
-                std::process::exit(1);
-            });
+            let telemetry_dir = cfg.telemetry.dir.as_deref();
+            dashboard::run_dashboard(&repo, session.as_deref(), rates, telemetry_dir)
+                .unwrap_or_else(|e| {
+                    eprintln!("dashboard error: {e}");
+                    std::process::exit(1);
+                });
             Ok(())
         }
         Commands::Doctor { config, json } => {

@@ -69,6 +69,9 @@ pub struct PhaseInput {
     pub phase: String,
     /// Phase-doc tags (language / kind / size) for the `PhaseRun` record.
     pub tags: Vec<String>,
+    /// Full absolute path to the phase doc, recorded in `PhaseRun` for
+    /// milestone-aware savings queries.
+    pub phase_doc_path: String,
 }
 
 /// The injected dependencies the loop drives — explicit, no globals. The `clock`

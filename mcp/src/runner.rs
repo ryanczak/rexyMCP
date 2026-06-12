@@ -183,6 +183,7 @@ async fn run_phase_with(
         acceptance_criteria: fields.acceptance_criteria,
         phase,
         tags: fields.tags,
+        phase_doc_path: inp.phase_doc_path.to_string_lossy().into_owned(),
     };
 
     let session_id = generate_session_id();

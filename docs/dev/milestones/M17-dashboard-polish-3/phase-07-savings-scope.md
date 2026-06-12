@@ -1,7 +1,7 @@
 # Phase 07: Savings scope — session + milestone + project
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** todo
+**Status:** review
 **Depends on:** phase-06 (phase-06 renames `"$ saved"` → `"Savings:"` and the
 `dollars_saved_line` function must exist before this phase replaces it)
 **Estimated diff:** ~160 lines across 8 files
@@ -356,6 +356,15 @@ Update the `load_data` call (line 33):
 let data = load_data(repo, session, telemetry_dir);
 ```
 
+**Do not add caching.** `run_loop` calls `load_data` once per ~500ms poll tick
+(`event_loop.rs:58`), so `read_phase_runs` re-reads and re-parses
+`phase_runs.jsonl` (≈120 lines today) every frame. This is intentional and
+consistent with the existing per-tick `status::load_records` re-read — it keeps
+the live dashboard simple and the figures fresh when a phase completes
+mid-session. Introducing a cache / dirty-flag / mtime check here is **out of
+scope** (note it under "Notes for review" if you think it's worth a future
+phase; do not implement it).
+
 **6b. `run_dashboard` (mcp/src/dashboard/mod.rs):**
 
 Add `telemetry_dir: Option<&Path>` parameter:
@@ -406,12 +415,39 @@ Commands::Dashboard { repo, session, config } => {
 **7a. Remove `dollars_saved_line`.** Delete the entire function and its doc comment
 (lines ~458–472 after phase-06). Keep the private `dollars_saved(input, output, in_rate, out_rate)` helper — it's still used internally.
 
-**7b. Add `savings_lines`:**
+**7b. Add `savings_lines`.**
+
+Layout decision (architect, 2026-06-11): the savings block is a **`Savings`
+header** followed by indented, **value-aligned** scope rows — `Session`
+(always, when session metrics exist), then `Milestone` and `Project` (each only
+when its token data is available). This supersedes phase-06's single
+`"Savings:"` session line: phase-06 emits that line as an interim state and this
+phase replaces the whole function, so the session figure now lives under the
+header as the `Session:` row. Rationale: a flat `"Savings:"` session line next
+to scope-named `"Milestone:"`/`"Project:"` sub-lines read as if *Savings* were a
+total and the others its breakdown — semantically inverted (session ⊂ milestone
+⊂ project). A header + uniformly scope-named rows fixes the hierarchy, and
+right-aligning the dollar values makes the decimals line up in a column.
+
+Target rendering (the `$` decimals align because values are right-aligned in a
+fixed-width field; the em-dash replaces the value when rates are unset):
+
+```
+Savings
+  Session:      $10.50
+  Milestone:     $3.20
+  Project:     $120.00
+```
+
+Implementation — note the **explicit named width args** (`lw`/`vw`) in the
+`format!`; do not rely on inline-captured width identifiers:
 
 ```rust
-/// Budget-panel savings block: session savings (always, when metrics exist),
-/// plus milestone and project savings when token data is available.
-/// Returns empty when there are no session metrics yet.
+/// Budget-panel savings block. A `Savings` header followed by indented,
+/// value-aligned rows: `Session` (always, when session metrics exist), then
+/// `Milestone` and `Project` (each only when its token data is available).
+/// Dollar values are right-aligned so their decimals line up in a column.
+/// Returns empty when there are no session metrics yet — never a lone header.
 pub(crate) fn savings_lines(
     summary: &StatusSummary,
     rates: BudgetRates,
@@ -424,40 +460,38 @@ pub(crate) fn savings_lines(
     };
     let out_tok = summary.last_output_tokens.unwrap_or(0);
     let no_rates = rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0;
-    let mut lines = Vec::new();
 
-    // Session line — same label as phase-06 established
-    lines.push(if no_rates {
-        Line::from("Savings: —")
-    } else {
-        let saved = dollars_saved(in_tok, out_tok, rates.input_per_mtok, rates.output_per_mtok);
-        Line::from(format!("Savings: ${saved:.2}"))
-    });
-
-    // Milestone line (only when telemetry data available)
-    if let Some((m_in, m_out)) = milestone_tok {
-        lines.push(if no_rates {
-            Line::from("  Milestone: —")
+    // Dollar value for a scope, or an em-dash when no rates are configured.
+    let value = |i: u32, o: u32| -> String {
+        if no_rates {
+            "—".to_string()
         } else {
-            let saved = dollars_saved(m_in, m_out, rates.input_per_mtok, rates.output_per_mtok);
-            Line::from(format!("  Milestone: ${saved:.2}"))
-        });
-    }
+            let saved = dollars_saved(i, o, rates.input_per_mtok, rates.output_per_mtok);
+            format!("${saved:.2}")
+        }
+    };
+    // Indented row: label padded left, value padded right (decimals align).
+    // `lw` covers the longest label ("Milestone:"); `vw` holds "$XXXX.XX".
+    let row = |label: &str, v: String| -> Line<'static> {
+        Line::from(format!("  {:<lw$}{:>vw$}", label, v, lw = 11, vw = 9))
+    };
 
-    // Project line (only when at least one telemetry record exists)
+    let mut lines = vec![Line::from("Savings")];
+    lines.push(row("Session:", value(in_tok, out_tok)));
+    if let Some((m_in, m_out)) = milestone_tok {
+        lines.push(row("Milestone:", value(m_in, m_out)));
+    }
     let (p_in, p_out) = project_tok;
     if p_in > 0 || p_out > 0 {
-        lines.push(if no_rates {
-            Line::from("  Project: —")
-        } else {
-            let saved = dollars_saved(p_in, p_out, rates.input_per_mtok, rates.output_per_mtok);
-            Line::from(format!("  Project: ${saved:.2}"))
-        });
+        lines.push(row("Project:", value(p_in, p_out)));
     }
-
     lines
 }
 ```
+
+The value field width `vw = 9` is a **minimum**, not a cap — an all-time
+`Project` total exceeding `$9999.99` simply renders wider, shifting that one
+row's alignment rather than truncating. That is acceptable; do not clamp it.
 
 ### §8 — Update the budget call site (mcp/src/dashboard/render.rs)
 
@@ -477,8 +511,21 @@ budget.extend(savings_lines(
 ));
 ```
 
-Update the import in `render.rs` if needed — `savings_lines` is exported from
-`panels.rs` with `pub(crate)` like its predecessor.
+**Update the import — this is required, not optional.** `render.rs:10–12` has a
+`use super::panels::{ ... };` block that names `dollars_saved_line`. Remove
+`dollars_saved_line` from that list and add `savings_lines` (alphabetical
+position is fine):
+
+```rust
+// render.rs imports, e.g.:
+use super::panels::{
+    BudgetRates, budget_lines, files_lines, milestone_line, panel, savings_lines,
+    /* ...the rest unchanged... */
+};
+```
+
+`savings_lines` is exported from `panels.rs` with `pub(crate)` like its
+predecessor, so no visibility change is needed.
 
 ## Acceptance criteria
 
@@ -493,8 +540,11 @@ Update the import in `render.rs` if needed — `savings_lines` is exported from
 - [ ] `run_phase_with` in `runner.rs` sets `phase_doc_path: inp.phase_doc_path.to_string_lossy().into_owned()`.
 - [ ] `load_data` signature is `load_data(repo, session, telemetry_dir: Option<&Path>)`.
 - [ ] `run_dashboard` and `run_loop` accept `telemetry_dir: Option<&Path>`.
-- [ ] Budget panel shows `"  Milestone: $X.XX"` and `"  Project: $X.XX"` lines when
-      telemetry data is present.
+- [ ] `savings_lines` emits a `"Savings"` header followed by a `"  Session:"` row
+      whenever session metrics exist, and adds `"  Milestone:"` / `"  Project:"`
+      rows when their token data is present.
+- [ ] Dollar values are right-aligned (decimals line up) and the em-dash replaces
+      the value on every row when rates are unset.
 - [ ] Legacy `PhaseRun` records without `phase_doc_path` deserialize without error
       (their `phase_doc_path` is `None`).
 
@@ -601,14 +651,31 @@ fn load_data_reads_project_savings_from_phase_runs() {
 - `dollars_saved_line_dash_when_rates_unset`
 - `dollars_saved_line_shows_dollars`
 
-**Add five `savings_lines_*` tests** (place them in the same location):
+**Add six `savings_lines_*` tests** (place them in the same location). These pin
+the new header + value-aligned layout: `lines[0]` is the `"Savings"` header, the
+scope rows follow, and every scope row renders to the **same character width**
+(that is the alignment guarantee — values share one right-aligned column). Note
+the `.chars().count()` for width (the em-dash is multi-byte; `.len()` would
+count bytes):
 
 ```rust
 #[test]
 fn savings_lines_empty_without_session_metrics() {
     let rates = BudgetRates { input_per_mtok: 3.0, output_per_mtok: 15.0 };
     let result = savings_lines(&StatusSummary::default(), rates, None, (0, 0));
-    assert!(result.is_empty(), "no session tokens → no lines");
+    assert!(result.is_empty(), "no session tokens → no header, no lines");
+}
+
+#[test]
+fn savings_lines_starts_with_header() {
+    let summary = StatusSummary {
+        last_input_tokens: Some(500),
+        last_output_tokens: Some(100),
+        ..StatusSummary::default()
+    };
+    let rates = BudgetRates { input_per_mtok: 3.0, output_per_mtok: 15.0 };
+    let lines = savings_lines(&summary, rates, None, (0, 0));
+    assert_eq!(format!("{}", lines[0]), "Savings", "first line is the header");
 }
 
 #[test]
@@ -620,7 +687,9 @@ fn savings_lines_session_dash_when_rates_unset() {
     };
     let rates = BudgetRates::default();
     let lines = savings_lines(&summary, rates, None, (0, 0));
-    assert_eq!(format!("{}", lines[0]), "Savings: —");
+    let row = format!("{}", lines[1]);
+    assert!(row.starts_with("  Session:"), "session row: {row}");
+    assert!(row.ends_with('—'), "value is the em-dash when rates unset: {row}");
 }
 
 #[test]
@@ -632,7 +701,9 @@ fn savings_lines_session_shows_dollars() {
     };
     let rates = BudgetRates { input_per_mtok: 3.0, output_per_mtok: 15.0 };
     let lines = savings_lines(&summary, rates, None, (0, 0));
-    assert_eq!(format!("{}", lines[0]), "Savings: $10.50");
+    // 1.0*3 + 0.5*15 = $10.50; right-aligned under the header.
+    assert_eq!(format!("{}", lines[1]), "  Session:      $10.50");
+    assert_eq!(lines.len(), 2, "header + session only");
 }
 
 #[test]
@@ -643,29 +714,31 @@ fn savings_lines_shows_milestone_when_provided() {
         ..StatusSummary::default()
     };
     let rates = BudgetRates { input_per_mtok: 3.0, output_per_mtok: 15.0 };
-    // Milestone: same token counts → same savings
     let lines = savings_lines(&summary, rates, Some((1_000_000, 500_000)), (0, 0));
-    assert!(lines.iter().any(|l| format!("{l}").contains("Milestone:")),
-        "Milestone line must appear: {lines:?}");
-    assert_eq!(lines.len(), 2, "session + milestone, no project (0,0)");
+    assert_eq!(lines.len(), 3, "header + session + milestone, no project (0,0)");
+    assert!(format!("{}", lines[2]).contains("Milestone:"), "{:?}", lines);
 }
 
 #[test]
-fn savings_lines_shows_all_three_scopes() {
+fn savings_lines_shows_all_three_scopes_value_aligned() {
     let summary = StatusSummary {
         last_input_tokens: Some(500_000),
         last_output_tokens: Some(200_000),
         ..StatusSummary::default()
     };
     let rates = BudgetRates { input_per_mtok: 3.0, output_per_mtok: 15.0 };
-    let milestone_tok = Some((2_000_000u32, 800_000u32));
-    let project_tok = (10_000_000u32, 4_000_000u32);
-    let lines = savings_lines(&summary, rates, milestone_tok, project_tok);
+    let lines = savings_lines(&summary, rates, Some((2_000_000, 800_000)), (10_000_000, 4_000_000));
     let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-    assert_eq!(lines.len(), 3, "session + milestone + project: {text:?}");
-    assert!(text[0].contains("Savings:"),   "session line: {}", text[0]);
-    assert!(text[1].contains("Milestone:"), "milestone line: {}", text[1]);
-    assert!(text[2].contains("Project:"),   "project line: {}", text[2]);
+    assert_eq!(lines.len(), 4, "header + session + milestone + project: {text:?}");
+    assert_eq!(text[0], "Savings");
+    assert!(text[1].contains("Session:"),   "{}", text[1]);
+    assert!(text[2].contains("Milestone:"), "{}", text[2]);
+    assert!(text[3].contains("Project:"),   "{}", text[3]);
+    // Alignment guarantee: all three scope rows share one width, so their
+    // right-aligned values land in the same column.
+    let widths: Vec<usize> = text[1..].iter().map(|s| s.chars().count()).collect();
+    assert!(widths.iter().all(|&w| w == widths[0]),
+        "scope rows must be equal width for value alignment: {widths:?}");
 }
 ```
 
@@ -673,12 +746,13 @@ fn savings_lines_shows_all_three_scopes() {
 
 After all gates pass, observe the live dashboard (if a session is available):
 
-1. The Budget panel still shows `"Savings: $X.XX"` (or `"—"` when rates unset).
+1. The Budget panel shows a `"Savings"` header with a `"  Session:   $X.XX"` row
+   beneath it (value `"—"` when rates unset), dollar value right-aligned.
 2. When `rexymcp.toml` has a `[telemetry] dir` set and `phase_runs.jsonl` exists
-   there with entries, two additional lines appear: `"  Milestone: $X.XX"` and
-   `"  Project: $X.XX"`.
-3. When no telemetry dir is configured, only the session line appears — no panic
-   or error.
+   there with entries, two additional rows appear: `"  Milestone:  $X.XX"` and
+   `"  Project:   $X.XX"`, with their decimals aligned under the session row's.
+3. When no telemetry dir is configured, only the header + `Session:` row appear —
+   no panic or error.
 4. Confirm existing `phase_runs.jsonl` records (written before this phase) still
    parse cleanly (the `serde(default)` field defaults to `None`).
 

@@ -105,6 +105,10 @@ pub struct PhaseRun {
     pub model: String,
     pub generation_params: GenerationParams,
     pub phase_id: String,
+    /// Full path to the phase doc, for milestone-aware savings queries.
+    /// `None` for legacy records that predate this field (M7 phase-08b and earlier).
+    #[serde(default)]
+    pub phase_doc_path: Option<String>,
     pub tags: Vec<String>,
     // outcome
     pub status: String,
@@ -332,6 +336,7 @@ mod tests {
             model: "qwen2.5-coder".to_string(),
             generation_params: GenerationParams::default(),
             phase_id: "phase-08".to_string(),
+            phase_doc_path: Some("/docs/dev/milestones/M17/phase-08.md".to_string()),
             tags: vec!["rust".to_string(), "feature".to_string()],
             status: "complete".to_string(),
             escalated: false,
@@ -366,6 +371,21 @@ mod tests {
         let back: PhaseRun = serde_json::from_str(&json).unwrap();
         // TokenBreakdown isn't PartialEq; compare via re-serialization.
         assert_eq!(json, serde_json::to_string(&back).unwrap());
+    }
+
+    #[test]
+    fn phase_run_phase_doc_path_round_trips() {
+        let json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","phase_doc_path":"/a/b.md","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let run: PhaseRun = serde_json::from_str(json).unwrap();
+        assert_eq!(run.phase_doc_path.as_deref(), Some("/a/b.md"));
+    }
+
+    #[test]
+    fn phase_run_phase_doc_path_defaults_none_on_legacy_record() {
+        // A JSON record without phase_doc_path — as emitted before this phase.
+        let json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let run: PhaseRun = serde_json::from_str(json).unwrap();
+        assert!(run.phase_doc_path.is_none(), "legacy record must not error");
     }
 
     #[test]
