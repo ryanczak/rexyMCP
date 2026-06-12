@@ -13,10 +13,6 @@ use super::highlight::{
 /// to full multi-line). Keeps one record = one line.
 pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 
-/// Width of the indent gutter for a paired tool-result header (matches the
-/// rendered width of a 2-cell emoji glyph plus its trailing space).
-pub(crate) const RESULT_INDENT: usize = 3;
-
 /// Beautify a tool call's arguments into compact, dimmed body lines. `patch`
 /// shows only the target path — its `old_str`/`new_str` are echoed as a unified
 /// diff in the paired result, so repeating them on the call is noise. Every
@@ -50,21 +46,6 @@ fn arg_value_preview(v: &serde_json::Value) -> String {
     }
 }
 
-/// Glyph shown in front of a tool-call header for fast visual scanning.
-fn tool_glyph(name: &str) -> &'static str {
-    match name {
-        "read_file" => "📖",
-        "write_file" => "✏️",
-        "patch" => "🩹",
-        "bash" => "⚡",
-        "search" => "🔍",
-        "find_files" => "📁",
-        "symbols" => "🔗",
-        "update_task" => "✅",
-        _ => "🔧",
-    }
-}
-
 /// Tracks the most-recent tool call so a following result can be paired with it.
 struct PendingCall {
     name: String,
@@ -86,7 +67,6 @@ pub(crate) fn transcript_lines(
     let mut out: Vec<Line<'static>> = Vec::new();
     let mut pending: Option<PendingCall> = None;
     for r in &visible {
-        let mut lead: Option<Span<'static>> = None;
         let mut paired = false;
         let mut hint: Option<String> = None;
         match &r.event {
@@ -100,7 +80,6 @@ pub(crate) fn transcript_lines(
                 } else {
                     None
                 };
-                lead = Some(Span::raw(format!("{} ", tool_glyph(&tool_call.name))));
                 pending = Some(PendingCall {
                     name: tool_call.name.clone(),
                     path,
@@ -114,7 +93,6 @@ pub(crate) fn transcript_lines(
                     if name == "read_file" {
                         hint = p.path.clone();
                     }
-                    lead = Some(Span::raw(" ".repeat(RESULT_INDENT)));
                 }
                 pending = None;
             }
@@ -124,10 +102,7 @@ pub(crate) fn transcript_lines(
         let mut lines = record_lines_with_lang(r, hint.as_deref(), paired);
 
         if let Some(header) = lines.first_mut() {
-            let mut spans = Vec::with_capacity(header.spans.len() + 2);
-            if let Some(lead) = lead {
-                spans.push(lead);
-            }
+            let mut spans = Vec::with_capacity(header.spans.len() + 1);
             spans.push(Span::styled(
                 format!("[{}] ", relative_ts(r.ts, base_ts)),
                 Style::new().fg(Color::Rgb(180, 150, 50)),
@@ -1066,16 +1041,6 @@ mod tests {
     }
 
     #[test]
-    fn tool_glyph_maps_known_and_default() {
-        assert_eq!(tool_glyph("read_file"), "📖");
-        assert_eq!(tool_glyph("bash"), "⚡");
-        assert_eq!(tool_glyph("update_task"), "✅");
-        assert_eq!(tool_glyph("nope"), "🔧");
-        // Distinct values — not a single-glyph impl
-        assert_ne!(tool_glyph("read_file"), tool_glyph("bash"));
-    }
-
-    #[test]
     fn transcript_lines_pairs_call_and_result() {
         let records = vec![
             rec(
@@ -1102,14 +1067,14 @@ mod tests {
         let lines = transcript_lines(&records, &ActivityFilter::default());
         let rendered: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
 
-        // The call header should contain the glyph and the call name
+        // The call header should contain the call name
         let call_header = rendered
             .iter()
             .find(|l| l.contains("→ call read_file"))
             .expect("should have a call header line");
         assert!(
-            call_header.contains("📖"),
-            "call header should contain read_file glyph: {call_header}"
+            !call_header.is_empty(),
+            "call header should not be empty: {call_header}"
         );
 
         // The result header should contain the paired connector and not the tool name
