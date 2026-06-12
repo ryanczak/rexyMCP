@@ -43,12 +43,20 @@ pub fn load_data(
     // Phase runs are independent of session records — read them before the match
     // so project_savings is always computed even when session loading fails.
     let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
-    let project_savings = phase_runs.iter().fold((0u32, 0u32), |(i, o), r| {
-        (
-            i.saturating_add(r.tokens.input_tokens),
-            o.saturating_add(r.tokens.output_tokens),
-        )
-    });
+    let project_savings = phase_runs
+        .iter()
+        .filter(|r| {
+            r.phase_doc_path
+                .as_deref()
+                .map(|p| Path::new(p).starts_with(repo))
+                .unwrap_or(false)
+        })
+        .fold((0u32, 0u32), |(i, o), r| {
+            (
+                i.saturating_add(r.tokens.input_tokens),
+                o.saturating_add(r.tokens.output_tokens),
+            )
+        });
 
     match status::load_records(repo, session) {
         Ok(records) => {
@@ -311,8 +319,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let sessions = sessions_dir(dir.path());
         std::fs::create_dir_all(&sessions).unwrap();
-        let run1 = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p1","tags":[],"status":"complete","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"input_tokens":1000,"output_tokens":500}}"#;
-        let run2 = r#"{"ts":2,"model":"t","generation_params":{},"phase_id":"p2","tags":[],"status":"complete","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"input_tokens":2000,"output_tokens":800}}"#;
+        // phase_doc_path must be under dir.path() to be attributed to this project.
+        let repo_path = dir.path().to_string_lossy();
+        let run1 = format!(
+            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","phase_doc_path":"{repo_path}/docs/M1/phase-01.md","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":1000,"output_tokens":500}}}}"#
+        );
+        let run2 = format!(
+            r#"{{"ts":2,"model":"t","generation_params":{{}},"phase_id":"p2","phase_doc_path":"{repo_path}/docs/M1/phase-02.md","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":2000,"output_tokens":800}}}}"#
+        );
         let telemetry_dir = dir.path().join("telemetry");
         std::fs::create_dir_all(&telemetry_dir).unwrap();
         std::fs::write(
@@ -325,10 +339,38 @@ mod tests {
         assert_eq!(
             data.project_savings,
             (3000, 1300),
-            "project savings must sum all phase runs"
+            "project savings must sum phase runs belonging to this repo"
         );
         // No session phase id → no milestone match.
         assert!(data.milestone_savings.is_none());
+    }
+
+    #[test]
+    fn load_data_project_savings_excludes_other_repos() {
+        let dir = TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+        let repo_path = dir.path().to_string_lossy();
+        // One run belongs to this repo; one belongs to a different repo.
+        let this_run = format!(
+            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","phase_doc_path":"{repo_path}/docs/M1/phase-01.md","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":1000,"output_tokens":500}}}}"#
+        );
+        let other_run = r#"{"ts":2,"model":"t","generation_params":{},"phase_id":"p2","phase_doc_path":"/other/project/docs/M1/phase-01.md","tags":[],"status":"complete","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"input_tokens":9000,"output_tokens":4000}}"#;
+        let legacy_run = r#"{"ts":3,"model":"t","generation_params":{},"phase_id":"p3","tags":[],"status":"complete","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"input_tokens":500,"output_tokens":200}}"#;
+        let telemetry_dir = dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        std::fs::write(
+            telemetry_dir.join("phase_runs.jsonl"),
+            format!("{this_run}\n{other_run}\n{legacy_run}\n"),
+        )
+        .unwrap();
+
+        let data = load_data(dir.path(), None, Some(&telemetry_dir));
+        assert_eq!(
+            data.project_savings,
+            (1000, 500),
+            "project savings must exclude runs from other repos and legacy records without phase_doc_path"
+        );
     }
 
     // --- milestone resolver + formatter tests ---
