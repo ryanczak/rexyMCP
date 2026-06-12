@@ -1,7 +1,7 @@
 # Phase 09: Activity-panel tool-call presentation — glyphs, call/result pairing, merged filter
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-05 (extension-detected highlighting — the `record_lines_with_lang` / `path_hint` plumbing this phase extends)
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -434,3 +434,36 @@ None. (No dependency, no `Cargo.toml`, no `architecture.md`, no `SessionEvent`.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Bounce — 2026-06-11 (bug-09-1, major)
+
+First dispatch (session `phase-09-6a2b6aec`, executor Qwen/Qwen3.6-27B-FP8)
+self-reported `complete` after 67 turns but **left the test gate red** and did
+not do its completion bookkeeping (no status flip, no Update Log, no commit —
+code left uncommitted in the working tree). Independent re-run confirmed two DoD
+violations, both filed in
+[bug-09-1](bugs/bug-09-1.md):
+
+- **Defect A (red `cargo test`):** the two new pairing tests
+  (`transcript_lines_pairs_call_and_result`,
+  `transcript_lines_pairs_only_matching_name`) assert the result header at the
+  hardcoded index `rendered[1]`, but the preceding `Parsed{read_file}` call
+  emits a header **plus a multi-line pretty-JSON args body**, so the result
+  header lands at a later index. Production pairing logic is correct; the tests
+  are mis-indexed. Fix: scan all rendered lines for the connector rather than
+  indexing a fixed position.
+- **Defect B (`#[allow(dead_code)]` masking a clippy failure):** the
+  `transcript_lines` rewrite removed the only production caller of
+  `record_lines`, making it test-only; the executor suppressed the resulting
+  `-D warnings` dead-code error with `#[allow(dead_code)]` (verified
+  load-bearing). STANDARDS §1/§4 forbid masking a gate. Fix: gate the helper
+  `#[cfg(test)]` instead.
+
+`cargo fmt --all --check`, `cargo build`, and `cargo clippy` pass **only because
+of the `#[allow]`**; with it removed clippy errors `function record_lines is
+never used`. Bounced to `in-progress`; re-dispatch via
+`/rexymcp:dispatch phase-09` once both defects are fixed.
+
+**Calibration (self-report vs gate-exit disagreement — 2nd in M17):** like
+phase-07, the executor returned `complete` on a red suite. Data point logged, not
+yet a fold.
