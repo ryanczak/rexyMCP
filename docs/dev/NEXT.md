@@ -4,13 +4,20 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — phase-09 (Activity-panel tool-call presentation) to be
-drafted via `/rexymcp:architect next`.
+**Active phase:** phase-09 — Activity-panel tool-call presentation (glyphs,
+call/result pairing, merged filter). Drafted 2026-06-11
+([phase-09-tool-call-pairing.md](milestones/M17-dashboard-polish-3/phase-09-tool-call-pairing.md));
+dispatch via `/rexymcp:dispatch phase-09`.
 
 M17 phase-06 (done, `04f51c7`), phase-07 (done, escalated), and phase-08 (done,
-approved_first_try — `seed_from_spec` `§N` heading support) are complete. One more
-in-scope phase remains: **phase-09**, the Activity-panel tool-call presentation
-work. Do **not** close M17 — phase-09 is still in scope and not yet drafted.
+approved_first_try — `seed_from_spec` `§N` heading support) are complete.
+**phase-09** is the last in-scope M17 phase: per-tool glyphs on call headers, the
+`ToolResult` indented under its `Parsed` call with a `╰` connector ("two headers,
+indented" shape, chosen with the user), and the `tool result` filter toggle merged
+into `tool call` (`FILTER_ITEM_COUNT` 15→14) so a tool interaction is atomically
+shown/hidden. Display-only: no `SessionEvent`, no `Cargo.toml`, no `log_query.rs`.
+Args block deliberately unchanged (inline signature not selected). M17 closes only
+after phase-09 is `done`.
 
 **M17 phase-07 — done** (2026-06-11, **escalated**; commit pending `docs: approve`):
 three-scope savings in the Budget panel — **session** (live), **milestone**
