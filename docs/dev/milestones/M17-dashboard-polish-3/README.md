@@ -56,7 +56,7 @@ gauge, Context-panel rename, Usage line migration) and savings-scope expansion
 | 05 | Markdown + extension-detected syntax highlighting ([phase-05-highlighting.md](phase-05-highlighting.md)) | done | feat | m |
 | 06 | Layout, pan rate, label renames, Context panel ([phase-06-display-tweaks.md](phase-06-display-tweaks.md)) | done | feat | m |
 | 07 | Savings scope — session + milestone + project ([phase-07-savings-scope.md](phase-07-savings-scope.md)) | done | feat | m |
-| 08 | `seed_from_spec` — recognise `§N` Spec headings ([phase-08-task-seed-section-sign.md](phase-08-task-seed-section-sign.md)) | review | fix | xs |
+| 08 | `seed_from_spec` — recognise `§N` Spec headings ([phase-08-task-seed-section-sign.md](phase-08-task-seed-section-sign.md)) | done | fix | xs |
 
 ## Notes
 

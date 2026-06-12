@@ -1,7 +1,7 @@
 # Phase 08: `seed_from_spec` — recognise `§N` Spec headings
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** none (pure addition to `executor/src/agent/tasks.rs`)
 **Estimated diff:** ~50 lines across 1 file
 **Tags:** language=rust, kind=fix, size=xs
@@ -291,3 +291,23 @@ headings and confirm the Tasks panel shows entries rather than remaining empty.
 **End-to-end verification:** `cargo test -p rexymcp-executor seed_from_spec_parses_section_sign` passes (1 passed). The `§` literal confirmed present in source via grep (15 matches across the new branch and tests).
 
 <!-- entries appended below this line -->
+
+### Review verdict — 2026-06-12
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen3.6-27B-FP8 (the run's Update Log self-reports
+  "Claude sonnet-4-5", a local-model identity hallucination — the served model
+  per the endpoint is Qwen3.6-27B-FP8)
+- **Scope deviations:** none — `§` branch added exactly as specced; the existing
+  `Task N` and `N.` branches were not modified (verified: zero deletions in the
+  committed diff).
+- **Calibration:** none
+- **Verification:** All four gates re-run independently green — fmt/build/clippy
+  clean; **739 executor + 377 mcp** pass (2 ignored). New tests confirmed
+  mutation-sensitive: disabling the `§` branch fails both
+  `parse_heading_task_line_accepts_section_sign_separators` and
+  `seed_from_spec_parses_section_sign_headings`. No `unwrap`/`expect`/`panic!`
+  outside test code; no `unsafe`, `#[allow]`, `dbg!`, `println!`, or TODO added.
+  This dogfoods immediately — phase-07's own `§N` Spec headings (which seeded
+  zero tasks at dispatch time) will now seed correctly.
