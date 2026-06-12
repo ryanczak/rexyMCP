@@ -17,6 +17,39 @@ pub(crate) const TRANSCRIPT_PREVIEW_MAX: usize = 100;
 /// rendered width of a 2-cell emoji glyph plus its trailing space).
 pub(crate) const RESULT_INDENT: usize = 3;
 
+/// Beautify a tool call's arguments into compact, dimmed body lines. `patch`
+/// shows only the target path — its `old_str`/`new_str` are echoed as a unified
+/// diff in the paired result, so repeating them on the call is noise. Every
+/// other tool renders its scalar args as `key: value` previews, one per line,
+/// with newlines/tabs flattened and long values truncated. Returns an empty Vec
+/// when there is nothing worth showing (no args, or `patch` without a path).
+fn tool_arg_lines(name: &str, args: &serde_json::Value) -> Vec<String> {
+    let obj = match args {
+        serde_json::Value::Object(m) if !m.is_empty() => m,
+        _ => return Vec::new(),
+    };
+    if name == "patch" {
+        return obj
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(|p| vec![format!("path: {p}")])
+            .unwrap_or_default();
+    }
+    obj.iter()
+        .map(|(k, v)| format!("{k}: {}", arg_value_preview(v)))
+        .collect()
+}
+
+/// One-line preview of a single JSON argument value: strings are flattened
+/// (newlines/tabs → spaces) and truncated via `preview`; other scalars use their
+/// compact JSON form so the rendered arg stays on one neat line.
+fn arg_value_preview(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => preview(s),
+        other => other.to_string(),
+    }
+}
+
 /// Glyph shown in front of a tool-call header for fast visual scanning.
 fn tool_glyph(name: &str) -> &'static str {
     match name {
@@ -146,14 +179,14 @@ pub(crate) fn record_lines_with_lang(
                 Some(completion_body_lines(raw)),
             ),
             SessionEvent::Parsed { tool_call } => {
-                let body = match &tool_call.arguments {
-                    serde_json::Value::Null => None,
-                    serde_json::Value::Object(m) if m.is_empty() => None,
-                    args => {
-                        let pretty =
-                            serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
-                        Some(plain_body_lines(&pretty, Color::Rgb(128, 128, 128)))
-                    }
+                let arg_lines = tool_arg_lines(&tool_call.name, &tool_call.arguments);
+                let body = if arg_lines.is_empty() {
+                    None
+                } else {
+                    Some(plain_body_lines(
+                        &arg_lines.join("\n"),
+                        Color::Rgb(128, 128, 128),
+                    ))
                 };
                 (
                     format!("→ call {}", tool_call.name),
@@ -650,6 +683,62 @@ mod tests {
             Some(Color::Rgb(128, 128, 128)),
             "body span should be dim grey"
         );
+    }
+
+    #[test]
+    fn tool_call_patch_shows_only_path() {
+        // patch's old_str/new_str appear as a diff in the paired result, so the
+        // call body shows just the file being patched — not the replacement text.
+        let parsed = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "patch".into(),
+                arguments: serde_json::json!({
+                    "path": "src/foo.rs",
+                    "old_str": "fn old() {}",
+                    "new_str": "fn new() {}",
+                }),
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let lines = record_lines(&rec(0, 0, parsed));
+        // 1 header + exactly 1 body line (the path).
+        assert_eq!(
+            lines.len(),
+            2,
+            "patch call should render header + one path line, got {} lines",
+            lines.len()
+        );
+        let body = format!("{}", lines[1]);
+        assert!(body.contains("src/foo.rs"), "body should show path: {body}");
+        assert!(
+            !body.contains("old()") && !body.contains("new()"),
+            "patch body must not echo old_str/new_str: {body}"
+        );
+    }
+
+    #[test]
+    fn tool_call_args_flatten_multiline_values() {
+        // A bash command with embedded newlines collapses to a single neat line.
+        let parsed = SessionEvent::Parsed {
+            tool_call: rexymcp_executor::parser::ToolCall {
+                name: "bash".into(),
+                arguments: serde_json::json!({ "command": "echo a\necho b" }),
+                origin: rexymcp_executor::parser::Origin::Native,
+            },
+        };
+        let lines = record_lines(&rec(0, 0, parsed));
+        assert_eq!(
+            lines.len(),
+            2,
+            "header + one flattened command line, got {} lines",
+            lines.len()
+        );
+        let body = format!("{}", lines[1]);
+        assert!(
+            body.contains("command:"),
+            "body should label command: {body}"
+        );
+        assert!(body.contains("echo a") && body.contains("echo b"), "{body}");
     }
 
     #[test]

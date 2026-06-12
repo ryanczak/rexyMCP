@@ -126,9 +126,15 @@ const SPRITE_CELLS: usize = 2;
 /// the session runs, `spinner` is `Some(tick)` (a monotonic per-loop counter);
 /// once it ends, `None` (→ no spinner line). `width` is the panel inner width.
 ///
-/// One cycle: the dog walks left→right (`track + 1` steps) closing on the brain
-/// pinned at the right edge, catches it, then one overtake-burst frame
-/// (`🧠🐕💨`) before resetting. The chase distance scales with `width`.
+/// One cycle has two phases:
+/// 1. **Chase** — the brain starts at the panel middle and runs right; the dog
+///    starts at the far left and closes at double the brain's pace, catching it
+///    just as the brain's right edge meets the border.
+/// 2. **Return** — the dog grabs the brain (`💨`) and the `🧠🐕💨` cluster (brain
+///    now directly left of the dog) retreats right→left in double-time. When the
+///    brain reaches the left edge the cycle resets.
+///
+/// The chase/return distances scale with `width`.
 ///
 /// Char-count vs display-width caveat (unchanged from the prior impl): each emoji
 /// is one `char` but two display cells; positions are computed in display cells so
@@ -137,31 +143,39 @@ const SPRITE_CELLS: usize = 2;
 /// border — acceptable.
 pub(crate) fn spinner_line(spinner: Option<usize>, width: usize) -> Option<Line<'static>> {
     let tick = spinner?;
-    // Reserve SPRITE_CELLS for the dog and SPRITE_CELLS for the brain so neither
-    // sprite runs past `width`. `track` is the range the dog's left edge sweeps.
-    let track = width.saturating_sub(SPRITE_CELLS * 2);
-    if track == 0 {
+    // The return cluster (brain + dog + dash) is three sprites wide; below a
+    // panel that can also fit the chase gap there is no room to animate, so show
+    // a static pair.
+    if width < SPRITE_CELLS * 4 {
         return Some(Line::from(format!("{DOG}{BRAIN}")));
     }
-    let period = track + 2; // track+1 chase steps + 1 overtake-burst frame
+    // `span`: rightmost left-edge a single sprite can take while touching the
+    // right border. `mid`: the brain's starting left-edge (panel middle).
+    let span = width - SPRITE_CELLS;
+    let mid = width / 2;
+    let steps_a = span - mid; // chase: brain advances one cell per frame
+    let p0 = width - SPRITE_CELLS * 3; // return cluster's left-edge at the border
+    let steps_b = p0 / 2; // return: cluster retreats two cells per frame
+    let period = steps_a + steps_b + 2;
     let phase = tick % period;
-    if phase <= track {
-        // Chase: dog at `phase`; brain pinned so its right edge is the panel edge.
-        let dog_off = phase;
-        let brain_off = track + SPRITE_CELLS;
-        let gap = brain_off.saturating_sub(dog_off + SPRITE_CELLS);
+
+    if phase <= steps_a {
+        // Chase: brain mid→right (1 cell/frame), dog left→behind-brain (2/frame),
+        // clamped so the dog never overruns the brain on odd widths.
+        let i = phase;
+        let brain = mid + i;
+        let dog = (2 * i).min(brain - SPRITE_CELLS);
+        let gap = brain - dog - SPRITE_CELLS;
         Some(Line::from(format!(
             "{}{DOG}{}{BRAIN}",
-            " ".repeat(dog_off),
+            " ".repeat(dog),
             " ".repeat(gap),
         )))
     } else {
-        // Overtake burst: brain, dog, dust — pinned to the right edge.
-        let lead = width.saturating_sub(SPRITE_CELLS * 3);
-        Some(Line::from(format!(
-            "{}{BRAIN}{DOG}{DASH}",
-            " ".repeat(lead)
-        )))
+        // Return: the brain+dog+dash cluster retreats right→left at double-time.
+        let j = phase - (steps_a + 1);
+        let p = p0.saturating_sub(2 * j);
+        Some(Line::from(format!("{}{BRAIN}{DOG}{DASH}", " ".repeat(p))))
     }
 }
 
@@ -660,29 +674,63 @@ mod tests {
     }
 
     #[test]
-    fn spinner_line_emits_overtake_burst_once_per_cycle() {
+    fn spinner_line_brain_starts_middle_dog_starts_left() {
+        // Tick 0 is the first chase frame: the dog sits flush at the far left and
+        // the brain begins around the panel middle, to the dog's right.
         let width: usize = 40;
-        let track = width.saturating_sub(SPRITE_CELLS * 2);
-        let period = track + 2;
-        let mut burst_count = 0;
-        let mut burst_has_adjacent_brain_dog = false;
-        for tick in 0..period {
-            let line = spinner_line(Some(tick), width).unwrap();
-            let s = format!("{}", line);
-            if s.contains('💨') {
-                burst_count += 1;
-                assert!(
-                    s.contains("🧠🐕"),
-                    "burst frame missing adjacent brain+dog: {s}"
-                );
-                burst_has_adjacent_brain_dog = true;
-            }
-        }
-        assert_eq!(burst_count, 1, "expected exactly one burst frame per cycle");
+        let line = spinner_line(Some(0), width).unwrap();
+        let s = format!("{}", line);
         assert!(
-            burst_has_adjacent_brain_dog,
-            "burst frame must contain 🧠🐕 adjacent"
+            s.starts_with('🐕'),
+            "dog should start at the far left: {s:?}"
         );
+        // Display-cell offset of a sprite's left edge: spaces are 1 cell, the
+        // dog sprite ahead of it is 2.
+        let cell_of = |target: char| -> usize {
+            s.chars()
+                .take_while(|&c| c != target)
+                .map(|c| if c == ' ' { 1 } else { SPRITE_CELLS })
+                .sum()
+        };
+        let brain_cell = cell_of('🧠');
+        // Brain's left edge should begin near the middle (within a sprite of width/2).
+        assert!(
+            brain_cell >= width / 2 - SPRITE_CELLS && brain_cell <= width / 2 + SPRITE_CELLS,
+            "brain should begin near the panel middle (cell {brain_cell}, width {width})"
+        );
+        assert!(cell_of('🐕') < brain_cell, "dog must be left of the brain");
+    }
+
+    #[test]
+    fn spinner_line_return_cluster_brain_left_of_dog_with_dash() {
+        // Every return frame shows the brain+dog+dash cluster contiguous, with the
+        // brain directly left of the dog, traveling back toward the left edge.
+        let width: usize = 40;
+        let span = width - SPRITE_CELLS;
+        let mid = width / 2;
+        let steps_a = span - mid;
+        let p0 = width - SPRITE_CELLS * 3;
+        let steps_b = p0 / 2;
+        let period = steps_a + steps_b + 2;
+
+        let mut return_frames = 0;
+        let mut prev_lead: Option<usize> = None;
+        for phase in (steps_a + 1)..period {
+            let line = spinner_line(Some(phase), width).unwrap();
+            let s = format!("{}", line);
+            assert!(
+                s.contains("🧠🐕💨"),
+                "return frame must show brain+dog+dash adjacent: {s:?}"
+            );
+            // The cluster slides leftward (leading spaces strictly decrease).
+            let lead = s.chars().take_while(|&c| c == ' ').count();
+            if let Some(p) = prev_lead {
+                assert!(lead < p, "return cluster must move left: {lead} !< {p}");
+            }
+            prev_lead = Some(lead);
+            return_frames += 1;
+        }
+        assert_eq!(return_frames, steps_b + 1, "return phase length");
     }
 
     #[test]
