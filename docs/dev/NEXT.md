@@ -4,11 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** `docs/dev/milestones/M17-dashboard-polish-3/phase-06-display-tweaks.md`
+**Active phase:** none — phase-08 (Activity-panel tool-call presentation) to be
+drafted via `/rexymcp:architect next`.
 
-M17 phase-06 and phase-07 are now **drafted** (2026-06-11). Phase-06 is the active
-phase; phase-07 follows it. Do **not** close M17 after phase-06 — phase-07 is still
-in scope.
+M17 phase-06 (done, `04f51c7`) and phase-07 (done, escalated — see below) are
+complete. One more in-scope phase remains: **phase-08**, focused on improving the
+presentation of tool calls in the Activity panel. Do **not** close M17 — phase-08
+is still in scope and not yet drafted.
+
+**M17 phase-07 — done** (2026-06-11, **escalated**; commit pending `docs: approve`):
+three-scope savings in the Budget panel — **session** (live), **milestone**
+(cumulative `PhaseRun` records for the active milestone), **project** (all
+`PhaseRun` records). Recorded `phase_doc_path` in every `PhaseRun` (`#[serde(default)]`
+`Option<String>`, legacy records → `None`) and threaded `telemetry_dir` from config
+through `run_dashboard`→`run_loop`→`load_data`. `dollars_saved_line` replaced by a
+multi-line `savings_lines`: a `Savings` header + value-aligned `Session:`/`Milestone:`/
+`Project:` rows (right-aligned so decimals share a column). **Escalated:** Qwen3.6-27B
+returned `complete` on a red test suite — `project_savings` was computed only in
+`load_data`'s `Ok` branch, so the empty-sessions `Err` path reported `(0,0)`. Architect
+took over (no bounce): lifted the telemetry read + `project_savings` fold above the
+`match`. Calibration data point logged (self-report vs gate-exit disagreement). All
+gates green on independent re-run: **736 executor + 377 mcp** pass.
 
 **M17 phase-05 — done** (2026-06-11, approved_first_try; commit `83bfc15` feat):
 two Activity-panel highlighting upgrades on the **existing syntect** path (no new

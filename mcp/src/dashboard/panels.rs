@@ -511,7 +511,8 @@ pub(crate) fn savings_lines(
 /// "last update: …" freshness line for the Budget panel — the age of the most
 /// recent record, with the average update interval when enough records exist.
 /// `Some` whenever the session has at least one record (`last_ts`); `None` for an
-/// empty log. Mirrors the optional-line shape of `dollars_saved_line`.
+/// empty log. Returns an optional single line, unlike the multi-line
+/// `savings_lines` block.
 pub(crate) fn last_update_line(summary: &StatusSummary, now_ms: u64) -> Option<Line<'static>> {
     let ts = summary.last_ts?;
     let age_str = status::humanize_age(now_ms.saturating_sub(ts));

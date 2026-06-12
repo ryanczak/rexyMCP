@@ -1,7 +1,7 @@
 # Phase 07: Savings scope — session + milestone + project
 
 **Milestone:** M17 — Dashboard Polish (Round 3)
-**Status:** review
+**Status:** done
 **Depends on:** phase-06 (phase-06 renames `"$ saved"` → `"Savings:"` and the
 `dollars_saved_line` function must exist before this phase replaces it)
 **Estimated diff:** ~160 lines across 8 files
@@ -782,3 +782,27 @@ If no live session is available, the gate suite is sufficient.
 ## Update Log
 
 <!-- entries appended below this line -->
+
+### Review verdict — 2026-06-11
+
+- **Verdict:** escalated
+- **Bounces:** none (no bug doc filed — fixed in-session via takeover)
+- **Executor:** Qwen3.6-27B-FP8 (initial run) → Claude Code (direct) for the fix
+- **Scope deviations:** Executor returned `complete` but `cargo test` failed —
+  `load_data` computed `project_savings` only inside the `Ok(records)` branch, so
+  an empty sessions dir (Err path) reported `(0, 0)` and
+  `load_data_reads_project_savings_from_phase_runs` failed. Architect took over
+  rather than re-dispatching: lifted the telemetry read + `project_savings` fold
+  above the `match` (session-independent), kept `milestone_savings` in the `Ok`
+  arm (needs the active phase id). Also fixed a stale doc comment in `panels.rs`
+  referencing the deleted `dollars_saved_line`.
+- **Calibration:** One data point — the executor's final-gate self-report
+  disagreed with the actual `cargo test` exit (declared `complete` on a red test
+  suite). Watch for recurrence; if it repeats, fold a "gate exit status is
+  authoritative over self-report" check into the verifier. Not a fix yet (one
+  occurrence is data).
+- **Verification:** All four gates re-run independently green — fmt clean, clippy
+  clean, build clean, **736 executor + 377 mcp** tests pass (2 ignored). Savings
+  tests confirmed mutation-sensitive (`vw=9`→`7` fails
+  `savings_lines_session_shows_dollars`). No `unwrap`/`expect`/`panic!` outside
+  test code; no `unsafe`, `#[allow]`, `dbg!`, or TODO added.
