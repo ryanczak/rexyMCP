@@ -1,7 +1,7 @@
 # Phase 01: Review write-back substrate
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** in-progress (bounced — see [bug-01-1](bugs/bug-01-1.md))
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
