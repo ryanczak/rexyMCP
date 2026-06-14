@@ -187,6 +187,182 @@ pub fn read(path: &Path) -> std::io::Result<Vec<PhaseRun>> {
         .collect())
 }
 
+/// Overlay each `PhaseReview` onto its matching `PhaseRun`, returning runs with
+/// the supervision fields populated. For each run, the matching review is the
+/// **latest** (max `ts`) review whose phase identity equals the run's:
+/// `phase_doc_path` when both have it, else (`project_id`, `phase_id`). A review
+/// applies only to the **latest** run sharing that identity (the approved run);
+/// earlier bounce runs are left unannotated. Runs with no matching review are
+/// returned unchanged.
+///
+/// Note: `failure_class` is **not** stored on `PhaseRun` in this phase (no
+/// `PhaseRun` field is added); the failure-class data reaches consumers through
+/// `read_reviews` directly in phase-03.
+pub fn fold_reviews(runs: Vec<PhaseRun>, reviews: &[PhaseReview]) -> Vec<PhaseRun> {
+    // Build a map from identity key -> latest review (max ts)
+    use std::collections::HashMap;
+
+    #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+    enum Key {
+        Path(String),
+        IdProject(String, String),
+    }
+
+    fn key_for(r: &PhaseReview) -> Key {
+        if let Some(ref p) = r.phase_doc_path {
+            Key::Path(p.clone())
+        } else {
+            Key::IdProject(r.phase_id.clone(), r.project_id.clone().unwrap_or_default())
+        }
+    }
+
+    fn key_for_run(r: &PhaseRun) -> Key {
+        if let Some(ref p) = r.phase_doc_path {
+            Key::Path(p.clone())
+        } else {
+            Key::IdProject(r.phase_id.clone(), r.project_id.clone().unwrap_or_default())
+        }
+    }
+
+    let mut latest_review: HashMap<Key, &PhaseReview> = HashMap::new();
+    for rev in reviews {
+        let k = key_for(rev);
+        latest_review
+            .entry(k)
+            .and_modify(|existing| {
+                if rev.ts > existing.ts {
+                    *existing = rev;
+                }
+            })
+            .or_insert(rev);
+    }
+
+    // Find the latest run per key
+    let mut latest_run_ts: HashMap<Key, u64> = HashMap::new();
+    for run in &runs {
+        let k = key_for_run(run);
+        latest_run_ts
+            .entry(k)
+            .and_modify(|existing| {
+                if run.ts > *existing {
+                    *existing = run.ts;
+                }
+            })
+            .or_insert(run.ts);
+    }
+
+    // Apply reviews to runs
+    runs.into_iter()
+        .map(|mut run| {
+            let k = key_for_run(&run);
+            if let Some(rev) = latest_review.get(&k) {
+                // Only apply to the latest run for this key
+                if run.ts == *latest_run_ts.get(&k).unwrap_or(&0) {
+                    run.architect_verdict = Some(rev.architect_verdict.clone());
+                    run.bounces_to_approval = rev.bounces_to_approval;
+                    run.bugs_filed = rev.bugs_filed;
+                    run.warnings = rev.warnings;
+                }
+            }
+            run
+        })
+        .collect()
+}
+
+/// Canonical failure-class vocabulary for `PhaseReview.failure_class`. The list
+/// is intentionally open — new classes fold in as they recur (WORKFLOW
+/// § Calibration) — so this is a *documented* vocabulary, not a closed enum.
+/// `spec_bug` and `infra_blip` exist so a bounce caused by the architect's spec
+/// or by transient infrastructure is NOT charged against the model's competency.
+pub const FAILURE_CLASSES: &[&str] = &[
+    "none",              // clean approval
+    "false_completion",  // self-reported complete on a red gate
+    "prod_unwrap",       // unwrap/expect in a production path (STANDARDS §2.1)
+    "multi_site_break",  // breaking multi-site type change ran out of verifier runway
+    "parse_format",      // tool-call format / forgiving-parser repair churn
+    "masked_diagnostic", // #[allow]/#[ignore] used to hide a warning/error
+    "scope_deviation",   // touched out-of-scope files or widened scope
+    "spec_bug",          // the bounce was the architect's spec fault, not the model's
+    "infra_blip",        // transient backend/decode error, not a work defect
+];
+
+/// True if `class` is in the canonical `FAILURE_CLASSES` vocabulary.
+pub fn is_known_failure_class(class: &str) -> bool {
+    FAILURE_CLASSES.contains(&class)
+}
+
+/// An append-only architect-review annotation, folded onto its matching
+/// `PhaseRun` at read time. Written by the `rexymcp review` CLI (phase-02);
+/// the executor never writes one. Coexists with `PhaseRun` in
+/// `phase_runs.jsonl`; the `record` discriminator keeps the two readers from
+/// confusing the line types.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhaseReview {
+    /// Literal discriminator. Always `"review"`. `#[serde(default)]` so a
+    /// `PhaseRun` line (which has no `record` field) deserializes to `""` here
+    /// and is filtered out by `read_reviews`.
+    #[serde(default)]
+    pub record: String,
+    pub ts: u64,
+    /// Identity of the phase being reviewed. Prefer `phase_doc_path` (unique per
+    /// phase doc); `phase_id` + `project_id` are the fallback key for runs that
+    /// predate `phase_doc_path`.
+    #[serde(default)]
+    pub phase_doc_path: Option<String>,
+    pub phase_id: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    // the supervision label
+    pub architect_verdict: String,
+    #[serde(default)]
+    pub bounces_to_approval: Option<u32>,
+    #[serde(default)]
+    pub bugs_filed: Option<u32>,
+    #[serde(default)]
+    pub warnings: Option<u32>,
+    /// Structured failure classes from `FAILURE_CLASSES`. Empty or `["none"]`
+    /// for a clean approval. May carry several (a phase can fail two ways).
+    #[serde(default)]
+    pub failure_class: Vec<String>,
+}
+
+/// The literal value of `PhaseReview.record`. Use everywhere instead of a bare
+/// string so the discriminator is single-sourced.
+pub const REVIEW_RECORD_TAG: &str = "review";
+
+/// Append one `PhaseReview` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`
+/// (the same store as `PhaseRun`). Returns the file path.
+pub fn append_review(telemetry_dir: &Path, review: &PhaseReview) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+
+    std::fs::create_dir_all(telemetry_dir)?;
+    let path = telemetry_dir.join("phase_runs.jsonl");
+    let line = serde_json::to_string(review).map_err(std::io::Error::other)?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    file.write_all(line.as_bytes())?;
+    file.write_all(b"\n")?;
+    Ok(path)
+}
+
+/// Read all `PhaseReview` records from a store file. Lines that are `PhaseRun`
+/// records (or anything without `record == "review"`) are skipped.
+pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    Ok(content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<PhaseReview>(l).ok())
+        .filter(|r| r.record == REVIEW_RECORD_TAG)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,5 +609,257 @@ mod tests {
         let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
         assert_eq!(run.context_window, None);
         assert_eq!(run.model, "qwen2.5-coder");
+    }
+
+    #[test]
+    fn phase_review_round_trips() {
+        let dir = TempDir::new().unwrap();
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-a".to_string()),
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(1),
+            bugs_filed: Some(0),
+            warnings: Some(2),
+            failure_class: vec!["none".to_string()],
+        };
+        append_review(dir.path(), &review).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let reviews = read_reviews(&path).unwrap();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0], review);
+    }
+
+    #[test]
+    fn read_skips_review_lines() {
+        let dir = TempDir::new().unwrap();
+        let run = sample();
+        append(dir.path(), &run).unwrap();
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-a".to_string()),
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(1),
+            bugs_filed: Some(0),
+            warnings: Some(2),
+            failure_class: vec!["none".to_string()],
+        };
+        append_review(dir.path(), &review).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let records = read(&path).unwrap();
+        assert_eq!(records.len(), 1, "read should return only PhaseRun records");
+        assert_eq!(records[0].phase_id, run.phase_id);
+        assert_eq!(records[0].model, run.model);
+    }
+
+    #[test]
+    fn read_reviews_skips_run_lines() {
+        let dir = TempDir::new().unwrap();
+        let run = sample();
+        append(dir.path(), &run).unwrap();
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-a".to_string()),
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(1),
+            bugs_filed: Some(0),
+            warnings: Some(2),
+            failure_class: vec!["none".to_string()],
+        };
+        append_review(dir.path(), &review).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let reviews = read_reviews(&path).unwrap();
+        assert_eq!(
+            reviews.len(),
+            1,
+            "read_reviews should return only review records"
+        );
+        assert_eq!(reviews[0].record, "review");
+    }
+
+    #[test]
+    fn fold_reviews_overlays_by_doc_path() {
+        let run = PhaseRun {
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            ..sample()
+        };
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-a".to_string()),
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(1),
+            bugs_filed: Some(0),
+            warnings: Some(2),
+            failure_class: vec!["none".to_string()],
+        };
+        let folded = fold_reviews(vec![run], &[review]);
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0].architect_verdict, Some("approved".to_string()));
+        assert_eq!(folded[0].bounces_to_approval, Some(1));
+        assert_eq!(folded[0].bugs_filed, Some(0));
+        assert_eq!(folded[0].warnings, Some(2));
+    }
+
+    #[test]
+    fn fold_reviews_falls_back_to_id_project() {
+        let run = PhaseRun {
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-a".to_string()),
+            ..sample()
+        };
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: None,
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-a".to_string()),
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(1),
+            bugs_filed: Some(0),
+            warnings: Some(2),
+            failure_class: vec!["none".to_string()],
+        };
+        let folded = fold_reviews(vec![run], std::slice::from_ref(&review));
+        assert_eq!(folded[0].architect_verdict, Some("approved".to_string()));
+
+        // Differing project_id must NOT match (pinned negative)
+        let run_b = PhaseRun {
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "phase-01".to_string(),
+            project_id: Some("proj-b".to_string()),
+            ..sample()
+        };
+        let folded_b = fold_reviews(vec![run_b], &[review]);
+        assert_eq!(
+            folded_b[0].architect_verdict, None,
+            "different project_id must not cross-fold"
+        );
+    }
+
+    #[test]
+    fn fold_reviews_latest_review_wins() {
+        let run = PhaseRun {
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            ..sample()
+        };
+        let review_old = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: None,
+            architect_verdict: "bounced".to_string(),
+            bounces_to_approval: None,
+            bugs_filed: None,
+            warnings: None,
+            failure_class: vec!["false_completion".to_string()],
+        };
+        let review_new = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 3_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: None,
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(2),
+            bugs_filed: Some(1),
+            warnings: Some(0),
+            failure_class: vec!["none".to_string()],
+        };
+        let folded = fold_reviews(vec![run], &[review_old, review_new]);
+        assert_eq!(
+            folded[0].architect_verdict,
+            Some("approved".to_string()),
+            "latest review (ts=3000) should win"
+        );
+        assert_eq!(folded[0].bounces_to_approval, Some(2));
+    }
+
+    #[test]
+    fn fold_reviews_applies_to_latest_run() {
+        let run_old = PhaseRun {
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            ..sample()
+        };
+        let run_new = PhaseRun {
+            ts: 2_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            ..sample()
+        };
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 3_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            phase_id: "phase-01".to_string(),
+            project_id: None,
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: Some(1),
+            bugs_filed: Some(0),
+            warnings: Some(0),
+            failure_class: vec!["none".to_string()],
+        };
+        let folded = fold_reviews(vec![run_old, run_new], &[review]);
+        assert_eq!(
+            folded[0].architect_verdict, None,
+            "earlier run should stay unannotated"
+        );
+        assert_eq!(
+            folded[1].architect_verdict,
+            Some("approved".to_string()),
+            "latest run should be annotated"
+        );
+    }
+
+    #[test]
+    fn fold_reviews_leaves_unmatched_none() {
+        let run = PhaseRun {
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-01.md".to_string()),
+            ..sample()
+        };
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: Some("/docs/other-phase.md".to_string()),
+            phase_id: "phase-02".to_string(),
+            project_id: None,
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: None,
+            bugs_filed: None,
+            warnings: None,
+            failure_class: vec!["none".to_string()],
+        };
+        let folded = fold_reviews(vec![run], &[review]);
+        assert_eq!(folded[0].architect_verdict, None);
+        assert_eq!(folded[0].bounces_to_approval, None);
+        assert_eq!(folded[0].bugs_filed, None);
+        assert_eq!(folded[0].warnings, None);
+    }
+
+    #[test]
+    fn is_known_failure_class_validates_vocabulary() {
+        assert!(is_known_failure_class("false_completion"));
+        assert!(is_known_failure_class("none"));
+        assert!(is_known_failure_class("spec_bug"));
+        assert!(is_known_failure_class("infra_blip"));
+        assert!(!is_known_failure_class("made_up"));
     }
 }

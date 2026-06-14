@@ -123,7 +123,11 @@ fn milestone_id_from_path(path: &Path) -> Option<String> {
         .next()
         .map(|c| c.is_ascii_digit())
         .unwrap_or(false);
-    if has_num { Some(dir_name.to_string()) } else { None }
+    if has_num {
+        Some(dir_name.to_string())
+    } else {
+        None
+    }
 }
 
 /// Register the full built-in tool set and derive schemas.

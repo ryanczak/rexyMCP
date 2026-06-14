@@ -111,8 +111,14 @@ pub fn run_dashboard(
     project_id: Option<String>,
 ) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
-    let result =
-        event_loop::run_loop(&mut terminal, repo, session, rates, telemetry_dir, project_id);
+    let result = event_loop::run_loop(
+        &mut terminal,
+        repo,
+        session,
+        rates,
+        telemetry_dir,
+        project_id,
+    );
     ratatui::restore();
     result
 }

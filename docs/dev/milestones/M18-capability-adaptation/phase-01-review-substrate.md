@@ -1,7 +1,7 @@
 # Phase 01: Review write-back substrate
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -314,3 +314,40 @@ kickoff; this phase does not touch it.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-14 04:58 (started)
+
+**Executor:** rexyMCP executor LLM
+
+**Summary:** Implementing the store-layer substrate for architect review write-back: `PhaseReview` record type, `FAILURE_CLASSES` vocabulary, `append_review`, `read_reviews`, `fold_reviews`, and 9 tests.
+
+### Update — 2026-06-14 04:58 (complete)
+
+**Summary:** All spec tasks implemented in `executor/src/store/telemetry.rs`.
+
+**Files changed:**
+- `executor/src/store/telemetry.rs` — added `PhaseReview` struct, `REVIEW_RECORD_TAG` const, `FAILURE_CLASSES` const, `is_known_failure_class`, `append_review`, `read_reviews`, `fold_reviews`, and 9 tests.
+- `docs/dev/milestones/M18-capability-adaptation/phase-01-review-substrate.md` — status flip to `review`, update log entries.
+- `docs/dev/milestones/M18-capability-adaptation/README.md` — phase table row updated to `review`.
+
+**Verification commands:**
+```
+cargo fmt --all --check: clean
+cargo build: clean (zero warnings)
+cargo clippy --all-targets --all-features -- -D warnings: clean
+cargo test -p rexymcp-executor: 749 passed, 0 failed, 2 ignored
+```
+
+**Verification summary:** build clean, clippy clean, format clean, all 749 tests pass (9 new + existing).
+
+**Grep for pinned literals:**
+```
+grep REVIEW_RECORD_TAG executor/src/store/telemetry.rs → 11 matches (const + usage in read_reviews + 9 test sites)
+grep FAILURE_CLASSES executor/src/store/telemetry.rs → 4 matches (const + is_known_failure_class + 2 doc refs)
+```
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact. Hermetic `TempDir` tests are the verification.
+
+**Notes for review:** None — implementation matches spec exactly.
+
+**Commit:** `feat: add PhaseReview annotation substrate to telemetry store`

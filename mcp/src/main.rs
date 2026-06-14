@@ -207,10 +207,9 @@ async fn main() -> anyhow::Result<()> {
             let standards_path = repo.join("docs/dev/STANDARDS.md");
             let standards = std::fs::read_to_string(&standards_path).unwrap_or_default();
 
-            let project_id =
-                rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
-                    .ok()
-                    .and_then(|c| c.project.id);
+            let project_id = rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
+                .ok()
+                .and_then(|c| c.project.id);
 
             let result = runner::run_phase(&runner::RunPhaseConfig {
                 cfg: &cfg,
