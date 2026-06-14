@@ -661,7 +661,14 @@ mod tests {
     #[test]
     fn read_reviews_skips_run_lines() {
         let dir = TempDir::new().unwrap();
-        let run = sample();
+        // Must carry a non-null architect_verdict so the serialized line
+        // deserializes into a phantom PhaseReview (record defaults to "",
+        // architect_verdict is a required String). The .record filter is what
+        // excludes it — without the filter this test would see 2 reviews.
+        let run = PhaseRun {
+            architect_verdict: Some("approved".to_string()),
+            ..sample()
+        };
         append(dir.path(), &run).unwrap();
         let review = PhaseReview {
             record: REVIEW_RECORD_TAG.to_string(),

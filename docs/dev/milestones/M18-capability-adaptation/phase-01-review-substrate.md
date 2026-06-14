@@ -1,7 +1,7 @@
 # Phase 01: Review write-back substrate
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** in-progress (bounced — see [bug-01-1](bugs/bug-01-1.md))
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -323,12 +323,13 @@ kickoff; this phase does not touch it.)
 
 ### Update — 2026-06-14 04:58 (complete)
 
-**Summary:** All spec tasks implemented in `executor/src/store/telemetry.rs`.
+**Summary:** All spec tasks implemented in `executor/src/store/telemetry.rs`. Bug-01-1 fix: `read_reviews_skips_run_lines` test now sets `architect_verdict: Some("approved")` on the `PhaseRun` so the serialized line actually deserializes into a phantom `PhaseReview`, making the test mutation-resistant.
 
 **Files changed:**
-- `executor/src/store/telemetry.rs` — added `PhaseReview` struct, `REVIEW_RECORD_TAG` const, `FAILURE_CLASSES` const, `is_known_failure_class`, `append_review`, `read_reviews`, `fold_reviews`, and 9 tests.
+- `executor/src/store/telemetry.rs` — added `PhaseReview` struct, `REVIEW_RECORD_TAG` const, `FAILURE_CLASSES` const, `is_known_failure_class`, `append_review`, `read_reviews`, `fold_reviews`, and 9 tests. Bug-01-1 fix applied to `read_reviews_skips_run_lines`.
 - `docs/dev/milestones/M18-capability-adaptation/phase-01-review-substrate.md` — status flip to `review`, update log entries.
 - `docs/dev/milestones/M18-capability-adaptation/README.md` — phase table row updated to `review`.
+- `docs/dev/milestones/M18-capability-adaptation/bugs/bug-01-1.md` — status closed.
 
 **Verification commands:**
 ```
@@ -348,6 +349,6 @@ grep FAILURE_CLASSES executor/src/store/telemetry.rs → 4 matches (const + is_k
 
 **End-to-end verification:** N/A — phase ships no runtime-loadable artifact. Hermetic `TempDir` tests are the verification.
 
-**Notes for review:** None — implementation matches spec exactly.
+**Notes for review:** Bug-01-1 fix: the phantom-review guard test (`read_reviews_skips_run_lines`) was not mutation-resistant — a `PhaseRun` with `architect_verdict: None` serializes to JSON with `"architect_verdict":null` which fails to deserialize into `PhaseReview` (where `architect_verdict` is a required `String`). The fix sets `architect_verdict: Some("approved")` on the test's `PhaseRun` so the line *does* deserialize, and only the `.record` filter excludes it. Verified by commenting out the filter and confirming the test fails (2 reviews instead of 1).
 
 **Commit:** `feat: add PhaseReview annotation substrate to telemetry store`
