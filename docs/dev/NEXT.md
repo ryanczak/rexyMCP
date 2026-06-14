@@ -4,8 +4,23 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-01-review-substrate.md`
-(M18 phase-01, `todo`). Dispatch with `/rexymcp:dispatch phase-01`.
+**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-02-review-cli-fold.md`
+(M18 phase-02, `todo`). Dispatch with `/rexymcp:dispatch phase-02`.
+
+**M18 phase-01 — done** (2026-06-14, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8). Store-layer review write-back substrate landed in
+`executor/src/store/telemetry.rs`: `PhaseReview` annotation record +
+`REVIEW_RECORD_TAG` discriminator, `FAILURE_CLASSES` vocabulary +
+`is_known_failure_class`, `append_review`/`read_reviews`/`fold_reviews`, 9 tests.
+Bounce ([bug-01-1](milestones/M18-capability-adaptation/bugs/bug-01-1.md), minor):
+the phantom-review guard test was not mutation-resistant — `sample()`'s
+`architect_verdict: None` serializes to `null`, which fails to deserialize into
+`PhaseReview`'s required `String`, so the run line was dropped by the `.ok()`
+parse-failure *before* the `.record` filter ran; fixed by giving the test run a
+non-null verdict. **Phase-02 (drafted) closes the loop:** the `rexymcp review`
+CLI (producer) + folding `read_reviews`/`fold_reviews` into the three read paths
+(`runs.rs:173`, `scorecard_cli.rs:31`, `server.rs:292`) + wiring the
+`/rexymcp:review` skill to call the CLI.
 
 **📌 M18 — Capability-Aware Adaptation kicked off (2026-06-13, with the user).**
 Make rexyMCP characterize each local model's strengths/failure modes and

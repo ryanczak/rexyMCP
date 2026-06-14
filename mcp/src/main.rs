@@ -8,6 +8,7 @@ mod dashboard;
 mod doctor;
 mod init;
 mod log_query;
+mod review;
 mod roots;
 mod runner;
 mod runs;
@@ -158,6 +159,48 @@ enum Commands {
         /// Emit the report as JSON instead of a human summary
         #[arg(long)]
         json: bool,
+    },
+    /// Record an architect review verdict as a PhaseReview annotation
+    Review {
+        /// Path to the config file
+        #[arg(long)]
+        config: PathBuf,
+
+        /// Absolute path to the phase doc under review (primary fold key)
+        #[arg(long)]
+        phase_doc: Option<PathBuf>,
+
+        /// Phase id label (e.g. phase-01); also the fallback fold key
+        #[arg(long)]
+        phase_id: String,
+
+        /// Project id; defaults to [project].id from config when omitted
+        #[arg(long)]
+        project_id: Option<String>,
+
+        /// The verdict string (e.g. approved_first_try, approved_after_1, escalated)
+        #[arg(long)]
+        verdict: String,
+
+        /// Failure class from the canonical vocabulary; repeat for several
+        #[arg(long = "failure-class")]
+        failure_class: Vec<String>,
+
+        /// Bounces to approval
+        #[arg(long)]
+        bounces: Option<u32>,
+
+        /// Bugs filed during review
+        #[arg(long)]
+        bugs_filed: Option<u32>,
+
+        /// Warnings noted during review
+        #[arg(long)]
+        warnings: Option<u32>,
+
+        /// Override the telemetry phase_runs.jsonl path
+        #[arg(long)]
+        telemetry_path: Option<PathBuf>,
     },
 }
 
@@ -363,6 +406,54 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", scorecard_cli::format_settings_scorecard(&rows));
             }
             Ok(())
+        }
+        Commands::Review {
+            config,
+            phase_doc,
+            phase_id,
+            project_id,
+            verdict,
+            failure_class,
+            bounces,
+            bugs_filed,
+            warnings,
+            telemetry_path,
+        } => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let args = review::ReviewArgs {
+                phase_doc: phase_doc.as_deref(),
+                phase_id: &phase_id,
+                project_id: project_id.as_deref(),
+                verdict: &verdict,
+                failure_class: &failure_class,
+                bounces,
+                bugs_filed,
+                warnings,
+            };
+            match review::record_review(&config, telemetry_path.as_deref(), now_ms, &args) {
+                Ok(outcome) => {
+                    for unknown in &outcome.unknown_classes {
+                        eprintln!(
+                            "warning: unknown failure class {:?} (recorded anyway); known classes: {:?}",
+                            unknown,
+                            rexymcp_executor::store::telemetry::FAILURE_CLASSES
+                        );
+                    }
+                    println!(
+                        "recorded review for {} -> {}",
+                        phase_id,
+                        outcome.path.display()
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Dashboard {
             repo,

@@ -172,6 +172,9 @@ pub fn load_runs(
 
     let runs =
         rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+    let reviews = rexymcp_executor::store::telemetry::read_reviews(&telemetry_file)
+        .map_err(|e| e.to_string())?;
+    let runs = rexymcp_executor::store::telemetry::fold_reviews(runs, &reviews);
     Ok(select(runs, filter))
 }
 
@@ -587,6 +590,105 @@ model = "qwen"
         assert!(
             dash_count >= 3,
             "expected at least 3 '—' sentinels on qwen line (verdict + peak_cxt + reclaimed): {qwen_line}"
+        );
+    }
+
+    #[test]
+    fn load_runs_folds_review_verdict() {
+        use rexymcp_executor::store::telemetry::{
+            PhaseReview, REVIEW_RECORD_TAG, append, append_review,
+        };
+        use std::fs;
+
+        let dir = TempDir::new().unwrap();
+        let telemetry_dir = dir.path().join("telemetry");
+        fs::create_dir_all(&telemetry_dir).unwrap();
+
+        // Write a config pointing at the telemetry dir
+        let config_path = dir.path().join("rexymcp.toml");
+        fs::write(
+            &config_path,
+            format!(
+                r#"[project]
+id = "test-proj"
+
+[executor]
+provider = "openai"
+base_url = "http://localhost:8000/v1"
+model = "qwen"
+
+[telemetry]
+dir = "{}"
+"#,
+                telemetry_dir.display()
+            ),
+        )
+        .unwrap();
+
+        let phase_doc = "/abs/path/to/phase-05.md";
+
+        // Append a PhaseRun with verdict None
+        let run = PhaseRun {
+            ts: 1_717_000_000_000,
+            model: "qwen".to_string(),
+            generation_params: GenerationParams::default(),
+            phase_id: "phase-05".to_string(),
+            phase_doc_path: Some(phase_doc.to_string()),
+            tags: vec!["rust".to_string()],
+            status: "complete".to_string(),
+            escalated: false,
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            parse_failure_rate: 0.0,
+            repairs_per_call: 0.0,
+            verifier_retries: 0,
+            tool_success_rate: 1.0,
+            turns: 5,
+            wall_clock_s: 10.0,
+            tokens: Default::default(),
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: None,
+            served_model: None,
+            length_finish_rate: None,
+            context_window: None,
+            context_efficiency: Default::default(),
+            project_id: Some("test-proj".to_string()),
+            milestone_id: None,
+        };
+        append(&telemetry_dir, &run).unwrap();
+
+        // Append a matching PhaseReview
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 1_717_000_001_000,
+            phase_doc_path: Some(phase_doc.to_string()),
+            phase_id: "phase-05".to_string(),
+            project_id: Some("test-proj".to_string()),
+            architect_verdict: "approved_first_try".to_string(),
+            bounces_to_approval: Some(0),
+            bugs_filed: Some(0),
+            warnings: Some(0),
+            failure_class: vec!["none".to_string()],
+        };
+        append_review(&telemetry_dir, &review).unwrap();
+
+        // load_runs should fold the review verdict onto the run
+        let filter = RunsFilter {
+            model: None,
+            tags: &[],
+            limit: 0,
+        };
+        let runs = load_runs(&config_path, None, &filter).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].architect_verdict,
+            Some("approved_first_try".to_string())
         );
     }
 }

@@ -92,7 +92,7 @@ drafted. See Notes.
 | #  | Phase | Thread | Status |
 |----|-------|--------|--------|
 | 01 | review write-back substrate (`PhaseReview` annotation + fold-on-read + failure-class taxonomy) ([phase-01-review-substrate.md](phase-01-review-substrate.md)) | 1 | done |
-| 02 | `rexymcp review` CLI + fold into runs/scorecard reads + skill wiring | 1 | planned |
+| 02 | `rexymcp review` CLI + fold into runs/scorecard reads + skill wiring ([phase-02-review-cli-fold.md](phase-02-review-cli-fold.md)) | 1 | review |
 | 03 | `model_profile` aggregation (strengths + ranked failure classes) | 2 | planned |
 | 04 | surface the profile to the architect (MCP tool + `rexymcp profile` CLI) | 2 | planned |
 | 05 | per-model config-override resolution layer | 3 | planned |

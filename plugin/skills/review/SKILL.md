@@ -136,6 +136,16 @@ a. **Write the Review verdict** block at the bottom of the phase doc's
    Adjust `Verdict` to `approved_after_N` if there were prior bounces, or
    `escalated` if this was a takeover.
 
+a-bis. **Record the verdict in the telemetry store** so the scorecard sees
+   it. Run (absolute `--phase-doc` so it matches the stored run identity):
+
+   `rexymcp review --config <repo>/rexymcp.toml --phase-doc <abs phase-doc path>
+   --phase-id <phase short id> --verdict approved_first_try --failure-class none`
+
+   Use `approved_after_N` and the real bounce/bug counts (`--bounces N
+   --bugs-filed N`) and the matching `--failure-class` from the taxonomy when
+   there were prior bounces.
+
 b. **Flip the phase doc's `Status:` line** from `review` to `done`.
 
 c. **Update the milestone README's phase-table row** to `done`.
@@ -190,6 +200,10 @@ b. **Flip the phase doc's `Status:` line** from `review` back to
    `in-progress` (with a note referencing the bug).
 
 c. **Update the milestone README's phase-table row** to `in-progress`.
+
+c-bis. **Record the bounce in the telemetry store:** `rexymcp review --config
+   <repo>/rexymcp.toml --phase-doc <abs phase-doc path> --phase-id <phase short
+   id> --verdict bounced --bugs-filed 1 --failure-class <class from taxonomy>`
 
 d. **Commit** with a conventional commit message:
    `docs: bounce <milestone> <phase> — bug-<n>-<n> (<short summary>)`.

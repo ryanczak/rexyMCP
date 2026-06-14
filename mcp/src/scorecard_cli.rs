@@ -30,6 +30,9 @@ pub fn load_settings_scorecard(
 
     let runs: Vec<PhaseRun> =
         rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+    let reviews = rexymcp_executor::store::telemetry::read_reviews(&telemetry_file)
+        .map_err(|e| e.to_string())?;
+    let runs = rexymcp_executor::store::telemetry::fold_reviews(runs, &reviews);
     Ok(aggregate_by_settings(&runs, filter))
 }
 

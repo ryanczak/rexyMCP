@@ -700,3 +700,86 @@ async fn execute_phase_inner_with_none_captures_nothing() {
         result
     );
 }
+
+#[test]
+fn model_scorecard_folds_review() {
+    use rexymcp_executor::store::telemetry::{PhaseReview, REVIEW_RECORD_TAG, append_review};
+
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_config_with_telemetry(&temp_dir);
+    let fixture = write_telemetry_fixture(&temp_dir);
+
+    // Append a review keyed to the first run (model "m1", phase "p1")
+    // The first fixture run has ts=1717000000000, model="m1", phase_id="p1", architect_verdict=null
+    let telemetry_dir = temp_dir.path().join("telemetry");
+    append_review(
+        &telemetry_dir,
+        &PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 1_717_000_000_500,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            architect_verdict: "approved_first_try".to_string(),
+            bounces_to_approval: Some(0),
+            bugs_filed: Some(0),
+            warnings: Some(0),
+            failure_class: vec!["none".to_string()],
+        },
+    )
+    .unwrap();
+
+    let params = ModelScorecardParams {
+        tags: None,
+        model: None,
+        min_runs: None,
+        telemetry_path: Some(fixture.to_str().unwrap().to_string()),
+    };
+    let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+    assert_eq!(result.total_runs_considered, 2);
+
+    // The m1 row should now show approved_first_try rate > 0
+    let m1_row = result
+        .rows
+        .iter()
+        .find(|r| r.model == "m1")
+        .expect("expected m1 row in scorecard");
+    assert!(
+        m1_row.approved_first_try_rate.is_some() && m1_row.approved_first_try_rate.unwrap() > 0.0,
+        "expected m1 approved_first_try_rate > 0 after folding review, got {:?}",
+        m1_row.approved_first_try_rate
+    );
+
+    // Pinned negative: a review whose phase_doc_path matches no run should not affect aggregates.
+    // Append a review for a non-existent phase
+    append_review(
+        &telemetry_dir,
+        &PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 1_717_000_002_000,
+            phase_doc_path: Some("/nonexistent/phase-99.md".to_string()),
+            phase_id: "phase-99".to_string(),
+            project_id: Some("other-project".to_string()),
+            architect_verdict: "approved_first_try".to_string(),
+            bounces_to_approval: Some(0),
+            bugs_filed: Some(0),
+            warnings: Some(0),
+            failure_class: vec!["none".to_string()],
+        },
+    )
+    .unwrap();
+
+    let result2 = model_scorecard_inner(&config_path, &params).unwrap();
+    assert_eq!(result2.total_runs_considered, 2);
+    // m1 row should be unchanged (the phantom review didn't match any run)
+    let m1_row2 = result2
+        .rows
+        .iter()
+        .find(|r| r.model == "m1")
+        .expect("expected m1 row in scorecard");
+    assert_eq!(
+        m1_row.approved_first_try_rate, m1_row2.approved_first_try_rate,
+        "phantom review should not change m1 aggregates"
+    );
+}

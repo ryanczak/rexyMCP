@@ -291,6 +291,9 @@ pub(crate) fn model_scorecard_inner(
 
     let runs =
         rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+    let reviews = rexymcp_executor::store::telemetry::read_reviews(&telemetry_file)
+        .map_err(|e| e.to_string())?;
+    let runs = rexymcp_executor::store::telemetry::fold_reviews(runs, &reviews);
 
     let total_runs_considered = runs.len();
 
