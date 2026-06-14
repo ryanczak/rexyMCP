@@ -4,9 +4,35 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none. **M17 — Dashboard Polish (Round 3) is complete**
-(9/9 phases `done`, 2026-06-12). Kick off the next milestone explicitly with
-`/rexymcp:architect`.
+**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-01-review-substrate.md`
+(M18 phase-01, `todo`). Dispatch with `/rexymcp:dispatch phase-01`.
+
+**📌 M18 — Capability-Aware Adaptation kicked off (2026-06-13, with the user).**
+Make rexyMCP characterize each local model's strengths/failure modes and
+compensate for them (draft-time + runtime) instead of per-phase trial-and-error.
+Milestone [README](milestones/M18-capability-adaptation/README.md) written;
+`architecture.md` §Status #18 added. **Foundational discovery driving phase-01:**
+the supervision half of the eval loop was never wired — the executor writes every
+`PhaseRun`'s `architect_verdict`/`bounces_to_approval`/`bugs_filed`/`warnings` as
+`None` (`executor/src/agent/metrics.rs:121-124`), the store is append-only, and
+**no write-back path exists**. The architect's verdict has only ever lived in
+phase-doc prose, so "trial and error" can't compound. **Four threads** (README):
+(1) supervision write-back substrate — an append-only `PhaseReview` annotation
+folded onto its `PhaseRun` by phase identity, written by a new `rexymcp review`
+CLI, carrying a structured **failure-class** taxonomy; (2) per-model capability
+profile (strengths + ranked failure classes) surfaced to the architect at draft
+time; (3) model-conditioned runtime knobs (`task_tracking`/governor
+thresholds/router breadth/sampling) from config instead of globals; (4)
+cold-start calibration battery — **shelved** for later revisit (with the user,
+2026-06-13), out of M18's committed scope; when picked up it needs a talk-through
++ `architecture.md` precedence decision (it departs from the "passive telemetry
+only" principle). **Decisions locked with the user (2026-06-13):** write-back is
+an **append-only annotation record folded at read time** (not in-place rewrite);
+the trigger is a **`rexymcp review` CLI** the `/rexymcp:review` skill calls.
+On-demand drafting: only phase-01 is drafted; expand 02–06 via
+`/rexymcp:architect next`. Phase-07 (thread 4) is shelved, not blocked.
+
+**M17 — Dashboard Polish (Round 3) is complete** (9/9 phases `done`, 2026-06-12).
 
 **M17 phase-09 — done** (2026-06-12, **approved_after_1**; commit `abd11e6` fix /
 approve pending): tool-call presentation — per-tool glyphs on `Parsed` headers

@@ -1,7 +1,7 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 and M9–M16 are fully implemented
-> and closed; M17 (dashboard polish, round 3) is active. M8 (live session dashboard) is implemented but
+> **Status:** Living design doc. M1–M7 and M9–M17 are fully implemented
+> and closed; M18 (capability-aware adaptation) is active. M8 (live session dashboard) is implemented but
 > open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
 > live-session confirmation and bug fixes before its milestone close. This document is the source of truth
 > for the *intended* design; the code under `executor/` and `mcp/` is the source
@@ -835,3 +835,29 @@ The project plan. Each entry becomes a milestone with its own
     crate's existing **syntect** dependency (tree-sitter was considered and
     dropped). No new `SessionEvent` and no new dependency in any phase. See
     `docs/dev/milestones/M17-dashboard-polish-3/README.md`.
+
+18. **M18 — Capability-Aware Adaptation** *(in progress, kicked off 2026-06-13)*.
+    Make rexyMCP characterize each local model's strengths and failure modes and
+    compensate for them — at draft time and at runtime — instead of relearning
+    them by per-phase trial-and-error. **Foundational fix:** the supervision half
+    of the eval loop was never wired — the executor writes every `PhaseRun`'s
+    `architect_verdict`/`bounces_to_approval`/`bugs_filed`/`warnings` as `None`
+    (`executor/src/agent/metrics.rs`), the telemetry store is append-only, and no
+    write-back path exists, so the architect's verdict has only ever lived in
+    phase-doc prose. Four threads: (1) **supervision write-back substrate** — an
+    append-only `PhaseReview` annotation, folded onto its matching `PhaseRun` by
+    phase identity at read time, written by a new `rexymcp review` CLI, carrying a
+    structured **failure-class** taxonomy (`false_completion`, `prod_unwrap`,
+    `multi_site_break`, …, plus `spec_bug`/`infra_blip` so non-model faults are
+    not charged to the model); (2) a per-model **capability profile** (per-`(model,
+    tag)` strengths + ranked failure classes) surfaced to the architect at draft
+    time to make pre-injection data-driven; (3) **model-conditioned runtime knobs**
+    — `task_tracking`/governor thresholds/router breadth/sampling resolve per-model
+    defaults from config instead of global constants; (4) a **cold-start
+    calibration battery** to seed a new model's profile — *shelved for later
+    revisit, outside M18's committed scope*: it is active benchmark measurement
+    and departs from this section's "passive production telemetry" principle, so
+    when picked up it needs a talk-through and an explicit amendment of that
+    principle before its phase is drafted. The scorecard still **informs** the
+    human's model choice; M18 adds no automated model-routing. See
+    `docs/dev/milestones/M18-capability-adaptation/README.md`.
