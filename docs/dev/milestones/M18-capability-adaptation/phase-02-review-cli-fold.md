@@ -1,7 +1,7 @@
 # Phase 02: `rexymcp review` CLI + fold into read paths + skill wiring
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (the `PhaseReview` substrate — done)
 **Estimated diff:** ~340 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -505,3 +505,28 @@ Usage: rexymcp review [OPTIONS] --config <CONFIG> --phase-id <PHASE_ID> --verdic
 **Notes for review:** The end-to-end `rexymcp runs` command showed "(no runs)" because the e2e store only contained a review line (no `PhaseRun` line) — this is correct behavior since `read` filters out review lines. The fold wire-in was verified via the `load_runs_folds_review_verdict` unit test which writes both a `PhaseRun` and a matching `PhaseReview` to a `TempDir` store and asserts the verdict is populated after the fold.
 
 **Commit:** `feat: add rexymcp review CLI, fold reviews into read paths, wire skill`
+
+### Review verdict — 2026-06-14
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — all changes confined to the authorized surface
+  (`mcp/src/{main,review,runs,scorecard_cli,server,server_tests}.rs` +
+  `plugin/skills/review/SKILL.md` §7/§8 + the two M18 docs). No
+  `Cargo.toml`/`architecture.md`/`STANDARDS.md`/`WORKFLOW.md` touched; no new
+  dependency.
+- **Calibration:** Reviewer independently re-ran all four gates (fmt/build/clippy
+  clean; 749 passed, 0 failed, 2 ignored) and verified the CLI **end-to-end
+  against the built binary** (not just unit fakes): recorded an approval and
+  confirmed it folds through `rexymcp runs` (`architect_verdict` null →
+  `approved_first_try`); confirmed an unknown failure class warns to stderr yet
+  is still recorded; confirmed `review --help` lists the subcommand. Mutation-
+  verified the load-bearing fold: deleting the `fold_reviews` line from
+  `load_runs` makes `load_runs_folds_review_verdict` fail. One latent edge noted
+  (no fold, no bounce — it is a spec artifact I authored): the
+  `--telemetry-path` override derives the dir via `.parent()` and `append_review`
+  re-joins `phase_runs.jsonl`, so a *custom-named* override file would be written
+  to `phase_runs.jsonl` in its parent rather than the named file. The flag is
+  documented as "the phase_runs.jsonl path," so this matches intent; worth
+  tightening if a non-`phase_runs.jsonl` override ever becomes a real use case.
