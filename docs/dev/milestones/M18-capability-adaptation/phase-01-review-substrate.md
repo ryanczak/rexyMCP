@@ -1,7 +1,7 @@
 # Phase 01: Review write-back substrate
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -352,3 +352,28 @@ grep FAILURE_CLASSES executor/src/store/telemetry.rs → 4 matches (const + is_k
 **Notes for review:** Bug-01-1 fix: the phantom-review guard test (`read_reviews_skips_run_lines`) was not mutation-resistant — a `PhaseRun` with `architect_verdict: None` serializes to JSON with `"architect_verdict":null` which fails to deserialize into `PhaseReview` (where `architect_verdict` is a required `String`). The fix sets `architect_verdict: Some("approved")` on the test's `PhaseRun` so the line *does* deserialize, and only the `.record` filter excludes it. Verified by commenting out the filter and confirming the test fails (2 reviews instead of 1).
 
 **Commit:** `feat: add PhaseReview annotation substrate to telemetry store`
+
+### Review verdict — 2026-06-14
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 ([bug-01-1](bugs/bug-01-1.md), minor — phantom-review guard
+  test was not mutation-resistant; `sample()`'s `architect_verdict: None`
+  serializes to `null`, which fails to deserialize into `PhaseReview`'s required
+  `String`, so the run line was excluded by the `.ok()` parse-failure before the
+  `.record` filter was ever consulted. Fixed by setting `architect_verdict:
+  Some("approved")` on the test's `PhaseRun` so the line *does* deserialize and
+  only the discriminator excludes it.)
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — store-layer additive change confined to
+  `executor/src/store/telemetry.rs`; no `PhaseRun` field/test changed, no
+  `architecture.md`/config/`Cargo.toml` touched.
+- **Calibration:** Re-review mutation-verified the fix: with `.filter(|r|
+  r.record == REVIEW_RECORD_TAG)` removed from `read_reviews`,
+  `read_reviews_skips_run_lines` now fails (`2 != 1`), confirming the
+  discriminator is genuinely guarded. Spec gap noted (no fold): the phase doc's
+  §2 comment and test-plan asserted "a `PhaseRun` line *will* deserialize into a
+  `PhaseReview` (every other field defaults)" — but `architect_verdict` is a
+  required non-default `String`, so a default run line does *not* deserialize.
+  The `.record` filter is still correct belt-and-suspenders (load-bearing for any
+  future folded/written-back run carrying a non-null verdict); the spec's stated
+  mechanism was just imprecise. One data point, not a trend.

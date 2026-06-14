@@ -91,7 +91,7 @@ drafted. See Notes.
 
 | #  | Phase | Thread | Status |
 |----|-------|--------|--------|
-| 01 | review write-back substrate (`PhaseReview` annotation + fold-on-read + failure-class taxonomy) ([phase-01-review-substrate.md](phase-01-review-substrate.md)) | 1 | review |
+| 01 | review write-back substrate (`PhaseReview` annotation + fold-on-read + failure-class taxonomy) ([phase-01-review-substrate.md](phase-01-review-substrate.md)) | 1 | done |
 | 02 | `rexymcp review` CLI + fold into runs/scorecard reads + skill wiring | 1 | planned |
 | 03 | `model_profile` aggregation (strengths + ranked failure classes) | 2 | planned |
 | 04 | surface the profile to the architect (MCP tool + `rexymcp profile` CLI) | 2 | planned |
