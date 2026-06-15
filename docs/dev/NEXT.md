@@ -4,11 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M18 phase-07 — executor tooling improvements (the cleanup
-thread). Dispatch with `/rexymcp:dispatch phase-07`. Committed threads 1–3 are
-done; thread 4 (cold-start calibration battery, now phase-08) stays shelved.
-After phase-07 lands and is approved, M18's last in-scope phase is done — that's
-the milestone boundary (human sign-off to close M18 / start a new milestone).
+**Active phase:** none — **M18 is complete** (all in-scope phases 01–07 approved
+2026-06-15; phase-08/thread-4 shelved). This is a milestone boundary: the user
+signs off before the next milestone begins. **M19 (Structural Gate Enforcement)
+is drafted and staged** at `docs/dev/milestones/M19-gate-enforcement/` —
+phase-01 (pre-completion gate enforcement) closes the recurring `false_completion`
+class structurally. To start it: `/rexymcp:architect next` (activates M19
+phase-01 + repoints this file), then `/rexymcp:dispatch phase-01`.
+
+**M18 phase-07 — done** (2026-06-15, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8; commit `b93e9d5` fix). The cleanup-thread tool-surface
+expansion: `write_file` append + line count, `search` `context_lines` (cap 5,
+no-context path byte-identical), `find_files` `depth` via `WalkBuilder`, and
+three new `Category::Write` tools `patch_lines`/`delete_file`/`move_file` wired
+into `mod.rs`/`router.rs`/`runner.rs`. **Bounced once** (bug-07-1, blocker): the
+first complete shipped the three new tools as **orphan files** never wired in —
+their tests never compiled, so "766 passed" was false confidence — plus a red
+fmt gate and two prod `unwrap`s in `search.rs`. Re-dispatch cleared all three in
+one 68-turn pass: 766 → **780 tests** (the 14 previously-dead new-tool tests now
+compile), all four gates green on independent re-run. **Calibration (2 folds
+pending user sign-off, see M18 retrospective):** (1) `prod_unwrap` 3rd occurrence
+crosses the WORKFLOW "three = fold" line; (2) `false_completion` is now the
+dominant recurring class — M19 addresses it structurally rather than by per-phase
+pre-injection.
 
 **M18 phase-07 — activated** (2026-06-15): the cleanup-thread tooling phase,
 **pre-drafted 2026-06-14** and re-verified current at activation — all

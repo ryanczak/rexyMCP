@@ -4,7 +4,7 @@
 failure modes and compensates for them — at draft time and at runtime — instead
 of relearning them by per-phase trial-and-error.
 
-**Status:** in-progress
+**Status:** done (all in-scope phases 01–07 approved; phase-08 shelved)
 
 **Depends on:** M7 (scorecard / `PhaseRun` telemetry), M12 (`task_tracking`,
 configurable governor thresholds)
@@ -97,12 +97,13 @@ drafted. See Notes.
 | 04 | surface the profile to the architect (MCP tool + `rexymcp profile` CLI) ([phase-04-profile-surface.md](phase-04-profile-surface.md)) | 2 | done |
 | 05 | per-model config-override resolution layer ([phase-05-model-config-overrides.md](phase-05-model-config-overrides.md)) | 3 | done |
 | 06 | wire the per-model override resolution into the dispatch path ([phase-06-wire-model-overrides.md](phase-06-wire-model-overrides.md)) | 3 | done |
-| 07 | executor tooling improvements (`write_file` append, `search` context, `find_files` depth, `patch_lines`/`delete_file`/`move_file`) ([phase-07-tooling-improvements.md](phase-07-tooling-improvements.md)) | cleanup | review |
+| 07 | executor tooling improvements (`write_file` append, `search` context, `find_files` depth, `patch_lines`/`delete_file`/`move_file`) ([phase-07-tooling-improvements.md](phase-07-tooling-improvements.md)) | cleanup | done |
 | 08 | cold-start calibration battery | 4 | **shelved — revisit later** |
 
-Only phase-01 is drafted (on-demand drafting). Expand 02–06 with
-`/rexymcp:architect next` as they are dispatched. Phase-07 (thread 4) is shelved
-— out of M18's committed scope until the user revisits it.
+All in-scope phases (01–07) are `done`. Phase-08 (thread 4, cold-start
+calibration battery) remains **shelved** — out of M18's committed scope until
+the user revisits it (needs a talk-through + `architecture.md` precedence
+decision first).
 
 ## Notes
 
@@ -147,4 +148,50 @@ clearly-separated "calibration" namespace that doesn't pollute the production
 matrix?) or defer thread 4 entirely — is a human call to be talked through at
 the thread-3/thread-4 boundary, not assumed here.
 
-### Retrospective — (filled at milestone close)
+### Retrospective — 2026-06-15
+
+**Outcome:** M18 closed with all 7 in-scope phases approved; thread 4 (phase-08)
+shelved by design. The eval loop the milestone set out to wire is live
+end-to-end: `rexymcp review` records a structured verdict + failure-class
+(phase-01/02), `model_profile` aggregates folded runs into per-`(model, tag)`
+strengths and ranked failure classes (phase-03/04), and per-model config
+overrides resolve into the live dispatch path (phase-05/06). Phase-07 was a
+cleanup-thread tool-surface expansion (append/context/depth + `patch_lines`/
+`delete_file`/`move_file`).
+
+**What worked:** the substrate→consumer phase splits (01→02, 03→04, 05→06) kept
+each phase to one session and isolated the load-bearing types from their wiring.
+Five of seven phases approved first-try.
+
+**What broke — two bounces, both `false_completion`:**
+- phase-03 bug-03-1 (`false_completion` + `spec_bug`): self-reported complete on
+  red fmt+clippy; the spec_bug was the lib-vs-bin dead-code asymmetry (`mcp` is a
+  binary crate where unused `pub` is denied).
+- phase-07 bug-07-1 (`false_completion` + `prod_unwrap`, blocker): reported
+  complete with ~half the phase undone — three new tools were orphan files never
+  wired into `mod.rs`/`router.rs`/`runner.rs`, so their tests never compiled and
+  the green "766 passed" was false confidence; fmt was red; two prod `unwrap`s in
+  `search.rs`. Re-dispatch cleared all three findings in one 68-turn pass.
+
+**Calibration — two folds pending user sign-off:**
+
+1. **`prod_unwrap` hits its 3rd occurrence** (M12 watch-item: M12 phase-05 parse,
+   M12 phase-06c Mutex lock, now M18 phase-07 F3). Per WORKFLOW "three = fold."
+   The watch-item's prescribed fix is a forward-looking gotcha pre-injected into
+   any `Mutex`/lock or slice/`.first()`/`.last()` phase doc — **not** a STANDARDS
+   edit (the gate text already forbids it; the gap is application). Held for sign-off.
+
+2. **`false_completion` is now the dominant recurring class** across M12/M17/M18
+   (self-report vs gate-exit disagreement). Rather than only pre-inject against
+   it per-phase, **M19 (Structural Gate Enforcement) is drafted** to make it
+   structurally impossible: the executor runtime runs the DoD gates at completion
+   and loops on any red gate instead of trusting the model's self-report. This is
+   the higher-leverage fix and directly serves the cost goal (less architect
+   re-review labour, more work landing on the local model first-try). M19 phase-01
+   is staged at `docs/dev/milestones/M19-gate-enforcement/`.
+
+**Note on the architect-labour anti-pattern (raised by the user this milestone):**
+pre-injection is mitigation, not cure — it scales linearly with phases and keeps
+the verification burden on the architect. M19 moves that burden into the runtime
+where it belongs, so the local LLM does the bulk of the work and the architect
+reviews a structurally-trustworthy `complete`. Keep this framing for M19 review.

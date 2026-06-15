@@ -1,7 +1,7 @@
 # Phase 07: Executor tooling improvements
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** none (additive changes to existing tools; independent of phases 03–06)
 **Estimated diff:** ~450 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -588,3 +588,13 @@ passing and tests green (780 passed, up from 766).
 - pending (one commit for all changes)
 
 **Notes for review:** Test count rose from 766 to 780 (14 new tests: 5 move_file, 5 patch_lines, 4 delete_file — the delete_file/patch_lines tests were previously dead code). The `runner.rs` test assertions were updated from 7→10 base tools and 8→11 with update_task to reflect the three new tools. No `.unwrap()` remains in any production path of the touched files.
+
+### Review verdict — 2026-06-15
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-07-1 — blocker: new tools unwired, `move_file` missing, fmt red, two prod `unwrap`s)
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** the bounce's F3 was the **3rd `prod_unwrap`** occurrence (M12 watch-item) — crosses the WORKFLOW "three = fold" threshold; held for user sign-off (see M18 retrospective). Re-dispatch cleared all three findings in one pass (68 turns).
+
+All four gates re-run independently green: fmt ✅ / build ✅ / lint ✅ / test ✅ **780 passed** (766 → 780; the 14 previously-orphan new-tool tests now compile in). F1 verified at every wiring site (`mod.rs` mod+pub-use ×3, `router.rs` categorize+test-array ×3, `runner.rs` build_registry ×3); F3 verified by a prod-section `unwrap`/`expect`/`panic` grep over all six touched tool files (clean). New tests spot-checked mutation-resistant (`context_lines_zero_output_matches_no_context` pins the no-context identity; `move_file` scope-rejection tests assert the escape error). Single conventional commit `b93e9d5`.
