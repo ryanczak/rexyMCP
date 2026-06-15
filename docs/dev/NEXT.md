@@ -4,8 +4,43 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-03-model-profile.md`
-(M18 phase-03, `todo`). Dispatch with `/rexymcp:dispatch phase-03`.
+**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-04-profile-surface.md`
+(M18 phase-04, `todo`). Dispatch with `/rexymcp:dispatch phase-04`.
+
+**M18 phase-04 — drafted** (2026-06-14): surface the phase-03 profile to the
+architect via a **`rexymcp profile` CLI** (`mcp/src/profile_cli.rs` `load_profiles`
++ `format_profiles`, a `Commands::Profile` clap variant + dispatch arm) **and** a
+**`model_profile` MCP tool** (`server.rs` `ModelProfileParams`/`ModelProfileOutput`/
+`model_profile_inner` + `#[rmcp::tool]` method) — both mirroring the `scorecard`
+pair almost line-for-line. **Phase closes the dead-code loop:** the
+`#![allow(dead_code)]` phase-03 added to `profile.rs:1` is **removed** here, since
+`aggregate_profiles`/`ModelProfile`/`is_model_attributable` now have real callers.
+**Two pre-injected gotchas:** (1) unlike `scorecard_cli`/`model_scorecard`,
+**no `fold_reviews` call** — `aggregate_profiles` folds internally and needs the raw
+`reviews` for `failure_class`; both surfaces pass raw runs+reviews. (2) the human
+formatter **must** call `is_model_attributable` (renders `spec_bug`/`infra_blip`
+parenthesized) — that is what gives the fn a production caller so the dead-code
+attribute can come out. Reuses `scorecard::MAX_ROWS` + `ScorecardFilter`; no new
+dep. ~320 lines.
+
+**M18 phase-03 — done** (2026-06-15, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8; commits `0967f92` fix / `3e44de9` approve). The pure
+`model_profile` aggregation layer landed in `mcp/src/profile.rs`: `ModelProfile`
++ `FailureClassCount` + `is_model_attributable` + `aggregate_profiles` (per-`(model,
+tag)` strengths from folded runs **and** ranked failure classes joined from the
+latest matching review), 8 hermetic tests. **Bounced once** (bug-03-1
+`false_completion` — self-reported complete on red fmt+clippy gates; bug-03-2
+`spec_bug` — clippy dead-code wall because `mcp` is a **binary** crate where unused
+`pub` items are dead code under `-D warnings`, unlike the `executor` lib crate
+phase-01 lived in). Fix added an **authorized** `#![allow(dead_code)]` at
+`profile.rs:1` with a removal note (phase-04 removes it). An earlier
+`IdenticalToolCallRepetition` hard_fail (oversized single `write_file` → `arguments:
+null` ×6) was handled by refined re-dispatch with a staged-write instruction, not a
+review bounce. Verdict recorded into live telemetry via `rexymcp review` and
+verified folded onto the latest run. **Calibration:** 1st lib-vs-bin dead-code
+occurrence (data, no fold); recurring dirty-tree-at-dispatch sweep (commit `0967f92`
+swept pre-existing dirty `NEXT.md`/`phase-07` files — architect-side Pre-flight-4
+miss).
 
 **M18 phase-02 — done** (2026-06-14, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8). The write-back loop is now live end-to-end: a new

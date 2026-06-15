@@ -94,7 +94,7 @@ drafted. See Notes.
 | 01 | review write-back substrate (`PhaseReview` annotation + fold-on-read + failure-class taxonomy) ([phase-01-review-substrate.md](phase-01-review-substrate.md)) | 1 | done |
 | 02 | `rexymcp review` CLI + fold into runs/scorecard reads + skill wiring ([phase-02-review-cli-fold.md](phase-02-review-cli-fold.md)) | 1 | done |
 | 03 | `model_profile` aggregation (strengths + ranked failure classes) ([phase-03-model-profile.md](phase-03-model-profile.md)) | 2 | done |
-| 04 | surface the profile to the architect (MCP tool + `rexymcp profile` CLI) | 2 | planned |
+| 04 | surface the profile to the architect (MCP tool + `rexymcp profile` CLI) ([phase-04-profile-surface.md](phase-04-profile-surface.md)) | 2 | todo |
 | 05 | per-model config-override resolution layer | 3 | planned |
 | 06 | wire runtime knobs to the resolved profile | 3 | planned |
 | 07 | executor tooling improvements (`write_file` append, `search` context, `find_files` depth, `patch_lines`/`delete_file`/`move_file`) ([phase-07-tooling-improvements.md](phase-07-tooling-improvements.md)) | cleanup | todo |
