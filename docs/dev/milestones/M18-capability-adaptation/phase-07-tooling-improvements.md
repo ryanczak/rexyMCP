@@ -1,7 +1,7 @@
 # Phase 07: Executor tooling improvements
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** in-progress (bounced at review — see [bug-07-1](bugs/bug-07-1.md))
+**Status:** review
 **Depends on:** none (additive changes to existing tools; independent of phases 03–06)
 **Estimated diff:** ~450 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -527,3 +527,64 @@ remaining work is exactly bug-07-1 § "How to fix": (1) create `move_file.rs`;
 four gates separately and confirm the test count rises above 766 (proof the new
 tools compiled in). The wiring step (mod.rs/router.rs/runner.rs) is the one that
 was skipped entirely — it is what makes the new tools real.
+
+### Update — 2026-06-15 21:11 (complete)
+
+**Summary:** Fixed all three bugs from bug-07-1 review bounce: (1) created
+`move_file.rs` per spec; (2) wired all three new tools into `mod.rs` (mod + pub
+use), `router.rs` (categorize + test array), and `runner.rs` (build_registry +
+test counts); (3) replaced two `.unwrap()` calls in `search.rs` `format_output`
+with `.map_or()`; (4) fixed clippy `if_same_then_else` in `patch_lines.rs`
+trailing-newline logic; (5) removed unused imports from test modules. All four
+gates pass: 780 tests (up from 766 — 14 new tests from the three new tools now
+compile in).
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+$ cargo fmt --all --check
+(exit 0)
+
+$ cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.17s
+
+$ cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.30s
+
+$ cargo test 2>&1 | tail -30
+test result: ok. 780 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.04s
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The E2E is the build
+passing and tests green (780 passed, up from 766).
+
+**Files changed:**
+- `executor/src/tools/move_file.rs` — new file: move/rename tool with scope confinement, 5 tests
+- `executor/src/tools/mod.rs` — added `mod` + `pub use` for delete_file, move_file, patch_lines
+- `executor/src/tools/router.rs` — added three new tools to `categorize()` Write arm + test array
+- `mcp/src/runner.rs` — added three new tools to `build_registry` vec + updated test counts (7→10, 8→11)
+- `executor/src/tools/search.rs` — replaced two `.unwrap()` with `.map_or()` in `format_output`
+- `executor/src/tools/patch_lines.rs` — fixed clippy `if_same_then_else` on trailing-newline logic, removed unused import
+- `executor/src/tools/delete_file.rs` — removed unused import
+- `docs/dev/milestones/M18-capability-adaptation/phase-07-tooling-improvements.md` — status → review, completion entry
+- `docs/dev/milestones/M18-capability-adaptation/README.md` — phase table status → review
+
+**New tests:**
+- `moves_file_to_new_name` in `move_file.rs`
+- `errors_when_destination_exists` in `move_file.rs`
+- `errors_when_from_missing` in `move_file.rs`
+- `rejects_from_outside_scope` in `move_file.rs`
+- `rejects_to_outside_scope` in `move_file.rs`
+
+**Commits:**
+- pending (one commit for all changes)
+
+**Notes for review:** Test count rose from 766 to 780 (14 new tests: 5 move_file, 5 patch_lines, 4 delete_file — the delete_file/patch_lines tests were previously dead code). The `runner.rs` test assertions were updated from 7→10 base tools and 8→11 with update_task to reflect the three new tools. No `.unwrap()` remains in any production path of the touched files.

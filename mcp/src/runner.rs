@@ -147,6 +147,9 @@ pub fn build_registry(
         tools::search(scope.clone()),
         tools::symbols(scope.clone()),
         tools::bash_with_filter(scope.clone(), bash_timeout_secs, filter_output),
+        tools::delete_file(scope.clone()),
+        tools::move_file(scope.clone()),
+        tools::patch_lines(scope.clone()),
     ];
 
     if let Some(t) = tasks {
@@ -424,7 +427,7 @@ mod tests {
         let scope = Scope::new(dir.path()).unwrap();
         let (_registry, schemas) = build_registry(&scope, 30, true, None);
 
-        assert_eq!(schemas.len(), 7);
+        assert_eq!(schemas.len(), 10);
         let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(
             names,
@@ -435,7 +438,10 @@ mod tests {
                 "find_files",
                 "search",
                 "symbols",
-                "bash"
+                "bash",
+                "delete_file",
+                "move_file",
+                "patch_lines"
             ]
         );
 
@@ -454,7 +460,7 @@ mod tests {
         }];
         let (_registry, schemas) = build_registry(&scope, 30, true, Some(tasks));
 
-        assert_eq!(schemas.len(), 8);
+        assert_eq!(schemas.len(), 11);
         let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"update_task"));
     }
@@ -465,7 +471,7 @@ mod tests {
         let scope = Scope::new(dir.path()).unwrap();
         let (_registry, schemas) = build_registry(&scope, 30, true, None);
 
-        assert_eq!(schemas.len(), 7);
+        assert_eq!(schemas.len(), 10);
         let names: Vec<_> = schemas.iter().map(|s| s.name.as_str()).collect();
         assert!(!names.contains(&"update_task"));
     }

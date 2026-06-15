@@ -6,7 +6,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use globset::Glob;
-use ignore::Walk;
+use ignore::WalkBuilder;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -20,6 +20,7 @@ struct FindFilesArgs {
     pattern: String,
     path: Option<String>,
     max_results: Option<usize>,
+    depth: Option<usize>,
 }
 
 pub struct FindFiles {
@@ -52,6 +53,11 @@ impl Tool for FindFiles {
                     "type": "integer",
                     "minimum": 1,
                     "description": "Hard cap on returned paths. Defaults to 100."
+                },
+                "depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum directory depth to search. None means unbounded."
                 }
             },
             "required": ["pattern"]
@@ -137,7 +143,7 @@ impl Tool for FindFiles {
             .unwrap_or_else(|_| search_root.clone());
         let mut matched: Vec<String> = Vec::new();
 
-        for entry in Walk::new(&abs_root) {
+        for entry in WalkBuilder::new(&abs_root).max_depth(parsed.depth).build() {
             let entry = match entry {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -447,5 +453,47 @@ mod tests {
 
         assert!(result.error.is_none());
         assert!(result.output.contains("a.rs"));
+    }
+
+    #[tokio::test]
+    async fn depth_one_returns_only_immediate_children() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(dir.path(), &[("a.rs", "// a"), ("sub/b.rs", "// b")]);
+
+        let tool = find_files(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "pattern": "**/*.rs",
+                "path": dir.path().to_string_lossy(),
+                "depth": 1
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("a.rs"));
+        assert!(
+            !result.output.contains("sub/b.rs"),
+            "depth 1 should not include nested files"
+        );
+    }
+
+    #[tokio::test]
+    async fn depth_none_returns_nested_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(dir.path(), &[("a.rs", "// a"), ("sub/b.rs", "// b")]);
+
+        let tool = find_files(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "pattern": "**/*.rs",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("a.rs"));
+        assert!(result.output.contains("sub/b.rs"));
     }
 }

@@ -1,4 +1,4 @@
-// write_file: create or overwrite a file. Prefer `patch` for edits.
+// write_file: create, overwrite, or append a file. Prefer `patch` for edits.
 //
 // Adapted from Rexy: uses Scope for path resolution instead of CWD.
 
@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::io::Write as _;
 use std::sync::Arc;
 
 use crate::security::scope::Scope;
@@ -16,6 +17,7 @@ use super::registry::{Tool, ToolResult};
 struct WriteFileArgs {
     path: String,
     content: String,
+    append: Option<bool>,
 }
 
 pub struct WriteFile {
@@ -29,7 +31,7 @@ impl Tool for WriteFile {
     }
 
     fn description(&self) -> &str {
-        "Create or overwrite a file with full content. Prefer patch for edits."
+        "Create, overwrite, or append a file. Use append: true to add to an existing file. Prefer patch for edits."
     }
 
     fn schema(&self) -> Value {
@@ -42,7 +44,11 @@ impl Tool for WriteFile {
                 },
                 "content": {
                     "type": "string",
-                    "description": "Full file content. Overwrites existing files."
+                    "description": "Full file content. Overwrites existing files unless append: true."
+                },
+                "append": {
+                    "type": "boolean",
+                    "description": "If true, append content to the file instead of overwriting it. Creates the file if it does not exist."
                 }
             },
             "required": ["path", "content"]
@@ -88,15 +94,42 @@ impl Tool for WriteFile {
 
         let existed = path.exists();
         let bytes = parsed.content.len();
+        let lines = parsed.content.lines().count();
 
-        match std::fs::write(&path, &parsed.content) {
-            Ok(()) => {}
-            Err(e) => {
-                return Ok(ToolResult {
-                    output: String::new(),
-                    error: Some(format!("failed to write {}: {e}", parsed.path)),
-                    metadata: None,
-                });
+        if parsed.append.unwrap_or(false) {
+            match std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                Ok(mut f) => match f.write_all(parsed.content.as_bytes()) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        return Ok(ToolResult {
+                            output: String::new(),
+                            error: Some(format!("failed to write {}: {e}", parsed.path)),
+                            metadata: None,
+                        });
+                    }
+                },
+                Err(e) => {
+                    return Ok(ToolResult {
+                        output: String::new(),
+                        error: Some(format!("failed to open {}: {e}", parsed.path)),
+                        metadata: None,
+                    });
+                }
+            }
+        } else {
+            match std::fs::write(&path, &parsed.content) {
+                Ok(()) => {}
+                Err(e) => {
+                    return Ok(ToolResult {
+                        output: String::new(),
+                        error: Some(format!("failed to write {}: {e}", parsed.path)),
+                        metadata: None,
+                    });
+                }
             }
         }
 
@@ -105,12 +138,16 @@ impl Tool for WriteFile {
         let metadata = json!({
             "path": abs_path.to_string_lossy(),
             "bytes_written": bytes,
+            "lines_written": lines,
             "created": !existed,
-            "overwritten": existed,
+            "overwritten": existed && !parsed.append.unwrap_or(false),
         });
 
         Ok(ToolResult {
-            output: format!("wrote {bytes} bytes to {}", abs_path.to_string_lossy()),
+            output: format!(
+                "wrote {lines} lines ({bytes} bytes) to {}",
+                abs_path.to_string_lossy()
+            ),
             error: None,
             metadata: Some(metadata),
         })
@@ -144,6 +181,7 @@ mod tests {
             .unwrap();
 
         assert!(result.error.is_none());
+        assert!(result.output.contains("1 lines"));
         assert!(result.output.contains("11 bytes"));
         let meta = result.metadata.unwrap();
         assert!(meta["created"].as_bool().unwrap());
@@ -171,6 +209,86 @@ mod tests {
         assert!(!meta["created"].as_bool().unwrap());
         assert!(meta["overwritten"].as_bool().unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new content");
+    }
+
+    #[tokio::test]
+    async fn appends_to_existing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("append.txt");
+        std::fs::write(&path, "line 1\n").unwrap();
+
+        let tool = write_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "path": path.to_string_lossy(),
+                "content": "line 2\n",
+                "append": true
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "line 1\nline 2\n");
+    }
+
+    #[tokio::test]
+    async fn append_creates_file_if_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("new_append.txt");
+
+        let tool = write_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "path": path.to_string_lossy(),
+                "content": "first line\n",
+                "append": true
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(path.exists());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "first line\n");
+    }
+
+    #[tokio::test]
+    async fn append_false_overwrites() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("overwrite.txt");
+        std::fs::write(&path, "original\n").unwrap();
+
+        let tool = write_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "path": path.to_string_lossy(),
+                "content": "replaced\n",
+                "append": false
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "replaced\n");
+    }
+
+    #[tokio::test]
+    async fn success_output_includes_line_count() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("counted.txt");
+
+        let tool = write_file(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "path": path.to_string_lossy(),
+                "content": "line one\nline two\n"
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("2 lines"));
+        let meta = result.metadata.unwrap();
+        assert_eq!(meta["lines_written"].as_u64().unwrap(), 2);
     }
 
     #[tokio::test]

@@ -97,7 +97,7 @@ drafted. See Notes.
 | 04 | surface the profile to the architect (MCP tool + `rexymcp profile` CLI) ([phase-04-profile-surface.md](phase-04-profile-surface.md)) | 2 | done |
 | 05 | per-model config-override resolution layer ([phase-05-model-config-overrides.md](phase-05-model-config-overrides.md)) | 3 | done |
 | 06 | wire the per-model override resolution into the dispatch path ([phase-06-wire-model-overrides.md](phase-06-wire-model-overrides.md)) | 3 | done |
-| 07 | executor tooling improvements (`write_file` append, `search` context, `find_files` depth, `patch_lines`/`delete_file`/`move_file`) ([phase-07-tooling-improvements.md](phase-07-tooling-improvements.md)) | cleanup | todo |
+| 07 | executor tooling improvements (`write_file` append, `search` context, `find_files` depth, `patch_lines`/`delete_file`/`move_file`) ([phase-07-tooling-improvements.md](phase-07-tooling-improvements.md)) | cleanup | review |
 | 08 | cold-start calibration battery | 4 | **shelved — revisit later** |
 
 Only phase-01 is drafted (on-demand drafting). Expand 02–06 with

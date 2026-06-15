@@ -14,7 +14,7 @@ pub enum Category {
 pub fn categorize(tool_name: &str) -> Option<Category> {
     Some(match tool_name {
         "read_file" | "symbols" => Category::Read,
-        "write_file" | "patch" => Category::Write,
+        "write_file" | "patch" | "patch_lines" | "delete_file" | "move_file" => Category::Write,
         "search" | "find_files" => Category::Search,
         "bash" => Category::Run,
         "update_task" => Category::Meta,
@@ -80,7 +80,11 @@ mod tests {
             "find_files",
             "write_file",
             "patch",
+            "patch_lines",
+            "delete_file",
+            "move_file",
             "bash",
+            "update_task",
         ];
         for name in built_ins {
             assert!(

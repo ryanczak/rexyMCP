@@ -23,6 +23,7 @@ struct SearchArgs {
     path: Option<String>,
     max_results: Option<usize>,
     case_insensitive: Option<bool>,
+    context_lines: Option<usize>,
 }
 
 struct MatchHit {
@@ -30,6 +31,8 @@ struct MatchHit {
     line: usize,
     col: usize,
     line_content: String,
+    context_before: Vec<(usize, String)>,
+    context_after: Vec<(usize, String)>,
 }
 
 pub struct Search {
@@ -66,6 +69,12 @@ impl Tool for Search {
                 "case_insensitive": {
                     "type": "boolean",
                     "description": "If true, regex is compiled case-insensitively. Defaults to false."
+                },
+                "context_lines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5,
+                    "description": "Number of context lines before and after each match (0–5). Defaults to 0."
                 }
             },
             "required": ["pattern"]
@@ -138,12 +147,14 @@ impl Tool for Search {
             }
         };
 
+        let ctx = parsed.context_lines.unwrap_or(0).min(5);
+
         let abs_root = search_root
             .canonicalize()
             .unwrap_or_else(|_| search_root.clone());
 
         if search_root.is_file() {
-            return execute_single_file(&abs_root, &parsed.pattern, &re, max_results);
+            return execute_single_file(&abs_root, &parsed.pattern, &re, max_results, ctx);
         }
 
         let mut hits: Vec<MatchHit> = Vec::new();
@@ -170,17 +181,46 @@ impl Tool for Search {
                 .to_string_lossy()
                 .to_string();
 
-            for (line_idx, line) in content.lines().enumerate() {
+            let all_lines: Vec<&str> = content.lines().collect();
+            for (line_idx, line) in all_lines.iter().enumerate() {
                 for m in re.find_iter(line) {
+                    let context_before = if ctx > 0 {
+                        let before_start = line_idx.saturating_sub(ctx);
+                        all_lines[before_start..line_idx]
+                            .iter()
+                            .enumerate()
+                            .map(|(i, l)| (before_start + i + 1, l.to_string()))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let context_after = if ctx > 0 {
+                        let after_end = (line_idx + 1 + ctx).min(all_lines.len());
+                        all_lines[line_idx + 1..after_end]
+                            .iter()
+                            .enumerate()
+                            .map(|(i, l)| (line_idx + 2 + i, l.to_string()))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
                     hits.push(MatchHit {
                         path: rel_path.clone(),
                         line: line_idx + 1,
                         col: m.start() + 1,
                         line_content: line.to_string(),
+                        context_before,
+                        context_after,
                     });
                     if hits.len() >= max_results {
                         let truncated = hits.len() == max_results;
-                        return Ok(format_output(&hits, &abs_root, &parsed.pattern, truncated));
+                        return Ok(format_output(
+                            &hits,
+                            &abs_root,
+                            &parsed.pattern,
+                            truncated,
+                            ctx,
+                        ));
                     }
                 }
             }
@@ -197,7 +237,7 @@ impl Tool for Search {
                 metadata: None,
             })
         } else {
-            Ok(format_output(&hits, &abs_root, &parsed.pattern, false))
+            Ok(format_output(&hits, &abs_root, &parsed.pattern, false, ctx))
         }
     }
 }
@@ -207,6 +247,7 @@ fn execute_single_file(
     pattern: &str,
     re: &regex::Regex,
     max_results: usize,
+    ctx: usize,
 ) -> Result<ToolResult> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -222,16 +263,39 @@ fn execute_single_file(
     let mut hits: Vec<MatchHit> = Vec::new();
     let path_str = path.to_string_lossy().to_string();
 
-    for (line_idx, line) in content.lines().enumerate() {
+    let all_lines: Vec<&str> = content.lines().collect();
+    for (line_idx, line) in all_lines.iter().enumerate() {
         for m in re.find_iter(line) {
+            let context_before = if ctx > 0 {
+                let before_start = line_idx.saturating_sub(ctx);
+                all_lines[before_start..line_idx]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| (before_start + i + 1, l.to_string()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let context_after = if ctx > 0 {
+                let after_end = (line_idx + 1 + ctx).min(all_lines.len());
+                all_lines[line_idx + 1..after_end]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| (line_idx + 2 + i, l.to_string()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             hits.push(MatchHit {
                 path: path_str.clone(),
                 line: line_idx + 1,
                 col: m.start() + 1,
                 line_content: line.to_string(),
+                context_before,
+                context_after,
             });
             if hits.len() >= max_results {
-                return Ok(format_output(&hits, path, pattern, true));
+                return Ok(format_output(&hits, path, pattern, true, ctx));
             }
         }
     }
@@ -243,7 +307,7 @@ fn execute_single_file(
             metadata: None,
         })
     } else {
-        Ok(format_output(&hits, path, pattern, false))
+        Ok(format_output(&hits, path, pattern, false, ctx))
     }
 }
 
@@ -252,6 +316,7 @@ fn format_output(
     abs_root: &std::path::Path,
     pattern: &str,
     truncated: bool,
+    ctx: usize,
 ) -> ToolResult {
     let file_set: std::collections::HashSet<&str> = hits.iter().map(|h| h.path.as_str()).collect();
     let file_count = file_set.len();
@@ -259,6 +324,8 @@ fn format_output(
     let mut output = format!("✓ {} matches in {} files\n\n", hits.len(), file_count);
 
     let mut current_file = "";
+    let mut last_after_end = 0usize;
+
     for hit in hits {
         if hit.path != current_file {
             if !current_file.is_empty() {
@@ -266,11 +333,33 @@ fn format_output(
             }
             output.push_str(&format!("{}:\n", hit.path));
             current_file = &hit.path;
+            last_after_end = 0;
         }
-        output.push_str(&format!(
-            "  {}:{}  {}\n",
-            hit.line, hit.col, hit.line_content
-        ));
+
+        if ctx > 0 {
+            let before_start = hit.context_before.first().map_or(hit.line, |t| t.0);
+            // Emit separator if context windows don't overlap
+            if last_after_end > 0 && before_start > last_after_end {
+                output.push_str("---\n");
+            }
+
+            for (line_num, content) in &hit.context_before {
+                output.push_str(&format!("   {:>4}  {}\n", line_num, content));
+            }
+            output.push_str(&format!(
+                "> {:>4}:{}  {}\n",
+                hit.line, hit.col, hit.line_content
+            ));
+            for (line_num, content) in &hit.context_after {
+                output.push_str(&format!("   {:>4}  {}\n", line_num, content));
+            }
+            last_after_end = hit.context_after.last().map_or(hit.line, |t| t.0);
+        } else {
+            output.push_str(&format!(
+                "  {}:{}  {}\n",
+                hit.line, hit.col, hit.line_content
+            ));
+        }
     }
 
     if truncated {
@@ -564,5 +653,149 @@ mod tests {
 
         assert!(result.error.is_none());
         assert!(result.output.contains("✓ 1 matches in 1 files"));
+    }
+
+    #[tokio::test]
+    async fn context_lines_zero_output_matches_no_context() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("test.txt", "line one\nline two\nline three\n")],
+        );
+
+        let tool = search(make_scope(&dir));
+        let result_zero = tool
+            .execute(json!({
+                "pattern": "two",
+                "path": dir.path().to_string_lossy(),
+                "context_lines": 0
+            }))
+            .await
+            .unwrap();
+        let result_absent = tool
+            .execute(json!({
+                "pattern": "two",
+                "path": dir.path().to_string_lossy()
+            }))
+            .await
+            .unwrap();
+
+        assert!(result_zero.error.is_none());
+        assert!(result_absent.error.is_none());
+        assert_eq!(
+            result_zero.output, result_absent.output,
+            "context_lines: 0 and absent must produce identical output"
+        );
+    }
+
+    #[tokio::test]
+    async fn context_lines_emits_before_and_after() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[(
+                "test.txt",
+                "line one\nline two\nMATCH here\nline four\nline five\n",
+            )],
+        );
+
+        let tool = search(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "pattern": "MATCH",
+                "path": dir.path().to_string_lossy(),
+                "context_lines": 2
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let out = result.output;
+        assert!(out.contains("line one"), "context before: {out}");
+        assert!(out.contains("line two"), "context before: {out}");
+        assert!(out.contains("MATCH here"), "match line: {out}");
+        assert!(out.contains("line four"), "context after: {out}");
+        assert!(out.contains("line five"), "context after: {out}");
+        assert!(out.contains('>'), "match line has > prefix: {out}");
+    }
+
+    #[tokio::test]
+    async fn context_lines_capped_at_five() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("test.txt", "line one\nMATCH here\nline three\n")],
+        );
+
+        let tool = search(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "pattern": "MATCH",
+                "path": dir.path().to_string_lossy(),
+                "context_lines": 99
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        // Only 1 before and 1 after available (bounded by file edges)
+        let out = result.output;
+        assert!(out.contains("line one"), "context before: {out}");
+        assert!(out.contains("line three"), "context after: {out}");
+    }
+
+    #[tokio::test]
+    async fn context_lines_separator_between_nonadjacent_hits() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[(
+                "test.txt",
+                "A1\nA2\nMATCH_A\nA4\nA5\nA6\nA7\nA8\nA9\nA10\nB1\nB2\nMATCH_B\nB4\nB5\n",
+            )],
+        );
+
+        let tool = search(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "pattern": "MATCH",
+                "path": dir.path().to_string_lossy(),
+                "context_lines": 2
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let out = result.output;
+        assert!(
+            out.contains("---"),
+            "separator between non-adjacent hits: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn context_lines_no_separator_for_adjacent_hits() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_files(
+            dir.path(),
+            &[("test.txt", "line one\nMATCH_A\nMATCH_B\nline four\n")],
+        );
+
+        let tool = search(make_scope(&dir));
+        let result = tool
+            .execute(json!({
+                "pattern": "MATCH",
+                "path": dir.path().to_string_lossy(),
+                "context_lines": 2
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let out = result.output;
+        assert!(
+            !out.contains("---"),
+            "no separator for adjacent hits whose context windows overlap: {out}"
+        );
     }
 }
