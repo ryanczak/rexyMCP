@@ -1,7 +1,7 @@
 # Phase 05: per-model config-override resolution layer
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** todo
+**Status:** review
 **Depends on:** phase-04 (thread 2 complete — the profile that *informs* which
 per-model knobs to set is now surfaced; this phase builds the substrate that
 *acts* on that judgment)
@@ -311,3 +311,34 @@ not fabricate a CLI transcript.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-15 03:02 (started)
+
+**Executor:** Claude (executor)
+
+**Tasks:** Implement `ModelOverride` struct, `models` field on `Config`, `Config::resolve_for_model`, and 6 unit tests in `executor/src/config.rs`.
+
+### Update — 2026-06-15 03:02 (complete)
+
+**Executor:** Claude (executor)
+
+**Verification commands:**
+- `cargo fmt --all --check` — clean
+- `cargo build` — clean
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean (no new warnings, no `#[allow]`)
+- `cargo test` — 755 passed, 0 failed, 2 ignored
+
+**Files changed:**
+- `executor/src/config.rs` — added `ModelOverride` struct, `models: HashMap<String, ModelOverride>` field on `Config`, `Config::resolve_for_model(&mut self, model: &str)`, and 6 unit tests (`model_override_section_parses_from_toml`, `models_section_absent_is_empty_map`, `resolve_for_model_applies_matching_override`, `resolve_for_model_leaves_unset_fields_global`, `resolve_for_model_unknown_model_is_noop`, `resolve_for_model_is_exact_match`).
+- `docs/dev/milestones/M18-capability-adaptation/phase-05-model-config-overrides.md` — status → review, Update Log entries.
+- `docs/dev/milestones/M18-capability-adaptation/README.md` — phase table row → review.
+
+**Commit:** one conventional commit covering all changes.
+
+**End-to-end verification:** N/A — this phase ships no runtime-loadable artifact that exercises the resolution. `resolve_for_model` has no caller in any binary until phase-06 wires it into `runner.rs`. The config parse half is real and covered by `model_override_section_parses_from_toml` going through actual `Config::load` (file → TOML → struct).
+
+**Grep for spec-pinned literal:** `grep -rn 'ModelOverride' executor/src/config.rs` confirms `ModelOverride` struct at line 83 and `HashMap<String, ModelOverride>` at line 112.
+
+**Notes for review:**
+- Clippy flagged `assert_eq!(x, true/false)` in test code; replaced with `assert!(x)` / `assert!(!x)` per clippy guidance.
+- No `#[allow]` or `#![allow]` added — the lib-crate gotcha was respected; `pub` items are public API.
