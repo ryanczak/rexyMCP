@@ -1,7 +1,7 @@
 # Phase 03: `model_profile` aggregation (strengths + ranked failure classes)
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (substrate), phase-02 (write-back loop is live — reviews
 now exist in the store)
 **Estimated diff:** ~360 lines
@@ -461,3 +461,11 @@ staged-write instruction, not a spec change.
 **Notes for review:**
 - The `#![allow(dead_code)]` attribute is the only `#[allow]`/`#![allow]` in `profile.rs`, as authorized. It must be removed in phase-04.
 - All 8 spec-pinned tests pass: `strengths_come_from_folded_runs`, `ranks_failure_classes_by_count_then_name`, `excludes_none_from_failure_ranking`, `attributes_failure_to_matched_run_tags`, `attributes_to_latest_run_only`, `multi_class_review_counts_each_class`, `is_model_attributable_separates_spec_and_infra`, `min_runs_filters_small_buckets`.
+
+### Review verdict — 2026-06-15
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bugs: bug-03-1 `false_completion` + bug-03-2 `spec_bug` — both major). The earlier `IdenticalToolCallRepetition` was a hard_fail handled by refined re-dispatch (oversized `write_file` payload), not a review bounce.
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** the fix commit `0967f92` swept pre-existing dirty-tree files unrelated to phase-03 (`docs/dev/NEXT.md`, `phase-07-tooling-improvements.md`) into the same commit. Root cause is dispatching with an unclean tree (Pre-flight step 4), an architect-side miss — not an executor defect. The phase-03 deliverable (`profile.rs`, `main.rs`) is correct.
+- **Calibration:** (1) The `spec_bug` half of the bounce — phase-01's "no surface" pattern doesn't transfer to the `mcp` **binary** crate, where unused `pub` items are dead code under `-D warnings`. Lesson: when a phase ships purely-additive code with no caller until a later phase, the architect must check lib-vs-bin and pre-authorize `#![allow(dead_code)]` (with a removal-phase reference) at draft time. This is the 1st occurrence of the lib/bin dead-code distinction — calibration data, no fold yet. (2) Recurring dirty-tree-at-dispatch sweep (seen M13 phase-06, M13 phase-08-era) — commit ambient/architect edits **before** dispatch. Independently re-verified at review: fmt/build/clippy clean, 402 mcp + 749 total tests pass.
