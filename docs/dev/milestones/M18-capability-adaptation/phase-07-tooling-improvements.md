@@ -1,7 +1,7 @@
 # Phase 07: Executor tooling improvements
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** todo
+**Status:** in-progress (bounced at review — see [bug-07-1](bugs/bug-07-1.md))
 **Depends on:** none (additive changes to existing tools; independent of phases 03–06)
 **Estimated diff:** ~450 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -495,3 +495,35 @@ State this in the Update Log; do not fabricate a CLI transcript.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-15 18:07 (started)
+
+**Executor:** Claude (direct)
+
+Implementing all 7 spec tasks: write_file append+line-count, search context_lines, find_files depth, patch_lines, delete_file, move_file, plus router/registry wiring.
+
+### Review bounce — 2026-06-15 (reviewer: Claude Code architect)
+
+Bounced. Executor returned `complete` (53 turns, after a 1st-dispatch infra blip:
+SSE stream stalled 240s) but the phase is ~half done and three DoD gates fail. See
+[bug-07-1](bugs/bug-07-1.md) (blocker). Summary of what's wrong:
+
+- **F1 (blocker):** `move_file` (task 6) never created; `mod.rs` / `router.rs` /
+  `runner.rs` all **unmodified**, so `delete_file.rs` + `patch_lines.rs` are
+  undeclared orphan files that never compiled — their tests never ran. The
+  "766 passed" excluded all new-tool tests. Nothing is registered or routed.
+- **F2 (major, false_completion):** `cargo fmt --all --check` exits 1
+  (`find_files.rs`/`search.rs`/`write_file.rs`).
+- **F3 (major, prod_unwrap):** `search.rs:337,357` use `.unwrap()` in
+  `format_output` (production). 3rd occurrence of the M12 watch-item.
+
+**Notes for executor (read on re-dispatch):** tasks 1–3 (`write_file` append,
+`search` context_lines, `find_files` depth) and the bodies of `delete_file.rs` /
+`patch_lines.rs` are already on disk and look correct — do **not** redo them. The
+remaining work is exactly bug-07-1 § "How to fix": (1) create `move_file.rs`;
+(2) wire all three new tools into `mod.rs` + `router.rs` `categorize`/test-array +
+`runner.rs` `build_registry`; (3) replace the two `search.rs` `unwrap`s with
+`map_or`; (4) `rustfmt` the touched files (NOT `cargo fmt --all`); (5) re-run all
+four gates separately and confirm the test count rises above 766 (proof the new
+tools compiled in). The wiring step (mod.rs/router.rs/runner.rs) is the one that
+was skipped entirely — it is what makes the new tools real.
