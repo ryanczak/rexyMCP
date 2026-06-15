@@ -182,7 +182,10 @@ async fn run_phase_with(
     let scope = Scope::new(inp.repo_path)
         .map_err(|e| rexymcp_executor::error::Error::Internal(format!("scope error: {}", e)))?;
 
-    let tasks = if inp.cfg.executor.task_tracking {
+    let mut cfg = inp.cfg.clone();
+    cfg.resolve_for_model(inp.model);
+
+    let tasks = if cfg.executor.task_tracking {
         Some(rexymcp_executor::agent::tasks::seed_from_spec(&phase_doc))
     } else {
         None
@@ -223,14 +226,14 @@ async fn run_phase_with(
         commands: &inp.cfg.commands,
         runner: seams.runner,
         generation_params: GenerationParams {
-            temperature: inp.cfg.executor.temperature,
-            seed: inp.cfg.executor.seed,
+            temperature: cfg.executor.temperature,
+            seed: cfg.executor.seed,
         },
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
         context_window: inp.context_window,
-        governor: inp.cfg.governor,
-        task_tracking: inp.cfg.executor.task_tracking,
+        governor: cfg.governor,
+        task_tracking: cfg.executor.task_tracking,
     };
 
     agent::execute_phase(&input, deps).await
@@ -254,16 +257,25 @@ pub struct RunPhaseConfig<'a> {
 
 /// Production wrapper — builds real seams + system clock, delegates.
 pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Result<PhaseResult> {
-    let model = inp.model_override.unwrap_or(&inp.cfg.executor.model);
+    let model = inp
+        .model_override
+        .map(str::to_string)
+        .unwrap_or_else(|| inp.cfg.executor.model.clone());
+
+    // Per-model overrides for the wire client's sampling. The loop deps resolve
+    // independently in `run_phase_with` (see "Why two resolve calls" in the phase
+    // doc) — `inp.cfg` is passed down unresolved.
+    let mut client_cfg = inp.cfg.clone();
+    client_cfg.resolve_for_model(&model);
 
     let prod_client = OpenAiClient::new(
-        inp.cfg.executor.api_key.clone().unwrap_or_default(),
-        model.to_string(),
-        inp.cfg.executor.base_url.clone(),
-        std::time::Duration::from_secs(inp.cfg.executor.first_token_timeout_secs),
-        std::time::Duration::from_secs(inp.cfg.executor.stream_idle_timeout_secs),
-        inp.cfg.executor.temperature,
-        inp.cfg.executor.seed,
+        client_cfg.executor.api_key.clone().unwrap_or_default(),
+        model.clone(),
+        client_cfg.executor.base_url.clone(),
+        std::time::Duration::from_secs(client_cfg.executor.first_token_timeout_secs),
+        std::time::Duration::from_secs(client_cfg.executor.stream_idle_timeout_secs),
+        client_cfg.executor.temperature,
+        client_cfg.executor.seed,
     );
 
     let client: &dyn AiClient = match inp.test_client {
@@ -293,11 +305,11 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         phase_doc_path: inp.phase_doc_path,
         repo_path: inp.repo_path,
         standards: inp.standards,
-        model,
+        model: &model,
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
         context_window: if inp.test_client.is_none() {
-            rexymcp_executor::health::fetch_context_window(&inp.cfg.executor, model).await
+            rexymcp_executor::health::fetch_context_window(&inp.cfg.executor, &model).await
         } else {
             None
         },
@@ -546,5 +558,141 @@ mod tests {
         let result = run_phase_with(&inp, &seams).await;
 
         assert!(result.is_err(), "should error on non-existent root");
+    }
+
+    // --- per-model override resolution wiring tests ---
+
+    #[tokio::test]
+    async fn run_phase_with_resolves_per_model_sampling_into_telemetry() {
+        let dir = TempDir::new().unwrap();
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let phase_doc_path = dir.path().join("phase-01-test.md");
+        std::fs::write(
+            &phase_doc_path,
+            "# Phase 01: Test\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\n",
+        )
+        .unwrap();
+
+        let mut cfg = Config::default();
+        cfg.executor.temperature = Some(0.8);
+        cfg.models.insert(
+            "override-model".into(),
+            rexymcp_executor::config::ModelOverride {
+                temperature: Some(0.2),
+                seed: None,
+                task_tracking: None,
+                identical_call_threshold: None,
+                verifier_persistence_threshold: None,
+                runaway_output_bytes: None,
+            },
+        );
+
+        let mock = MockAiClient::new(vec!["Done.".to_string()]);
+
+        let clock = || 1234567890u64;
+
+        let seams = Seams {
+            client: &mock,
+            verifier: &NoopVerifier,
+            runner: &NoopRunner,
+            clock: &clock,
+        };
+
+        let inp = AssemblyInput {
+            cfg: &cfg,
+            phase_doc_path: &phase_doc_path,
+            repo_path: &repo_dir,
+            standards: "standards",
+            model: "override-model",
+            telemetry_dir: Some(dir.path()),
+            progress: None,
+            context_window: None,
+            project_id: None,
+        };
+
+        let result = run_phase_with(&inp, &seams).await;
+        assert!(
+            result.is_ok(),
+            "run_phase_with should succeed: {:?}",
+            result
+        );
+
+        let runs = rexymcp_executor::store::telemetry::read(&dir.path().join("phase_runs.jsonl"))
+            .expect("telemetry should be readable");
+        assert_eq!(runs.len(), 1, "exactly one phase run recorded");
+        assert_eq!(
+            runs[0].generation_params.temperature,
+            Some(0.2),
+            "temperature must be the per-model override (0.2), not the global (0.8)"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_phase_with_unknown_model_keeps_global_sampling() {
+        let dir = TempDir::new().unwrap();
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let phase_doc_path = dir.path().join("phase-01-test.md");
+        std::fs::write(
+            &phase_doc_path,
+            "# Phase 01: Test\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\n",
+        )
+        .unwrap();
+
+        let mut cfg = Config::default();
+        cfg.executor.temperature = Some(0.8);
+        cfg.models.insert(
+            "override-model".into(),
+            rexymcp_executor::config::ModelOverride {
+                temperature: Some(0.2),
+                seed: None,
+                task_tracking: None,
+                identical_call_threshold: None,
+                verifier_persistence_threshold: None,
+                runaway_output_bytes: None,
+            },
+        );
+
+        let mock = MockAiClient::new(vec!["Done.".to_string()]);
+
+        let clock = || 1234567890u64;
+
+        let seams = Seams {
+            client: &mock,
+            verifier: &NoopVerifier,
+            runner: &NoopRunner,
+            clock: &clock,
+        };
+
+        let inp = AssemblyInput {
+            cfg: &cfg,
+            phase_doc_path: &phase_doc_path,
+            repo_path: &repo_dir,
+            standards: "standards",
+            model: "different-model",
+            telemetry_dir: Some(dir.path()),
+            progress: None,
+            context_window: None,
+            project_id: None,
+        };
+
+        let result = run_phase_with(&inp, &seams).await;
+        assert!(
+            result.is_ok(),
+            "run_phase_with should succeed: {:?}",
+            result
+        );
+
+        let runs = rexymcp_executor::store::telemetry::read(&dir.path().join("phase_runs.jsonl"))
+            .expect("telemetry should be readable");
+        assert_eq!(runs.len(), 1, "exactly one phase run recorded");
+        assert_eq!(
+            runs[0].generation_params.temperature,
+            Some(0.8),
+            "temperature must be the global (0.8) since 'different-model' has no [models] entry"
+        );
     }
 }

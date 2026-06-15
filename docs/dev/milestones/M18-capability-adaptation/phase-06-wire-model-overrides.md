@@ -1,7 +1,7 @@
 # Phase 06: wire the per-model override resolution into the dispatch path
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** todo
+**Status:** review
 **Depends on:** phase-05 (the pure `Config::resolve_for_model` substrate — done)
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -364,3 +364,33 @@ quote the output in the completion Update Log:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-15 03:40 (started)
+
+**Executor:** rexyMCP executor
+
+**Plan:** Implement the three spec tasks: (1) resolve per-model overrides for the live client in `run_phase`, (2) resolve per-model overrides for loop deps in `run_phase_with`, (3) document `[models]` in the `rexymcp init` template. Add two wiring tests in `runner.rs` and one template test in `init.rs`.
+
+### Update — 2026-06-15 03:40 (complete)
+
+**Executor:** rexyMCP executor
+
+**Verification commands:**
+- `cargo fmt --all --check` — clean
+- `cargo build` — clean, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 755 passed, 0 failed, 2 ignored
+
+**End-to-end verification:**
+1. `rexymcp init` template — ran real binary into `/tmp/m18p06-e2e`; `grep -n 'models'` confirmed line 29 contains `# [models."<model-id>"]` documentation.
+2. Resolution wiring — `run_phase_with_resolves_per_model_sampling_into_telemetry` writes actual `phase_runs.jsonl` parsed by `telemetry::read`, proving resolved `generation_params.temperature == Some(0.2)` (override) vs `Some(0.8)` (global).
+
+**Files changed:**
+- `mcp/src/runner.rs` — resolve call in `run_phase` for wire client; resolve call in `run_phase_with` for loop deps; two new hermetic tests.
+- `mcp/src/init.rs` — commented `[models]` block in template; one new test.
+- `docs/dev/milestones/M18-capability-adaptation/phase-06-wire-model-overrides.md` — status flip + Update Log.
+- `docs/dev/milestones/M18-capability-adaptation/README.md` — phase table status flip.
+
+**Grep for pinned literal:** `grep -rn '\[models\."' mcp/src/init.rs` → `37:# [models."<model-id>"]` — confirmed.
+
+**Notes for review:** None. All spec tasks implemented per the phase doc. `executor/src/config.rs` is untouched.

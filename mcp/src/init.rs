@@ -34,6 +34,16 @@ identical_call_threshold = 6      # consecutive identical tool calls → hard-fa
 verifier_persistence_threshold = 6 # consecutive turns with verifier errors → hard-fail
 runaway_output_bytes = 102400     # single tool output bytes → hard-fail (100 KB)
 
+# [models."<model-id>"]              # per-model knob overrides; key is the exact
+#                                    # active model id (no prefix/substring match).
+#                                    # Any key omitted here inherits the global value above.
+# task_tracking = false              # override [executor] task_tracking for this model
+# temperature = 0.2                  # override [executor] temperature
+# seed = 7                           # override [executor] seed
+# identical_call_threshold = 8       # override [governor] identical_call_threshold
+# verifier_persistence_threshold = 8 # override [governor] verifier_persistence_threshold
+# runaway_output_bytes = 204800      # override [governor] runaway_output_bytes
+
 [commands]
 # format = "cargo fmt --all"
 # build = "cargo build"
@@ -169,5 +179,26 @@ mod tests {
         let dir = TempDir::new().unwrap();
         run(dir.path(), false).unwrap();
         assert!(!dir.path().join(".mcp.json").exists());
+    }
+
+    #[test]
+    fn init_documents_models_override_section() {
+        let dir = TempDir::new().unwrap();
+        run(dir.path(), false).unwrap();
+
+        let path = dir.path().join("rexymcp.toml");
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("[models.\""),
+            "generated config must document the [models] override section"
+        );
+
+        // The [models] block is fully commented, so loading must succeed with an
+        // empty models map.
+        let cfg = Config::load(&path).expect("generated config must load");
+        assert!(
+            cfg.models.is_empty(),
+            "commented [models] block must not populate config.models"
+        );
     }
 }
