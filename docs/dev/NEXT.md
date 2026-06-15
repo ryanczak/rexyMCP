@@ -4,10 +4,30 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — M18 phase-04 is `done`. Thread 2 (capability profile +
-draft-time aid) is complete. The next in-scope phase is **phase-05** (per-model
-config-override resolution layer, thread 3), **undrafted** — draft it with
-`/rexymcp:architect next` when ready.
+**Active phase:** **phase-05** — per-model config-override resolution layer
+(thread 3), **drafted** (2026-06-15), `todo`. Dispatch it with
+`/rexymcp:dispatch phase-05` when ready.
+
+**M18 phase-05 — drafted** (2026-06-15): opens thread 3 (model-conditioned
+runtime knobs). Adds a `[models."<id>"]` override table to `rexymcp.toml` and a
+pure `Config::resolve_for_model(&mut self, model)` in `executor/src/config.rs`
+that applies a matching model's overrides (`task_tracking`, `temperature`,
+`seed`, the three governor thresholds) **in place** over the global
+`[executor]`/`[governor]` defaults. **Pure substrate, mirrors the 03→04 split:**
+this phase ships the config types + resolution fn with full unit coverage but
+**does not wire it into `runner.rs`** — that (plus the `rexymcp init` template
+docs) is phase-06, the immediate pinned consumer. In-place mutation is the
+low-blast-radius shape: the dispatch path (`runner.rs:185,226-228,232-233`)
+already reads `cfg.executor.{task_tracking,temperature,seed}`/`cfg.governor`
+directly, so phase-06 becomes a single resolve call before those reads.
+**Pre-injected gotchas:** (1) `.cloned()` + `let-else` on the `models.get` lookup
+to end the immutable borrow before mutating sibling fields (borrow-check stall
+guard); (2) **exact-match only** (pinned negative: `[models."qwen"]` must not
+apply to `"qwen2.5-coder"`); (3) `None` override field = inherit, not reset
+(pinned); (4) **no `#![allow(dead_code)]`** — `config.rs` is in the `executor`
+**lib** crate where unused `pub` is fine, unlike phase-03's `mcp`-binary-crate
+`profile.rs` (bug-03-2). **Router breadth scoped out** (no global config home
+today — it's a router constant; a separate concern). ~200 lines, single file.
 
 **M18 phase-04 — done** (2026-06-15, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `5f236a0` feat). The phase-03 profile now has its
