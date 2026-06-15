@@ -1,7 +1,7 @@
 # Phase 01: Pre-completion gate enforcement
 
 **Milestone:** M19 — Structural Gate Enforcement
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s

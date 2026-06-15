@@ -4,13 +4,17 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M18 is complete** (all in-scope phases 01–07 approved
-2026-06-15; phase-08/thread-4 shelved). This is a milestone boundary: the user
-signs off before the next milestone begins. **M19 (Structural Gate Enforcement)
-is drafted and staged** at `docs/dev/milestones/M19-gate-enforcement/` —
-phase-01 (pre-completion gate enforcement) closes the recurring `false_completion`
-class structurally. To start it: `/rexymcp:architect next` (activates M19
-phase-01 + repoints this file), then `/rexymcp:dispatch phase-01`.
+**Active phase:** M19 phase-01 —
+`docs/dev/milestones/M19-gate-enforcement/phase-01-pre-completion-gates.md`
+
+**M19 — Structural Gate Enforcement** (kicked off 2026-06-15, with the user).
+Single-phase milestone. Closes the recurring `false_completion` class
+structurally by inspecting the `Gates` result from `run_command_set` before
+returning `PhaseResult::Complete`. Two files: `executor/src/agent/command.rs`
+(new `gate_failure_feedback` helper) + `executor/src/agent/mod.rs` (restructure
+the `NoToolCall` completion arm). ~130 lines, size=s. Calibration folds
+(`prod_unwrap` 3rd occurrence, `false_completion` dominant class) held for
+sign-off **after** M19 phase-01 is done.
 
 **M18 phase-07 — done** (2026-06-15, **approved_after_1**, executor
 Qwen/Qwen3.6-27B-FP8; commit `b93e9d5` fix). The cleanup-thread tool-surface

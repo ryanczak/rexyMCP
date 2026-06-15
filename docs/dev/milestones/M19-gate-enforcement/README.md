@@ -4,7 +4,7 @@
 runtime enforces DoD gates at completion time rather than trusting the model's
 self-assessment.
 
-**Status:** todo (staged; starts after M18 closes)
+**Status:** in-progress (phase-01 active)
 
 **Depends on:** M18 (uses the `Gates` / `CommandOutputs` types already in the
 tree; no M18 feature depends on M19)
@@ -44,7 +44,7 @@ is injected back into the conversation and the model must fix and re-complete.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | pre-completion gate enforcement ([phase-01-pre-completion-gates.md](phase-01-pre-completion-gates.md)) | todo |
+| 01 | pre-completion gate enforcement ([phase-01-pre-completion-gates.md](phase-01-pre-completion-gates.md)) | in-progress |
 
 ## Notes
 
