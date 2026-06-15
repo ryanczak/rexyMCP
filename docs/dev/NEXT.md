@@ -4,9 +4,10 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-06** — wire the per-model override resolution into the
-dispatch path (thread 3), **drafted** (2026-06-15), `todo`. Dispatch it with
-`/rexymcp:dispatch phase-06` when ready.
+**Active phase:** none — threads 1–3 of M18 are complete. Threads 1–3 done;
+thread 4 (cold-start calibration battery) is shelved. Use
+`/rexymcp:architect next` to start phase-07 (executor tooling improvements,
+the cleanup thread) when ready, or close M18 and start a new milestone.
 
 **M18 phase-06 — drafted** (2026-06-15): closes thread 3 — wires phase-05's pure
 `Config::resolve_for_model` into the live dispatch path (`mcp/src/runner.rs`) so a

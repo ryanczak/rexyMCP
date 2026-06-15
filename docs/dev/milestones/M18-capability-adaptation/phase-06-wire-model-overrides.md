@@ -1,7 +1,7 @@
 # Phase 06: wire the per-model override resolution into the dispatch path
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** phase-05 (the pure `Config::resolve_for_model` substrate — done)
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -394,3 +394,11 @@ quote the output in the completion Update Log:
 **Grep for pinned literal:** `grep -rn '\[models\."' mcp/src/init.rs` → `37:# [models."<model-id>"]` — confirmed.
 
 **Notes for review:** None. All spec tasks implemented per the phase doc. `executor/src/config.rs` is untouched.
+
+### Review verdict — 2026-06-15
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none — all four gates green on independent re-run (fmt/build/clippy `-D warnings`/test 755 passed, 2 pre-existing ignored); both new wiring tests mutation-resistant (`run_phase_with_resolves_per_model_sampling_into_telemetry` reads back `phase_runs.jsonl` — a wrong/missing resolve would give `Some(0.8)` not `Some(0.2)`; negative `run_phase_with_unknown_model_keeps_global_sampling` confirms no spurious match); `init_documents_models_override_section` confirms the template carries the knob doc and loads with empty models. E2E: real binary produced `# [models."<model-id>"]` at line 29. `executor/src/config.rs` untouched; no `#[allow]`, no `unwrap` in prod paths.
