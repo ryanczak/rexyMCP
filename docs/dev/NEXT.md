@@ -4,9 +4,30 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** **phase-05** — per-model config-override resolution layer
-(thread 3), **drafted** (2026-06-15), `todo`. Dispatch it with
-`/rexymcp:dispatch phase-05` when ready.
+**Active phase:** **phase-06** — wire the per-model override resolution into the
+dispatch path (thread 3), **drafted** (2026-06-15), `todo`. Dispatch it with
+`/rexymcp:dispatch phase-06` when ready.
+
+**M18 phase-06 — drafted** (2026-06-15): closes thread 3 — wires phase-05's pure
+`Config::resolve_for_model` into the live dispatch path (`mcp/src/runner.rs`) so a
+model's `[models."<id>"]` overrides actually take effect, and documents the
+`[models]` section in the `rexymcp init` template (`mcp/src/init.rs`). **Two
+resolve sites by design (pre-injected rationale):** `temperature`/`seed` are
+consumed in two functions across the prod/test seam — the **wire client**
+(`OpenAiClient::new` in `run_phase`, bakes sampling at construction) and the
+**loop deps/telemetry** (`run_phase_with`, builds `GenerationParams`/governor/
+`task_tracking`). `run_phase` passes **unresolved** `inp.cfg` down, so each
+function resolves its own clone; neither resolve is removable without breaking its
+consumer. Only the six overridable knobs switch to the resolved clone; non-
+overridable reads (`commands`/`budget`/`context`/timeouts) stay on `inp.cfg`
+(also dodges the `commands: &inp.cfg.commands` borrow). **Testability seam:**
+`run_phase` uses Real verifier/runner (not hermetic), so the wiring test lives at
+`run_phase_with` (Noop seams, `MockAiClient`) and observes resolution via the
+real `telemetry::append`→`read` round-trip on `generation_params.temperature`
+(the one hermetically-observable resolved knob — governor/task_tracking aren't in
+`PhaseResult`, but resolve through the same call). Positive + unknown-model
+negative + an `init` template-doc test. `config.rs` untouched. ~130 lines, 2
+files.
 
 **M18 phase-05 — drafted** (2026-06-15): opens thread 3 (model-conditioned
 runtime knobs). Adds a `[models."<id>"]` override table to `rexymcp.toml` and a
