@@ -4,10 +4,26 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — threads 1–3 of M18 are complete. Threads 1–3 done;
-thread 4 (cold-start calibration battery) is shelved. Use
-`/rexymcp:architect next` to start phase-07 (executor tooling improvements,
-the cleanup thread) when ready, or close M18 and start a new milestone.
+**Active phase:** M18 phase-07 — executor tooling improvements (the cleanup
+thread). Dispatch with `/rexymcp:dispatch phase-07`. Committed threads 1–3 are
+done; thread 4 (cold-start calibration battery, now phase-08) stays shelved.
+After phase-07 lands and is approved, M18's last in-scope phase is done — that's
+the milestone boundary (human sign-off to close M18 / start a new milestone).
+
+**M18 phase-07 — activated** (2026-06-15): the cleanup-thread tooling phase,
+**pre-drafted 2026-06-14** and re-verified current at activation — all
+load-bearing line refs still exact after phases 05–06 (`runner.rs`
+`build_registry` tool vec at 142–150, above phase-06's resolve edits at 185+;
+`write_file.rs` parent-dir guard 75–87 / write-fail arm 94–100; `router.rs`
+`categorize` 14–23 / `built_ins` test 76–84; `find_files.rs`/`search.rs`
+untouched since May). Seven additive tool-surface improvements, no new
+`Cargo.toml` dep: (1) `write_file` append mode + line count; (2) `search`
+`context_lines` (capped 5, byte-identical no-context path pinned); (3)
+`find_files` `depth` via `WalkBuilder`; new tools (4) `patch_lines`, (5)
+`delete_file`, (6) `move_file`, all `Category::Write`, registered in `runner.rs`
+tool vec + `router.rs` `categorize` + `mod.rs` re-exports. ~450 lines, size=l.
+**Independent of phases 03–06** (additive to existing tools). No MCP/CLI surface
+change; E2E is build-green + tests (no fabricated transcript).
 
 **M18 phase-06 — drafted** (2026-06-15): closes thread 3 — wires phase-05's pure
 `Config::resolve_for_model` into the live dispatch path (`mcp/src/runner.rs`) so a
