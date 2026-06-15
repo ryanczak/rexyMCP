@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use rexymcp_executor::agent::progress::ProgressCallback;
 use rexymcp_executor::ai::AiClient;
+use rexymcp_executor::config::Config;
 
 use crate::cap;
 use crate::log_query;
+use crate::profile;
 use crate::roots;
 use crate::runner;
 use crate::scorecard;
@@ -270,6 +272,25 @@ pub struct ModelScorecardOutput {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ModelProfileParams {
+    /// Tags the run must contain (AND-ed). Empty = no filter.
+    pub tags: Option<Vec<String>>,
+    pub model: Option<String>,
+    pub min_runs: Option<usize>,
+    /// Override the cross-project `phase_runs.jsonl` path. `None` = resolve
+    /// from `cfg.telemetry.dir`.
+    pub telemetry_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ModelProfileOutput {
+    pub rows: Vec<profile::ModelProfile>,
+    pub total_runs_considered: usize,
+    /// True iff the row count was clipped by `MAX_ROWS`.
+    pub truncated: bool,
+}
+
 /// Inner logic for `model_scorecard`.
 pub(crate) fn model_scorecard_inner(
     config_path: &Path,
@@ -311,6 +332,53 @@ pub(crate) fn model_scorecard_inner(
     }
 
     Ok(ModelScorecardOutput {
+        rows,
+        total_runs_considered,
+        truncated,
+    })
+}
+
+/// Inner logic for `model_profile`.
+pub(crate) fn model_profile_inner(
+    config_path: &Path,
+    params: &ModelProfileParams,
+) -> Result<ModelProfileOutput, String> {
+    let cfg =
+        Config::load_with_env(config_path).map_err(|e| format!("failed to load config: {}", e))?;
+
+    let telemetry_file = if let Some(ref p) = params.telemetry_path {
+        PathBuf::from(p)
+    } else if let Some(ref dir) = cfg.telemetry.dir {
+        dir.join("phase_runs.jsonl")
+    } else {
+        return Err(
+            "telemetry disabled: cfg.telemetry.dir not set and no telemetry_path provided"
+                .to_string(),
+        );
+    };
+
+    let runs =
+        rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+    let reviews = rexymcp_executor::store::telemetry::read_reviews(&telemetry_file)
+        .map_err(|e| e.to_string())?;
+
+    let total_runs_considered = runs.len();
+
+    let filter = scorecard::ScorecardFilter {
+        tags: params.tags.as_deref().unwrap_or(&[]),
+        model: params.model.as_deref(),
+        min_runs: params.min_runs.unwrap_or(0),
+    };
+
+    // aggregate_profiles folds internally — pass raw runs + reviews (no fold_reviews).
+    let mut rows = profile::aggregate_profiles(&runs, &reviews, &filter);
+
+    let truncated = rows.len() > scorecard::MAX_ROWS;
+    if truncated {
+        rows.truncate(scorecard::MAX_ROWS);
+    }
+
+    Ok(ModelProfileOutput {
         rows,
         total_runs_considered,
         truncated,
@@ -369,6 +437,16 @@ impl RexyMcpServer {
         Parameters(params): Parameters<ModelScorecardParams>,
     ) -> Result<Json<ModelScorecardOutput>, String> {
         model_scorecard_inner(&self.config_path, &params).map(Json)
+    }
+
+    #[rmcp::tool(
+        description = "Aggregate the cross-project PhaseRun telemetry into a per-(model, tag) capability profile. Returns strengths (gate-pass rate, approved-first-try rate, reliability means) and ranked failure classes with counts. Non-attributable classes (spec_bug, infra_blip) are separated from the model's real weaknesses. Filterable by tags (AND semantics), model, min_runs. Output capped at 500 rows."
+    )]
+    async fn model_profile(
+        &self,
+        Parameters(params): Parameters<ModelProfileParams>,
+    ) -> Result<Json<ModelProfileOutput>, String> {
+        model_profile_inner(&self.config_path, &params).map(Json)
     }
 }
 

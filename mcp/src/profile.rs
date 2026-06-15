@@ -1,7 +1,3 @@
-#![allow(dead_code)]
-// Removal note: this attribute must be removed in phase-04 when the CLI/MCP
-// surface lands and `aggregate_profiles` has callers.
-
 use std::collections::{BTreeMap, HashMap};
 
 use schemars::JsonSchema;

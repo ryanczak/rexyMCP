@@ -1,7 +1,7 @@
 # Phase 04: surface the profile to the architect (`rexymcp profile` CLI + MCP tool)
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** todo
+**Status:** review
 **Depends on:** phase-03 (the `mcp/src/profile.rs` aggregation layer is live —
 `ModelProfile`, `aggregate_profiles`, `is_model_attributable`)
 **Estimated diff:** ~320 lines
@@ -398,3 +398,48 @@ fabricating data.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-15 02:20 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Created the two runtime surfaces for `aggregate_profiles`: a `rexymcp profile` CLI subcommand and a `model_profile` MCP tool. Removed the `#![allow(dead_code)]` from `profile.rs` — all public items now have production callers.
+
+**Files changed:**
+- `mcp/src/profile.rs` — deleted `#![allow(dead_code)]` + removal-note comment (lines 1-3)
+- `mcp/src/profile_cli.rs` — new file with `load_profiles` and `format_profiles` (+ tests)
+- `mcp/src/main.rs` — added `mod profile_cli;`, `Commands::Profile` variant, dispatch arm, and `cli_parse_profile_collects_filters` test
+- `mcp/src/server.rs` — added `use crate::profile;`, `ModelProfileParams`, `ModelProfileOutput`, `model_profile_inner`, `model_profile` tool method
+- `mcp/src/server_tests.rs` — added `model_profile_success_via_config_telemetry_dir`, `model_profile_telemetry_path_override_takes_precedence`, `model_profile_telemetry_disabled_returns_error`
+
+**Verification commands:**
+```
+$ cargo fmt --all --check
+(clean)
+$ cargo build 2>&1 | tail -20
+(clean)
+$ cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(clean)
+$ cargo test 2>&1 | tail -30
+test result: ok. 749 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**Grep proof — `allow(dead_code)` removed from profile.rs:**
+```
+$ grep -c 'allow(dead_code)' mcp/src/profile.rs
+0
+```
+
+**Grep proof — `is_model_attributable` called in formatter:**
+```
+$ grep -n 'is_model_attributable' mcp/src/profile_cli.rs
+82:            if profile::is_model_attributable(&c.class) {
+```
+
+**End-to-end verification:**
+1. **CLI:** `cargo run -p rexymcp -- profile --config rexymcp.toml` printed a 28-row table with header `MODEL  TAG  N  GATES  AFT  BOUNCES  TOOL  PARSE  ESC  WEAKNESSES`. The `WEAKNESSES` column correctly rendered `false_completion×1 (spec_bug×1)` — `spec_bug` parenthesized, `false_completion` bare. `--json` output parsed as a valid JSON array of `ModelProfile` objects.
+2. **MCP tool inner:** `model_profile_success_via_config_telemetry_dir` verified `total_runs_considered` matches raw run count, `truncated == false`, rows non-empty. `model_profile_telemetry_path_override_takes_precedence` confirmed override wins over config dir. `model_profile_telemetry_disabled_returns_error` confirmed `Err` on missing telemetry.
+
+**Notes for review:** No adaptations or deviations from the spec. All acceptance criteria met.
+
+**Commit:** `feat: surface model profile via rexymcp profile CLI and model_profile MCP tool`

@@ -783,3 +783,83 @@ fn model_scorecard_folds_review() {
         "phantom review should not change m1 aggregates"
     );
 }
+
+// --- model_profile tests ---
+
+#[test]
+fn model_profile_success_via_config_telemetry_dir() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_config_with_telemetry(&temp_dir);
+    write_telemetry_fixture(&temp_dir);
+
+    let params = ModelProfileParams {
+        tags: None,
+        model: None,
+        min_runs: None,
+        telemetry_path: None,
+    };
+    let result = model_profile_inner(&config_path, &params).unwrap();
+
+    assert_eq!(result.total_runs_considered, 2);
+    assert!(!result.truncated);
+    assert!(!result.rows.is_empty());
+}
+
+#[test]
+fn model_profile_telemetry_path_override_takes_precedence() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_config_with_telemetry(&temp_dir);
+    write_telemetry_fixture(&temp_dir);
+
+    let alt_dir = temp_dir.path().join("alt_telemetry");
+    std::fs::create_dir_all(&alt_dir).unwrap();
+    let alt_path = alt_dir.join("phase_runs.jsonl");
+    let line = r#"{"ts":1717000002000,"model":"m3","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["go"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+    std::fs::write(&alt_path, format!("{}\n", line)).unwrap();
+
+    let params = ModelProfileParams {
+        tags: None,
+        model: None,
+        min_runs: None,
+        telemetry_path: Some(alt_path.to_str().unwrap().to_string()),
+    };
+    let result = model_profile_inner(&config_path, &params).unwrap();
+
+    assert_eq!(result.total_runs_considered, 1);
+    assert_eq!(result.rows[0].model, "m3");
+}
+
+#[test]
+fn model_profile_telemetry_disabled_returns_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("rexymcp.toml");
+    std::fs::write(
+        &config_path,
+        r#"[executor]
+provider = "openai"
+model = "test-model"
+base_url = "http://127.0.0.1:1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+    )
+    .unwrap();
+
+    let params = ModelProfileParams {
+        tags: None,
+        model: None,
+        min_runs: None,
+        telemetry_path: None,
+    };
+    let result = model_profile_inner(&config_path, &params);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("telemetry disabled"));
+}

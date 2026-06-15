@@ -9,6 +9,7 @@ mod doctor;
 mod init;
 mod log_query;
 mod profile;
+mod profile_cli;
 mod review;
 mod roots;
 mod runner;
@@ -104,6 +105,32 @@ enum Commands {
     },
     /// Aggregate runs into a model × settings competency matrix
     Scorecard {
+        /// Path to the config file
+        #[arg(long)]
+        config: PathBuf,
+
+        /// Restrict to one model (exact match)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Restrict to runs whose tags contain this tag; repeat for AND
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+
+        /// Drop buckets with fewer than this many runs
+        #[arg(long, default_value_t = 0)]
+        min_runs: usize,
+
+        /// Override the telemetry phase_runs.jsonl path
+        #[arg(long)]
+        telemetry_path: Option<PathBuf>,
+
+        /// Emit JSON instead of a human table
+        #[arg(long)]
+        json: bool,
+    },
+    /// Aggregate folded runs into a per-(model, tag) capability profile
+    Profile {
         /// Path to the config file
         #[arg(long)]
         config: PathBuf,
@@ -408,6 +435,41 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Commands::Profile {
+            config,
+            model,
+            tags,
+            min_runs,
+            telemetry_path,
+            json,
+        } => {
+            let filter = scorecard::ScorecardFilter {
+                model: model.as_deref(),
+                tags: &tags,
+                min_runs,
+            };
+
+            let rows = match profile_cli::load_profiles(&config, telemetry_path.as_deref(), &filter)
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            };
+
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&rows).unwrap_or_else(|e| {
+                        format!("{{\"error\": \"failed to serialize profile: {}\"}}", e)
+                    })
+                );
+            } else {
+                println!("{}", profile_cli::format_profiles(&rows));
+            }
+            Ok(())
+        }
         Commands::Review {
             config,
             phase_doc,
@@ -698,6 +760,44 @@ mod tests {
                 assert!(json);
             }
             _ => panic!("expected Scorecard"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_profile_collects_filters() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "profile",
+            "--config",
+            "rexymcp.toml",
+            "--model",
+            "qwen",
+            "--tag",
+            "rust",
+            "--tag",
+            "feature",
+            "--min-runs",
+            "3",
+            "--json",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Profile {
+                config,
+                model,
+                tags,
+                min_runs,
+                json,
+                ..
+            }) => {
+                assert_eq!(config, PathBuf::from("rexymcp.toml"));
+                assert_eq!(model.as_deref(), Some("qwen"));
+                assert_eq!(tags, ["rust", "feature"]);
+                assert_eq!(min_runs, 3);
+                assert!(json);
+            }
+            _ => panic!("expected Profile"),
         }
     }
 
