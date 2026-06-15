@@ -8,6 +8,7 @@ mod dashboard;
 mod doctor;
 mod init;
 mod log_query;
+mod profile;
 mod review;
 mod roots;
 mod runner;

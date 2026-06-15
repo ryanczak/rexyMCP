@@ -4,8 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-02-review-cli-fold.md`
-(M18 phase-02, `todo`). Dispatch with `/rexymcp:dispatch phase-02`.
+**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-03-model-profile.md`
+(M18 phase-03, `todo`). Dispatch with `/rexymcp:dispatch phase-03`.
+
+**M18 phase-02 — done** (2026-06-14, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8). The write-back loop is now live end-to-end: a new
+`rexymcp review` CLI (`mcp/src/review.rs` `record_review` + `Commands::Review`
+clap variant, clock injected at `main.rs`) appends a `PhaseReview` annotation,
+and `read_reviews`+`fold_reviews` were folded into the three read paths
+(`runs.rs`, `scorecard_cli.rs`, `server.rs::model_scorecard`) so supervision
+columns carry real data. `/rexymcp:review` SKILL §7/§8 wired to invoke the CLI.
+Identity gotcha pinned and held: `--phase-doc` is stored **verbatim** (never
+canonicalized) so fold matches the executor's stored `phase_doc_path`.
+Mutation-verified at review (removing the fold line fails
+`load_runs_folds_review_verdict`). Dogfooded into rexyMCP's own production
+telemetry — the phase-02 approval folded onto the real Qwen run while the older
+gemma run stayed `None` (correct latest-run-only semantics). Commits `39cee12`
+(feat) + `6bd02b9` (approve). One calibration note (not a bounce): a custom-named
+`--telemetry-path` override writes to `phase_runs.jsonl` in that file's parent
+(documented as "the phase_runs.jsonl path" — matches intent). **Phase-03 (drafted)
+opens thread 2:** the pure `model_profile` aggregation layer (`mcp/src/profile.rs`
+`ModelProfile` + `aggregate_profiles` + `is_model_attributable`) — per-`(model,
+tag)` strengths from folded runs **and** ranked failure classes joined from
+reviews; no CLI/MCP surface (that is phase-04).
 
 **M18 phase-01 — done** (2026-06-14, **approved_after_1**, executor
 Qwen/Qwen3.6-27B-FP8). Store-layer review write-back substrate landed in

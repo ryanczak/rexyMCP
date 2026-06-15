@@ -1,7 +1,7 @@
 # Phase 03: `model_profile` aggregation (strengths + ranked failure classes)
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** in-progress (bug-03-1, bug-03-2)
+**Status:** review
 **Depends on:** phase-01 (substrate), phase-02 (write-back loop is live — reviews
 now exist in the store)
 **Estimated diff:** ~360 lines
@@ -433,3 +433,31 @@ as separate invocations and confirm each exits 0.
 **Rationale:** first failure, spec is sound and fully comprehended; the blocker
 was an oversized single `write_file` payload (native args → null ×6), fixed by a
 staged-write instruction, not a spec change.
+
+### Update — 2026-06-15 01:01 (complete)
+
+**Executor:** rexyMCP executor (re-dispatch)
+
+**What changed:**
+- Added `#![allow(dead_code)]` as the first line of `mcp/src/profile.rs` with the mandatory removal-note comment (per bug-03-2 authorization). This suppresses the dead-code wall in the binary crate since `aggregate_profiles` has no caller until phase-04.
+- Ran `cargo fmt --all` to fix two formatting divergences (per bug-03-1).
+
+**Verification commands (all exited 0):**
+- `cargo fmt --all --check`: clean
+- `cargo build`: clean
+- `cargo clippy --all-targets --all-features -- -D warnings`: clean
+- `cargo test --package rexymcp -- profile`: 8 passed; 0 failed
+- `cargo test` (full suite): 749 passed; 0 failed; 2 ignored
+
+**Files changed:**
+- `mcp/src/profile.rs` — added `#![allow(dead_code)]` attribute + removal-note comment at line 1; formatting fixed by `rustfmt`
+- `docs/dev/milestones/M18-capability-adaptation/phase-03-model-profile.md` — status flipped to `review`, completion Update Log appended
+- `docs/dev/milestones/M18-capability-adaptation/README.md` — phase table row updated to `review`
+
+**End-to-end verification:** N/A — this phase ships no runtime-loadable artifact (no CLI, no MCP tool; those are phase-04). Hermetic tests over hand-built records are the verification, as stated in the spec.
+
+**One-line verification summary:** fmt clean, build clean, clippy clean, 8 profile tests + 749 total tests all pass.
+
+**Notes for review:**
+- The `#![allow(dead_code)]` attribute is the only `#[allow]`/`#![allow]` in `profile.rs`, as authorized. It must be removed in phase-04.
+- All 8 spec-pinned tests pass: `strengths_come_from_folded_runs`, `ranks_failure_classes_by_count_then_name`, `excludes_none_from_failure_ranking`, `attributes_failure_to_matched_run_tags`, `attributes_to_latest_run_only`, `multi_class_review_counts_each_class`, `is_model_attributable_separates_spec_and_infra`, `min_runs_filters_small_buckets`.
