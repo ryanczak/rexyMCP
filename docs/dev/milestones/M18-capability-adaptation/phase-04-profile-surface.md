@@ -1,7 +1,7 @@
 # Phase 04: surface the profile to the architect (`rexymcp profile` CLI + MCP tool)
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (the `mcp/src/profile.rs` aggregation layer is live —
 `ModelProfile`, `aggregate_profiles`, `is_model_attributable`)
 **Estimated diff:** ~320 lines
@@ -443,3 +443,19 @@ $ grep -n 'is_model_attributable' mcp/src/profile_cli.rs
 **Notes for review:** No adaptations or deviations from the spec. All acceptance criteria met.
 
 **Commit:** `feat: surface model profile via rexymcp profile CLI and model_profile MCP tool`
+
+### Review verdict — 2026-06-15
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — additive surfaces plus the authorized 3-line
+  `#![allow(dead_code)]` deletion; `profile.rs` aggregation logic untouched.
+- **Calibration:** the first dispatch was interrupted before the bookkeeping
+  step, leaving uncommitted work in the tree (no bug, no review bounce); the
+  re-dispatch completed cleanly. Independent re-run confirmed all four gates
+  green (749 passed / 2 ignored), the formatter's `is_model_attributable`
+  branch mutation-resistant (`format_profiles_marks_non_attributable` fails
+  when the branch is dropped), and the live CLI rendered
+  `false_completion×1 (spec_bug×1)` against real telemetry — `spec_bug`
+  parenthesized, attributable class bare.

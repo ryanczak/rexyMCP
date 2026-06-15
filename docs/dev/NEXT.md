@@ -4,8 +4,31 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** `docs/dev/milestones/M18-capability-adaptation/phase-04-profile-surface.md`
-(M18 phase-04, `todo`). Dispatch with `/rexymcp:dispatch phase-04`.
+**Active phase:** none — M18 phase-04 is `done`. Thread 2 (capability profile +
+draft-time aid) is complete. The next in-scope phase is **phase-05** (per-model
+config-override resolution layer, thread 3), **undrafted** — draft it with
+`/rexymcp:architect next` when ready.
+
+**M18 phase-04 — done** (2026-06-15, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `5f236a0` feat). The phase-03 profile now has its
+two runtime surfaces: a **`rexymcp profile` CLI** (`mcp/src/profile_cli.rs`
+`load_profiles` + `format_profiles`, a `Commands::Profile` clap variant +
+dispatch arm in `main.rs`) **and** a **`model_profile` MCP tool**
+(`server.rs` `ModelProfileParams`/`ModelProfileOutput`/`model_profile_inner` +
+`#[rmcp::tool]` method), both mirroring the `scorecard` pair. **Dead-code loop
+closed:** `#![allow(dead_code)]` removed from `profile.rs` now that
+`aggregate_profiles`/`ModelProfile`/`is_model_attributable` have production
+callers. Both gotchas held: no `fold_reviews` (raw runs+reviews to
+`aggregate_profiles`), and the formatter calls `is_model_attributable` to
+parenthesize `spec_bug`/`infra_blip`. **Clean approved_first_try** (36-turn
+re-dispatch). All four gates green on independent re-run (749 passed / 2
+ignored); the non-attributable formatter branch mutation-verified; live CLI
+against real telemetry rendered `false_completion×1 (spec_bug×1)` (spec_bug
+parenthesized, attributable bare) and `--json` parsed as a 26-row
+`Vec<ModelProfile>`. **Calibration (no fold):** the *first* dispatch was
+interrupted before the bookkeeping step, leaving uncommitted work in the tree
+(no bug, no review bounce); the re-dispatch completed it cleanly — a recurrence
+of the dirty-tree-at-dispatch operational pattern, not a model defect.
 
 **M18 phase-04 — drafted** (2026-06-14): surface the phase-03 profile to the
 architect via a **`rexymcp profile` CLI** (`mcp/src/profile_cli.rs` `load_profiles`
