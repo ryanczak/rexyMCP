@@ -1,7 +1,7 @@
 # Phase 05: per-model config-override resolution layer
 
 **Milestone:** M18 — Capability-Aware Adaptation
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (thread 2 complete — the profile that *informs* which
 per-model knobs to set is now surfaced; this phase builds the substrate that
 *acts* on that judgment)
@@ -342,3 +342,15 @@ not fabricate a CLI transcript.
 **Notes for review:**
 - Clippy flagged `assert_eq!(x, true/false)` in test code; replaced with `assert!(x)` / `assert!(!x)` per clippy guidance.
 - No `#[allow]` or `#![allow]` added — the lib-crate gotcha was respected; `pub` items are public API.
+
+### Review verdict — 2026-06-14
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none — gates re-run clean (fmt/build/clippy `-D warnings`/test
+  755 passed, 2 pre-existing ignored); the two negative tests
+  (`resolve_for_model_unknown_model_is_noop`, `resolve_for_model_is_exact_match`)
+  are mutation-resistant; `.cloned()`+let-else and exact-match implemented per
+  spec; `runner.rs`/`init.rs` untouched (wiring correctly deferred to phase-06).
