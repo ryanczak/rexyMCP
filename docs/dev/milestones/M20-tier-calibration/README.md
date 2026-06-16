@@ -64,7 +64,7 @@ M20 closes those gaps with three phases that each ship independently:
 | 01 | Config schema, `/calibrate` CLI, known-model registry ([phase-01-config-and-calibrate.md](phase-01-config-and-calibrate.md)) | done |
 | 02 | Tier/cost telemetry fields and `EscalationEvent` record ([phase-02-telemetry-fields.md](phase-02-telemetry-fields.md)) | done |
 | 03 | Dashboard cost breakdown (Executor/Architect/Net per scope, Assists counter) ([phase-03-dashboard-cost-breakdown.md](phase-03-dashboard-cost-breakdown.md)) | done |
-| 04 | Documentation sync — README and architecture.md ([phase-04-documentation-sync.md](phase-04-documentation-sync.md)) | todo |
+| 04 | Documentation sync — README and architecture.md ([phase-04-documentation-sync.md](phase-04-documentation-sync.md)) | review |
 
 ## Notes
 

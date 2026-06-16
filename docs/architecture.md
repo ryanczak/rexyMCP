@@ -1,10 +1,11 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 and M9–M17 are fully implemented
-> and closed; M18 (capability-aware adaptation) is active. M8 (live session dashboard) is implemented but
-> open — the wireframe redesign shipped (2026-06-03) and M8 remains open for
-> live-session confirmation and bug fixes before its milestone close. This document is the source of truth
-> for the *intended* design; the code under `executor/` and `mcp/` is the source
+> **Status:** Living design doc. M1–M7 and M9–M20 are fully implemented
+> and closed (M8 and M18 remain open — see below); M8 (live session dashboard)
+> is implemented but open — the wireframe redesign shipped (2026-06-03) and M8
+> remains open for live-session confirmation and bug fixes before its milestone
+> close; M18 (capability-aware adaptation) is in progress. This document is the
+> source of truth for the *intended* design; the code under `executor/` and `mcp/` is the source
 > of truth for what actually runs. Milestones are listed in the **Status** section
 > at the bottom — that list is the project plan.
 
@@ -131,9 +132,13 @@ hits a budget cap:
    failure, feed the diagnostics back for a retry.
 7. The hard-fail detector watches for repetition loops, repeated verifier
    failures, and budget overflow. If it trips, assemble a **briefing** and stop.
-8. On clean completion, run the project's full command set
-   (`{FORMAT_COMMAND}`/`{BUILD_COMMAND}`/`{LINT_COMMAND}`/`{TEST_COMMAND}`),
-   capture output, and return.
+8. When the model signals completion (`NoToolCall`), run the project's full
+   command set (`{FORMAT_COMMAND}`/`{BUILD_COMMAND}`/`{LINT_COMMAND}`/
+   `{TEST_COMMAND}`). If any gate exits non-zero, inject its output as a user
+   message and re-enter the loop at step 3 — the model must fix the failure and
+   re-signal completion. If the turn budget is exhausted while fixing gate
+   failures, the result is `PhaseResult::BudgetExceeded`. Only when all
+   configured gates pass does the loop return `PhaseResult::Complete`. (M19.)
 
 Every step that produces an event — the rendered prompt, the raw completion, the
 parsed `ToolCall` or `ParseFailure`, the tool result, the verifier outcome, and
@@ -268,6 +273,14 @@ PhaseRun {
   // endpoint-reported provenance (best-effort; None when the server omits them)
   served_model,                         // model id from the chat response — more accurate than requested
   context_window,                       // max_model_len from /v1/models; distinct from budget.context_length
+  // tier calibration (M20; #[serde(default)] — absent in pre-M20 records)
+  tier_telemetry: {
+    tier,                               // LARGE | MEDIUM | SMALL — from [escalation] config
+    doc_level,                          // 0–3 architect detail level
+    escalation_count,                   // mid-phase Architect assists this run
+    architect_input_tokens,             // Architect (Claude) input tokens
+    architect_output_tokens,            // Architect (Claude) output tokens
+  },
   // supervision label (filled at review)
   architect_verdict,                    // approved_first_try | approved_after_N | rejected | escalated
 }
@@ -489,7 +502,12 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
   (`format`/`build`/`lint`/`test`), plus an optional `lint_fix` autofixing
   command run by the post-write hook (step 5a above) — not advertised to the
   executor model, not a gate command,
-- budget knobs (context %, max turns, escalation slots).
+- budget knobs (context %, max turns, escalation slots),
+- **`[escalation]`** (M20) — tier (`LARGE`/`MEDIUM`/`SMALL`) and tier-derived
+  defaults for `max_turns`, `escalation_slots`, `doc_level`,
+- **`[architect]`** (M20) — Claude model id and cost rates
+  (`input_per_mtok`, `output_per_mtok`) for the dashboard Architect cost column;
+  a `known_model_rates` registry auto-fills rates for recognized Claude model IDs.
 
 ## Non-goals
 
@@ -615,8 +633,11 @@ The project plan. Each entry becomes a milestone with its own
    - **Session panel** — phase, session id, model, state, turn count, stage, age.
    - **Budget panel** — tokens in/out, context % (color-coded gauge: green <50 /
      yellow 50–80 / red ≥80), tok/s (derived from `Metrics` record timestamps),
-     and `$ saved` (configurable cloud-baseline $/Mtok via `[dashboard]` in
-     `rexymcp.toml`; shows `—` when unset).
+     and a tabular **Baseline / Executor / Architect / Net** cost breakdown across
+     Session, Milestone, and Project scopes — plus an **Assists** counter (sum of
+     mid-phase Architect escalations). Configurable cloud-baseline and Architect
+     rates via `[dashboard]` / `[architect]` in `rexymcp.toml`; rows show `—`
+     when the corresponding rate is unset.
    - **Reclaim panel** — aggregate live reclaim across all four M10 sources:
      compaction (event count, tokens freed, compression ratio), boundary-filter
      (`OutputFiltered`), superseded-read eviction (`ReadEvicted`), and redundant-read
@@ -628,8 +649,11 @@ The project plan. Each entry becomes a milestone with its own
      color-formatted per type, with multi-line tool output and tail-follow.
    - **Files panel** — per-file `+N -N` numstat, left-trimmed paths.
    - **`[dashboard]` config section** — `saved_input_per_mtok` /
-     `saved_output_per_mtok` (f64, default 0.0 → show `—`). A missing section
-     falls back to defaults (purely additive; no required config to run).
+     `saved_output_per_mtok` (f64, default 0.0 → `—` in Baseline/Net rows) and
+     `saved_model` (optional string — auto-fills rates for recognized Claude model
+     IDs, M15). A missing section falls back to defaults (purely additive). A
+     sibling **`[architect]` config section** (M20) mirrors the same fields
+     (`model`, `input_per_mtok`, `output_per_mtok`) for the Architect cost column.
 10. **M10 — Context optimization** *(done, 2026-06-08)*. Two arcs shrink the
     executor's context footprint so the local model completes more phases without
     compaction or hard-fail. Ships:
@@ -861,3 +885,36 @@ The project plan. Each entry becomes a milestone with its own
     principle before its phase is drafted. The scorecard still **informs** the
     human's model choice; M18 adds no automated model-routing. See
     `docs/dev/milestones/M18-capability-adaptation/README.md`.
+
+19. **M19 — Structural Gate Enforcement** *(done, 2026-06-16; 1/1
+    approved_after_1)*. Make `false_completion` structurally impossible:
+    `execute_phase` now returns `PhaseResult::Complete` only when every
+    configured DoD gate passes (exit 0). When a gate exits non-zero at
+    completion, the runtime injects the failure output as a user message and
+    continues the loop; turn-budget exhaustion while fixing gates yields
+    `BudgetExceeded`. Backward-compatible: `EMPTY_COMMANDS` / `NoopRunner`
+    (gates all `None`) paths unchanged. A ~130-line change in
+    `executor/src/agent/mod.rs` closes the control-flow gap in the `NoToolCall`
+    completion arm.
+
+20. **M20 — Tier Calibration and Cost Visibility** *(done, 2026-06-16; 4/4
+    phases approved)*. Three implementation phases plus a documentation sync:
+    - **Phase-01** adds `[escalation]` + `[architect]` config sections and a
+      `rexymcp calibrate LARGE|MEDIUM|SMALL` CLI subcommand — one knob that
+      writes tier-derived budget defaults (`max_turns`, `escalation_slots`,
+      `doc_level`) to `rexymcp.toml`. A shared `known_model_rates` registry in
+      `executor/src/config.rs` auto-fills baseline and architect cost rates for
+      recognized Claude model IDs.
+    - **Phase-02** adds a `TierTelemetry` struct nested in `PhaseRun` via
+      `#[serde(default)]` — five new fields: `tier`, `doc_level`,
+      `escalation_count`, `architect_input_tokens`, `architect_output_tokens`.
+      `EscalationEvent` record appended to `phase_runs.jsonl` each time a
+      mid-phase Architect assist fires (M21 wires the firing; M20 defines the
+      record).
+    - **Phase-03** upgrades the dashboard Budget panel's Savings block from a
+      gross three-scope `$ saved` row to a tabular **Baseline / Executor /
+      Architect / Net** breakdown (Session × Milestone × Project columns) with
+      a project Assists counter. Net savings now subtracts Architect spend from
+      the cloud baseline. `ScopeCosts` struct introduced in
+      `mcp/src/dashboard/panels.rs`; `BudgetRates` gains
+      `architect_input_per_mtok` / `architect_output_per_mtok`.

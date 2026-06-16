@@ -1,7 +1,7 @@
 # Phase 04: Documentation sync — README and architecture
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** todo
+**Status:** review
 **Depends on:** phase-03 (dashboard cost breakdown complete)
 **Estimated diff:** ~110 lines
 **Tags:** language=rust, kind=docs, size=s
@@ -492,3 +492,40 @@ No other file may be touched. No Cargo.toml, no source files, no other docs.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-16 23:45 (started)
+
+**Executor:** Claude (Sonnet)
+
+Implementing all 10 spec tasks: 7 passages in `docs/architecture.md` and 3 passages in `README.md`.
+
+### Update — 2026-06-16 23:45 (complete)
+
+**Tasks completed:** All 10 spec tasks.
+
+**Files changed:**
+- `docs/architecture.md` — 7 passages updated (status header, turn cycle step 8, PhaseRun schema tier_telemetry, Configuration section, M8 Budget panel, M8 [dashboard] config, M19+M20 status entries)
+- `README.md` — 3 passages updated (dashboard CLI entry, calibrate CLI addition, config example)
+- `docs/dev/milestones/M20-tier-calibration/phase-04-documentation-sync.md` — status → review, Update Log
+- `docs/dev/milestones/M20-tier-calibration/README.md` — phase table row 04 → review
+
+**Verification commands:**
+```
+cargo fmt --all --check → exit 0
+cargo build → exit 0, zero new warnings
+cargo clippy --all-targets --all-features -- -D warnings → exit 0
+cargo test → 807 passed; 0 failed; 2 ignored
+```
+
+**One-line verification summary:** fmt clean, build clean, clippy clean, 807 tests passed.
+
+**Grep for spec-pinned literals:**
+- `tier_telemetry` in `docs/architecture.md`: 1 match (PhaseRun schema) ✓
+- `rexymcp calibrate` in `README.md`: 1 match (CLI list) ✓
+- `[architect]` in `README.md`: 1 match (config example) ✓
+- `M19 — Structural Gate Enforcement` in `docs/architecture.md`: 1 match (status section) ✓
+- `M20 — Tier Calibration and Cost Visibility` in `docs/architecture.md`: 1 match (status section) ✓
+
+**End-to-end verification:** N/A — documentation-only phase. Gate commands confirm the tree is still clean.
+
+**Notes for review:** None — all changes are documentation sync per spec.

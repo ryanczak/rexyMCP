@@ -207,11 +207,12 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
   `PhaseResult` as JSON), no MCP client required.
 - `rexymcp serve` — start the MCP stdio server.
 - `rexymcp dashboard` — live full-screen TUI over the session JSONL: Session,
-  Budget (tokens · context % · tok/s · $ saved), Reclaim (compaction + per-lever
+  Budget (tokens · context % · tok/s · tabular Baseline/Executor/Architect/Net
+  cost breakdown per scope · Assists counter), Reclaim (compaction + per-lever
   Arc A/B sources), Tasks (the phase's Spec-seeded TODO list, checked off live),
   Activity transcript (scrollable full replay), and Files panels.
-  Stays open and auto-follows new sessions. `--config` loads `[dashboard]` rates
-  for the `$ saved` line.
+  Stays open and auto-follows new sessions. `--config` loads `[dashboard]` and
+  `[architect]` rates for the cost breakdown.
 - `rexymcp status` — one-shot session summary (human or `--json`). Scriptable;
   the lightweight alternative to `dashboard` for CI / piping.
 - `rexymcp runs` — list individual `PhaseRun` records with per-run stats (model,
@@ -220,6 +221,10 @@ An `rmcp` stdio MCP server exposing six tools to Claude Code:
 - `rexymcp scorecard` — aggregate runs into a **`model × settings` competency
   matrix** so you can compare sampling settings for a given model. Filterable by
   `--model` / `--tag` / `--min-runs`; `--json` for scripting.
+- `rexymcp calibrate LARGE|MEDIUM|SMALL` — write tier-derived budget defaults
+  (`max_turns`, `escalation_slots`, `doc_level`) to `rexymcp.toml` and print a
+  confirmation. Sets how much hand-holding the Architect provides and how many
+  retries the executor gets before escalation fires.
 
 **The Claude Code plugin**
 
@@ -338,8 +343,14 @@ escalation_slots = 1      # briefings returned to the architect per phase
 # dir = "~/.rexymcp/telemetry"   # enables cross-project scorecard records
 
 # [dashboard]
-# saved_input_per_mtok  = 3.0    # USD/Mtok for cloud input  — shown as "$ saved" in the TUI
-# saved_output_per_mtok = 15.0   # USD/Mtok for cloud output   (0.0 = omit, show "—")
+# saved_input_per_mtok  = 3.0      # USD/Mtok for cloud input  — cost Baseline in Budget panel
+# saved_output_per_mtok = 15.0     # USD/Mtok for cloud output   (0.0 → "—" in Baseline/Net rows)
+# saved_model = "claude-opus-4-5"  # auto-fill rates from the known-model registry
+
+# [architect]
+# model = "claude-opus-4-8"        # Claude model id — auto-fills input/output rates
+# input_per_mtok  = 15.0           # override: USD/Mtok for Architect input
+# output_per_mtok = 75.0           # override: USD/Mtok for Architect output
 ```
 
 All values have defaults; a missing config falls back to a local LM Studio
