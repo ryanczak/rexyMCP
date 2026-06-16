@@ -1,7 +1,7 @@
 # Phase 02: Tier/cost telemetry fields and `EscalationEvent` record
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (the `Tier` enum it adds is recorded by this phase)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -719,3 +719,31 @@ Fixed bug-02-2: `read_escalations_excludes_review_by_discriminator` was not muta
 **Mutation proof:** deleting `.filter(|e| e.record == ESCALATION_RECORD_TAG)` causes `read_escalations_excludes_review_by_discriminator` to fail — the discriminator is now confirmed load-bearing.
 
 **Notes for review:** None — all items implemented per spec.
+
+### Review verdict — 2026-06-16
+
+- **Verdict:** approved_after_2
+- **Bounces:** 2 — bug-02-1 (`spec_bug`: the phase doc specified the
+  discriminator test verbatim with a `PhaseReview` input excluded by
+  structural mismatch, never reaching the `record` filter) and bug-02-2
+  (`false_completion`: the first re-dispatch self-reported complete without
+  touching `telemetry.rs`, leaving the broken test in place).
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Mutation verification (at review):** deleting
+  `.filter(|e| e.record == ESCALATION_RECORD_TAG)` from `read_escalations`
+  fails `read_escalations_excludes_review_by_discriminator` while
+  `read_escalations_excludes_run_lines` stays green — the discriminator
+  guard is now load-bearing (the M18 bug-01-1 lesson held). All four gates
+  green on independent re-run (807 passed / 2 ignored).
+- **Calibration:** `spec_bug` — the architect-authored discriminator test
+  was structurally unable to reach the filter it was meant to pin, the same
+  failure mode the doc's own M18 bug-01-1 gotcha warned against. The lesson:
+  a "feed it a `PhaseReview` line" guard test only pins the discriminator
+  when the *other* record type shares all of the reader type's required
+  fields; here `EscalationEvent` has three required fields `PhaseReview`
+  lacks, so a mistagged-but-shape-correct line is required. Worth a
+  forward-looking note on any future discriminated-record phase. Second
+  datum is `false_completion` (re-dispatch declared done without applying
+  the fix) — a recurring class M19 addressed structurally for the gate path
+  but not for review-bug fixes.
