@@ -3259,9 +3259,11 @@ async fn format_hook_failure_does_not_halt_turn() {
         vec![token("done")],
     ]);
     let verifier = MockFileVerifier::new(vec![]);
-    let runner = MockCommandRunner::new("ok");
+    // First call (post-write hook) fails — advisory, must not halt.
+    // Second call (completion gate) passes — allows completion.
+    let runner = ScriptedCommandRunner::new(vec![false, true]);
     let commands = CommandConfig {
-        format: Some("ok-fmt".into()),
+        format: Some("fmt".into()),
         ..EMPTY_COMMANDS
     };
 

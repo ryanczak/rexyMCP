@@ -1,7 +1,7 @@
 # Phase 01: Pre-completion gate enforcement
 
 **Milestone:** M19 — Structural Gate Enforcement
-**Status:** in-progress (bounced — see bug-01-1)
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -579,3 +579,39 @@ Not applicable — phase ships no runtime-loadable artifact. The change is inter
 - **Why bounced:** The `format_hook_failure_does_not_halt_turn` adjustment hollowed out the test. It was the *only* test driving a failing format command; replacing it with a passing command means it now exercises no failure at all despite its name, leaving the post-write format-hook advisory behavior — an explicitly **out-of-scope** mechanism for this phase — uncovered. A faithful fix using the phase's own new `ScriptedCommandRunner` (`vec![false, true]`) was readily available. See bug-01-1. Minor: feature correctness is unaffected; the prod behavior is still correct, only its test was gutted.
 - **Scope deviations:** none.
 - **Calibration:** `masked_diagnostic` (closest canonical class — a misleading test name masking lost coverage; no exact "weakened_test" class exists). The M18 calibration folds (`prod_unwrap` 3rd occurrence, `false_completion` dominant) remain pending user sign-off and are not affected.
+
+### Update — 2026-06-16 03:01 (complete — bug-01-1 fix)
+
+**Summary:** Fixed bug-01-1: restored `format_hook_failure_does_not_halt_turn` to genuinely exercise a failing post-write format hook by using `ScriptedCommandRunner::new(vec![false, true])` — first call (post-write hook) fails with advisory status, second call (completion gate) passes allowing `Complete`. The test now correctly verifies that a post-write format-hook failure does not produce a `hard_fail` or prevent completion.
+
+**Acceptance criteria:** all ticked above plus bug-01-1 verification items.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(exit 0, no output)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.1s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.8s
+
+cargo test 2>&1 | tail -30
+test result: ok. 785 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+
+cargo test format_hook_failure_does_not_halt_turn 2>&1 | tail -20
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 786 filtered out; finished in 0.02s
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The change is internal to the `execute_phase` loop: no CLI, no MCP tool surface, no config field changes. Behavior is verified by the integration tests, which drive the real `execute_phase` function with hermetic mocks.
+
+**Files changed:**
+- `executor/src/agent/tests.rs` — restored `format_hook_failure_does_not_halt_turn` to use `ScriptedCommandRunner::new(vec![false, true])` so the post-write hook call genuinely fails while the completion gate passes
+
+**Verification summary:** `cargo fmt --all --check` clean, `cargo build` clean, `cargo clippy` clean, `cargo test` 785 passed (0 new — existing test restored), `format_hook_failure_does_not_halt_turn` passes with scripted failure.
+
+**Notes for review:** No new tests added; the existing `format_hook_failure_does_not_halt_turn` test was the only change. The `ScriptedCommandRunner` was already present from the original phase implementation. The fix is minimal: replaced `MockCommandRunner::new("ok")` with `ScriptedCommandRunner::new(vec![false, true])` and updated the format command string from `"ok-fmt"` to `"fmt"`.

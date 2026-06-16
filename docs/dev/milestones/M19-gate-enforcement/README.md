@@ -44,7 +44,7 @@ is injected back into the conversation and the model must fix and re-complete.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | pre-completion gate enforcement ([phase-01-pre-completion-gates.md](phase-01-pre-completion-gates.md)) | in-progress |
+| 01 | pre-completion gate enforcement ([phase-01-pre-completion-gates.md](phase-01-pre-completion-gates.md)) | review |
 
 ## Notes
 
