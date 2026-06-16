@@ -249,6 +249,7 @@ mod tests {
             temperature: None,
             seed: None,
             task_tracking: true,
+            tier: None,
         };
         let _c = make_client(&cfg);
     }
@@ -265,6 +266,7 @@ mod tests {
             temperature: None,
             seed: None,
             task_tracking: true,
+            tier: None,
         };
         let _c = make_client(&cfg);
     }
@@ -281,6 +283,7 @@ mod tests {
             temperature: None,
             seed: None,
             task_tracking: true,
+            tier: None,
         };
         let _c = make_client(&cfg);
     }

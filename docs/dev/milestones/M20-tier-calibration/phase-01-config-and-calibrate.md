@@ -1,7 +1,7 @@
 # Phase 01: Config schema, `/calibrate` CLI, and known-model registry
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** todo
+**Status:** review
 **Depends on:** none (pure config / CLI layer; no executor loop changes)
 **Estimated diff:** ~380 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -912,3 +912,48 @@ Quote the terminal output of both runs in the Update Log completion entry.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-16 16:44 (complete)
+
+**Implemented by:** Executor (Claude)
+
+**Summary:** All 9 spec tasks completed. Config schema (`Tier`, `EscalationConfig`, `ArchitectConfig`, `known_model_rates`) added to `executor/src/config.rs`. Existing structs modified (`ExecutorConfig.tier`, `BudgetConfig.gate_retries`, `DashboardConfig.effective_rates()`, `Config` gains `escalation`/`architect` fields). `mcp/src/calibrate.rs` implements the `calibrate` CLI with `toml_edit` write-back. `mcp/src/dashboard/panels.rs` delegates to shared `known_model_rates`. `mcp/src/main.rs` gains `Calibrate` command variant, `CalibrateArg` enum, and match arm. `mcp/Cargo.toml` gains `toml_edit = "0.22"`. Also fixed downstream test code in `executor/src/health.rs` and `executor/src/ai/mod.rs` to include the new `tier: None` field in `ExecutorConfig` struct literals.
+
+**Verification commands:**
+- `cargo fmt --all --check` → exit 0
+- `cargo build` → exit 0, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` → exit 0
+- `cargo test` → 799 passed, 0 failed, 2 ignored
+
+**End-to-end verification:**
+```
+$ cargo run -p rexymcp -- calibrate MEDIUM --config /tmp/test.toml
+Calibrated to MEDIUM — updated executor.tier=MEDIUM, budget.max_turns=250, budget.gate_retries=2
+```
+Written file contains `tier = "MEDIUM"`, `gate_retries = 2`, and `[architect]` skeleton.
+```
+$ cargo run -p rexymcp -- calibrate SMALL --config /tmp/test.toml
+Calibrated to SMALL — updated executor.tier=SMALL, budget.max_turns=100, budget.gate_retries=1, escalation.max_assists=3
+```
+Written file contains `tier = "SMALL"`, `[escalation] max_assists = 3`.
+
+**Files changed:**
+- `executor/src/config.rs` — added `known_model_rates`, `Tier`, `EscalationConfig`, `ArchitectConfig`, `DashboardConfig::effective_rates()`, `BudgetConfig::effective_gate_retries()`/`effective_max_turns()`, `ExecutorConfig.tier`, `Config.escalation`/`architect`. Added 15 new unit tests.
+- `mcp/src/calibrate.rs` — new file, `calibrate` handler + 6 integration tests.
+- `mcp/src/main.rs` — `Calibrate` command variant, `CalibrateArg` enum, match arm, 3 CLI parsing tests.
+- `mcp/src/dashboard/panels.rs` — removed `model_rates` function, updated tests to use `DashboardConfig::effective_rates()`.
+- `mcp/Cargo.toml` — added `toml_edit = "0.22"`.
+- `executor/src/health.rs` — added `tier: None` to test struct literal.
+- `executor/src/ai/mod.rs` — added `tier: None` to 3 test struct literals.
+
+**Notes for review:**
+- The `model_rates` function in `panels.rs` was removed entirely (it was only used by tests after the Task 5 change). Tests were updated to use `DashboardConfig::effective_rates()` instead.
+- Downstream test code in `health.rs` and `ai/mod.rs` needed `tier: None` added to their `ExecutorConfig` struct literals — this is a natural consequence of the new field and not an out-of-scope change.
+- `mcp/src/dashboard/mod.rs` had a minor formatting change (`pub use panels::{BudgetRates}` → `pub use panels::BudgetRates`) from `cargo fmt`.
+
+**Grep verification:**
+```
+$ grep -r 'known_model_rates' executor/src/config.rs | head -1
+pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
+```
+Literal confirmed present in config.rs.

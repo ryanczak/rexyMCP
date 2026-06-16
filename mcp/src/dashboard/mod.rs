@@ -17,7 +17,7 @@ mod panels;
 mod render;
 mod transcript;
 
-pub use panels::{BudgetRates, model_rates};
+pub use panels::BudgetRates;
 
 /// Snapshot of the latest session data or an error loading it.
 pub struct DashboardData {

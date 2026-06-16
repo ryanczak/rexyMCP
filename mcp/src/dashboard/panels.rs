@@ -21,38 +21,10 @@ pub struct BudgetRates {
     pub output_per_mtok: f64,
 }
 
-/// Return hardcoded cloud baseline rates for a known Claude model name.
-/// Returns `None` for unrecognised names (caller falls back to configured rates).
+/// Wall-clock session duration in ms.
 ///
-/// Pricing as of 2026-06-04 ($/MTok input / $/MTok output):
-/// - Fable 5 / Mythos 5: $10.00 / $50.00
-/// - Opus 4.8 / 4.7 / 4.6: $5.00 / $25.00
-/// - Sonnet 4.6: $3.00 / $15.00
-/// - Haiku 4.5: $1.00 / $5.00
-pub fn model_rates(model: &str) -> Option<BudgetRates> {
-    match model {
-        "claude-fable-5" | "claude-mythos-5" => Some(BudgetRates {
-            input_per_mtok: 10.0,
-            output_per_mtok: 50.0,
-        }),
-        "claude-opus-4-8" | "claude-opus-4-7" | "claude-opus-4-6" => Some(BudgetRates {
-            input_per_mtok: 5.0,
-            output_per_mtok: 25.0,
-        }),
-        "claude-sonnet-4-6" => Some(BudgetRates {
-            input_per_mtok: 3.0,
-            output_per_mtok: 15.0,
-        }),
-        "claude-haiku-4-5" => Some(BudgetRates {
-            input_per_mtok: 1.0,
-            output_per_mtok: 5.0,
-        }),
-        _ => None,
-    }
-}
-
-/// Wall-clock session duration in ms: **live** (`now_ms − started_at`) while the
-/// session is running, **frozen** (`last_ts − started_at`) once it has ended.
+/// Returns live duration (`now_ms - started_at`) while the session is running,
+/// or frozen duration (`last_ts - started_at`) once it has ended.
 /// `None` for an empty log (no `started_at`). `saturating_sub` guards a clock that
 /// reads behind the first record.
 pub(crate) fn session_duration_ms(summary: &StatusSummary, now_ms: u64) -> Option<u64> {
@@ -548,6 +520,7 @@ pub(crate) fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rexymcp_executor::config::DashboardConfig;
     use rexymcp_executor::store::sessions::event::FileNumstat;
 
     // --- session_lines tests ---
@@ -1780,28 +1753,33 @@ mod tests {
         );
     }
 
-    // --- model_rates tests ---
+    // --- effective_rates tests (model_rates moved to executor crate) ---
 
     #[test]
-    fn model_rates_opus_48_returns_correct_pricing() {
-        let rates = model_rates("claude-opus-4-8").expect("opus-4-8 should have rates");
-        assert_eq!(rates.input_per_mtok, 5.0);
-        assert_eq!(rates.output_per_mtok, 25.0);
+    fn dashboard_effective_rates_opus_48_returns_correct_pricing() {
+        let d = DashboardConfig {
+            saved_model: Some("claude-opus-4-8".into()),
+            ..DashboardConfig::default()
+        };
+        assert_eq!(d.effective_rates(), (5.0, 25.0));
     }
 
     #[test]
-    fn model_rates_fable_5_returns_correct_pricing() {
-        let rates = model_rates("claude-fable-5").expect("fable-5 should have rates");
-        assert_eq!(rates.input_per_mtok, 10.0);
-        assert_eq!(rates.output_per_mtok, 50.0);
+    fn dashboard_effective_rates_fable_5_returns_correct_pricing() {
+        let d = DashboardConfig {
+            saved_model: Some("claude-fable-5".into()),
+            ..DashboardConfig::default()
+        };
+        assert_eq!(d.effective_rates(), (10.0, 50.0));
     }
 
     #[test]
-    fn model_rates_unknown_model_is_none() {
-        assert!(
-            model_rates("gpt-4").is_none(),
-            "unknown model should return None"
-        );
-        assert!(model_rates("").is_none(), "empty string should return None");
+    fn dashboard_effective_rates_unknown_model_uses_explicit() {
+        let d = DashboardConfig {
+            saved_model: Some("gpt-4".into()),
+            saved_input_per_mtok: 1.0,
+            saved_output_per_mtok: 2.0,
+        };
+        assert_eq!(d.effective_rates(), (1.0, 2.0));
     }
 }

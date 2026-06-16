@@ -4,6 +4,103 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
+/// Returns `(input_per_mtok, output_per_mtok)` in USD/MTok for known Claude
+/// model IDs. Used by both `DashboardConfig` and `ArchitectConfig` so the
+/// rate table lives in one place.
+pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
+    match model {
+        "claude-fable-5" | "claude-mythos-5" => Some((10.0, 50.0)),
+        "claude-opus-4-8" | "claude-opus-4-7" | "claude-opus-4-6" => Some((5.0, 25.0)),
+        "claude-sonnet-4-6" => Some((3.0, 15.0)),
+        "claude-haiku-4-5" | "claude-haiku-4-5-20251001" => Some((1.0, 5.0)),
+        _ => None,
+    }
+}
+
+/// Executor capability tier. Set via `rexymcp calibrate` and recorded in
+/// `[executor].tier`. Controls default `max_turns`, `gate_retries`, and
+/// whether mid-phase Architect escalation is enabled (SMALL only, wired in M21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Tier {
+    Large,
+    Medium,
+    Small,
+}
+
+impl Tier {
+    /// Default `max_turns` for this tier when not explicitly set in `[budget]`.
+    pub fn default_max_turns(self) -> u32 {
+        match self {
+            Tier::Large => 400,
+            Tier::Medium => 250,
+            Tier::Small => 100,
+        }
+    }
+
+    /// Default `gate_retries` for this tier when not explicitly set in `[budget]`.
+    /// `u32::MAX` means retry until `max_turns` is exhausted (LARGE behavior).
+    pub fn default_gate_retries(self) -> u32 {
+        match self {
+            Tier::Large => u32::MAX,
+            Tier::Medium => 2,
+            Tier::Small => 1,
+        }
+    }
+}
+
+/// SMALL-tier escalation settings. When `tier = "SMALL"`, the executor fires
+/// up to `max_assists` autonomous Architect assists before hard-failing. Absent
+/// or ignored for MEDIUM and LARGE tiers (wired in M21).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EscalationConfig {
+    /// Maximum autonomous mid-phase Architect assists before hard_fail.
+    pub max_assists: u32,
+}
+
+impl Default for EscalationConfig {
+    fn default() -> Self {
+        Self { max_assists: 3 }
+    }
+}
+
+/// The model used for Architect escalation assists. Separate from `[dashboard]`
+/// which is the hypothetical cloud baseline — this is a real cost center.
+/// When `model` matches a known Claude model ID, rates are auto-filled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchitectConfig {
+    /// Claude model ID for Architect assists (e.g. `"claude-opus-4-8"`).
+    /// When recognised, auto-fills `input_per_mtok` / `output_per_mtok`.
+    pub model: Option<String>,
+    /// USD per million input tokens (overridden by `model` when recognised).
+    pub input_per_mtok: f64,
+    /// USD per million output tokens (overridden by `model` when recognised).
+    pub output_per_mtok: f64,
+}
+
+impl Default for ArchitectConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            input_per_mtok: 0.0,
+            output_per_mtok: 0.0,
+        }
+    }
+}
+
+impl ArchitectConfig {
+    /// Resolved `(input_per_mtok, output_per_mtok)`: model lookup wins when
+    /// the model ID is recognised; explicit fields win otherwise.
+    pub fn effective_rates(&self) -> (f64, f64) {
+        self.model
+            .as_deref()
+            .and_then(known_model_rates)
+            .unwrap_or((self.input_per_mtok, self.output_per_mtok))
+    }
+}
+
 /// Live-dashboard settings. The "$ saved" baseline: cloud $/million-tokens the
 /// local run is priced against. Default 0.0 → the dashboard shows "—" (unset).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +126,17 @@ impl Default for DashboardConfig {
             saved_output_per_mtok: 0.0,
             saved_model: None,
         }
+    }
+}
+
+impl DashboardConfig {
+    /// Resolved `(input_per_mtok, output_per_mtok)` for the cloud baseline.
+    /// `saved_model` lookup wins; explicit fields win otherwise.
+    pub fn effective_rates(&self) -> (f64, f64) {
+        self.saved_model
+            .as_deref()
+            .and_then(known_model_rates)
+            .unwrap_or((self.saved_input_per_mtok, self.saved_output_per_mtok))
     }
 }
 
@@ -110,6 +218,10 @@ pub struct Config {
     pub context: ContextConfig,
     pub governor: GovernorConfig,
     pub models: HashMap<String, ModelOverride>,
+    #[serde(default)]
+    pub escalation: EscalationConfig,
+    #[serde(default)]
+    pub architect: ArchitectConfig,
 }
 
 /// Cross-project telemetry store. `None` disables telemetry emission.
@@ -148,6 +260,10 @@ pub struct ExecutorConfig {
     /// tracking (the seeding emit is byte-for-byte suppressed).
     #[serde(default = "default_task_tracking")]
     pub task_tracking: bool,
+    /// Executor capability tier. `None` = no tier configured (behavior unchanged
+    /// from pre-M20). Set via `rexymcp calibrate`.
+    #[serde(default)]
+    pub tier: Option<Tier>,
 }
 
 fn default_first_token_timeout_secs() -> u64 {
@@ -174,6 +290,7 @@ impl Default for ExecutorConfig {
             temperature: None,
             seed: None,
             task_tracking: default_task_tracking(),
+            tier: None,
         }
     }
 }
@@ -199,6 +316,11 @@ pub struct BudgetConfig {
     pub max_turns: u32,
     /// Escalation slots (briefings returned to the architect) per phase.
     pub escalation_slots: u32,
+    /// Max gate-retry loops at completion time before escalation. `None` = derive
+    /// from `executor.tier`; if tier is also `None`, unlimited (bounded by
+    /// `max_turns`). Set explicitly to override tier default.
+    #[serde(default)]
+    pub gate_retries: Option<u32>,
 }
 
 impl Default for BudgetConfig {
@@ -208,7 +330,31 @@ impl Default for BudgetConfig {
             max_context_pct: 70,
             max_turns: 200,
             escalation_slots: 1,
+            gate_retries: None,
         }
+    }
+}
+
+impl BudgetConfig {
+    /// Resolved gate_retries: explicit field wins; falls back to tier default;
+    /// falls back to `u32::MAX` (unlimited, bounded by `max_turns`).
+    pub fn effective_gate_retries(&self, tier: Option<Tier>) -> u32 {
+        self.gate_retries
+            .or_else(|| tier.map(|t| t.default_gate_retries()))
+            .unwrap_or(u32::MAX)
+    }
+
+    /// Resolved max_turns: explicit field wins; falls back to tier default.
+    /// `BudgetConfig.max_turns` always has a value (it has no `Option` wrapper)
+    /// so this only matters when the TOML omits `max_turns` entirely. Current
+    /// configs always set it, but future `/calibrate` writes will omit it and
+    /// rely on this resolution.
+    pub fn effective_max_turns(&self, tier: Option<Tier>) -> u32 {
+        // max_turns is already resolved from TOML (or its Default impl).
+        // This helper is the future hook for tier-derived defaults; for now
+        // it just returns the stored value.
+        let _ = tier; // reserved for M21 when calibrate stops writing max_turns
+        self.max_turns
     }
 }
 
@@ -1069,5 +1215,156 @@ task_tracking = false
             cfg.executor.task_tracking,
             "prefix 'qwen' must not match model 'qwen2.5-coder'"
         );
+    }
+
+    #[test]
+    fn known_model_rates_returns_opus_rates() {
+        let (i, o) = known_model_rates("claude-opus-4-8").expect("opus must be known");
+        assert_eq!(i, 5.0);
+        assert_eq!(o, 25.0);
+    }
+
+    #[test]
+    fn known_model_rates_returns_none_for_unknown() {
+        assert!(known_model_rates("some-local-llm").is_none());
+    }
+
+    #[test]
+    fn tier_default_max_turns_correct() {
+        assert_eq!(Tier::Large.default_max_turns(), 400);
+        assert_eq!(Tier::Medium.default_max_turns(), 250);
+        assert_eq!(Tier::Small.default_max_turns(), 100);
+    }
+
+    #[test]
+    fn tier_default_gate_retries_correct() {
+        assert_eq!(Tier::Large.default_gate_retries(), u32::MAX);
+        assert_eq!(Tier::Medium.default_gate_retries(), 2);
+        assert_eq!(Tier::Small.default_gate_retries(), 1);
+    }
+
+    #[test]
+    fn budget_effective_gate_retries_explicit_wins() {
+        let b = BudgetConfig {
+            gate_retries: Some(5),
+            ..BudgetConfig::default()
+        };
+        assert_eq!(b.effective_gate_retries(Some(Tier::Small)), 5);
+    }
+
+    #[test]
+    fn budget_effective_gate_retries_falls_back_to_tier() {
+        let b = BudgetConfig {
+            gate_retries: None,
+            ..BudgetConfig::default()
+        };
+        assert_eq!(b.effective_gate_retries(Some(Tier::Medium)), 2);
+    }
+
+    #[test]
+    fn budget_effective_gate_retries_unlimited_when_no_tier() {
+        let b = BudgetConfig {
+            gate_retries: None,
+            ..BudgetConfig::default()
+        };
+        assert_eq!(b.effective_gate_retries(None), u32::MAX);
+    }
+
+    #[test]
+    fn architect_effective_rates_uses_known_model() {
+        let a = ArchitectConfig {
+            model: Some("claude-opus-4-8".into()),
+            input_per_mtok: 0.0,
+            output_per_mtok: 0.0,
+        };
+        assert_eq!(a.effective_rates(), (5.0, 25.0));
+    }
+
+    #[test]
+    fn architect_effective_rates_falls_back_to_explicit() {
+        let a = ArchitectConfig {
+            model: Some("unknown-model".into()),
+            input_per_mtok: 2.5,
+            output_per_mtok: 12.5,
+        };
+        assert_eq!(a.effective_rates(), (2.5, 12.5));
+    }
+
+    #[test]
+    fn config_parses_tier_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.toml");
+        std::fs::write(
+            &path,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+tier = "MEDIUM"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.tier, Some(Tier::Medium));
+    }
+
+    #[test]
+    fn config_tier_absent_is_none() {
+        let cfg = Config::default();
+        assert_eq!(cfg.executor.tier, None);
+    }
+
+    #[test]
+    fn config_parses_escalation_and_architect_sections() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.toml");
+        std::fs::write(
+            &path,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[escalation]
+max_assists = 5
+
+[architect]
+model = "claude-opus-4-8"
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.escalation.max_assists, 5);
+        assert_eq!(cfg.architect.model.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(cfg.architect.effective_rates(), (5.0, 25.0));
+    }
+
+    #[test]
+    fn config_escalation_absent_uses_default() {
+        let cfg = Config::default();
+        assert_eq!(cfg.escalation.max_assists, 3);
+    }
+
+    #[test]
+    fn dashboard_effective_rates_uses_known_model() {
+        let d = DashboardConfig {
+            saved_model: Some("claude-sonnet-4-6".into()),
+            ..DashboardConfig::default()
+        };
+        assert_eq!(d.effective_rates(), (3.0, 15.0));
     }
 }

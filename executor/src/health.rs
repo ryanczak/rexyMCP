@@ -154,6 +154,7 @@ mod tests {
             temperature: None,
             seed: None,
             task_tracking: true,
+            tier: None,
         };
         let health = check(&cfg).await;
         assert!(!health.reachable);

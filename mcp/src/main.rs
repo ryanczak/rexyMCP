@@ -3,6 +3,7 @@ use rexymcp_executor::config::Config;
 use rexymcp_executor::health;
 use std::path::PathBuf;
 
+mod calibrate;
 mod cap;
 mod dashboard;
 mod doctor;
@@ -26,6 +27,26 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum CalibrateArg {
+    #[value(name = "LARGE")]
+    Large,
+    #[value(name = "MEDIUM")]
+    Medium,
+    #[value(name = "SMALL")]
+    Small,
+}
+
+impl From<CalibrateArg> for rexymcp_executor::config::Tier {
+    fn from(a: CalibrateArg) -> Self {
+        match a {
+            CalibrateArg::Large => Self::Large,
+            CalibrateArg::Medium => Self::Medium,
+            CalibrateArg::Small => Self::Small,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Check connectivity to the configured LLM endpoint
@@ -37,6 +58,18 @@ enum Commands {
         /// Override the base URL from config
         #[arg(long)]
         base_url: Option<String>,
+    },
+    /// Set the executor capability tier and write tier-derived defaults to the
+    /// config file
+    Calibrate {
+        /// Capability tier: LARGE (Deepseek/Qwen3.6+), MEDIUM (Qwen3.6-27B /
+        /// Gemma4-31b), or SMALL (Qwen3.5-coder-12b / Gemma-12b)
+        #[arg(value_enum)]
+        tier: CalibrateArg,
+
+        /// Path to the config file
+        #[arg(long, default_value = "rexymcp.toml")]
+        config: PathBuf,
     },
     /// Execute a phase against a target repository
     RunPhase {
@@ -242,6 +275,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     match command {
+        Commands::Calibrate { tier, config } => {
+            calibrate::run(&calibrate::CalibrateArgs {
+                tier: tier.into(),
+                config_path: &config,
+            })?;
+            Ok(())
+        }
         Commands::Health { config, base_url } => {
             let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
             let mut cfg = Config::load_with_env(&config_path)?;
@@ -525,15 +565,11 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
             let cfg = Config::load_with_env(&config_path)?;
-            let d = &cfg.dashboard;
-            let rates = d
-                .saved_model
-                .as_deref()
-                .and_then(dashboard::model_rates)
-                .unwrap_or(dashboard::BudgetRates {
-                    input_per_mtok: d.saved_input_per_mtok,
-                    output_per_mtok: d.saved_output_per_mtok,
-                });
+            let (i, o) = cfg.dashboard.effective_rates();
+            let rates = dashboard::BudgetRates {
+                input_per_mtok: i,
+                output_per_mtok: o,
+            };
             let telemetry_dir = cfg.telemetry.dir.as_deref();
             let project_id = rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
                 .ok()
@@ -560,7 +596,7 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands};
+    use super::{CalibrateArg, Cli, Commands};
     use clap::Parser;
     use std::path::PathBuf;
 
@@ -860,5 +896,42 @@ mod tests {
             }
             _ => panic!("expected Doctor"),
         }
+    }
+
+    #[test]
+    fn cli_parse_calibrate_medium() {
+        let cli = Cli::try_parse_from(["rexymcp", "calibrate", "MEDIUM"]).unwrap();
+        match cli.command {
+            Some(Commands::Calibrate { tier, config }) => {
+                assert!(matches!(tier, CalibrateArg::Medium));
+                assert_eq!(config, PathBuf::from("rexymcp.toml"));
+            }
+            _ => panic!("expected Calibrate"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_calibrate_small_with_config() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "calibrate",
+            "SMALL",
+            "--config",
+            "/path/rexymcp.toml",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Calibrate { tier, config }) => {
+                assert!(matches!(tier, CalibrateArg::Small));
+                assert_eq!(config, PathBuf::from("/path/rexymcp.toml"));
+            }
+            _ => panic!("expected Calibrate"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_calibrate_missing_tier_fails() {
+        let result = Cli::try_parse_from(["rexymcp", "calibrate"]);
+        assert!(result.is_err());
     }
 }
