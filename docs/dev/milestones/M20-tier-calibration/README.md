@@ -6,7 +6,7 @@ Architect provides, how many retries the executor gets, and when mid-phase
 Architect escalation fires. Track every real cost, including Architect assists,
 so the dashboard shows honest savings, not optimistic ones.
 
-**Status:** in-progress (phase-01 active)
+**Status:** in-progress (phase-01 done; phase-02 next)
 
 **Depends on:** M19 (gate-retry loop already in executor; M20 builds the config
 layer on top of it)
@@ -61,7 +61,7 @@ M20 closes those gaps with three phases that each ship independently:
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Config schema, `/calibrate` CLI, known-model registry ([phase-01-config-and-calibrate.md](phase-01-config-and-calibrate.md)) | review |
+| 01 | Config schema, `/calibrate` CLI, known-model registry ([phase-01-config-and-calibrate.md](phase-01-config-and-calibrate.md)) | done |
 | 02 | Escalation telemetry fields and `EscalationEvent` record | todo |
 | 03 | Dashboard cost breakdown (Architect cost line, net-savings honest accounting) | todo |
 

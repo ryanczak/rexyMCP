@@ -1,7 +1,7 @@
 # Phase 01: Config schema, `/calibrate` CLI, and known-model registry
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** review
+**Status:** done
 **Depends on:** none (pure config / CLI layer; no executor loop changes)
 **Estimated diff:** ~380 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -957,3 +957,30 @@ $ grep -r 'known_model_rates' executor/src/config.rs | head -1
 pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
 ```
 Literal confirmed present in config.rs.
+
+### Review verdict — 2026-06-16
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct)
+- **Scope deviations:** Two minor, both documented in the executor's "Notes for
+  review" and accepted: (1) `model_rates` was deleted from `panels.rs` rather
+  than kept as the thin wrapper the spec described — after the Task 5 `main.rs`
+  change it had no production callers, so deletion aligns with STANDARDS §2.2
+  ("delete unused symbols"). (2) A gratuitous reword of the unrelated
+  `session_duration_ms` doc comment, left adjacent by the `model_rates` removal —
+  cosmetic, no behavior change.
+- **Calibration:** Two spec-defect observations recorded for follow-up (the
+  executor implemented the spec verbatim; these are design issues, not executor
+  faults): (1) `[architect]`/`[escalation]` are emitted as top-level inline
+  tables floating *above* `[executor]` rather than as `[section]` headers — a
+  direct consequence of the spec's `doc["architect"]["model"] = value(...)`
+  pattern. Output is valid TOML and round-trips through `Config::load_with_env`
+  (verified end-to-end via `rexymcp health` on a calibrated file), but the
+  placement is ugly and contradicts the spec's stated intent ("so the user sees
+  the section"). (2) `gate_retries` persists when re-calibrating *to* LARGE: the
+  calibrate logic only *skips writing* it for LARGE, never removes a stale value
+  left by a prior MEDIUM/SMALL calibration — unlike `[escalation]`, which is
+  correctly removed. A future polish phase should (a) write `[architect]`/
+  `[escalation]` as explicit table headers and (b) remove `gate_retries` on
+  LARGE re-calibration for symmetry with the escalation handling.
