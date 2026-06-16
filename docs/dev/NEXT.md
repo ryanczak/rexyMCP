@@ -4,7 +4,15 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none.
+**Active phase:** M20 phase-01 —
+`docs/dev/milestones/M20-tier-calibration/phase-01-config-and-calibrate.md`
+
+**M20 — Tier Calibration and Cost Visibility** (kicked off 2026-06-16).
+Three-phase milestone. Phase-01: config schema (`Tier`, `EscalationConfig`,
+`ArchitectConfig`), known-model rate registry moved to executor lib, and
+`rexymcp calibrate LARGE|MEDIUM|SMALL` CLI command. Phase-02: telemetry
+fields (`tier`, `doc_level`, `escalation_count`, `architect_*_tokens`).
+Phase-03: dashboard cost breakdown (Architect cost line, honest net savings).
 
 **M19 — Structural Gate Enforcement — done** (2026-06-16, **approved_after_1**,
 executor Qwen/Qwen3.6-27B-FP8 on re-dispatch; original implementation Claude
