@@ -1,6 +1,6 @@
 use rexymcp_executor::config::Tier;
 use std::path::Path;
-use toml_edit::{DocumentMut, value};
+use toml_edit::{DocumentMut, Item, Table, value};
 
 pub struct CalibrateArgs<'a> {
     pub tier: Tier,
@@ -27,22 +27,28 @@ pub fn run(args: &CalibrateArgs<'_>) -> anyhow::Result<()> {
     if doc.get("budget").and_then(|b| b.get("max_turns")).is_none() {
         doc["budget"]["max_turns"] = value(max_turns as i64);
     }
-    // gate_retries: write only when absent; skip for Large (u32::MAX is implicit).
+    // gate_retries: write when absent for Medium/Small; remove for Large (unlimited
+    // is implicit, and removing keeps the file in sync with the LARGE semantic).
     let gate_retries = args.tier.default_gate_retries();
-    if gate_retries != u32::MAX
-        && doc
+    if gate_retries != u32::MAX {
+        if doc
             .get("budget")
             .and_then(|b| b.get("gate_retries"))
             .is_none()
-    {
-        doc["budget"]["gate_retries"] = value(gate_retries as i64);
+        {
+            doc["budget"]["gate_retries"] = value(gate_retries as i64);
+        }
+    } else if let Some(budget) = doc.get_mut("budget").and_then(|b| b.as_table_mut()) {
+        budget.remove("gate_retries");
     }
 
     // [escalation] — write only for Small; remove for Medium/Large (absent = ignored).
     match args.tier {
         Tier::Small => {
             if doc.get("escalation").is_none() {
-                doc["escalation"]["max_assists"] = value(3i64);
+                let mut t = Table::new();
+                t["max_assists"] = value(3i64);
+                doc.insert("escalation", Item::Table(t));
             }
         }
         _ => {
@@ -52,9 +58,11 @@ pub fn run(args: &CalibrateArgs<'_>) -> anyhow::Result<()> {
 
     // [architect] — add skeleton when absent so the user sees the section.
     if doc.get("architect").is_none() {
-        doc["architect"]["model"] = value("");
-        doc["architect"]["input_per_mtok"] = value(0.0);
-        doc["architect"]["output_per_mtok"] = value(0.0);
+        let mut t = Table::new();
+        t["model"] = value("");
+        t["input_per_mtok"] = value(0.0);
+        t["output_per_mtok"] = value(0.0);
+        doc.insert("architect", Item::Table(t));
     }
 
     std::fs::write(args.config_path, doc.to_string())?;
@@ -235,8 +243,37 @@ escalation_slots = 1
         );
         let doc: toml_edit::DocumentMut = result.parse().unwrap();
         assert!(
-            doc.get("architect").is_some(),
-            "[architect] skeleton must be added"
+            doc.get("architect").is_some_and(|a| a.is_table()),
+            "[architect] must be a section header, not an inline table"
+        );
+    }
+
+    #[test]
+    fn calibrate_large_removes_stale_gate_retries() {
+        let dir = TempDir::new().unwrap();
+        let result = run_calibrate(
+            &dir,
+            Tier::Large,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 131071
+max_context_pct = 80
+max_turns = 400
+escalation_slots = 1
+gate_retries = 2
+"#,
+        );
+        let doc: toml_edit::DocumentMut = result.parse().unwrap();
+        assert!(
+            doc.get("budget")
+                .and_then(|b| b.get("gate_retries"))
+                .is_none(),
+            "gate_retries must be removed when re-calibrating to LARGE"
         );
     }
 
