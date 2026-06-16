@@ -1,7 +1,7 @@
 # Phase 02: Tier/cost telemetry fields and `EscalationEvent` record
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** review
+**Status:** in-progress (bounced — see bugs/bug-02-2.md)
 **Depends on:** phase-01 (the `Tier` enum it adds is recorded by this phase)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
