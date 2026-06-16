@@ -4,11 +4,32 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M20 phase-03 —
-`docs/dev/milestones/M20-tier-calibration/phase-03-dashboard-cost-breakdown.md`
+**Active phase:** M20 phase-04 —
+`docs/dev/milestones/M20-tier-calibration/phase-04-documentation-sync.md`
+
+**M20 phase-04 — drafted** (2026-06-16, **already on disk**): the docs-sync
+closeout. No code; edits only `docs/architecture.md` (seven stale passages:
+status header, turn-cycle step 8 → gate-retry loop, `PhaseRun` schema gains
+`tier_telemetry`, Configuration `[escalation]`/`[architect]` bullets, M8 Budget
+panel → tabular breakdown, M8 `[dashboard]` config, + M19/M20 Status entries) and
+`README.md` (three passages: dashboard CLI entry, new `rexymcp calibrate` bullet,
+config example `[architect]` block). All before-text anchors re-verified current
+against the live files at activation (status header 3–9, turn step 8 at 134–136,
+README dashboard at 209–214 — all match the doc's quoted blocks). The phase doc
+was committed incidentally inside phase-03's `feat` commit `41fc075` (the
+recurring dirty-tree sweep); `/rexymcp:architect next` found it already drafted,
+so this turn only re-pointed `NEXT.md` at it — no re-draft. ~110 lines, size=s,
+`kind=docs`. **This is the last M20 phase — after approval, M20 closes and the
+next `next` is a human-gated milestone boundary** (retrospective + fold review).
+
+**M20 phase-03 — done** (2026-06-16, **approved_first_try**; commits `41fc075`
+feat / `7c38efe` approve). Tabular Baseline/Executor/Architect/Net cost breakdown
+per Session+Milestone+Project scope + Assists counter landed in
+`mcp/src/dashboard/panels.rs` (`ScopeCosts`, `BudgetRates` architect rates).
 
 **M20 — Tier Calibration and Cost Visibility** (kicked off 2026-06-16).
-Three-phase milestone. Phase-01: config schema (`Tier`, `EscalationConfig`,
+Four phases (a docs-sync closeout was added as phase-04). Phase-01: config
+schema (`Tier`, `EscalationConfig`,
 `ArchitectConfig`), known-model rate registry moved to executor lib, and
 `rexymcp calibrate LARGE|MEDIUM|SMALL` CLI command. Phase-02: telemetry
 fields (`tier`, `doc_level`, `escalation_count`, `architect_*_tokens`).
