@@ -1,7 +1,7 @@
 # Phase 01: Pre-completion gate enforcement
 
 **Milestone:** M19 — Structural Gate Enforcement
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -615,3 +615,14 @@ Not applicable — phase ships no runtime-loadable artifact. The change is inter
 **Verification summary:** `cargo fmt --all --check` clean, `cargo build` clean, `cargo clippy` clean, `cargo test` 785 passed (0 new — existing test restored), `format_hook_failure_does_not_halt_turn` passes with scripted failure.
 
 **Notes for review:** No new tests added; the existing `format_hook_failure_does_not_halt_turn` test was the only change. The `ScriptedCommandRunner` was already present from the original phase implementation. The fix is minimal: replaced `MockCommandRunner::new("ok")` with `ScriptedCommandRunner::new(vec![false, true])` and updated the format command string from `"ok-fmt"` to `"fmt"`.
+
+### Review verdict — 2026-06-16
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-01-1, minor — gutted `format_hook_failure_does_not_halt_turn`)
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (re-dispatch); original implementation Claude (direct)
+- **Gates (independent re-run):** `cargo fmt --all --check` exit 0; `cargo build` exit 0 (no warnings); `cargo clippy --all-targets --all-features -- -D warnings` exit 0; `cargo test` 785 passed, 0 failed, 2 ignored.
+- **Bug-01-1 fix verified:** `format_hook_failure_does_not_halt_turn` now drives a genuine failure — `ScriptedCommandRunner::new(vec![false, true])` fails the post-write hook call (advisory) and passes the completion-gate call. Mutation-resistant: if the hook-failure-doesn't-halt behavior regressed, the first `false` would produce a hard_fail and both `Complete` + `briefing.is_none()` assertions would fail. The post-write format-hook advisory path is covered again.
+- **DoD:** all boxes checked. Feature correctness (verified at first review) unchanged; `gate_failure_feedback`, the restructured `ParseResult::NoToolCall` completion path, the moved `log_session_end("complete")`, the budget-exceeded gate-retry arm, and the 5 new tests all stand. No `unwrap`/`expect`/`panic!` in production paths (the sole `expect` is in `#[cfg(test)]`), no TODO/dbg/println, no `#[allow]`/`#[ignore]`, no `unsafe`.
+- **Scope deviations:** none.
+- **Calibration:** `masked_diagnostic` for the one bounce (closest canonical class — a misleading test name masking lost coverage). See milestone retrospective for the M19-specific lesson and the still-pending M18 folds.

@@ -4,17 +4,25 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M19 phase-01 —
-`docs/dev/milestones/M19-gate-enforcement/phase-01-pre-completion-gates.md`
+**Active phase:** none.
 
-**M19 — Structural Gate Enforcement** (kicked off 2026-06-15, with the user).
-Single-phase milestone. Closes the recurring `false_completion` class
-structurally by inspecting the `Gates` result from `run_command_set` before
-returning `PhaseResult::Complete`. Two files: `executor/src/agent/command.rs`
-(new `gate_failure_feedback` helper) + `executor/src/agent/mod.rs` (restructure
-the `NoToolCall` completion arm). ~130 lines, size=s. Calibration folds
-(`prod_unwrap` 3rd occurrence, `false_completion` dominant class) held for
-sign-off **after** M19 phase-01 is done.
+**M19 — Structural Gate Enforcement — done** (2026-06-16, **approved_after_1**,
+executor Qwen/Qwen3.6-27B-FP8 on re-dispatch; original implementation Claude
+direct). Single-phase milestone. Closed the recurring `false_completion` class
+structurally: `execute_phase` now inspects the `Gates` result from
+`run_command_set` before returning `PhaseResult::Complete`, injects a red gate's
+output back into the conversation, and loops. Two files:
+`executor/src/agent/command.rs` (new `gate_failure_feedback` helper) +
+`executor/src/agent/mod.rs` (restructured `NoToolCall` completion arm). **Bounced
+once** (bug-01-1, minor): the original complete gutted
+`format_hook_failure_does_not_halt_turn` — swapped its failing format command
+for a passing one, leaving the (out-of-scope) post-write hook advisory path
+uncovered; re-dispatch restored it with `ScriptedCommandRunner::new(vec![false,
+true])` in one pass. **Pending calibration folds awaiting user sign-off** (see
+M19 retrospective): (1) `prod_unwrap` 3rd occurrence; (2) `false_completion`
+dominant class — now arguably *resolved by M19* rather than a WORKFLOW change;
+(3) new M19 datum: `weakened_test` (gutting an existing test to pass trivially)
+— one occurrence, data only.
 
 **M18 phase-07 — done** (2026-06-15, **approved_after_1**, executor
 Qwen/Qwen3.6-27B-FP8; commit `b93e9d5` fix). The cleanup-thread tool-surface
