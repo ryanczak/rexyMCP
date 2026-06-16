@@ -103,6 +103,42 @@ pub(super) async fn run_command_set(
     )
 }
 
+pub(super) fn gate_failure_feedback(gates: &Gates, outputs: &CommandOutputs) -> Option<String> {
+    let mut sections: Vec<String> = Vec::new();
+    if gates.fmt == Some(false) {
+        sections.push(format!(
+            "FORMAT failed:\n{}",
+            outputs.format.as_deref().unwrap_or("(no output captured)")
+        ));
+    }
+    if gates.build == Some(false) {
+        sections.push(format!(
+            "BUILD failed:\n{}",
+            outputs.build.as_deref().unwrap_or("(no output captured)")
+        ));
+    }
+    if gates.lint == Some(false) {
+        sections.push(format!(
+            "LINT failed:\n{}",
+            outputs.lint.as_deref().unwrap_or("(no output captured)")
+        ));
+    }
+    if gates.test == Some(false) {
+        sections.push(format!(
+            "TEST failed:\n{}",
+            outputs.test.as_deref().unwrap_or("(no output captured)")
+        ));
+    }
+    if sections.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Pre-completion gate check failed — the phase is not done yet. \
+         Fix the issues below, then re-emit your completion signal.\n\n{}",
+        sections.join("\n\n")
+    ))
+}
+
 pub(super) async fn run_post_write_hooks(
     runner: &dyn CommandRunner,
     commands: &CommandConfig,
@@ -136,5 +172,56 @@ fn tail(s: &str, max_chars: usize) -> String {
         s.chars().skip(count - max_chars).collect()
     } else {
         s.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::phase::CommandOutputs;
+    use crate::store::telemetry::Gates;
+
+    fn outputs_with(format: &str, build: &str, lint: &str, test: &str) -> CommandOutputs {
+        CommandOutputs {
+            format: Some(format.to_string()),
+            build: Some(build.to_string()),
+            lint: Some(lint.to_string()),
+            test: Some(test.to_string()),
+        }
+    }
+
+    #[test]
+    fn gate_failure_feedback_returns_none_when_all_pass() {
+        let gates = Gates {
+            fmt: Some(true),
+            build: Some(true),
+            lint: Some(true),
+            test: Some(true),
+        };
+        assert!(gate_failure_feedback(&gates, &outputs_with("ok", "ok", "ok", "ok")).is_none());
+    }
+
+    #[test]
+    fn gate_failure_feedback_returns_none_when_no_commands_configured() {
+        // Gates::default() is all None — unconfigured commands are not failures.
+        assert!(gate_failure_feedback(&Gates::default(), &CommandOutputs::default()).is_none());
+    }
+
+    #[test]
+    fn gate_failure_feedback_includes_failing_gates_and_omits_passing() {
+        let gates = Gates {
+            fmt: Some(false),
+            build: Some(false),
+            lint: Some(true),
+            test: Some(false),
+        };
+        let outputs = outputs_with("fmt diff here", "build errors", "lint ok", "test failed");
+        let msg = gate_failure_feedback(&gates, &outputs).expect("should be Some");
+        assert!(msg.contains("FORMAT failed"), "missing FORMAT section");
+        assert!(msg.contains("fmt diff here"), "missing FORMAT output");
+        assert!(msg.contains("BUILD failed"), "missing BUILD section");
+        assert!(msg.contains("build errors"), "missing BUILD output");
+        assert!(!msg.contains("LINT"), "LINT should not appear (it passed)");
+        assert!(msg.contains("TEST failed"), "missing TEST section");
     }
 }

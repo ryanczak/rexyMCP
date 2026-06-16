@@ -558,8 +558,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         }
                         continue;
                     }
-                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
-                    // Step 8 — clean completion runs the final command set.
+                    // Step 8 — run the final gate set BEFORE declaring completion. If any
+                    // gate fails, inject the failure output and continue so the model must
+                    // fix and re-complete. Only log "complete" after all gates pass.
                     let emit = EmitCtx {
                         progress: deps.progress,
                         log_handle: &log_handle,
@@ -571,6 +572,58 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     };
                     let (command_outputs, gates) =
                         run_command_set(deps.runner, deps.commands, deps.project_root, &emit).await;
+                    if let Some(feedback) = command::gate_failure_feedback(&gates, &command_outputs)
+                    {
+                        log_event(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            turns,
+                            SessionEvent::Progress {
+                                turn: turns,
+                                stage: "gate_retry".to_string(),
+                                files_changed: vec![],
+                                message: feedback.clone(),
+                            },
+                        );
+                        messages.push(user_text(&feedback, turns));
+                        if turns >= deps.max_turns {
+                            log_session_end(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                "budget_exceeded",
+                                turns,
+                            );
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "budget_exceeded",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "budget_exceeded",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(budget_exceeded_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                turns_line(deps.max_turns),
+                                artifacts,
+                            ));
+                        }
+                        continue;
+                    }
+                    // All configured gates passed — this is a true completion.
+                    log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
                     let artifacts = build_artifacts(
                         &pre_edit_content,

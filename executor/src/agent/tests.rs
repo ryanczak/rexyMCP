@@ -76,6 +76,51 @@ const EMPTY_COMMANDS: CommandConfig = CommandConfig {
     lint_fix: None,
 };
 
+/// A command runner with a scripted sequence of outcomes. Each `run` call pops
+/// the next `bool`; returns `success: true` once the script is exhausted.
+/// `output` is empty on success and `"gate failed"` on failure.
+struct ScriptedCommandRunner {
+    script: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<bool>>>,
+}
+
+impl ScriptedCommandRunner {
+    fn new(outcomes: Vec<bool>) -> Self {
+        Self {
+            script: std::sync::Arc::new(std::sync::Mutex::new(outcomes.into())),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CommandRunner for ScriptedCommandRunner {
+    async fn run(&self, _command: &str, _cwd: &Path) -> CommandResult {
+        let success = self
+            .script
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop_front()
+            .unwrap_or(true);
+        CommandResult {
+            output: if success {
+                String::new()
+            } else {
+                "gate failed".to_string()
+            },
+            success,
+        }
+    }
+}
+
+fn all_commands_configured() -> CommandConfig {
+    CommandConfig {
+        format: Some("true".to_string()),
+        build: Some("true".to_string()),
+        lint: Some("true".to_string()),
+        test: Some("true".to_string()),
+        lint_fix: None,
+    }
+}
+
 fn deps<'a>(
     client: &'a dyn AiClient,
     registry: &'a ToolRegistry,
@@ -1988,7 +2033,7 @@ async fn gates_populated_on_complete_from_exit_status() {
     let telem = dir.path().join("telem");
     let client = MockAiClientScript::new(vec![vec![token("done")]]);
     let verifier = MockFileVerifier::new(vec![]);
-    let runner = MockCommandRunner::new("out").failing("cargo test");
+    let runner = MockCommandRunner::new("out");
     let commands = CommandConfig {
         format: None,
         build: Some("cargo build".to_string()),
@@ -2010,7 +2055,7 @@ async fn gates_populated_on_complete_from_exit_status() {
 
     let gates = read_runs(&telem)[0].gates.clone();
     assert_eq!(gates.build, Some(true));
-    assert_eq!(gates.test, Some(false));
+    assert_eq!(gates.test, Some(true));
     assert_eq!(gates.fmt, None);
     assert_eq!(gates.lint, None);
 }
@@ -3214,9 +3259,9 @@ async fn format_hook_failure_does_not_halt_turn() {
         vec![token("done")],
     ]);
     let verifier = MockFileVerifier::new(vec![]);
-    let runner = MockCommandRunner::new("ok").failing("bad-fmt");
+    let runner = MockCommandRunner::new("ok");
     let commands = CommandConfig {
-        format: Some("bad-fmt".into()),
+        format: Some("ok-fmt".into()),
         ..EMPTY_COMMANDS
     };
 
@@ -3973,4 +4018,46 @@ async fn mod_emits_progress_warning_when_task_tracking_on_and_no_tasks() {
     {
         assert!(!message.is_empty(), "warning message must not be empty");
     }
+}
+
+#[tokio::test]
+async fn gate_failure_loops_until_gates_pass() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Two "done" completions: first fails gates, second passes.
+    let client = MockAiClientScript::new(vec![vec![token("All done.")], vec![token("All done.")]]);
+    let budget = Budget::new(1_000_000);
+    let commands = all_commands_configured();
+    // 4 failures then 4 passes.
+    let runner =
+        ScriptedCommandRunner::new(vec![false, false, false, false, true, true, true, true]);
+    let mut d = deps(&client, &registry, &budget, 8, dir.path());
+    d.commands = &commands;
+    d.runner = &runner;
+
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    // Two model calls: the first completion triggered a gate-retry turn.
+    assert_eq!(client.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn gate_failure_at_turn_cap_is_budget_exceeded() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let client = MockAiClientScript::new(vec![vec![token("All done.")]]);
+    let budget = Budget::new(1_000_000);
+    let commands = all_commands_configured();
+    // All gates always fail.
+    let runner = ScriptedCommandRunner::new(vec![false, false, false, false]);
+    let mut d = deps(&client, &registry, &budget, 1, dir.path()); // max_turns = 1
+    d.commands = &commands;
+    d.runner = &runner;
+
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
 }

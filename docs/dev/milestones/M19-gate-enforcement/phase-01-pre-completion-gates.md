@@ -1,7 +1,7 @@
 # Phase 01: Pre-completion gate enforcement
 
 **Milestone:** M19 — Structural Gate Enforcement
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -519,3 +519,53 @@ None.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-15 23:43 (started)
+
+**Executor:** Claude (direct)
+
+Implementing pre-completion gate enforcement: adding `gate_failure_feedback` to `command.rs`, restructuring the completion path in `mod.rs` to check gates before declaring completion, and adding unit + integration tests.
+
+### Update — 2026-06-15 23:43 (complete)
+
+**Summary:** Added `gate_failure_feedback` function to `command.rs` that inspects `Gates` and `CommandOutputs` and returns a user-facing feedback message when any configured gate exited non-zero. Restructured the `ParseResult::NoToolCall` completion path in `mod.rs` to run gates before declaring completion — on failure, the feedback is injected back into the conversation and the loop continues. Moved `log_session_end("complete")` to after the gate check so the session log no longer records a premature completion. Added 3 unit tests in `command.rs` and 2 integration tests in `tests.rs`. Two existing tests (`gates_populated_on_complete_from_exit_status` and `format_hook_failure_does_not_halt_turn`) had to be adjusted because they relied on the old behavior of completing despite failing gates.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(exit 0, no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.32s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.0 (/home/matt/src/rexyMCP/executor)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.42s
+
+cargo test 2>&1 | tail -30
+test result: ok. 785 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The change is internal to the `execute_phase` loop: no CLI, no MCP tool surface, no config field changes. Behavior is verified by the integration tests, which drive the real `execute_phase` function with hermetic mocks.
+
+**Files changed:**
+- `executor/src/agent/command.rs` — added `gate_failure_feedback` function and 3 unit tests
+- `executor/src/agent/mod.rs` — restructured completion path to check gates before declaring completion
+- `executor/src/agent/tests.rs` — added `ScriptedCommandRunner`, `all_commands_configured()`, and 2 integration tests; adjusted 2 existing tests that relied on old gate-bypass behavior
+
+**New tests:**
+- `gate_failure_feedback_returns_none_when_all_pass` in `executor/src/agent/command.rs`
+- `gate_failure_feedback_returns_none_when_no_commands_configured` in `executor/src/agent/command.rs`
+- `gate_failure_feedback_includes_failing_gates_and_omits_passing` in `executor/src/agent/command.rs`
+- `gate_failure_loops_until_gates_pass` in `executor/src/agent/tests.rs`
+- `gate_failure_at_turn_cap_is_budget_exceeded` in `executor/src/agent/tests.rs`
+
+**Verification summary:** `cargo fmt --all --check` clean, `cargo build` clean, `cargo clippy` clean, `cargo test` 785 passed (5 new).
+
+**Notes for review:** Two existing tests (`gates_populated_on_complete_from_exit_status` and `format_hook_failure_does_not_halt_turn`) were adjusted because they relied on the old behavior of completing despite failing gates. The former asserted `gates.test == Some(false)` on a complete result — now gates must pass for completion, so the test was changed to all-passing. The latter used a failing format command to verify the format hook doesn't halt a turn — but the format gate now prevents completion, so the test was changed to use a passing format command (the format hook behavior is tested separately from the gate check).
