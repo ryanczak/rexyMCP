@@ -1045,29 +1045,30 @@ mod tests {
 
     #[test]
     fn read_escalations_excludes_review_by_discriminator() {
-        // A PhaseReview line parses far enough to reach the discriminator filter
-        // (it has ts/phase_id and no required escalation-only field would block it
-        // only if absent) — assert the `record != "escalation"` filter is what
-        // excludes it. This pins the discriminator as load-bearing (M18 bug-01-1).
+        // An escalation-SHAPED line (all required EscalationEvent fields present)
+        // with a non-"escalation" record tag must be excluded by the `record`
+        // filter — not by structural mismatch. Deleting the
+        // `.filter(|e| e.record == ESCALATION_RECORD_TAG)` line in
+        // read_escalations MUST fail this test (M18 bug-01-1 lesson: pin the
+        // discriminator as load-bearing).
         let dir = TempDir::new().unwrap();
-        let review = PhaseReview {
-            record: REVIEW_RECORD_TAG.to_string(),
+        let mistagged = EscalationEvent {
+            record: REVIEW_RECORD_TAG.to_string(), // wrong tag, escalation shape
             ts: 2_000,
             phase_doc_path: Some("/docs/phase-02.md".to_string()),
             phase_id: "phase-02".to_string(),
             project_id: None,
-            architect_verdict: "approved".to_string(),
-            bounces_to_approval: None,
-            bugs_filed: None,
-            warnings: None,
-            failure_class: vec!["none".to_string()],
+            assist_index: 1,
+            model: None,
+            architect_input_tokens: 1,
+            architect_output_tokens: 1,
         };
-        append_review(dir.path(), &review).unwrap();
+        append_escalation(dir.path(), &mistagged).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
         let events = read_escalations(&path).unwrap();
         assert!(
             events.is_empty(),
-            "review lines must be excluded from escalations"
+            "a non-\"escalation\" record tag must be excluded by the discriminator"
         );
     }
 

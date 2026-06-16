@@ -62,7 +62,7 @@ M20 closes those gaps with three phases that each ship independently:
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Config schema, `/calibrate` CLI, known-model registry ([phase-01-config-and-calibrate.md](phase-01-config-and-calibrate.md)) | done |
-| 02 | Tier/cost telemetry fields and `EscalationEvent` record ([phase-02-telemetry-fields.md](phase-02-telemetry-fields.md)) | in-progress |
+| 02 | Tier/cost telemetry fields and `EscalationEvent` record ([phase-02-telemetry-fields.md](phase-02-telemetry-fields.md)) | review |
 | 03 | Dashboard cost breakdown (Architect cost line, net-savings honest accounting) | todo |
 
 ## Notes
