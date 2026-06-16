@@ -699,4 +699,23 @@ Implementing all 9 tasks: `TierTelemetry` nested struct, `PhaseRun.tier_telemetr
 - `ESCALATION_RECORD_TAG` found in telemetry.rs (const + filter + 3 test uses) ✓
 - `"escalation"` discriminator verified via grep ✓
 
+### Update — 2026-06-16 21:10 (bug-02-2 fix)
+
+**Executor:** rexyMCP executor LLM
+
+Fixed bug-02-2: `read_escalations_excludes_review_by_discriminator` was not mutation-resistant — it used a `PhaseReview` record excluded by structural mismatch (missing required `EscalationEvent` fields) rather than by the discriminator filter. Replaced with an escalation-shaped line carrying a wrong `record` tag so only the `.filter(|e| e.record == ESCALATION_RECORD_TAG)` guard can exclude it.
+
+**Files changed:**
+- `executor/src/store/telemetry.rs` — fixed `read_escalations_excludes_review_by_discriminator` test body
+- `docs/dev/milestones/M20-tier-calibration/phase-02-telemetry-fields.md` — status → review
+- `docs/dev/milestones/M20-tier-calibration/README.md` — phase-02 status → review
+
+**Verification commands (all clean):**
+- `cargo fmt --all --check` — exit 0
+- `cargo build` — exit 0, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — exit 0
+- `cargo test` — 807 passed, 0 failed, 2 ignored
+
+**Mutation proof:** deleting `.filter(|e| e.record == ESCALATION_RECORD_TAG)` causes `read_escalations_excludes_review_by_discriminator` to fail — the discriminator is now confirmed load-bearing.
+
 **Notes for review:** None — all items implemented per spec.
