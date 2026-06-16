@@ -14,11 +14,25 @@ use rexymcp_executor::store::sessions::event::TaskState;
 /// how large the added/removed counts are.
 const FILE_LINE_MAX: usize = 28;
 
+/// Token costs for one budget scope (Session / Milestone / Project).
+/// `executor_*` are local-model tokens (cost = $0.00 until a local rate is
+/// configured; future: paid OpenRouter/provider rates). `architect_*` are summed
+/// from `PhaseRun.tier_telemetry.architect_*_tokens`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ScopeCosts {
+    pub executor_in: u64,
+    pub executor_out: u64,
+    pub architect_in: u64,
+    pub architect_out: u64,
+}
+
 /// Cloud-baseline $/Mtok rates for the Budget panel's "Savings:" line.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BudgetRates {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
+    pub architect_input_per_mtok: f64,
+    pub architect_output_per_mtok: f64,
 }
 
 /// Wall-clock session duration in ms.
@@ -438,60 +452,124 @@ pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
-/// Dollar cost the given cumulative token usage would incur at the cloud baseline.
-fn dollars_saved(
-    input_tokens: u32,
-    output_tokens: u32,
-    in_per_mtok: f64,
-    out_per_mtok: f64,
-) -> f64 {
-    (input_tokens as f64 / 1_000_000.0) * in_per_mtok
-        + (output_tokens as f64 / 1_000_000.0) * out_per_mtok
-}
-
 /// Budget-panel savings block. A `Savings` header followed by indented,
-/// value-aligned rows: `Session` (always, when session metrics exist), then
-/// `Milestone` and `Project` (each only when its token data is available).
-/// Dollar values are right-aligned so their decimals line up in a column.
+/// value-aligned rows: Baseline / Executor / Architect / Net across
+/// Session / Milestone / Project columns, plus an Assists count.
 /// Returns empty when there are no session metrics yet — never a lone header.
 pub(crate) fn savings_lines(
     summary: &StatusSummary,
     rates: BudgetRates,
-    milestone_tok: Option<(u32, u32)>,
-    project_tok: (u32, u32),
+    milestone_costs: Option<ScopeCosts>,
+    project_costs: ScopeCosts,
+    project_escalation_count: u32,
 ) -> Vec<Line<'static>> {
-    let in_tok = match summary.last_input_tokens {
-        Some(v) => v,
+    let sess_in = match summary.last_input_tokens {
+        Some(v) => v as u64,
         None => return Vec::new(),
     };
-    let out_tok = summary.last_output_tokens.unwrap_or(0);
-    let no_rates = rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0;
+    let sess_out = summary.last_output_tokens.unwrap_or(0) as u64;
 
-    // Dollar value for a scope, or an em-dash when no rates are configured.
-    let value = |i: u32, o: u32| -> String {
-        if no_rates {
+    let cost = |in_toks: u64, out_toks: u64, in_rate: f64, out_rate: f64| -> f64 {
+        (in_toks as f64 / 1_000_000.0) * in_rate + (out_toks as f64 / 1_000_000.0) * out_rate
+    };
+    let fmt_dollars = |v: f64| format!("${v:.2}");
+    let no_baseline = rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0;
+    let baseline_val = |in_toks: u64, out_toks: u64| -> String {
+        if no_baseline {
             "—".to_string()
         } else {
-            let saved = dollars_saved(i, o, rates.input_per_mtok, rates.output_per_mtok);
-            format!("${saved:.2}")
+            fmt_dollars(cost(
+                in_toks,
+                out_toks,
+                rates.input_per_mtok,
+                rates.output_per_mtok,
+            ))
         }
     };
-    // Indented row: label padded left, value padded right (decimals align).
-    // `lw` covers the longest label ("Milestone:"); `vw` holds "$XXXX.XX".
-    let row = |label: &str, v: String| -> Line<'static> {
-        Line::from(format!("  {:<lw$}{:>vw$}", label, v, lw = 11, vw = 9))
+    let executor_val = |_in: u64, _out: u64| -> String { "$0.00".to_string() };
+    let architect_val = |in_toks: u64, out_toks: u64| -> String {
+        fmt_dollars(cost(
+            in_toks,
+            out_toks,
+            rates.architect_input_per_mtok,
+            rates.architect_output_per_mtok,
+        ))
+    };
+    let net_val = |b_in: u64, b_out: u64, a_in: u64, a_out: u64| -> String {
+        if no_baseline {
+            return "—".to_string();
+        }
+        let baseline = cost(b_in, b_out, rates.input_per_mtok, rates.output_per_mtok);
+        let architect = cost(
+            a_in,
+            a_out,
+            rates.architect_input_per_mtok,
+            rates.architect_output_per_mtok,
+        );
+        fmt_dollars(baseline - architect)
     };
 
-    let mut lines = vec![Line::from("Savings")];
-    lines.push(row("Session:", value(in_tok, out_tok)));
-    if let Some((m_in, m_out)) = milestone_tok {
-        lines.push(row("Milestone:", value(m_in, m_out)));
-    }
-    let (p_in, p_out) = project_tok;
-    if p_in > 0 || p_out > 0 {
-        lines.push(row("Project:", value(p_in, p_out)));
-    }
-    lines
+    let has_milestone = milestone_costs.is_some();
+    let mile = milestone_costs.unwrap_or_default();
+
+    let header: Line<'static> = if has_milestone {
+        Line::from(format!(
+            "{:<12}{:>9}{:>9}{:>9}",
+            "Savings", "Session", "Milestone", "Project"
+        ))
+    } else {
+        Line::from(format!("{:<12}{:>9}{:>9}", "Savings", "Session", "Project"))
+    };
+
+    let make_row = |label: &str, v_sess: String, v_mile: String, v_proj: String| -> Line<'static> {
+        if has_milestone {
+            Line::from(format!(
+                "  {:<10}{:>9}{:>9}{:>9}",
+                label, v_sess, v_mile, v_proj
+            ))
+        } else {
+            Line::from(format!("  {:<10}{:>9}{:>9}", label, v_sess, v_proj))
+        }
+    };
+
+    vec![
+        header,
+        make_row(
+            "Baseline:",
+            baseline_val(sess_in, sess_out),
+            baseline_val(mile.executor_in, mile.executor_out),
+            baseline_val(project_costs.executor_in, project_costs.executor_out),
+        ),
+        make_row(
+            "Executor:",
+            executor_val(sess_in, sess_out),
+            executor_val(mile.executor_in, mile.executor_out),
+            executor_val(project_costs.executor_in, project_costs.executor_out),
+        ),
+        make_row(
+            "Architect:",
+            architect_val(0, 0),
+            architect_val(mile.architect_in, mile.architect_out),
+            architect_val(project_costs.architect_in, project_costs.architect_out),
+        ),
+        make_row(
+            "Net:",
+            net_val(sess_in, sess_out, 0, 0),
+            net_val(
+                mile.executor_in,
+                mile.executor_out,
+                mile.architect_in,
+                mile.architect_out,
+            ),
+            net_val(
+                project_costs.executor_in,
+                project_costs.executor_out,
+                project_costs.architect_in,
+                project_costs.architect_out,
+            ),
+        ),
+        Line::from(format!("  Assists: {project_escalation_count}")),
+    ]
 }
 
 /// "last update: …" freshness line for the Budget panel — the age of the most
@@ -1632,124 +1710,250 @@ mod tests {
 
     #[test]
     fn savings_lines_empty_without_session_metrics() {
-        let rates = BudgetRates {
-            input_per_mtok: 3.0,
-            output_per_mtok: 15.0,
-        };
-        let result = savings_lines(&StatusSummary::default(), rates, None, (0, 0));
-        assert!(result.is_empty(), "no session tokens → no header, no lines");
-    }
-
-    #[test]
-    fn savings_lines_starts_with_header() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(500),
-            last_output_tokens: Some(100),
-            ..StatusSummary::default()
-        };
-        let rates = BudgetRates {
-            input_per_mtok: 3.0,
-            output_per_mtok: 15.0,
-        };
-        let lines = savings_lines(&summary, rates, None, (0, 0));
-        assert_eq!(
-            format!("{}", lines[0]),
-            "Savings",
-            "first line is the header"
+        let result = savings_lines(
+            &StatusSummary::default(),
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
         );
+        assert!(result.is_empty(), "no session tokens → empty");
     }
 
     #[test]
-    fn savings_lines_session_dash_when_rates_unset() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(500),
-            last_output_tokens: Some(100),
-            ..StatusSummary::default()
-        };
-        let rates = BudgetRates::default();
-        let lines = savings_lines(&summary, rates, None, (0, 0));
-        let row = format!("{}", lines[1]);
-        assert!(row.starts_with("  Session:"), "session row: {row}");
-        assert!(
-            row.ends_with('—'),
-            "value is the em-dash when rates unset: {row}"
-        );
-    }
-
-    #[test]
-    fn savings_lines_session_shows_dollars() {
+    fn savings_lines_header_contains_scope_names() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
             ..StatusSummary::default()
         };
-        let rates = BudgetRates {
-            input_per_mtok: 3.0,
-            output_per_mtok: 15.0,
-        };
-        let lines = savings_lines(&summary, rates, None, (0, 0));
-        // 1.0*3 + 0.5*15 = $10.50; right-aligned under the header.
-        assert_eq!(format!("{}", lines[1]), "  Session:      $10.50");
-        assert_eq!(lines.len(), 2, "header + session only");
+        // No milestone → 2-scope header
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
+        );
+        let header = format!("{}", lines[0]);
+        assert!(header.contains("Savings"), "header must start with Savings");
+        assert!(header.contains("Session"), "header must name Session");
+        assert!(header.contains("Project"), "header must name Project");
+        assert!(
+            !header.contains("Milestone"),
+            "no Milestone column when None"
+        );
     }
 
     #[test]
-    fn savings_lines_shows_milestone_when_provided() {
+    fn savings_lines_three_scope_header_contains_milestone() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
             ..StatusSummary::default()
         };
-        let rates = BudgetRates {
-            input_per_mtok: 3.0,
-            output_per_mtok: 15.0,
-        };
-        let lines = savings_lines(&summary, rates, Some((1_000_000, 500_000)), (0, 0));
-        assert_eq!(
-            lines.len(),
-            3,
-            "header + session + milestone, no project (0,0)"
+        let mile = Some(ScopeCosts {
+            executor_in: 500_000,
+            executor_out: 200_000,
+            ..ScopeCosts::default()
+        });
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            mile,
+            ScopeCosts::default(),
+            0,
         );
+        let header = format!("{}", lines[0]);
         assert!(
-            format!("{}", lines[2]).contains("Milestone:"),
-            "{:?}",
-            lines
+            header.contains("Milestone"),
+            "3-scope header must name Milestone"
         );
     }
 
     #[test]
-    fn savings_lines_shows_all_three_scopes_value_aligned() {
+    fn savings_lines_produces_six_lines_with_session_metrics() {
+        // header + Baseline + Executor + Architect + Net + Assists = 6 lines
         let summary = StatusSummary {
-            last_input_tokens: Some(500_000),
-            last_output_tokens: Some(200_000),
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
             ..StatusSummary::default()
-        };
-        let rates = BudgetRates {
-            input_per_mtok: 3.0,
-            output_per_mtok: 15.0,
         };
         let lines = savings_lines(
             &summary,
-            rates,
-            Some((2_000_000, 800_000)),
-            (10_000_000, 4_000_000),
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
         );
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert_eq!(
-            lines.len(),
-            4,
-            "header + session + milestone + project: {text:?}"
+        assert_eq!(lines.len(), 6, "exactly 6 lines: {lines:?}");
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(texts[1].contains("Baseline:"), "row 1 is Baseline");
+        assert!(texts[2].contains("Executor:"), "row 2 is Executor");
+        assert!(texts[3].contains("Architect:"), "row 3 is Architect");
+        assert!(texts[4].contains("Net:"), "row 4 is Net");
+        assert!(texts[5].contains("Assists:"), "row 5 is Assists");
+    }
+
+    #[test]
+    fn savings_lines_baseline_dash_when_rates_unset() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
         );
-        assert_eq!(text[0], "Savings");
-        assert!(text[1].contains("Session:"), "{}", text[1]);
-        assert!(text[2].contains("Milestone:"), "{}", text[2]);
-        assert!(text[3].contains("Project:"), "{}", text[3]);
-        // Alignment guarantee: all three scope rows share one width, so their
-        // right-aligned values land in the same column.
-        let widths: Vec<usize> = text[1..].iter().map(|s| s.chars().count()).collect();
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        assert!(
+            texts[1].contains('—'),
+            "Baseline shows — when no rates: {}",
+            texts[1]
+        );
+        assert!(
+            texts[4].contains('—'),
+            "Net shows — when no rates: {}",
+            texts[4]
+        );
+    }
+
+    #[test]
+    fn savings_lines_executor_always_shows_zero_dollars() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+            ..BudgetRates::default()
+        };
+        let lines = savings_lines(&summary, rates, None, ScopeCosts::default(), 0);
+        let exec_row = format!("{}", lines[2]);
+        assert!(
+            exec_row.contains("$0.00"),
+            "Executor always $0.00: {exec_row}"
+        );
+    }
+
+    #[test]
+    fn savings_lines_architect_cost_shown_from_project_costs() {
+        // architect_*_tokens > 0 with configured architect rates → non-zero Architect value
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(0),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+            architect_input_per_mtok: 5.0,
+            architect_output_per_mtok: 25.0,
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 0,
+            architect_in: 1_000_000, // 1M architect input tokens
+            architect_out: 0,
+        };
+        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        // Project Architect column: 1M tokens × $5/MTok = $5.00
+        assert!(
+            texts[3].contains("$5.00"),
+            "Architect project column shows $5.00: {}",
+            texts[3]
+        );
+    }
+
+    #[test]
+    fn savings_lines_net_subtracts_architect_from_baseline() {
+        // Baseline $5.00, Architect $1.00, Net $4.00
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(0),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+            architect_input_per_mtok: 1.0,
+            architect_output_per_mtok: 5.0,
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 0,
+            architect_in: 1_000_000,
+            architect_out: 0,
+        };
+        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        // Baseline project: 1M × $5 = $5.00; Architect project: 1M × $1 = $1.00; Net = $4.00
+        assert!(
+            texts[1].contains("$5.00"),
+            "Baseline project $5.00: {}",
+            texts[1]
+        );
+        assert!(
+            texts[4].contains("$4.00"),
+            "Net project $4.00: {}",
+            texts[4]
+        );
+    }
+
+    #[test]
+    fn savings_lines_assists_shows_project_escalation_count() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(0),
+            ..StatusSummary::default()
+        };
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            3,
+        );
+        let assists_row = format!("{}", lines[5]);
+        assert!(
+            assists_row.contains("Assists: 3"),
+            "Assists row: {assists_row}"
+        );
+    }
+
+    #[test]
+    fn savings_lines_data_rows_equal_width_for_alignment() {
+        // All four data rows (Baseline/Executor/Architect/Net) must be equal width
+        // so values land in the same columns.
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+            ..BudgetRates::default()
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 5_000_000,
+            executor_out: 2_000_000,
+            architect_in: 0,
+            architect_out: 0,
+        };
+        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let texts: Vec<String> = lines[1..5].iter().map(|l| format!("{l}")).collect();
+        let widths: Vec<usize> = texts.iter().map(|s| s.chars().count()).collect();
         assert!(
             widths.iter().all(|&w| w == widths[0]),
-            "scope rows must be equal width for value alignment: {widths:?}"
+            "all data rows must be equal width for column alignment: {widths:?}",
         );
     }
 

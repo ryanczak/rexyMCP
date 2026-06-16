@@ -4,15 +4,29 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M20 phase-02 —
-`docs/dev/milestones/M20-tier-calibration/phase-02-telemetry-fields.md`
+**Active phase:** M20 phase-03 —
+`docs/dev/milestones/M20-tier-calibration/phase-03-dashboard-cost-breakdown.md`
 
 **M20 — Tier Calibration and Cost Visibility** (kicked off 2026-06-16).
 Three-phase milestone. Phase-01: config schema (`Tier`, `EscalationConfig`,
 `ArchitectConfig`), known-model rate registry moved to executor lib, and
 `rexymcp calibrate LARGE|MEDIUM|SMALL` CLI command. Phase-02: telemetry
 fields (`tier`, `doc_level`, `escalation_count`, `architect_*_tokens`).
-Phase-03: dashboard cost breakdown (Architect cost line, honest net savings).
+Phase-03: dashboard cost breakdown — tabular Baseline/Executor/Architect/Net
+per Session+Milestone+Project scope, plus Assists counter in Budget panel.
+
+**M20 phase-03 — drafted** (2026-06-16): Budget panel Savings block redesigned
+as a tabular 5-row × 2-or-3-column layout. New `ScopeCosts` struct replaces the
+`(u32, u32)` tuples in `DashboardData`, accumulating executor + architect token
+counts per scope. `BudgetRates` gains `architect_input_per_mtok`/
+`architect_output_per_mtok`. `savings_lines` produces: header row with scope
+column names + Baseline/Executor/Architect/Net data rows (Executor always $0.00
+until local rates wired; Net = Baseline − Architect) + Assists counter from
+`project_escalation_count`. Header height grows from 11→13 to fit. ~130 lines.
+**Decision (2026-06-16 with user):** (1) Executor cost = $0.00 always now,
+row always shown for future paid providers; (2) per-scope (Session/Milestone/
+Project) tabular layout Option A; (3) Assists counter satisfies escalation-feed
+requirement (no separate feed panel).
 
 **M20 phase-02 — drafted** (2026-06-16): the tier/cost telemetry substrate.
 A new nested `TierTelemetry` struct (`tier`/`doc_level`/`escalation_count`/

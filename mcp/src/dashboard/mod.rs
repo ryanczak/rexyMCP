@@ -17,7 +17,7 @@ mod panels;
 mod render;
 mod transcript;
 
-pub use panels::BudgetRates;
+pub use panels::{BudgetRates, ScopeCosts};
 
 /// Snapshot of the latest session data or an error loading it.
 pub struct DashboardData {
@@ -25,13 +25,15 @@ pub struct DashboardData {
     pub records: Vec<SessionRecord>,
     pub error: Option<String>,
     pub milestone: Option<String>,
-    /// Cumulative (input_tokens, output_tokens) from `PhaseRun` records whose
-    /// `phase_doc_path` belongs to the active milestone. `None` when telemetry
-    /// is absent, no phase is active, or no matching records exist.
-    pub milestone_savings: Option<(u32, u32)>,
-    /// Cumulative (input_tokens, output_tokens) from ALL `PhaseRun` records in
-    /// the telemetry file. `(0, 0)` when telemetry dir is not configured.
-    pub project_savings: (u32, u32),
+    /// Cumulative executor + architect token costs from `PhaseRun` records whose
+    /// `phase_doc_path` belongs to the active milestone. `None` when telemetry is
+    /// absent, no phase is active, or no matching records exist.
+    pub milestone_costs: Option<ScopeCosts>,
+    /// Cumulative executor + architect token costs from ALL project `PhaseRun`
+    /// records. `ScopeCosts::default()` when telemetry is not configured.
+    pub project_costs: ScopeCosts,
+    /// Sum of `PhaseRun.tier_telemetry.escalation_count` across all project runs.
+    pub project_escalation_count: u32,
 }
 
 /// Load the latest session data. Pure, testable.
@@ -44,19 +46,33 @@ pub fn load_data(
     project_id: Option<&str>,
 ) -> DashboardData {
     // Phase runs are independent of session records — read them before the match
-    // so project_savings is always computed even when session loading fails.
+    // so project_costs is always computed even when session loading fails.
     let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
-    let project_savings = match project_id {
+    // project_costs: executor tokens + architect tokens + escalation count
+    let (project_costs, project_escalation_count) = match project_id {
         Some(pid) => phase_runs
             .iter()
             .filter(|r| r.project_id.as_deref() == Some(pid))
-            .fold((0u32, 0u32), |(i, o), r| {
-                (
-                    i.saturating_add(r.tokens.input_tokens),
-                    o.saturating_add(r.tokens.output_tokens),
-                )
-            }),
-        None => (0u32, 0u32),
+            .fold(
+                (ScopeCosts::default(), 0u32),
+                |(mut costs, mut assists), r| {
+                    costs.executor_in = costs
+                        .executor_in
+                        .saturating_add(r.tokens.input_tokens as u64);
+                    costs.executor_out = costs
+                        .executor_out
+                        .saturating_add(r.tokens.output_tokens as u64);
+                    costs.architect_in = costs
+                        .architect_in
+                        .saturating_add(r.tier_telemetry.architect_input_tokens);
+                    costs.architect_out = costs
+                        .architect_out
+                        .saturating_add(r.tier_telemetry.architect_output_tokens);
+                    assists = assists.saturating_add(r.tier_telemetry.escalation_count);
+                    (costs, assists)
+                },
+            ),
+        None => (ScopeCosts::default(), 0u32),
     };
 
     match status::load_records(repo, session) {
@@ -65,7 +81,7 @@ pub fn load_data(
             let milestone = resolve_milestone(repo, summary.phase.as_deref());
             // Milestone savings requires the active milestone dir from session data.
             // Filter by both project_id and milestone_id for accurate scoping.
-            let milestone_savings = resolve_milestone_dir(repo, summary.phase.as_deref())
+            let milestone_costs = resolve_milestone_dir(repo, summary.phase.as_deref())
                 .zip(project_id)
                 .map(|(milestone_dir, pid)| {
                     phase_runs
@@ -74,21 +90,36 @@ pub fn load_data(
                             r.project_id.as_deref() == Some(pid)
                                 && r.milestone_id.as_deref() == Some(milestone_dir.as_str())
                         })
-                        .fold((0u32, 0u32), |(i, o), r| {
-                            (
-                                i.saturating_add(r.tokens.input_tokens),
-                                o.saturating_add(r.tokens.output_tokens),
-                            )
+                        .fold(ScopeCosts::default(), |mut costs, r| {
+                            costs.executor_in = costs
+                                .executor_in
+                                .saturating_add(r.tokens.input_tokens as u64);
+                            costs.executor_out = costs
+                                .executor_out
+                                .saturating_add(r.tokens.output_tokens as u64);
+                            costs.architect_in = costs
+                                .architect_in
+                                .saturating_add(r.tier_telemetry.architect_input_tokens);
+                            costs.architect_out = costs
+                                .architect_out
+                                .saturating_add(r.tier_telemetry.architect_output_tokens);
+                            costs
                         })
                 })
-                .filter(|&(i, o)| i > 0 || o > 0);
+                .filter(|c| {
+                    c.executor_in > 0
+                        || c.executor_out > 0
+                        || c.architect_in > 0
+                        || c.architect_out > 0
+                });
             DashboardData {
                 summary,
                 records,
                 error: None,
                 milestone,
-                milestone_savings,
-                project_savings,
+                milestone_costs,
+                project_costs,
+                project_escalation_count,
             }
         }
         Err(e) => DashboardData {
@@ -96,8 +127,9 @@ pub fn load_data(
             records: Vec::new(),
             error: Some(e),
             milestone: None,
-            milestone_savings: None,
-            project_savings,
+            milestone_costs: None,
+            project_costs,
+            project_escalation_count,
         },
     }
 }
@@ -345,12 +377,17 @@ mod tests {
 
         let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
         assert_eq!(
-            data.project_savings,
-            (3000, 1300),
-            "project savings must sum phase runs with matching project_id"
+            data.project_costs,
+            ScopeCosts {
+                executor_in: 3000,
+                executor_out: 1300,
+                architect_in: 0,
+                architect_out: 0
+            },
+            "project costs must sum phase runs with matching project_id"
         );
         // No session phase id → no milestone match.
-        assert!(data.milestone_savings.is_none());
+        assert!(data.milestone_costs.is_none());
     }
 
     #[test]
@@ -378,9 +415,14 @@ mod tests {
 
         let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(this_pid));
         assert_eq!(
-            data.project_savings,
-            (1000, 500),
-            "project savings must exclude runs from other project UUIDs and legacy records"
+            data.project_costs,
+            ScopeCosts {
+                executor_in: 1000,
+                executor_out: 500,
+                architect_in: 0,
+                architect_out: 0
+            },
+            "project costs must exclude runs from other project UUIDs and legacy records"
         );
     }
 
@@ -397,12 +439,65 @@ mod tests {
         std::fs::create_dir_all(&telemetry_dir).unwrap();
         std::fs::write(telemetry_dir.join("phase_runs.jsonl"), format!("{run}\n")).unwrap();
 
-        // project_id=None → savings are (0,0) regardless of what's in the store.
+        // project_id=None → costs are default regardless of what's in the store.
         let data = load_data(dir.path(), None, Some(&telemetry_dir), None);
         assert_eq!(
-            data.project_savings,
-            (0, 0),
-            "project savings must be (0,0) when no project_id is configured"
+            data.project_costs,
+            ScopeCosts::default(),
+            "project costs must be default when no project_id is configured"
+        );
+    }
+
+    #[test]
+    fn load_data_reads_project_architect_costs_from_phase_runs() {
+        // PhaseRun lines with non-zero tier_telemetry.architect_*_tokens are summed.
+        let dir = TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+        let pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        // A run with architect_input_tokens=1500, architect_output_tokens=300 in tier_telemetry.
+        let run = format!(
+            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":1000,"output_tokens":500}},"tier_telemetry":{{"tier":null,"doc_level":null,"escalation_count":0,"architect_input_tokens":1500,"architect_output_tokens":300}}}}"#
+        );
+        let telemetry_dir = dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        std::fs::write(telemetry_dir.join("phase_runs.jsonl"), format!("{run}\n")).unwrap();
+
+        let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        assert_eq!(
+            data.project_costs.architect_in, 1500,
+            "architect_in must be summed from tier_telemetry"
+        );
+        assert_eq!(
+            data.project_costs.architect_out, 300,
+            "architect_out must be summed from tier_telemetry"
+        );
+    }
+
+    #[test]
+    fn load_data_reads_project_escalation_count() {
+        let dir = TempDir::new().unwrap();
+        let sessions = sessions_dir(dir.path());
+        std::fs::create_dir_all(&sessions).unwrap();
+        let pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let run1 = format!(
+            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":0,"output_tokens":0}},"tier_telemetry":{{"tier":null,"doc_level":null,"escalation_count":2,"architect_input_tokens":0,"architect_output_tokens":0}}}}"#
+        );
+        let run2 = format!(
+            r#"{{"ts":2,"model":"t","generation_params":{{}},"phase_id":"p2","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":0,"output_tokens":0}},"tier_telemetry":{{"tier":null,"doc_level":null,"escalation_count":1,"architect_input_tokens":0,"architect_output_tokens":0}}}}"#
+        );
+        let telemetry_dir = dir.path().join("telemetry");
+        std::fs::create_dir_all(&telemetry_dir).unwrap();
+        std::fs::write(
+            telemetry_dir.join("phase_runs.jsonl"),
+            format!("{run1}\n{run2}\n"),
+        )
+        .unwrap();
+
+        let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        assert_eq!(
+            data.project_escalation_count, 3,
+            "escalation_count must sum across all project runs"
         );
     }
 

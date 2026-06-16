@@ -128,8 +128,10 @@ pub(crate) fn render_dashboard(
     // Session, Model, State, Duration, last-update, Turn/stage, spinner). Budget and
     // Reclaim share this height; the body (Activity · Tasks/Files) fills the rest.
     let total_wrapped;
+    // Height 13 = 2 border rows + up to 11 Budget content rows (savings block now
+    // 6 lines: header + Baseline/Executor/Architect/Net + Assists).
     let [header, body] =
-        Layout::vertical([Constraint::Length(11), Constraint::Min(0)]).areas::<2>(area);
+        Layout::vertical([Constraint::Length(13), Constraint::Min(0)]).areas::<2>(area);
 
     // Header band: Session · Budget · Compactions.
     // Budget uses Min(52) so the combined tok/s line
@@ -159,8 +161,9 @@ pub(crate) fn render_dashboard(
     budget.extend(savings_lines(
         &data.summary,
         rates,
-        data.milestone_savings,
-        data.project_savings,
+        data.milestone_costs,
+        data.project_costs,
+        data.project_escalation_count,
     ));
     frame.render_widget(panel(" Budget ", budget), budget_area);
     frame.render_widget(

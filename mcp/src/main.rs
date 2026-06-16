@@ -566,9 +566,12 @@ async fn main() -> anyhow::Result<()> {
             let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
             let cfg = Config::load_with_env(&config_path)?;
             let (i, o) = cfg.dashboard.effective_rates();
+            let (arch_in, arch_out) = cfg.architect.effective_rates();
             let rates = dashboard::BudgetRates {
                 input_per_mtok: i,
                 output_per_mtok: o,
+                architect_input_per_mtok: arch_in,
+                architect_output_per_mtok: arch_out,
             };
             let telemetry_dir = cfg.telemetry.dir.as_deref();
             let project_id = rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
