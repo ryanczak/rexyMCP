@@ -1,7 +1,7 @@
 # Phase 03: Dashboard cost breakdown (Executor/Architect/Net per scope)
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (tier_telemetry and EscalationEvent fields in PhaseRun)
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -869,3 +869,19 @@ $ grep -rn 'Assists:' mcp/src/dashboard/panels.rs | head -3
 **End-to-end verification:** N/A — phase ships a TUI display-only change. No runtime-loadable artifact other than the dashboard panel itself; unit tests render real `Line`/`Span` output.
 
 **Notes for review:** None — implementation follows the spec exactly.
+
+### Review verdict — 2026-06-16
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none. Clean 73-turn first-try. All four gates green on
+  independent re-run (fmt/build/clippy clean; 807 passed / 2 ignored).
+  Compiler-guided multi-site `BudgetRates`/`savings_lines`/`DashboardData`
+  traversal landed without churn stall. The Net-subtracts-architect test is
+  mutation-resistant (Baseline $5 − Architect $1 = $4; a non-subtracting impl
+  yields $5 and fails). E2E declared N/A per the established M13/M17 TUI
+  dashboard-panel precedent — authorized in the phase doc. The cosmetic
+  Update-Log identity self-stamp ("rexyMCP executor LLM") persists; date
+  correct (2026-06-16).
