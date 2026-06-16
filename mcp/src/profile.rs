@@ -284,6 +284,7 @@ mod tests {
             context_efficiency: Default::default(),
             project_id: None,
             milestone_id: None,
+            tier_telemetry: Default::default(),
         }
     }
 
@@ -326,6 +327,7 @@ mod tests {
             context_efficiency: Default::default(),
             project_id: None,
             milestone_id: None,
+            tier_telemetry: Default::default(),
         }
     }
 

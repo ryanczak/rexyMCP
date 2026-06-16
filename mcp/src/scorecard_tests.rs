@@ -37,6 +37,7 @@ fn make_run(
         context_efficiency: Default::default(),
         project_id: None,
         milestone_id: None,
+        tier_telemetry: Default::default(),
     }
 }
 
@@ -426,6 +427,7 @@ fn make_run_with_settings(
         context_efficiency: Default::default(),
         project_id: None,
         milestone_id: None,
+        tier_telemetry: Default::default(),
     }
 }
 

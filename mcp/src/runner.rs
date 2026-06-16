@@ -211,6 +211,7 @@ async fn run_phase_with(
         phase_doc_path: inp.phase_doc_path.to_string_lossy().into_owned(),
         project_id: inp.project_id.clone(),
         milestone_id: milestone_id_from_path(inp.phase_doc_path),
+        tier: cfg.executor.tier,
     };
 
     let session_id = generate_session_id();
@@ -632,6 +633,55 @@ mod tests {
             runs[0].generation_params.temperature,
             Some(0.2),
             "temperature must be the per-model override (0.2), not the global (0.8)"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_phase_with_records_configured_tier_in_telemetry() {
+        let dir = TempDir::new().unwrap();
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let phase_doc_path = dir.path().join("phase-01-test.md");
+        std::fs::write(
+            &phase_doc_path,
+            "# Phase 01: Test\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\n",
+        )
+        .unwrap();
+
+        let mut cfg = Config::default();
+        cfg.executor.tier = Some(rexymcp_executor::config::Tier::Medium);
+
+        let mock = MockAiClient::new(vec!["Done.".to_string()]);
+        let clock = || 1234567890u64;
+        let seams = Seams {
+            client: &mock,
+            verifier: &NoopVerifier,
+            runner: &NoopRunner,
+            clock: &clock,
+        };
+        let inp = AssemblyInput {
+            cfg: &cfg,
+            phase_doc_path: &phase_doc_path,
+            repo_path: &repo_dir,
+            standards: "standards",
+            model: "m",
+            telemetry_dir: Some(dir.path()),
+            progress: None,
+            context_window: None,
+            project_id: None,
+        };
+
+        let result = run_phase_with(&inp, &seams).await;
+        assert!(result.is_ok(), "run_phase_with should succeed: {result:?}");
+
+        let runs = rexymcp_executor::store::telemetry::read(&dir.path().join("phase_runs.jsonl"))
+            .expect("telemetry should be readable");
+        assert_eq!(runs.len(), 1, "exactly one phase run recorded");
+        assert_eq!(
+            runs[0].tier_telemetry.tier,
+            Some(rexymcp_executor::config::Tier::Medium),
+            "the configured tier must be recorded in the written telemetry"
         );
     }
 

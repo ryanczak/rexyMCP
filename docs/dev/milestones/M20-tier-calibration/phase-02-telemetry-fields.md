@@ -1,7 +1,7 @@
 # Phase 02: Tier/cost telemetry fields and `EscalationEvent` record
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (the `Tier` enum it adds is recorded by this phase)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -660,3 +660,43 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-16 18:34 (started)
+
+**Executor:** rexyMCP executor LLM
+
+Implementing all 9 tasks: `TierTelemetry` nested struct, `PhaseRun.tier_telemetry` field, `PhaseInput.tier` field, production wiring in `emit_phase_run` and `runner.rs`, `EscalationEvent` record with store API, multi-site struct-literal traversal, 8 unit tests in telemetry.rs, 1 end-to-end test in runner.rs.
+
+### Update — 2026-06-16 18:34 (complete)
+
+**Tasks completed:** 1–9
+
+**Files changed:**
+- `executor/src/store/telemetry.rs` — added `TierTelemetry` struct, `PhaseRun.tier_telemetry` field, `EscalationEvent` struct + `ESCALATION_RECORD_TAG` + `append_escalation` + `read_escalations`, 8 new unit tests
+- `executor/src/agent/mod.rs` — added `PhaseInput.tier` field
+- `executor/src/agent/metrics.rs` — populated `tier_telemetry` in `emit_phase_run`
+- `executor/src/agent/tests.rs` — added `tier: None` to `input()` helper
+- `mcp/src/runner.rs` — populated `tier` from `cfg.executor.tier`, added end-to-end test
+- `mcp/src/runs.rs` — added `tier_telemetry: Default::default()` to 3 test `PhaseRun` literals
+- `mcp/src/profile.rs` — added `tier_telemetry: Default::default()` to 2 test `PhaseRun` literals
+- `mcp/src/profile_cli.rs` — added `tier_telemetry: Default::default()` to test `PhaseRun` literal
+- `mcp/src/scorecard_cli.rs` — added `tier_telemetry: Default::default()` to test `PhaseRun` literal
+- `mcp/src/scorecard_tests.rs` — added `tier_telemetry: Default::default()` to 2 test `PhaseRun` literals
+- `docs/dev/milestones/M20-tier-calibration/phase-02-telemetry-fields.md` — status → review
+- `docs/dev/milestones/M20-tier-calibration/README.md` — phase-02 status → review
+
+**Verification commands (all clean):**
+- `cargo fmt --all --check` — exit 0
+- `cargo build` — exit 0, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — exit 0
+- `cargo test` — 807 passed, 0 failed, 2 ignored (new test count: 8 telemetry unit tests + 1 runner end-to-end test = 9 new)
+
+**Verification summary:** format clean, build clean (zero warnings), clippy clean, all 807 tests pass.
+
+**End-to-end verification:** `run_phase_with_records_configured_tier_in_telemetry` exercises the full production wiring (`cfg.executor.tier` → `PhaseInput.tier` → `emit_phase_run` → `append` → `read`) with a mock client against a temp telemetry dir, asserting `tier_telemetry.tier == Some(Tier::Medium)`. `append_escalation` → `read_escalations` round-trip test verifies the `EscalationEvent` schema.
+
+**Grep for spec-pinned literals:**
+- `ESCALATION_RECORD_TAG` found in telemetry.rs (const + filter + 3 test uses) ✓
+- `"escalation"` discriminator verified via grep ✓
+
+**Notes for review:** None — all items implemented per spec.

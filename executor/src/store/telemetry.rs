@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::types::TokenBreakdown;
+use crate::config::Tier;
 use crate::store::sessions::event::{SessionEvent, SessionRecord};
 
 /// Generation knobs for the run — "how" the model was asked. The executor layer
@@ -95,6 +96,29 @@ pub fn aggregate_context_efficiency(records: &[SessionRecord]) -> ContextEfficie
     eff
 }
 
+/// Per-run M20 tier/cost instrumentation. Nested in `PhaseRun` as a single
+/// `#[serde(default)]` field so legacy records and every struct literal need
+/// only `Default` (the `ContextEfficiency` precedent). Only `tier` is populated
+/// in M20 phase-02 — the configured executor tier, available from `[executor]
+/// tier`. `doc_level` is wired in M22 (phase-doc detail level L1/L2/L3 → 1/2/3);
+/// `escalation_count` and the two `architect_*_tokens` are wired in M21 when the
+/// mid-phase Architect-assist loop fires. Default (tier `None`, levels `None`,
+/// counts `0`) for legacy records and every run that did not escalate.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TierTelemetry {
+    /// Configured executor capability tier (`[executor] tier`); `None` when the
+    /// project has not run `rexymcp calibrate`.
+    pub tier: Option<Tier>,
+    /// Phase-doc detail level (1/2/3). `None` until M22 wires doc levels.
+    pub doc_level: Option<u8>,
+    /// Number of mid-phase Architect assists that fired this run. `0` until M21.
+    pub escalation_count: u32,
+    /// Architect input tokens spent on assists this run. `0` until M21.
+    pub architect_input_tokens: u64,
+    /// Architect output tokens spent on assists this run. `0` until M21.
+    pub architect_output_tokens: u64,
+}
+
 /// One per-phase metrics row. Objective fields are filled by the executor; the
 /// supervision fields are filled by the architect at review (M7).
 /// (No `PartialEq` — `TokenBreakdown` doesn't implement it; compare via JSON.)
@@ -154,6 +178,11 @@ pub struct PhaseRun {
     /// `None` when the phase doc is not inside a milestone directory.
     #[serde(default)]
     pub milestone_id: Option<String>,
+
+    /// M20 tier/cost instrumentation (tier, doc_level, escalation cost). Default
+    /// for legacy records and non-escalating runs.
+    #[serde(default)]
+    pub tier_telemetry: TierTelemetry,
 }
 
 /// Append one `PhaseRun` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`,
@@ -363,6 +392,80 @@ pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
         .collect())
 }
 
+/// An append-only record of a single mid-phase Architect assist, appended to
+/// `phase_runs.jsonl` alongside `PhaseRun` and `PhaseReview`. The `record`
+/// discriminator (`"escalation"`) keeps the three readers from confusing the
+/// line types. **No code writes one in M20** — the producer is wired in M21 when
+/// the SMALL-tier escalation loop fires; this phase defines the schema and the
+/// store API only (the `PhaseReview` substrate precedent from M18 phase-01).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EscalationEvent {
+    /// Literal discriminator. Always `"escalation"`. `#[serde(default)]` so a
+    /// `PhaseRun` line (no `record` field) deserializes to `""` here and is
+    /// filtered out by `read_escalations`.
+    #[serde(default)]
+    pub record: String,
+    pub ts: u64,
+    /// Identity of the phase that escalated. Prefer `phase_doc_path`; `phase_id`
+    /// + `project_id` are the fallback key (mirrors `PhaseReview`).
+    #[serde(default)]
+    pub phase_doc_path: Option<String>,
+    pub phase_id: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// 1-based index of this assist within the phase (1st assist = 1).
+    pub assist_index: u32,
+    /// Architect model that produced the assist (e.g. `"claude-opus-4-8"`).
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Architect input tokens spent on this single assist.
+    pub architect_input_tokens: u64,
+    /// Architect output tokens spent on this single assist.
+    pub architect_output_tokens: u64,
+}
+
+/// The literal value of `EscalationEvent.record`. Use everywhere instead of a
+/// bare string so the discriminator is single-sourced.
+pub const ESCALATION_RECORD_TAG: &str = "escalation";
+
+/// Append one `EscalationEvent` as a JSON line to
+/// `<telemetry_dir>/phase_runs.jsonl` (the same store as `PhaseRun`). Returns
+/// the file path.
+pub fn append_escalation(
+    telemetry_dir: &Path,
+    event: &EscalationEvent,
+) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+
+    std::fs::create_dir_all(telemetry_dir)?;
+    let path = telemetry_dir.join("phase_runs.jsonl");
+    let line = serde_json::to_string(event).map_err(std::io::Error::other)?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    file.write_all(line.as_bytes())?;
+    file.write_all(b"\n")?;
+    Ok(path)
+}
+
+/// Read all `EscalationEvent` records from a store file. Lines that are
+/// `PhaseRun` or `PhaseReview` records (or anything without
+/// `record == "escalation"`) are skipped.
+pub fn read_escalations(path: &Path) -> std::io::Result<Vec<EscalationEvent>> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    Ok(content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<EscalationEvent>(l).ok())
+        .filter(|e| e.record == ESCALATION_RECORD_TAG)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -550,6 +653,7 @@ mod tests {
             context_efficiency: Default::default(),
             project_id: None,
             milestone_id: None,
+            tier_telemetry: Default::default(),
         }
     }
 
@@ -868,5 +972,147 @@ mod tests {
         assert!(is_known_failure_class("spec_bug"));
         assert!(is_known_failure_class("infra_blip"));
         assert!(!is_known_failure_class("made_up"));
+    }
+
+    #[test]
+    fn phase_run_tier_telemetry_round_trips() {
+        let mut run = sample();
+        run.tier_telemetry = TierTelemetry {
+            tier: Some(Tier::Medium),
+            doc_level: Some(2),
+            escalation_count: 1,
+            architect_input_tokens: 1000,
+            architect_output_tokens: 200,
+        };
+        let json = serde_json::to_string(&run).unwrap();
+        let back: PhaseRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tier_telemetry, run.tier_telemetry);
+    }
+
+    #[test]
+    fn phase_run_without_tier_telemetry_deserializes() {
+        // A legacy JSONL line lacking tier_telemetry — as emitted before this phase.
+        let legacy_json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(run.tier_telemetry, TierTelemetry::default());
+        assert_eq!(run.tier_telemetry.tier, None);
+    }
+
+    #[test]
+    fn tier_serializes_uppercase_in_telemetry() {
+        let mut run = sample();
+        run.tier_telemetry.tier = Some(Tier::Small);
+        let json = serde_json::to_string(&run).unwrap();
+        assert!(
+            json.contains("\"tier\":\"SMALL\""),
+            "tier must serialize UPPERCASE: {json}"
+        );
+    }
+
+    #[test]
+    fn escalation_event_round_trips() {
+        let dir = TempDir::new().unwrap();
+        let event = EscalationEvent {
+            record: ESCALATION_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-02.md".to_string()),
+            phase_id: "phase-02".to_string(),
+            project_id: Some("proj-a".to_string()),
+            assist_index: 1,
+            model: Some("claude-opus-4-8".to_string()),
+            architect_input_tokens: 1500,
+            architect_output_tokens: 300,
+        };
+        append_escalation(dir.path(), &event).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let events = read_escalations(&path).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], event);
+    }
+
+    #[test]
+    fn read_escalations_excludes_run_lines() {
+        // A PhaseRun line must not be read as an EscalationEvent.
+        let dir = TempDir::new().unwrap();
+        append(dir.path(), &sample()).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let events = read_escalations(&path).unwrap();
+        assert!(
+            events.is_empty(),
+            "PhaseRun lines must not be read as escalations"
+        );
+    }
+
+    #[test]
+    fn read_escalations_excludes_review_by_discriminator() {
+        // A PhaseReview line parses far enough to reach the discriminator filter
+        // (it has ts/phase_id and no required escalation-only field would block it
+        // only if absent) — assert the `record != "escalation"` filter is what
+        // excludes it. This pins the discriminator as load-bearing (M18 bug-01-1).
+        let dir = TempDir::new().unwrap();
+        let review = PhaseReview {
+            record: REVIEW_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: Some("/docs/phase-02.md".to_string()),
+            phase_id: "phase-02".to_string(),
+            project_id: None,
+            architect_verdict: "approved".to_string(),
+            bounces_to_approval: None,
+            bugs_filed: None,
+            warnings: None,
+            failure_class: vec!["none".to_string()],
+        };
+        append_review(dir.path(), &review).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let events = read_escalations(&path).unwrap();
+        assert!(
+            events.is_empty(),
+            "review lines must be excluded from escalations"
+        );
+    }
+
+    #[test]
+    fn read_skips_escalation_lines() {
+        // The existing PhaseRun reader must not pick up escalation lines.
+        let dir = TempDir::new().unwrap();
+        append(dir.path(), &sample()).unwrap();
+        let event = EscalationEvent {
+            record: ESCALATION_RECORD_TAG.to_string(),
+            ts: 1,
+            phase_doc_path: None,
+            phase_id: "p".to_string(),
+            project_id: None,
+            assist_index: 1,
+            model: None,
+            architect_input_tokens: 1,
+            architect_output_tokens: 1,
+        };
+        append_escalation(dir.path(), &event).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let runs = read(&path).unwrap();
+        assert_eq!(runs.len(), 1, "read() must skip the escalation line");
+    }
+
+    #[test]
+    fn read_reviews_skips_escalation_lines() {
+        let dir = TempDir::new().unwrap();
+        let event = EscalationEvent {
+            record: ESCALATION_RECORD_TAG.to_string(),
+            ts: 1,
+            phase_doc_path: None,
+            phase_id: "p".to_string(),
+            project_id: None,
+            assist_index: 1,
+            model: None,
+            architect_input_tokens: 1,
+            architect_output_tokens: 1,
+        };
+        append_escalation(dir.path(), &event).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let reviews = read_reviews(&path).unwrap();
+        assert!(
+            reviews.is_empty(),
+            "read_reviews() must skip the escalation line"
+        );
     }
 }

@@ -36,6 +36,7 @@ fn input() -> PhaseInput {
         phase_doc_path: "docs/dev/milestones/M0-test/phase-01-test.md".to_string(),
         project_id: None,
         milestone_id: None,
+        tier: None,
     }
 }
 

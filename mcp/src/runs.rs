@@ -217,6 +217,7 @@ mod tests {
             context_efficiency: Default::default(),
             project_id: None,
             milestone_id: None,
+            tier_telemetry: Default::default(),
         }
     }
 
@@ -259,6 +260,7 @@ mod tests {
             context_efficiency: Default::default(),
             project_id: None,
             milestone_id: None,
+            tier_telemetry: Default::default(),
         }
     }
 
@@ -660,6 +662,7 @@ dir = "{}"
             context_efficiency: Default::default(),
             project_id: Some("test-proj".to_string()),
             milestone_id: None,
+            tier_telemetry: Default::default(),
         };
         append(&telemetry_dir, &run).unwrap();
 

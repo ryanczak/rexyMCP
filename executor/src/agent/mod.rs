@@ -78,6 +78,9 @@ pub struct PhaseInput {
     /// Milestone directory slug (e.g. `"M17-dashboard-polish-3"`) derived from
     /// the phase doc path. `None` when the phase doc is not under a milestone dir.
     pub milestone_id: Option<String>,
+    /// Configured executor capability tier (`[executor] tier`), recorded in the
+    /// `PhaseRun`'s `tier_telemetry`. `None` when no tier is configured.
+    pub tier: Option<crate::config::Tier>,
 }
 
 /// The injected dependencies the loop drives — explicit, no globals. The `clock`
