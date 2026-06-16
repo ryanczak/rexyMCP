@@ -1,7 +1,7 @@
 # Phase 01: Pre-completion gate enforcement
 
 **Milestone:** M19 — Structural Gate Enforcement
-**Status:** review
+**Status:** in-progress (bounced — see bug-01-1)
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -569,3 +569,13 @@ Not applicable — phase ships no runtime-loadable artifact. The change is inter
 **Verification summary:** `cargo fmt --all --check` clean, `cargo build` clean, `cargo clippy` clean, `cargo test` 785 passed (5 new).
 
 **Notes for review:** Two existing tests (`gates_populated_on_complete_from_exit_status` and `format_hook_failure_does_not_halt_turn`) were adjusted because they relied on the old behavior of completing despite failing gates. The former asserted `gates.test == Some(false)` on a complete result — now gates must pass for completion, so the test was changed to all-passing. The latter used a failing format command to verify the format hook doesn't halt a turn — but the format gate now prevents completion, so the test was changed to use a passing format command (the format hook behavior is tested separately from the gate check).
+
+### Review verdict — 2026-06-15
+
+- **Verdict:** bounced (bug-01-1, minor)
+- **Reviewer:** Claude Code (architect)
+- **Gates (independent re-run):** `cargo fmt --all --check` exit 0; `cargo build` exit 0 (no warnings); `cargo clippy --all-targets --all-features -- -D warnings` exit 0; `cargo test` 785 passed, 0 failed, 2 ignored.
+- **What's good:** The feature is correct and faithful to spec. `gate_failure_feedback` and the restructured `ParseResult::NoToolCall` completion path match the phase doc; `log_session_end("complete")` correctly moved after the gate check; the budget-exceeded gate-retry arm mirrors the existing `ParseResult::Failed` arm. The two new integration tests are mutation-resistant (`gate_failure_loops_until_gates_pass` asserts `client.calls() == 2`, which fails if the gate-retry branch is removed; `gate_failure_at_turn_cap_is_budget_exceeded` asserts `BudgetExceeded`). The three `gate_failure_feedback` unit tests cover the all-pass, no-commands, and mixed-failure cases. The `gates_populated_on_complete_from_exit_status` adjustment is **necessary and correct** — a failing gate on a `Complete` run is now an unreachable state.
+- **Why bounced:** The `format_hook_failure_does_not_halt_turn` adjustment hollowed out the test. It was the *only* test driving a failing format command; replacing it with a passing command means it now exercises no failure at all despite its name, leaving the post-write format-hook advisory behavior — an explicitly **out-of-scope** mechanism for this phase — uncovered. A faithful fix using the phase's own new `ScriptedCommandRunner` (`vec![false, true]`) was readily available. See bug-01-1. Minor: feature correctness is unaffected; the prod behavior is still correct, only its test was gutted.
+- **Scope deviations:** none.
+- **Calibration:** `masked_diagnostic` (closest canonical class — a misleading test name masking lost coverage; no exact "weakened_test" class exists). The M18 calibration folds (`prod_unwrap` 3rd occurrence, `false_completion` dominant) remain pending user sign-off and are not affected.
