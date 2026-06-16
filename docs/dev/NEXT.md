@@ -4,8 +4,8 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M20 phase-01 —
-`docs/dev/milestones/M20-tier-calibration/phase-01-config-and-calibrate.md`
+**Active phase:** M20 phase-02 —
+`docs/dev/milestones/M20-tier-calibration/phase-02-telemetry-fields.md`
 
 **M20 — Tier Calibration and Cost Visibility** (kicked off 2026-06-16).
 Three-phase milestone. Phase-01: config schema (`Tier`, `EscalationConfig`,
@@ -13,6 +13,40 @@ Three-phase milestone. Phase-01: config schema (`Tier`, `EscalationConfig`,
 `rexymcp calibrate LARGE|MEDIUM|SMALL` CLI command. Phase-02: telemetry
 fields (`tier`, `doc_level`, `escalation_count`, `architect_*_tokens`).
 Phase-03: dashboard cost breakdown (Architect cost line, honest net savings).
+
+**M20 phase-02 — drafted** (2026-06-16): the tier/cost telemetry substrate.
+A new nested `TierTelemetry` struct (`tier`/`doc_level`/`escalation_count`/
+`architect_input_tokens`/`architect_output_tokens`) added to `PhaseRun` as a
+single `#[serde(default)]` field — the `ContextEfficiency` nesting precedent, so
+the ~11 `PhaseRun` literal sites each take **one** `Default::default()` line, not
+five. Only `tier` is populated (threaded `cfg.executor.tier` → new
+`PhaseInput.tier` → `emit_phase_run`, the `project_id`/`milestone_id` path); the
+other four default to 0/None until M21/M22. Plus a new append-only
+`EscalationEvent` record + `ESCALATION_RECORD_TAG` + `append_escalation`/
+`read_escalations`, mirroring the M18 `PhaseReview` discriminated-record
+substrate (no producer until M21). **Pre-injected:** the `ContextEfficiency`
+nesting + `PhaseReview` discriminator worked examples quoted inline; the M18
+bug-01-1 guard-test lesson (pin the `record` filter as load-bearing, not just
+structural mismatch); the grep'd complete list of `PhaseRun`/`PhaseInput` literal
+sites + the compiler-guided E0063 traversal recipe (M12 phase-06b precedent for
+clean multi-site additive churn); an explicit no-`#[allow(dead_code)]` guard
+(executor **lib** crate, unlike M18 bug-03-2's `mcp` binary crate) — file a
+blocker instead. End-to-end is a `run_phase_with` mock-client test asserting the
+configured tier lands in the written `phase_runs.jsonl`. No new dep, no
+`Cargo.toml`/`architecture.md` edit. ~320 lines, size=m.
+
+**M20 phase-01 — done** (2026-06-16, **approved_first_try**, executor Claude Code
+direct). Config schema (`Tier`, `EscalationConfig`, `ArchitectConfig`,
+`known_model_rates`) added to `executor/src/config.rs`; the known-model rate
+registry moved to the executor lib and `DashboardConfig`/`ArchitectConfig` share
+it via `effective_rates()`; `ExecutorConfig.tier` + `BudgetConfig.gate_retries` +
+resolution helpers; new `rexymcp calibrate LARGE|MEDIUM|SMALL` CLI
+(`mcp/src/calibrate.rs`, `toml_edit` write-back) + `Calibrate` clap variant. 799
+passed. **Two spec-defect observations from review, both fixed in follow-up
+commit `4b375b3`:** (1) `[architect]`/`[escalation]` emitted as floating inline
+tables above `[executor]` rather than `[section]` headers; (2) `gate_retries`
+persisted on re-calibrate *to* LARGE (only skipped-on-write, never removed) —
+fixed to write proper TOML headers and strip stale `gate_retries` on LARGE.
 
 **M19 — Structural Gate Enforcement — done** (2026-06-16, **approved_after_1**,
 executor Qwen/Qwen3.6-27B-FP8 on re-dispatch; original implementation Claude
