@@ -451,8 +451,9 @@ improvising, and still halts at milestone boundaries.
 **Route opencode-hostile content to direct execution.** Some content classes
 reliably corrupt the opencode executor's tool-call serializer — notably
 close-tag-shaped text (`<tool_call>`/`</function>`), markdown fences, and escaped
-quotes inside JSON string literals inside Rust source (see AGENTS.md § "Writing
-files when the opencode tool harness fails"). When a phase's deliverable is
+quotes inside JSON string literals inside Rust source (see the archived
+`docs/dev/archive/AGENTS.md` § "Writing files when the opencode tool harness
+fails"). When a phase's deliverable is
 saturated with that content — the M3 forgiving parser was the canonical case
 (5/5 phases) — dispatching to opencode wastes a round of corruption-then-recovery.
 The architect should **pre-route such a phase to direct execution** (the principal

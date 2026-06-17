@@ -1,8 +1,8 @@
 # NEXT — Active phase pointer
 
-Single source of truth for which phase the executor works on next. The principal
-engineer (architect) maintains this file. The executor reads it first
-(AGENTS.md § "First action") and works the phase it points at.
+Single source of truth for which phase is active. The principal engineer
+(architect) maintains this file; every session reads it (per `REXYMCP.md`
+§ "Read these first") to know which phase to work next.
 
 **Active phase:** none — **M21 closed** (1/1 phase approved, 2026-06-16). The next
 milestone is a human-gated boundary: the user kicks off M22 explicitly.
