@@ -2,7 +2,7 @@
 
 **Let Claude be the *Architect*. Let a local model do the *execution*.**
 
-rexyMCP is named after Rexy, my cattle dog. Rexy lives to *herd* — to keep the
+rexyMCP is named after Rexy, my cattle dog. Rexy lives to herd — to keep the
 flock moving in one direction, to circle back the stragglers, to never let the
 work wander off. **rexyMCP herds your local LLM the same way.** Claude Code is
 the *Architect*: it decomposes your idea into a product plan with milestones and
@@ -10,10 +10,10 @@ spec'd phases, then reviews every result. A local model is the *Executor*: it
 writes the code, one bounded phase at a time, on an OpenAI-compatible endpoint
 (vLLM, LM Studio, Ollama). And in between — keeping the Executor on task,
 in-bounds, and honest, turn after turn — runs rexyMCP: parsing its messy tool
-calls, catching its loops before they burn the budget, feeding compiler errors
-straight back into the next turn, and refusing to let it touch anything outside
-the repo. The Architect thinks; the Executor types; **rexyMCP keeps the herd
-together.**
+calls, catching its loops before they spiral out of control, feeding compiler
+errors straight back into the next turn, and refusing to let the LLM touch anything
+outside the repo. The Architect designs; the Executor codes; **rexyMCP keeps the
+herd together and moving toward the goal.**
 
 Two things make rexyMCP stand out:
 
