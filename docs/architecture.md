@@ -918,3 +918,10 @@ The project plan. Each entry becomes a milestone with its own
       the cloud baseline. `ScopeCosts` struct introduced in
       `mcp/src/dashboard/panels.rs`; `BudgetRates` gains
       `architect_input_per_mtok` / `architect_output_per_mtok`.
+
+21. **M21 — Task Coverage Gate** *(in-progress)*. Close the `false_completion`
+    blind spot on docs/no-code phases: add a task-coverage check to the
+    `NoToolCall` completion arm, symmetric with M19's gate-retry loop. When
+    tasks are seeded and any remain incomplete at `NoToolCall` time, inject a
+    named-task list and loop. Single phase, ~120-line change in
+    `executor/src/agent/command.rs` and `executor/src/agent/mod.rs`.

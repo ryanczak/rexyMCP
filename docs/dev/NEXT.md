@@ -4,11 +4,33 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** none — **M20 closed** (4/4 phases done, 2026-06-16). Milestone
-boundary: human gate. The next milestone (M21) is not kicked off; await user
-sign-off + a talk-through of the two pending `false_completion` calibration
-folds (see the M20 retrospective). Run `/rexymcp:architect` to design M21 once
-the user decides.
+**Active phase:** M21 phase-01 —
+`docs/dev/milestones/M21-task-coverage-gate/phase-01-task-coverage-gate.md`
+
+**M21 — Task Coverage Gate** (kicked off 2026-06-16). Single-phase milestone.
+Closes the `false_completion` blind spot on docs/no-code phases: a task-coverage
+check in the `NoToolCall` arm of `execute_phase`, symmetric with M19's gate-retry
+loop. When tasks are seeded and any remain incomplete at `NoToolCall` time, inject
+a named-task list and loop. ~120 lines across `command.rs` + `mod.rs`; no
+`LoopDeps` struct change, no blast radius.
+
+**M21 phase-01 — drafted** (2026-06-16): two files, two tasks each — (1)
+`command.rs`: new `task_coverage_feedback` helper + 5 unit tests (mirror of
+`gate_failure_feedback` shape); (2) `mod.rs`: `task_states` shadow map
+initialised from `seeded`, updated in the existing task-metadata block, checked
+after the gate-retry block. Pre-injected: exact before-text for all three
+insertion points (line refs verified at draft time), the gate-retry block quoted
+verbatim as the shape to replicate, `TaskState` is `Copy` (safe to use after
+`SessionEvent::TaskUpdate { ..., state }`), two integration tests modelled
+exactly after `gate_failure_loops_until_gates_pass` /
+`gate_failure_at_turn_cap_is_budget_exceeded`. Backward-compat pin:
+`seeded.is_empty()` → `task_coverage_feedback` returns `None` → all pre-existing
+tests pass unmodified.
+
+**M20 closed** (4/4 phases done, 2026-06-16). M20 phase-04 approval triggered
+M21 design immediately (no prior milestone-boundary stop needed — the
+false_completion gap was identified during M20 review and the user asked to
+address it now).
 
 **M20 phase-04 — done** (2026-06-16, **approved_after_1**, executor
 Qwen/Qwen3.6-27B-FP8). Docs-sync closeout: `architecture.md` (7 passages) +
