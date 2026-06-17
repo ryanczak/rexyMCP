@@ -187,14 +187,14 @@ pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.compaction_count > 0 {
         let before = summary.compaction_tokens_before;
         let after = summary.compaction_tokens_after;
-        lines.push(Line::from(format!("Events: {}", summary.compaction_count)));
+        lines.push(Line::from(format!("Compactions: {}", summary.compaction_count)));
         lines.push(Line::from(format!(
-            "Freed: {} tokens",
+            "  Freed: {} tokens",
             before.saturating_sub(after)
         )));
         if after != 0 {
             let ratio = before as f64 / after as f64;
-            lines.push(Line::from(format!("Ratio: {ratio:.1}x")));
+            lines.push(Line::from(format!("  Ratio: {ratio:.1}x")));
         }
     }
     if summary.output_filtered_count > 0 {
@@ -205,7 +205,7 @@ pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     }
     if summary.read_evicted_count > 0 {
         lines.push(Line::from(format!(
-            "Evict: {} reads, {} freed",
+            "Evictions: {} reads, {} freed",
             summary.read_evicted_count, summary.read_evicted_tokens
         )));
     }
@@ -1600,7 +1600,7 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("Events: 2")));
+        assert!(text.iter().any(|s| s.contains("Compactions: 2")));
         assert!(text.iter().any(|s| s.contains("Freed: 400")));
         assert!(text.iter().any(|s| s.contains("1.7x")));
     }
@@ -1615,7 +1615,7 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("Events: 1")));
+        assert!(text.iter().any(|s| s.contains("Compactions: 1")));
         assert!(text.iter().any(|s| s.contains("Freed: 500")));
         assert!(!text.iter().any(|s| s.contains("x")));
     }
@@ -1644,7 +1644,7 @@ mod tests {
         };
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("Evict: 2 reads")));
+        assert!(text.iter().any(|s| s.contains("Evictions: 2 reads")));
         assert!(text.iter().any(|s| s.contains("Dedupe: 1 reads")));
     }
 
@@ -1659,7 +1659,7 @@ mod tests {
         let lines = reclaim_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(!text.iter().any(|s| s.contains("Filter:")));
-        assert!(!text.iter().any(|s| s.contains("Evict:")));
+        assert!(!text.iter().any(|s| s.contains("Evictions:")));
         assert!(!text.iter().any(|s| s.contains("Dedupe:")));
     }
 
