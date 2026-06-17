@@ -930,3 +930,18 @@ The project plan. Each entry becomes a milestone with its own
     tasks are seeded and any remain incomplete at `NoToolCall` time, inject a
     named-task list and loop. Single phase, ~120-line change in
     `executor/src/agent/command.rs` and `executor/src/agent/mod.rs`.
+22. **M22 — Bookkeeping-Loop Resilience** *(planning)*. Close four executor
+    loop-failure modes diagnosed from a live netviz e2e run where a MEDIUM-tier
+    model wrote correct code but could not reliably finish the bookkeeping tail:
+    (A) an empty-output death spiral — a blank completion was treated as a
+    completion attempt and re-ran the gates ~147× to the turn cap; (B) bogus task
+    seeding — a prose numbered algorithm in `## Spec` seeded duplicate-titled
+    tasks that drove an `update_task` fixation loop; and (C) a self-revert — `git
+    checkout <edited-file>` discarded the model's own green work. Five phases,
+    each structural and additive: empty-completion routing + a governor
+    empty-completion stall; a stuck-gate-feedback stall; seeder precision
+    (bold-name-required list tasks + de-dup); `update_task` results that echo the
+    remaining incomplete ids; and a working-set-aware self-revert refusal. Same
+    turn-cycle seam M19/M21 extended. (Server-authored bookkeeping — moving who
+    authors the Status flip / Update Log — is deferred pending a contract
+    discussion.)

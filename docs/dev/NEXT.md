@@ -4,8 +4,59 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** none — **M21 closed** (1/1 phase approved, 2026-06-16). The next
-milestone is a human-gated boundary: the user kicks off M22 explicitly.
+**Active phase:** M22 phase-01 — **Empty-completion routing + governor stall**
+([phase-01-empty-completion-stall.md](milestones/M22-bookkeeping-resilience/phase-01-empty-completion-stall.md)).
+Drafted 2026-06-17, status `todo`. Dispatch with `/rexymcp:dispatch phase-01`.
+
+**📌 M22 — Bookkeeping-Loop Resilience kicked off (2026-06-17, with the user).**
+Diagnosed from a live netviz e2e run (`google/gemma-4-26b-a4b-qat`, MEDIUM) where
+the executor reliably wrote correct code (all four gates green every failing
+session) but could not finish the bookkeeping loop. Three recurring mechanisms,
+each invisible to the existing guardrails, traced from the session logs in
+`/home/matt/src/netviz/.rexymcp/sessions/`:
+- **Empty-output death spiral** (`session-phase-04-6a32f806`, budget_exceeded@200):
+  after a `write_file` null-args error the model emitted **147 consecutive empty
+  completions**; the `NoToolCall` guard at `mod.rs:516` only catches a
+  `<think>`-only completion (requires `</think>`), so a blank `raw:""` fell through
+  and was treated as a completion attempt — re-running the gates, tripping
+  `task_coverage_retry`, and re-injecting identical feedback to the turn cap. The
+  `IdenticalToolCallRepetition` stall was blind to it (empty completions produce no
+  tool call, so `recent_tool_calls` never grew).
+- **Bogus seeding → update_task fixation** (`session-phase-04-6a32f237`,
+  hard_fail@26): `seed_from_spec` parsed a `#### update()` prose algorithm
+  (`1. If packet.tcp…`, `2. …`) as tasks with **byte-identical truncated titles**;
+  the model couldn't tell them apart and re-marked task 1 until
+  `IdenticalToolCallRepetition` fired.
+- **Self-revert** (same session): `git checkout src/flow-table.test.ts` discarded
+  the model's own green edit; `bash_classify` blocks the wholesale forms (`git
+  reset --hard`, `git checkout .`) but not a single-file restore of an edited file.
+
+**Five phases drafted up front** (user asked for the A+B cluster then C7; dispatch
+in order, review-gate each). Milestone
+[README](milestones/M22-bookkeeping-resilience/README.md) + `architecture.md`
+§Status #22 added.
+- **phase-01 (A1+A2):** broaden the `NoToolCall` empty guard to route a truly-empty
+  completion to the recovery nudge (not a completion attempt), + a governor
+  `EmptyCompletionStall` (consecutive-empty counter → `hard_fail`, default 3).
+- **phase-02 (A3):** additive peek-guard above the three gate blocks — the same gate
+  feedback re-injected ≥ K times (default 5) with no state change → `hard_fail`
+  (`StuckGateFeedback`). Three existing blocks untouched.
+- **phase-03 (B4+B5):** seeder precision — the `N.` list form **requires a bold
+  name** (matches the documented `WORKFLOW.md` § Spec convention; excludes prose
+  algorithm lines and removes title truncation), + de-dup seeded tasks by id and
+  title. **Design fork resolved with the user (2026-06-17):** bold-required over
+  depth-gating — convention-aligned, at the cost of updating 3 existing tests that
+  pinned the old bare-item leniency.
+- **phase-04 (B6):** `update_task` result echoes the still-incomplete ids and flags a
+  redundant re-mark; metadata shape unchanged (loop shadow intact).
+- **phase-05 (C7):** working-set-aware `destructive_restore_refusal` mirroring
+  `read_before_edit_refusal` — refuse `git checkout/restore <path>` when `<path>` is
+  in `pre_edit_content` (edited this session).
+
+**Deferred (D8/D9), to discuss before authoring:** pre-filled / server-authored
+bookkeeping (rexyMCP writing the Status flip + a baseline Update Log entry itself
+from data it already holds). This moves a responsibility from executor to server
+and touches the executor contract — a design conversation, not a quiet change.
 
 **M21 — Task Coverage Gate — done** (2026-06-16, **approved_after_1**, executor
 Qwen/Qwen3.6-27B-FP8). Single-phase milestone. Closed the `false_completion`
