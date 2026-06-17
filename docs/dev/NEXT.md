@@ -4,9 +4,28 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** M22 phase-01 — **Empty-completion routing + governor stall**
-([phase-01-empty-completion-stall.md](milestones/M22-bookkeeping-resilience/phase-01-empty-completion-stall.md)).
-Drafted 2026-06-17, status `todo`. Dispatch with `/rexymcp:dispatch phase-01`.
+**Active phase:** M22 phase-02 — **Stuck gate-feedback stall**
+([phase-02-stuck-gate-feedback-stall.md](milestones/M22-bookkeeping-resilience/phase-02-stuck-gate-feedback-stall.md)).
+Already drafted, status `todo`. Dispatch with `/rexymcp:dispatch phase-02` when
+ready (it depends on phase-01, now landed).
+
+**M22 phase-01 — done** (2026-06-17, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `e618496` feat). A1 broadened the `NoToolCall`
+empty guard to `post_think.trim().is_empty()` (a blank `raw:""` now routes to the
+parse-failure recovery nudge instead of the gate/completion path); A2 added a
+`consecutive_empty_completions` counter + `HardFailSignal::EmptyCompletionStall`
+(pure `check_empty_completion_stall`, default threshold 3 in `GovernorConfig` +
+`ModelOverride`), emitted inline in the `NoToolCall` arm with two reset sites
+(gate fall-through + tool-dispatch). Clean 98-turn first-try; all four gates green
+on independent re-run (825 executor + 431 mcp). The 2-line `mcp/src/runner.rs`
+test touch is a mechanically-required struct-literal consequence of the additive
+`ModelOverride` field (the executor's "not `#[serde(default)]`" rationale was
+imprecise — the struct carries struct-level `#[serde(default)]`; the edit is a
+Rust struct-literal requirement, not a serde one). **Calibration (1st-occurrence,
+no fold):** `single_empty_completion_then_recovers_does_not_hard_fail` scripts only
+one empty (below threshold 3), so it weakly covers the reset path — a spec-shape
+limitation (architect-authored), not an executor fault; a future interleaved-empty
+test would pin the reset.
 
 **📌 M22 — Bookkeeping-Loop Resilience kicked off (2026-06-17, with the user).**
 Diagnosed from a live netviz e2e run (`google/gemma-4-26b-a4b-qat`, MEDIUM) where

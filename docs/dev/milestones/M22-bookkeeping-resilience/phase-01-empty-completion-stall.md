@@ -1,7 +1,7 @@
 # Phase 01: Empty-completion routing + governor stall
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** review
+**Status:** done
 **Depends on:** none (extends the M19/M21 `NoToolCall` arm)
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -426,3 +426,28 @@ self.governor.empty_completion_threshold = v;
 **Notes for review:**
 - `mcp/src/runner.rs` was edited to add `empty_completion_threshold: None` to two `ModelOverride` struct literals in pre-existing tests. This was required because the new field is not `#[serde(default)]` on `ModelOverride` — it is an `Option<usize>` that must be named in struct initializers. This is a mechanical fix, not a design change.
 - The spec says `consecutive_count: threshold as u32` in the signal (not the actual count). This matches the pattern of other signals that report the threshold that was hit, not the raw count.
+
+### Review verdict — 2026-06-17
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. The 2-line `mcp/src/runner.rs` test touch (naming
+  the new `ModelOverride` field in two struct literals) is a mechanically-required
+  Rust struct-literal consequence of the additive field, flagged transparently in
+  Notes-for-review and consistent with the three sibling override fields. (Note:
+  the executor's stated reason was imprecise — `ModelOverride` *does* carry
+  struct-level `#[serde(default)]`, so TOML parsing already defaults the field to
+  `None`; the runner.rs edit is needed because Rust struct literals must name every
+  field, not because of serde. The fix itself is correct and minimal.)
+- **Calibration:** A1 guard broadened correctly (`post_think.trim().is_empty()`),
+  stall emission mirrors the Step-7 shape, both reset sites placed correctly; all
+  four gates green on independent re-run (825 executor + 431 mcp). One
+  test-strength note (data, no fold): `single_empty_completion_then_recovers_does_not_hard_fail`
+  scripts only **one** empty completion (below the default threshold 3), so it
+  verifies "one stray empty + recover → Complete" but cannot discriminate
+  reset-present from reset-absent — the reset is correct by inspection but only
+  weakly covered. This is a spec-prescribed test shape (architect-authored), not an
+  executor fault. A future tightening could interleave empties
+  (empty, empty, tool-call, empty, empty → never 3 consecutive → Complete) to pin
+  the reset; tracked as a possible follow-up, not a bounce.
