@@ -134,6 +134,14 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     } else {
         Vec::new()
     };
+
+    // Task-coverage shadow: tracks live state as update_task calls land.
+    // All Pending at start; updated in the tool-result block below.
+    // Only consulted when `task_tracking && !seeded.is_empty()`.
+    let mut task_states: HashMap<String, crate::store::sessions::event::TaskState> = seeded
+        .iter()
+        .map(|t| (t.id.clone(), t.state))
+        .collect();
     let system = format!(
         "{}{}{}",
         prompt::datetime_header((deps.clock)()),
@@ -625,6 +633,57 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         }
                         continue;
                     }
+                    // Task-coverage gate: if tasks were seeded and any are still incomplete,
+                    // inject named feedback and loop — symmetric with the gate-retry above.
+                    if let Some(feedback) = command::task_coverage_feedback(&seeded, &task_states) {
+                        log_event(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            turns,
+                            SessionEvent::Progress {
+                                turn: turns,
+                                stage: "task_coverage_retry".to_string(),
+                                files_changed: vec![],
+                                message: feedback.clone(),
+                            },
+                        );
+                        messages.push(user_text(&feedback, turns));
+                        if turns >= deps.max_turns {
+                            log_session_end(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                "budget_exceeded",
+                                turns,
+                            );
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "budget_exceeded",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "budget_exceeded",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(budget_exceeded_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                turns_line(deps.max_turns),
+                                artifacts,
+                            ));
+                        }
+                        continue;
+                    }
                     // All configured gates passed — this is a true completion.
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
@@ -827,6 +886,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     state,
                 },
             );
+            task_states.insert(id.to_string(), state);
         }
 
         // Record the working set: a read makes a file patch-eligible; a successful

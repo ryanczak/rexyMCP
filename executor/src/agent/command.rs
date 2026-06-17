@@ -60,6 +60,9 @@ use crate::config::CommandConfig;
 use crate::phase::CommandOutputs;
 use crate::store::telemetry::Gates;
 
+use crate::store::sessions::event::TaskState;
+use std::collections::HashMap;
+
 use super::progress::{EmitCtx, emit_progress};
 
 /// Tail cap on each captured final-command-set output.
@@ -139,6 +142,43 @@ pub(super) fn gate_failure_feedback(gates: &Gates, outputs: &CommandOutputs) -> 
     ))
 }
 
+/// Task-coverage gate symmetric with `gate_failure_feedback`. Returns `Some(msg)`
+/// when `seeded` is non-empty and any task's current state is not `Done`; `None`
+/// otherwise. The `states` map is kept in sync by the loop as `update_task` calls
+/// land — an absent key means the task was never touched (treated as Pending).
+pub(super) fn task_coverage_feedback(
+    seeded: &[super::tasks::Task],
+    states: &HashMap<String, TaskState>,
+) -> Option<String> {
+    if seeded.is_empty() {
+        return None;
+    }
+    let incomplete: Vec<&super::tasks::Task> = seeded
+        .iter()
+        .filter(|t| states.get(&t.id) != Some(&TaskState::Done))
+        .collect();
+    if incomplete.is_empty() {
+        return None;
+    }
+    let list = incomplete
+        .iter()
+        .map(|t| {
+            let label = match states.get(&t.id) {
+                Some(TaskState::Active) => "active",
+                _ => "pending",
+            };
+            format!("  Task {} ({}): {}", t.id, t.title, label)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!(
+        "Pre-completion task check: the following spec tasks are not yet marked done:\n{}\n\n\
+         Call update_task(id, state=\"done\") for each completed task, \
+         then re-signal completion.",
+        list
+    ))
+}
+
 pub(super) async fn run_post_write_hooks(
     runner: &dyn CommandRunner,
     commands: &CommandConfig,
@@ -178,8 +218,11 @@ fn tail(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::tasks::Task;
     use crate::phase::CommandOutputs;
+    use crate::store::sessions::event::TaskState;
     use crate::store::telemetry::Gates;
+    use std::collections::HashMap;
 
     fn outputs_with(format: &str, build: &str, lint: &str, test: &str) -> CommandOutputs {
         CommandOutputs {
@@ -223,5 +266,65 @@ mod tests {
         assert!(msg.contains("build errors"), "missing BUILD output");
         assert!(!msg.contains("LINT"), "LINT should not appear (it passed)");
         assert!(msg.contains("TEST failed"), "missing TEST section");
+    }
+
+    fn task(id: &str, title: &str) -> Task {
+        Task {
+            id: id.to_string(),
+            title: title.to_string(),
+            state: TaskState::Pending,
+        }
+    }
+
+    #[test]
+    fn task_coverage_feedback_returns_none_when_no_tasks_seeded() {
+        assert!(task_coverage_feedback(&[], &HashMap::new()).is_none());
+    }
+
+    #[test]
+    fn task_coverage_feedback_returns_none_when_all_tasks_done() {
+        let seeded = vec![task("1", "Foo"), task("2", "Bar")];
+        let states = HashMap::from([
+            ("1".to_string(), TaskState::Done),
+            ("2".to_string(), TaskState::Done),
+        ]);
+        assert!(task_coverage_feedback(&seeded, &states).is_none());
+    }
+
+    #[test]
+    fn task_coverage_feedback_lists_pending_task_by_id_and_title() {
+        let seeded = vec![task("1", "Update the status header")];
+        let states = HashMap::new(); // absent = pending
+        let msg = task_coverage_feedback(&seeded, &states).expect("should be Some");
+        assert!(
+            msg.contains("Task 1 (Update the status header): pending"),
+            "expected pending task listing, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn task_coverage_feedback_labels_active_task() {
+        let seeded = vec![task("3", "Wire the config")];
+        let states = HashMap::from([("3".to_string(), TaskState::Active)]);
+        let msg = task_coverage_feedback(&seeded, &states).expect("should be Some");
+        assert!(
+            msg.contains("Task 3 (Wire the config): active"),
+            "expected active label, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn task_coverage_feedback_omits_done_tasks_from_list() {
+        let seeded = vec![task("1", "Done task"), task("2", "Pending task")];
+        let states = HashMap::from([("1".to_string(), TaskState::Done)]);
+        let msg = task_coverage_feedback(&seeded, &states).expect("should be Some");
+        assert!(
+            !msg.contains("Done task"),
+            "done task must not appear: {msg}"
+        );
+        assert!(
+            msg.contains("Pending task"),
+            "pending task must appear: {msg}"
+        );
     }
 }

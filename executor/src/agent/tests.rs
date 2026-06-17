@@ -4064,3 +4064,74 @@ async fn gate_failure_at_turn_cap_is_budget_exceeded() {
 
     assert_eq!(result.status, PhaseStatus::BudgetExceeded);
 }
+
+#[tokio::test]
+async fn task_coverage_check_loops_until_all_tasks_done() {
+    use crate::tools::update_task as make_update_task;
+
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+
+    // Phase doc with one seeded task.
+    let phase_doc = "## Spec\n\n1. **Foo** — do the thing.\n";
+    let seeded_tasks = tasks::seed_from_spec(phase_doc);
+
+    // Registry with update_task so the tool call actually resolves.
+    let mut registry = registry_over(scope);
+    registry.register(make_update_task(seeded_tasks));
+
+    let commands = all_commands_configured();
+    // Turn 1: premature complete (no update_task call).
+    // Turn 2: update_task → marks task 1 done.
+    // Turn 3: true complete (all tasks done).
+    let client = MockAiClientScript::new(vec![
+        vec![token("All done.")],
+        vec![native("update_task", json!({"id": "1", "state": "done"}))],
+        vec![token("All done.")],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let mut inp = input();
+    inp.phase_doc = phase_doc.to_string();
+
+    let mut d = deps(&client, &registry, &budget, 8, dir.path());
+    d.commands = &commands;
+    d.runner = &NoopRunner; // gates always pass
+
+    let result = execute_phase(&inp, d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    // Three model calls: premature complete → task coverage retry turn →
+    // update_task turn → true complete.
+    assert_eq!(client.calls().len(), 3);
+}
+
+#[tokio::test]
+async fn task_coverage_check_at_turn_cap_is_budget_exceeded() {
+    use crate::tools::update_task as make_update_task;
+
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+
+    let phase_doc = "## Spec\n\n1. **Foo** — do the thing.\n";
+    let seeded_tasks = tasks::seed_from_spec(phase_doc);
+
+    let mut registry = registry_over(scope);
+    registry.register(make_update_task(seeded_tasks));
+
+    let commands = all_commands_configured();
+    // Only one model turn: premature complete at the turn cap.
+    let client = MockAiClientScript::new(vec![vec![token("All done.")]]);
+    let budget = Budget::new(1_000_000);
+
+    let mut inp = input();
+    inp.phase_doc = phase_doc.to_string();
+
+    let mut d = deps(&client, &registry, &budget, 1, dir.path()); // max_turns = 1
+    d.commands = &commands;
+    d.runner = &NoopRunner;
+
+    let result = execute_phase(&inp, d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+}

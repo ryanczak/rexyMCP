@@ -49,7 +49,7 @@ loop — exactly as the gate check does.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Task-coverage gate in the NoToolCall completion arm ([phase-01-task-coverage-gate.md](phase-01-task-coverage-gate.md)) | todo |
+| 01 | Task-coverage gate in the NoToolCall completion arm ([phase-01-task-coverage-gate.md](phase-01-task-coverage-gate.md)) | review |
 
 ## Notes
 
