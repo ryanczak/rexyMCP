@@ -124,14 +124,14 @@ pub(crate) fn render_dashboard(
     }
 
     // Outer split: fixed-height header band + filling body.
-    // Height 11 = 2 border rows + up to 9 Session content rows (Milestone, Phase,
-    // Session, Model, State, Duration, last-update, Turn/stage, spinner). Budget and
-    // Reclaim share this height; the body (Activity · Tasks/Files) fills the rest.
+    // Height 11 = 2 border rows + 9 content rows. The 9 content rows is the tallest
+    // panel's exact need: Session = Milestone/Phase/Session/Model/State/Duration/
+    // last-update/Turn-stage/spinner; Budget = Tokens-in/out + Tok/s (3) plus the
+    // savings block (header + Baseline/Executor/Architect/Net + Assists = 6). Budget
+    // and Context share this height; the body (Activity · Tasks/Files) fills the rest.
     let total_wrapped;
-    // Height 13 = 2 border rows + up to 11 Budget content rows (savings block now
-    // 6 lines: header + Baseline/Executor/Architect/Net + Assists).
     let [header, body] =
-        Layout::vertical([Constraint::Length(13), Constraint::Min(0)]).areas::<2>(area);
+        Layout::vertical([Constraint::Length(11), Constraint::Min(0)]).areas::<2>(area);
 
     // Header band: Session · Budget · Compactions.
     // Budget uses Min(52) so the combined tok/s line
@@ -258,7 +258,11 @@ pub(crate) fn render_dashboard(
         ),
         tasks_area,
     );
-    frame.render_widget(panel(" Files ", files_lines(&data.summary)), files_area);
+    let files_inner_width = files_area.width.saturating_sub(2) as usize;
+    frame.render_widget(
+        panel(" Files ", files_lines(&data.summary, files_inner_width)),
+        files_area,
+    );
     total_wrapped
 }
 

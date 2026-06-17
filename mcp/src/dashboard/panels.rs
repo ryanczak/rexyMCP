@@ -7,13 +7,6 @@ use ratatui::{
 use crate::status::{self, StatusSummary};
 use rexymcp_executor::store::sessions::event::TaskState;
 
-/// Total usable content width for a Files panel line (indent + path + space +
-/// numstat). Conservative for the 28%-wide panel at typical terminal widths.
-/// The path budget is computed per-entry as `FILE_LINE_MAX - 2 - 1 - numstat_width`,
-/// so the total rendered line is always ≤ `FILE_LINE_MAX + 2` chars regardless of
-/// how large the added/removed counts are.
-const FILE_LINE_MAX: usize = 28;
-
 /// Token costs for one budget scope (Session / Milestone / Project).
 /// `executor_*` are local-model tokens (cost = $0.00 until a local rate is
 /// configured; future: paid OpenRouter/provider rates). `architect_*` are summed
@@ -247,24 +240,27 @@ pub(crate) fn milestone_line(name: &str, width: usize) -> Line<'static> {
     Line::from(format!("{LABEL}{}", truncate_title(name, budget)))
 }
 
-/// Done/total progress gauge for the Tasks panel — a filled bar plus
-/// `done/total (pct%)`, colored by completion (progress-oriented: green = near/at
-/// done, neutral grey = no progress). Matches the Budget context-gauge *style*
-/// (a single colored text `Line`), not a ratatui `Gauge` widget.
+/// Done/total progress gauge — the Tasks panel's "status bar". A `Tasks` label, a
+/// two-tone bar (bright pct-colored fill / dim track) bracketed by thin edges with
+/// a `▏` fill-head marker, the `done/total` fraction, and a right-aligned percent.
+/// The bar fills the available width so the line spans the whole panel.
+///
+/// Layout (cells): `Tasks `(6) `▕`(1) fill+track(`bar`) `▏`(1) ` `(1) `done/total`
+/// `pad` `pct%`. `bar` and `pad` absorb all slack so the rendered line is exactly
+/// `width` cells whenever `width` is wide enough to hold the fixed parts.
 pub(crate) fn tasks_gauge_line(done: usize, total: usize, width: usize) -> Line<'static> {
+    const LABEL: &str = "Tasks ";
+    const CAPS: usize = 2; // "▕" + "▏"
+    const GAP: usize = 1; // space before the fraction
+    // Dim chrome so the fill and percent read as the foreground.
+    let chrome = Style::new().fg(Color::Rgb(150, 150, 150));
+    let track_style = Style::new().fg(Color::Rgb(90, 90, 90));
+
     let pct = if total == 0 {
         0
     } else {
         ((done as f64 / total as f64) * 100.0).round() as u32
     };
-    let suffix = format!(" {done}/{total} ({pct}%)");
-    let gauge_cells = width.saturating_sub(suffix.len()).max(1);
-    let filled = if total == 0 {
-        0
-    } else {
-        (((done as f64 / total as f64) * gauge_cells as f64).round() as usize).min(gauge_cells)
-    };
-    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(gauge_cells - filled));
     let color = if pct >= 80 {
         Color::Green
     } else if pct >= 40 {
@@ -272,10 +268,32 @@ pub(crate) fn tasks_gauge_line(done: usize, total: usize, width: usize) -> Line<
     } else {
         Color::Rgb(200, 200, 200)
     };
-    Line::from(Span::styled(
-        format!("{bar}{suffix}"),
-        Style::new().fg(color),
-    ))
+    let fill_style = Style::new().fg(color);
+
+    let frac = format!("{done}/{total}");
+    let pct_str = format!("{pct}%");
+    // Slack shared between the bar and the right-padding that pushes pct flush right.
+    let fixed = LABEL.chars().count() + CAPS + GAP + frac.chars().count() + pct_str.chars().count();
+    let flex = width.saturating_sub(fixed);
+    // Bar takes ~2/3 of the slack; the rest pads out to right-align the percent.
+    let bar_cells = (flex * 2 / 3).max(1).min(flex);
+    let pad = flex - bar_cells;
+    let filled = if total == 0 {
+        0
+    } else {
+        (((done as f64 / total as f64) * bar_cells as f64).round() as usize).min(bar_cells)
+    };
+
+    Line::from(vec![
+        Span::styled(LABEL, chrome),
+        Span::styled("▕", chrome),
+        Span::styled("█".repeat(filled), fill_style),
+        Span::styled("▏", chrome),
+        Span::styled("░".repeat(bar_cells - filled), track_style),
+        Span::raw(format!(" {frac}")),
+        Span::raw(" ".repeat(pad)),
+        Span::styled(pct_str, fill_style),
+    ])
 }
 
 /// Tasks panel: a done/total progress gauge over a list of named tasks, or a
@@ -345,7 +363,11 @@ fn scrolled_title(title: &str, max: usize, tick: Option<usize>) -> String {
 }
 
 /// Files panel: one line per changed file, or a placeholder when none.
-pub(crate) fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
+///
+/// `width` is the panel's inner width (border-excluded); each row's path budget
+/// is derived from it so filenames use all the space the panel offers without
+/// crowding the add/remove numstat columns.
+pub(crate) fn files_lines(summary: &StatusSummary, width: usize) -> Vec<Line<'static>> {
     if summary.files_changed.is_empty() {
         return vec![Line::from("(no files changed yet)")];
     }
@@ -356,9 +378,10 @@ pub(crate) fn files_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
             let added_str = format!("+{}", f.added);
             let removed_str = format!("-{}", f.removed);
             let numstat_width = added_str.len() + 1 + removed_str.len();
-            // Path budget = total line max − indent(2) − separator(1) − numstat.
-            // This guarantees the numstat is always visible regardless of its width.
-            let path_max = FILE_LINE_MAX.saturating_sub(1 + numstat_width);
+            // Path budget = panel width − indent(2) − separator(1) − numstat.
+            // This guarantees the numstat is always visible regardless of its width,
+            // while the path expands to fill whatever the panel allows.
+            let path_max = width.saturating_sub(3 + numstat_width);
             Line::from(vec![
                 Span::raw(format!("  {} ", trim_path_left(&f.path, path_max))),
                 Span::styled(added_str, Style::new().fg(Color::Green)),
@@ -512,9 +535,12 @@ pub(crate) fn savings_lines(
     let has_milestone = milestone_costs.is_some();
     let mile = milestone_costs.unwrap_or_default();
 
+    // Numeric columns are 10 wide in the 3-scope layout so the 9-char "Milestone"
+    // header keeps a leading space and doesn't abut "Session"; the 2-scope layout
+    // has no such collision and stays at 9.
     let header: Line<'static> = if has_milestone {
         Line::from(format!(
-            "{:<12}{:>9}{:>9}{:>9}",
+            "{:<12}{:>10}{:>10}{:>10}",
             "Savings", "Session", "Milestone", "Project"
         ))
     } else {
@@ -524,7 +550,7 @@ pub(crate) fn savings_lines(
     let make_row = |label: &str, v_sess: String, v_mile: String, v_proj: String| -> Line<'static> {
         if has_milestone {
             Line::from(format!(
-                "  {:<10}{:>9}{:>9}{:>9}",
+                "  {:<10}{:>10}{:>10}{:>10}",
                 label, v_sess, v_mile, v_proj
             ))
         } else {
@@ -951,7 +977,7 @@ mod tests {
             ],
             ..StatusSummary::default()
         };
-        let lines = files_lines(&summary);
+        let lines = files_lines(&summary, 40);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(
             text.iter()
@@ -966,14 +992,15 @@ mod tests {
     #[test]
     fn files_lines_empty_placeholder() {
         let summary = StatusSummary::default();
-        let lines = files_lines(&summary);
+        let lines = files_lines(&summary, 40);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(text.iter().any(|s| s.contains("no files changed")));
     }
 
     #[test]
     fn files_lines_trims_long_path_left() {
-        // Path longer than FILE_LINE_MAX; filename "chars.rs" is short enough to fit.
+        // Path longer than the panel width; filename "chars.rs" is short enough to fit.
+        const W: usize = 30;
         let long_path = "a/very/deeply/nested/path/that/is/definitely/longer/forty/chars.rs";
         let summary = StatusSummary {
             files_changed: vec![FileNumstat {
@@ -983,7 +1010,7 @@ mod tests {
             }],
             ..StatusSummary::default()
         };
-        let lines = files_lines(&summary);
+        let lines = files_lines(&summary, W);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert_eq!(text.len(), 1);
         let line = &text[0];
@@ -1001,22 +1028,23 @@ mod tests {
             !line.contains("nested"),
             "intermediate dirs must be trimmed: {line}"
         );
-        // Path portion fits within FILE_LINE_MAX.
+        // Path portion fits within the panel width.
         let path_part = line
             .strip_prefix("  ")
             .unwrap()
             .strip_suffix(" +5 -1")
             .unwrap();
         assert!(
-            path_part.chars().count() <= FILE_LINE_MAX,
-            "path portion must fit within FILE_LINE_MAX ({FILE_LINE_MAX}): '{path_part}' ({} chars)",
+            path_part.chars().count() <= W,
+            "path portion must fit within panel width ({W}): '{path_part}' ({} chars)",
             path_part.chars().count()
         );
     }
 
     #[test]
     fn files_lines_trims_long_filename_from_left() {
-        // Filename alone exceeds FILE_LINE_MAX — must be left-trimmed too.
+        // Filename alone exceeds the panel width — must be left-trimmed too.
+        const W: usize = 30;
         let long_filename = "a_very_long_filename_that_definitely_exceeds_the_budget_limit.rs";
         let path = format!("src/{long_filename}");
         let summary = StatusSummary {
@@ -1027,7 +1055,7 @@ mod tests {
             }],
             ..StatusSummary::default()
         };
-        let lines = files_lines(&summary);
+        let lines = files_lines(&summary, W);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let line = &text[0];
         // Numstat always visible.
@@ -1037,15 +1065,15 @@ mod tests {
         );
         // Path starts with '…' (was trimmed).
         assert!(line.starts_with("  …"), "must start with ellipsis: {line}");
-        // Path portion fits within FILE_LINE_MAX.
+        // Path portion fits within the panel width.
         let path_part = line
             .strip_prefix("  ")
             .unwrap()
             .strip_suffix(" +2 -0")
             .unwrap();
         assert!(
-            path_part.chars().count() <= FILE_LINE_MAX,
-            "path portion must fit within FILE_LINE_MAX ({FILE_LINE_MAX}): '{path_part}'"
+            path_part.chars().count() <= W,
+            "path portion must fit within panel width ({W}): '{path_part}'"
         );
     }
 
@@ -1059,7 +1087,7 @@ mod tests {
             }],
             ..StatusSummary::default()
         };
-        let lines = files_lines(&summary);
+        let lines = files_lines(&summary, 40);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert_eq!(text.len(), 1);
         assert!(
@@ -1248,20 +1276,23 @@ mod tests {
     fn tasks_gauge_line_full_is_green_and_complete() {
         let line = tasks_gauge_line(4, 4, 40);
         let text = format!("{line}");
+        assert!(text.contains("Tasks"), "should contain label: {text}");
         assert!(text.contains("4/4"), "should contain fraction: {text}");
         assert!(text.contains("100%"), "should contain 100%%: {text}");
+        // fixed=16, flex=24, bar_cells=16, fully filled.
         assert_eq!(
             text.matches('█').count(),
-            29,
-            "should have 29 filled cells: {text}"
+            16,
+            "should have 16 filled cells: {text}"
         );
         assert_eq!(
             text.matches('░').count(),
             0,
             "should have 0 empty cells: {text}"
         );
+        // spans[2] is the fill segment, colored by completion.
         assert_eq!(
-            line.spans[0].style.fg,
+            line.spans[2].style.fg,
             Some(Color::Green),
             "should be green"
         );
@@ -1273,18 +1304,19 @@ mod tests {
         let text = format!("{line}");
         assert!(text.contains("1/2"), "should contain fraction: {text}");
         assert!(text.contains("50%"), "should contain 50%%: {text}");
+        // fixed=15, flex=25, bar_cells=16, half filled.
         assert_eq!(
             text.matches('█').count(),
-            15,
-            "should have 15 filled cells: {text}"
+            8,
+            "should have 8 filled cells: {text}"
         );
         assert_eq!(
             text.matches('░').count(),
-            15,
-            "should have 15 empty cells: {text}"
+            8,
+            "should have 8 empty cells: {text}"
         );
         assert_eq!(
-            line.spans[0].style.fg,
+            line.spans[2].style.fg,
             Some(Color::Yellow),
             "should be yellow"
         );
@@ -1301,13 +1333,14 @@ mod tests {
             0,
             "should have 0 filled cells: {text}"
         );
+        // fixed=14, flex=26, bar_cells=17, none filled.
         assert_eq!(
             text.matches('░').count(),
-            31,
-            "should have 31 empty cells: {text}"
+            17,
+            "should have 17 empty cells: {text}"
         );
         assert_eq!(
-            line.spans[0].style.fg,
+            line.spans[2].style.fg,
             Some(Color::Rgb(200, 200, 200)),
             "should be grey"
         );
@@ -1322,10 +1355,11 @@ mod tests {
             text.contains("38%"),
             "should contain 38%% (round(37.5)): {text}"
         );
+        // fixed=15, flex=25, bar_cells=16, round(3/8*16)=6.
         assert_eq!(
             text.matches('█').count(),
-            11,
-            "should have 11 filled cells (round(11.25) at gauge_cells=30): {text}"
+            6,
+            "should have 6 filled cells: {text}"
         );
     }
 
@@ -1339,8 +1373,8 @@ mod tests {
 
     #[test]
     fn tasks_gauge_line_fills_panel_width() {
-        // pct = round(3/7*100) = 43; suffix = " 3/7 (43%)" = 10 chars;
-        // gauge_cells = 40-10 = 30; text.chars().count() = 30 + 10 = 40.
+        // pct=43; frac="3/7"(3), pct="43%"(3); fixed=15, flex=25 → bar+pad fill the
+        // remaining cells so the rendered line is exactly `width`.
         let width = 40;
         let line = tasks_gauge_line(3, 7, width);
         let text = format!("{line}");
