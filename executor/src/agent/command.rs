@@ -179,6 +179,59 @@ pub(super) fn task_coverage_feedback(
     ))
 }
 
+/// Bookkeeping gate: checks that the executor updated the phase doc's `**Status:**`
+/// line and wrote at least one Update Log entry before declaring done. Re-reads the
+/// phase doc from disk so in-session edits are visible. Returns `Some(msg)` when
+/// either check fails; `None` when both pass or when the file cannot be read
+/// (IO failures here are not a bookkeeping problem and should not block completion).
+pub(super) fn bookkeeping_feedback(phase_doc_path: &std::path::Path) -> Option<String> {
+    let content = match std::fs::read_to_string(phase_doc_path) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+
+    let mut issues: Vec<String> = Vec::new();
+
+    let status_still_open = content.lines().any(|line| {
+        let l = line.trim();
+        l.starts_with("**Status:**") && (l.contains("todo") || l.contains("in-progress"))
+    });
+    if status_still_open {
+        issues.push(
+            "The `**Status:**` line in the phase doc frontmatter still reads `todo` or \
+             `in-progress`. Change it to `review` before signalling completion \
+             (patch the phase doc's Status line)."
+                .to_string(),
+        );
+    }
+
+    let has_update_log_entry = content.contains("### Update");
+    if !has_update_log_entry {
+        issues.push(
+            "The phase doc's `## Update Log` has no entries. Fill in the completion \
+             entry using the `### Update — YYYY-MM-DD HH:MM (complete)` template from \
+             WORKFLOW.md, including: Summary, Acceptance criteria, Commands output, \
+             End-to-end verification, Files changed, New tests, Commits."
+                .to_string(),
+        );
+    }
+
+    if issues.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Pre-completion bookkeeping check failed — the phase is not done yet. \
+         Fix the items below, update the phase doc, then re-signal completion.\n\n{}",
+        issues
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{}. {}", i + 1, s))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    ))
+}
+
 pub(super) async fn run_post_write_hooks(
     runner: &dyn CommandRunner,
     commands: &CommandConfig,
@@ -326,5 +379,89 @@ mod tests {
             msg.contains("Pending task"),
             "pending task must appear: {msg}"
         );
+    }
+
+    fn write_phase_doc(dir: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+        let path = dir.path().join("phase-01-test.md");
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    const GOOD_DOC: &str = "\
+# Phase 01: Test\n\
+\n\
+**Status:** review\n\
+\n\
+## Update Log\n\
+\n\
+<!-- entries appended below this line -->\n\
+\n\
+### Update — 2026-06-17 10:00 (complete)\n\
+\n\
+**Summary:** done.\n";
+
+    #[test]
+    fn bookkeeping_feedback_returns_none_when_status_is_review_and_log_has_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_phase_doc(&dir, GOOD_DOC);
+        assert!(bookkeeping_feedback(&path).is_none());
+    }
+
+    #[test]
+    fn bookkeeping_feedback_flags_todo_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = GOOD_DOC.replace("**Status:** review", "**Status:** todo");
+        let path = write_phase_doc(&dir, &doc);
+        let msg = bookkeeping_feedback(&path).expect("should be Some");
+        assert!(msg.contains("Status"), "expected Status mention: {msg}");
+        assert!(msg.contains("review"), "expected review instruction: {msg}");
+    }
+
+    #[test]
+    fn bookkeeping_feedback_flags_in_progress_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = GOOD_DOC.replace("**Status:** review", "**Status:** in-progress");
+        let path = write_phase_doc(&dir, &doc);
+        let msg = bookkeeping_feedback(&path).expect("should be Some");
+        assert!(msg.contains("Status"), "expected Status mention: {msg}");
+    }
+
+    #[test]
+    fn bookkeeping_feedback_flags_missing_update_log_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = "\
+# Phase 01: Test\n\
+\n\
+**Status:** review\n\
+\n\
+## Update Log\n\
+\n\
+<!-- entries appended below this line -->\n";
+        let path = write_phase_doc(&dir, doc);
+        let msg = bookkeeping_feedback(&path).expect("should be Some");
+        assert!(msg.contains("Update Log"), "expected Update Log mention: {msg}");
+    }
+
+    #[test]
+    fn bookkeeping_feedback_flags_both_issues_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = "\
+# Phase 01: Test\n\
+\n\
+**Status:** todo\n\
+\n\
+## Update Log\n\
+\n\
+<!-- entries appended below this line -->\n";
+        let path = write_phase_doc(&dir, doc);
+        let msg = bookkeeping_feedback(&path).expect("should be Some");
+        assert!(msg.contains("Status"), "expected Status mention: {msg}");
+        assert!(msg.contains("Update Log"), "expected Update Log mention: {msg}");
+    }
+
+    #[test]
+    fn bookkeeping_feedback_returns_none_on_unreadable_file() {
+        let path = std::path::Path::new("/nonexistent/phase-01-test.md");
+        assert!(bookkeeping_feedback(path).is_none());
     }
 }

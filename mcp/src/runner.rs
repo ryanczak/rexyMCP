@@ -488,7 +488,10 @@ mod tests {
         let phase_doc_path = dir.path().join("phase-01-test.md");
         std::fs::write(
             &phase_doc_path,
-            "# Phase 01: Test\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\n",
+            "# Phase 01: Test\n\n**Status:** review\n\n**Tags:** language=rust, kind=test, size=s\
+             \n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\
+             \n\n## Update Log\n\n<!-- entries appended below this line -->\
+             \n\n### Update — 2026-01-01 00:00 (complete)\n\n**Summary:** done.\n",
         )
         .unwrap();
 

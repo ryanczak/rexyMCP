@@ -682,6 +682,59 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         }
                         continue;
                     }
+                    // Bookkeeping gate: phase doc status must be updated and
+                    // Update Log must have at least one entry.
+                    if let Some(feedback) =
+                        command::bookkeeping_feedback(std::path::Path::new(&input.phase_doc_path))
+                    {
+                        log_event(
+                            &log_handle,
+                            &redactor,
+                            deps.clock,
+                            turns,
+                            SessionEvent::Progress {
+                                turn: turns,
+                                stage: "bookkeeping_retry".to_string(),
+                                files_changed: vec![],
+                                message: feedback.clone(),
+                            },
+                        );
+                        messages.push(user_text(&feedback, turns));
+                        if turns >= deps.max_turns {
+                            log_session_end(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                "budget_exceeded",
+                                turns,
+                            );
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "budget_exceeded",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "budget_exceeded",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(budget_exceeded_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                turns_line(deps.max_turns),
+                                artifacts,
+                            ));
+                        }
+                        continue;
+                    }
                     // All configured gates passed — this is a true completion.
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
