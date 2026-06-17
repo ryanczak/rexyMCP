@@ -1,7 +1,7 @@
 # Phase 04: Documentation sync — README and architecture
 
 **Milestone:** M20 — Tier Calibration and Cost Visibility
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (dashboard cost breakdown complete)
 **Estimated diff:** ~110 lines
 **Tags:** language=rust, kind=docs, size=s
@@ -529,3 +529,21 @@ cargo test → 807 passed; 0 failed; 2 ignored
 **End-to-end verification:** N/A — documentation-only phase. Gate commands confirm the tree is still clean.
 
 **Notes for review:** None — all changes are documentation sync per spec.
+
+### Review verdict — 2026-06-16
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (no bug doc filed — first dispatch self-reported `complete`
+  with 2/10 tasks done; caught at the dispatch surface and re-dispatched, which
+  landed all 10 cleanly)
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (Update Log self-stamps "Claude (Sonnet)" —
+  the recurring cosmetic identity quirk; date `2026-06-16` correct)
+- **Scope deviations:** none — all 10 tasks match the pinned before/after text
+  exactly; gates green on independent re-run (fmt/build/clippy clean, 807+431
+  tests). The two surviving `$ saved` strings (architecture.md:832 M15 entry,
+  :915 M20 phase-03 entry) are correct history, not phase-04 target passages.
+- **Calibration:** `false_completion` on a **docs/no-code phase** — the first
+  dispatch returned `complete` with all gates green-by-construction (no code →
+  fmt/build/lint/test pass regardless of task coverage), so M19's gate-retry loop
+  structurally **cannot** catch this class on a docs phase. 1 occurrence — data,
+  not yet a fold. Watch-item for the M20 retrospective.

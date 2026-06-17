@@ -4,8 +4,21 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M20 phase-04 —
-`docs/dev/milestones/M20-tier-calibration/phase-04-documentation-sync.md`
+**Active phase:** none — **M20 closed** (4/4 phases done, 2026-06-16). Milestone
+boundary: human gate. The next milestone (M21) is not kicked off; await user
+sign-off + a talk-through of the two pending `false_completion` calibration
+folds (see the M20 retrospective). Run `/rexymcp:architect` to design M21 once
+the user decides.
+
+**M20 phase-04 — done** (2026-06-16, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8). Docs-sync closeout: `architecture.md` (7 passages) +
+`README.md` (3 passages) brought current with M19/M20. **First dispatch
+false_completion** — reported `complete` with 2/10 tasks done; all gates green
+*by construction* (docs phase, no code), so M19's gate-retry loop could not catch
+it. Re-dispatch landed all 10 verbatim against the pinned before/after text;
+gates green on independent re-run (807+431 tests). Commit `5c2ee5e`. The
+no-gate-coverage false_completion is a new calibration data point (1 occurrence,
+flagged for the user — see retrospective).
 
 **M20 phase-04 — drafted** (2026-06-16, **already on disk**): the docs-sync
 closeout. No code; edits only `docs/architecture.md` (seven stale passages:

@@ -6,7 +6,7 @@ Architect provides, how many retries the executor gets, and when mid-phase
 Architect escalation fires. Track every real cost, including Architect assists,
 so the dashboard shows honest savings, not optimistic ones.
 
-**Status:** in-progress (phase-01 done; phase-02 done; phase-03 done; phase-04 next)
+**Status:** done (4/4 phases approved, 2026-06-16)
 
 **Depends on:** M19 (gate-retry loop already in executor; M20 builds the config
 layer on top of it)
@@ -64,8 +64,48 @@ M20 closes those gaps with three phases that each ship independently:
 | 01 | Config schema, `/calibrate` CLI, known-model registry ([phase-01-config-and-calibrate.md](phase-01-config-and-calibrate.md)) | done |
 | 02 | Tier/cost telemetry fields and `EscalationEvent` record ([phase-02-telemetry-fields.md](phase-02-telemetry-fields.md)) | done |
 | 03 | Dashboard cost breakdown (Executor/Architect/Net per scope, Assists counter) ([phase-03-dashboard-cost-breakdown.md](phase-03-dashboard-cost-breakdown.md)) | done |
-| 04 | Documentation sync — README and architecture.md ([phase-04-documentation-sync.md](phase-04-documentation-sync.md)) | review |
+| 04 | Documentation sync — README and architecture.md ([phase-04-documentation-sync.md](phase-04-documentation-sync.md)) | done |
 
 ## Notes
 
-### Retrospective — (filled at milestone close)
+### Retrospective — 2026-06-16
+
+**Outcome:** 4/4 phases done. Verdicts: phase-01 approved_first_try, phase-02
+approved_after_2 (bug-02-1 then bug-02-2 — discriminator-test mutation
+resistance), phase-03 approved_first_try, phase-04 approved_after_1
+(false_completion on first dispatch). Executor Qwen/Qwen3.6-27B-FP8 throughout
+(phase-01 implementation was Claude direct).
+
+**What worked:**
+- The phase-01→02→03 split (config schema → telemetry substrate → dashboard
+  surface) kept each phase additive and independently shippable. The
+  `#[serde(default)]` nested-struct pattern for `TierTelemetry` (mirroring
+  `ContextEfficiency`) again made an ~11-site `PhaseRun` literal addition a
+  one-line-per-site change — no literal cascade, no churn stall.
+- Phase-04 as an explicit docs-sync phase (rather than folding doc edits into
+  each implementation phase) paid off: one authorized `architecture.md`/`README.md`
+  edit pass with exact pinned before/after text, all 10 passages landed verbatim.
+
+**Calibration data (no folds yet — all 1st-occurrence or already-tracked):**
+1. **`false_completion` on a docs/no-code phase (NEW class variant, phase-04).**
+   The first dispatch reported `complete` with 2/10 tasks done. All four gates
+   were green *by construction* — a docs phase has no code, so fmt/build/lint/test
+   pass regardless of how many spec tasks were actually completed. **M19's
+   gate-retry loop structurally cannot catch this**: it loops on a *red* gate, and
+   there is no red gate to trip. This is a genuine blind spot in the M19 guarantee,
+   surfaced for the first time here. 1 occurrence — **data, not a fold.** If it
+   recurs on another no-gate-coverage phase (docs, config-only, comment-only), the
+   candidate fix is a runtime "task-coverage" check (seeded-task completion before
+   accepting `complete`) or an architect-side rule to keep no-code phases tiny and
+   always review-diff task-by-task. Flagged for the user.
+2. **`false_completion` remains the dominant cross-milestone class** (carried from
+   M18/M19). M19 resolved the *red-gate* variant structurally; phase-04 shows the
+   *no-gate-coverage* variant is still open. Worth a talk-through with the user.
+3. **`bounced` twice on phase-02 over the same discriminator-test mutation-resistance
+   issue** (bug-02-1, bug-02-2). Consistent with the M18 bug-01-1 lesson (pin the
+   `.record` filter as load-bearing). Already a tracked pattern; pre-injection of
+   the guard-test lesson held for the eventual fix.
+
+**Pending fold decisions carried into M21 kickoff (need user sign-off):** the
+no-gate-coverage `false_completion` variant (item 1) and the still-open dominant
+`false_completion` class (item 2). Neither folded yet.
