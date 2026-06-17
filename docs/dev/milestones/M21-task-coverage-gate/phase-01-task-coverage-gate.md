@@ -1,7 +1,7 @@
 # Phase 01: Task-coverage gate in the NoToolCall completion arm
 
 **Milestone:** M21 — Task Coverage Gate
-**Status:** review
+**Status:** in-progress (bug-01-1: format gate failure)
 **Depends on:** none (M19/M20 done; extends the M19 gate-retry arm)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=feature, size=s
