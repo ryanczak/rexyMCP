@@ -122,7 +122,12 @@ rexymcp status    --repo /path/to/your/repo   # one-shot summary; scriptable wit
 
 ## Install & quick start
 
-Requires a recent Rust toolchain (`edition = "2024"`) and a running
+rexyMCP drives projects in **any programming language** — the executor calls
+language-neutral file/search/shell tools and runs *your* project's own
+format/build/lint/test commands. (rexyMCP itself is written in Rust, so building
+the binary needs a Rust toolchain; the projects it works on do not.)
+
+Requires a recent Rust toolchain (to build rexyMCP) and a running
 OpenAI-compatible LLM endpoint (vLLM, LM Studio, or Ollama).
 
 **1 — Build & install the binary**
@@ -149,12 +154,15 @@ provider = "lmstudio"                   # "openai" | "ollama" | "lmstudio"
 model    = "qwen2.5-coder"              # model id as your endpoint knows it
 base_url = "http://localhost:1234/v1"   # OpenAI-compatible endpoint
 
-[commands]
-format = "cargo fmt --all --check"
-build  = "cargo build"
-lint   = "cargo clippy --all-targets --all-features -- -D warnings"
-test   = "cargo test"
+[commands]                              # YOUR project's commands — any language
+format = "prettier --check ."           #   Rust: cargo fmt --all --check
+build  = "npm run build"                #   Go:   go build ./...
+lint   = "eslint ."                     #   Python: ruff check
+test   = "npm test"                     #   …whatever your stack uses
 ```
+
+These four commands are the only language-specific part of the setup — point
+them at whatever your project uses (`cargo`, `npm`, `go`, `pytest`, `make`, …).
 
 **3 — Confirm rexyMCP can reach the model, and the toolchain is present:**
 
@@ -247,7 +255,7 @@ session. Understanding them is the key to using the workflow correctly.
 | File | Who reads it | What it contains |
 |---|---|---|
 | `docs/architecture.md` | Architect, you | The design: layers, data flows, non-goals, milestone roadmap. The **single source of truth** when architecture questions come up. The Architect writes it; nothing else touches it without explicit authorization. |
-| `docs/dev/STANDARDS.md` | Executor, reviewer | The **Definition of Done**. The executor reads it at the start of every phase; the reviewer checks against it at the end. Holds the build/lint/test command set, hard rules (no `unwrap`, no `panic!`, no unauthorized dependencies), and the error model. Generated from a template with the project's commands substituted in. |
+| `docs/dev/STANDARDS.md` | Executor, reviewer | The **Definition of Done**. The executor reads it at the start of every phase; the reviewer checks against it at the end. Holds the build/lint/test command set, the project's hard rules (language-appropriate — e.g. no unchecked error handling, no unauthorized dependencies), and the error model. Generated from a template with the project's commands substituted in. |
 | `docs/dev/WORKFLOW.md` | Architect, executor | The **process rules**: phase lifecycle (`todo → in-progress → review → done`), the phase-doc and milestone-README templates, the Update Log / bug-report / review-verdict formats, and the calibration-fold discipline. The copy embedded in the plugin is canonical — changes propagate to every new project that bootstraps from it. |
 | `docs/dev/NEXT.md` | Executor (read first, every session) | A single pointer to the active phase doc. At a milestone boundary it says "none" — the **human gate** before the next milestone starts. |
 
@@ -347,7 +355,7 @@ stats, per-file numstat, the task list) — ideal for CI.
 AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT             SERVED_MODEL   TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED
 2h      qwen3  dashboard      seed=42      ✓✓✓✓   66     complete  approved_first_try  qwen3.6-27b    0%     128k     74%       18k
 5h      qwen3  dashboard      seed=42      ✓✓✓✗   250    budget_…  —                   qwen3.6-27b    4%     128k     91%       40k
-1d      gemma  rust,parser    default      ✓✓✓✓   88     complete  approved_after_1    gemma2-9b      2%     32k      63%       7k
+1d      gemma  api,parser     default      ✓✓✓✓   88     complete  approved_after_1    gemma2-9b      2%     32k      63%       7k
 ```
 
 `GATES` is four chars in `format/build/lint/test` order (`✓`/`✗`). `TRUNC` is the
@@ -372,19 +380,23 @@ profile` complements this by ranking each model's *failure classes* so you know
 **`rexymcp doctor`**:
 
 ```text
+# (a TypeScript/Node project — Tier 0 reflects ITS commands)
 === Tier 0 (required) ===
-  [     ok] cargo — format, build, lint, test
+  [     ok] npm — format, build, test
+  [     ok] eslint — lint
 
 === Tier 1 (advisory) ===
-  [     ok] cargo — Rust (install the Rust toolchain via https://rustup.rs)
-  [MISSING] tsc — TypeScript (npm install -g typescript)
-  [     ok] ruff — Python (pip install ruff)
+  [MISSING] cargo — Rust (install the Rust toolchain via https://rustup.rs)
+  [     ok] tsc — TypeScript (npm install -g typescript)
+  [MISSING] ruff — Python (pip install ruff)
 
 All required tools are present.
 ```
 
-Tier-1 always fails open — a missing enhancer never affects the exit code; only
-a missing Tier-0 binary does.
+Tier-0 lists *your* project's command binaries (here `npm`/`eslint`); Tier-1 is
+the fixed set of verifier enhancers. Tier-1 always fails open — the missing
+`cargo`/`ruff` above don't affect the exit code; only a missing Tier-0 binary
+does.
 
 **`rexymcp dashboard`** — a `ratatui` TUI refreshed every 500 ms, auto-following
 new sessions. Six panels:
@@ -400,12 +412,12 @@ new sessions. Six panels:
 │ Turn 42, stage verify   │   Net:       $0.50   $3.20  …  │                    │
 │      🐕      🧠          │   Assists: 0                   │                    │
 ├─ Activity [f=filter] ───┴───────────────────┬─ Tasks ────┴────────────────────┤
-│ [t42] bash  cargo test                      │ Tasks ▕███████▏░░░░░░░ 3/7    43%│
+│ [t42] bash  <your test command>             │ Tasks ▕███████▏░░░░░░░ 3/7    43%│
 │   running 187 tests …                       │ ☑ Read config                   │
-│ [t42] verify  cargo check → 0 new errors    │ ▶ Wire the gate                 │
+│ [t42] verify  typecheck → 0 new errors      │ ▶ Wire the gate                 │
 │ …  (scrollable full replay) …               ├─ Files ─────────────────────────┤
-│                                             │   mcp/src/…/panels.rs   +148 -64 │
-│                                             │   mcp/src/…/render.rs    +12  -6 │
+│                                             │   src/…/dashboard.ts   +148 -64 │
+│                                             │   src/…/render.ts       +12  -6 │
 └─────────────────────────────────────────────┴─────────────────────────────────┘
   q/Esc quit · f filter · ↑↓ scroll · PgUp/PgDn page · Home/End jump
 ```
@@ -436,9 +448,9 @@ answer to that constraint:
 |---|---|
 | Small models emit malformed tool calls — trailing commas, fenced JSON, near-miss key names | **Forgiving parser** recognizes six output formats (Hermes, fenced/loose JSON, YAML, XML-variant, plain text) and applies repair transforms (fuzzy name match, param aliasing, type coercion, default-fill, JSON repair, string-escape) before giving up — and when it must give up, it feeds *model-visible* feedback instead of silently aborting the turn |
 | The model loops, retrying the same broken edit | **Governor loop detector** trips on N identical consecutive tool calls (default 6) and converts it to a `hard_fail` briefing before it burns the turn budget |
-| The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit and injects the diagnostics back into the turn — including rustc's machine-applicable suggested fixes and structured `cargo test` digests — so the model fixes it without a wasted round-trip |
+| The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit and injects the diagnostics back into the turn (with language-appropriate detail — e.g. compiler suggested-fixes and structured test digests for Rust, TypeScript, and Python today) so the model fixes it without a wasted round-trip |
 | Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: a `patch` is refused on any file the model hasn't `read_file`'d this session (or whose mtime changed since), preventing blind overwrites |
-| The context window fills up mid-phase | **Context budgeting + the M10 reclaim levers**: `max_context_pct` triggers value-ranked compaction (noisiest tool output first; the last 3 turns protected). An output filter trims and de-dups command output at the boundary (ANSI strip, structured cargo compressor, overflow spilled to a recovery file); a read-lifecycle lever evicts superseded file reads after an edit and dedupes re-reads. Every lever is metered and visible live |
+| The context window fills up mid-phase | **Context budgeting + the M10 reclaim levers**: `max_context_pct` triggers value-ranked compaction (noisiest tool output first; the last 3 turns protected). An output filter trims and de-dups command output at the boundary (ANSI strip, a structured compressor for noisy build output, overflow spilled to a recovery file); a read-lifecycle lever evicts superseded file reads after an edit and dedupes re-reads. Every lever is metered and visible live |
 | The model uses `bash` irresponsibly | **Scope confinement** restricts every file and shell op to the target-repo root, and a bash classifier blocks the destructive command categories (`rm -rf`, `git push --force`, `git reset --hard`, `mkfs`, `curl … \| sh`, publish/upload, fork bombs, …) |
 | You don't know if a model is actually good for your codebase | **Per-run telemetry** records the objective outcome of every dispatch so you accumulate real evidence about which models and settings earn their keep |
 
@@ -492,10 +504,10 @@ for every project that uses it.
 
 ## Configuration — `rexymcp.toml` in full
 
-Every section and every field is optional: each is `#[serde(default)]`, and a
-**missing config file falls back to a working local-LM-Studio default**. In
-practice you need `[executor]` (a real `model` and the right `base_url`) and
-`[commands]`; everything else has sensible defaults. Four environment variables
+Every section and every field is optional, and a **missing config file falls
+back to a working local-LM-Studio default**. In practice you need `[executor]`
+(a real `model` and the right `base_url`) and `[commands]` (your project's
+commands, in any language); everything else has sensible defaults. Four environment variables
 override `[executor]` at load time (env beats TOML): `REXYMCP_PROVIDER`,
 `REXYMCP_MODEL`, `REXYMCP_BASE_URL`, `REXYMCP_API_KEY`.
 
@@ -519,13 +531,14 @@ stream_idle_timeout_secs = 240            # max gap between tokens once streamin
 task_tracking = true                      # seed a per-session checklist from the phase Spec (default true)
 # tier = "MEDIUM"                         # "LARGE" | "MEDIUM" | "SMALL" — usually set via `rexymcp calibrate`
 
-# ── The final command gate (run in order: format → build → lint → test) ──
+# ── The final command gate — YOUR project's commands, any language ──
+#    (run in order: format → build → lint → test)
 [commands]
-format   = "cargo fmt --all --check"
-build    = "cargo build"
-lint     = "cargo clippy --all-targets --all-features -- -D warnings"
-test     = "cargo test"
-# lint_fix = "cargo clippy --fix"         # optional auto-fix command
+format   = "prettier --check ."           # Rust: cargo fmt --all --check · Go: gofmt -l .
+build    = "npm run build"                # Rust: cargo build · Go: go build ./...
+lint     = "eslint ."                     # Rust: cargo clippy … · Python: ruff check
+test     = "npm test"                     # Rust: cargo test · Python: pytest · Go: go test ./...
+# lint_fix = "eslint --fix ."             # optional auto-fix command
 
 # ── Turn / context budget ─────────────────────────────────────────
 [budget]
