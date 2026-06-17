@@ -1,7 +1,7 @@
 # Phase 01: Empty-completion routing + governor stall
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** todo
+**Status:** review
 **Depends on:** none (extends the M19/M21 `NoToolCall` arm)
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -373,3 +373,56 @@ schema doc is required for an internally-defaulted governor knob.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-17 23:17 (started)
+
+**Executor:** rexyMCP executor LLM
+**Action:** Phase 01 implementation started.
+
+### Update — 2026-06-17 23:17 (complete)
+
+**Executor:** rexyMCP executor LLM
+**Summary:** Implemented A1 (empty-completion guard broadening) and A2 (empty-completion stall counter + governor hard-fail).
+
+**Files changed:**
+- `executor/src/governor/hard_fail.rs` — added `EmptyCompletionStall` variant, `describe()` arm, `check_empty_completion_stall()` pure check, 3 unit tests.
+- `executor/src/config.rs` — added `empty_completion_threshold: usize` to `GovernorConfig` (default 3), `Option<usize>` to `ModelOverride`, apply line in `apply_model_override`.
+- `executor/src/agent/mod.rs` — broadened `NoToolCall` guard (`&& completion.contains("</think>")` removed), added `consecutive_empty_completions` counter, stall emission block, two reset sites (gate fall-through + tool-dispatch path).
+- `executor/src/agent/tests.rs` — 2 integration tests: `empty_completions_hard_fail_at_threshold`, `single_empty_completion_then_recovers_does_not_hard_fail`.
+- `mcp/src/runner.rs` — added `empty_completion_threshold: None` to two `ModelOverride` struct literals in existing tests (required by new field).
+- `docs/dev/milestones/M22-bookkeeping-resilience/phase-01-empty-completion-stall.md` — status `in-progress` → `review`, update log entries.
+- `docs/dev/milestones/M22-bookkeeping-resilience/README.md` — phase 01 row `todo` → `review`.
+
+**Verification commands (all passed):**
+- `cargo fmt --all --check`: exit 0
+- `cargo build`: exit 0, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: exit 0
+- `cargo test`: 825 passed, 0 failed, 2 ignored
+
+**Verification summary:** fmt clean, build clean, clippy clean, all 825 tests pass (including 3 new unit tests + 2 new integration tests + pre-existing `gate_failure_loops_until_gates_pass` unchanged).
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact. Integration tests exercise `execute_phase` end-to-end with `MockAiClientScript`.
+
+**Grep proof for pinned literal `EmptyCompletionStall`:**
+```
+$ grep -r 'EmptyCompletionStall' executor/src/
+executor/src/governor/hard_fail.rs:    EmptyCompletionStall {
+executor/src/governor/hard_fail.rs:            Self::EmptyCompletionStall { consecutive_count } => {
+executor/src/governor/hard_fail.rs:        Some(HardFailSignal::EmptyCompletionStall {
+executor/src/governor/hard_fail.rs:            Some(HardFailSignal::EmptyCompletionStall {
+executor/src/governor/hard_fail.rs:        let signal = HardFailSignal::EmptyCompletionStall {
+```
+
+**Grep proof for pinned literal `empty_completion_threshold`:**
+```
+$ grep -r 'empty_completion_threshold' executor/src/config.rs
+pub empty_completion_threshold: usize,
+empty_completion_threshold: 3,
+pub empty_completion_threshold: Option<usize>,
+if let Some(v) = over.empty_completion_threshold {
+self.governor.empty_completion_threshold = v;
+```
+
+**Notes for review:**
+- `mcp/src/runner.rs` was edited to add `empty_completion_threshold: None` to two `ModelOverride` struct literals in pre-existing tests. This was required because the new field is not `#[serde(default)]` on `ModelOverride` — it is an `Option<usize>` that must be named in struct initializers. This is a mechanical fix, not a design change.
+- The spec says `consecutive_count: threshold as u32` in the signal (not the actual count). This matches the pattern of other signals that report the threshold that was hit, not the raw count.

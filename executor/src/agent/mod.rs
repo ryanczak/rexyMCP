@@ -163,6 +163,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut recent_verifier_error_counts: Vec<usize> = Vec::new();
     let mut last_author_diagnostics: Vec<Diagnostic> = Vec::new();
 
+    // Empty-completion stall counter (M22 phase-01).
+    let mut consecutive_empty_completions: usize = 0;
+
     // Read-before-edit working set (07d): resolved path → mtime at last read/edit.
     let mut working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
 
@@ -513,7 +516,51 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     // emitted no action. Treat it as a recoverable parse failure
                     // so it gets feedback to emit a tool call. bug-executor-1.
                     let post_think = crate::parser::strip_think_blocks(&completion);
-                    if post_think.trim().is_empty() && completion.contains("</think>") {
+                    if post_think.trim().is_empty() {
+                        consecutive_empty_completions += 1;
+                        if let Some(signal) =
+                            crate::governor::hard_fail::check_empty_completion_stall(
+                                consecutive_empty_completions,
+                                deps.governor.empty_completion_threshold,
+                            )
+                        {
+                            log_event(
+                                &log_handle,
+                                &redactor,
+                                deps.clock,
+                                turns,
+                                SessionEvent::HardFail {
+                                    reason: signal.describe(),
+                                },
+                            );
+                            log_session_end(&log_handle, &redactor, deps.clock, "hard_fail", turns);
+                            emit_phase_run(
+                                &deps,
+                                input,
+                                "hard_fail",
+                                Gates::default(),
+                                &metrics,
+                                &scorer,
+                                turns,
+                            );
+                            let artifacts = build_artifacts(
+                                &pre_edit_content,
+                                deps.project_root,
+                                log_path.clone(),
+                                "hard_fail",
+                                turns,
+                                CommandOutputs::default(),
+                            );
+                            return Ok(hard_fail_result(
+                                input,
+                                &recent_tool_calls,
+                                deps.project_root,
+                                last_author_diagnostics.clone(),
+                                signal,
+                                artifacts,
+                            ));
+                        }
+
                         metrics.parse_failures += 1;
                         let failure = crate::parser::ParseFailure {
                             raw: completion.clone(),
@@ -567,6 +614,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         }
                         continue;
                     }
+                    // Reaching here means the completion had real post-think text
+                    // (not empty/think-only) — reset the empty-completion counter.
+                    consecutive_empty_completions = 0;
                     // Step 8 — run the final gate set BEFORE declaring completion. If any
                     // gate fails, inject the failure output and continue so the model must
                     // fix and re-complete. Only log "complete" after all gates pass.
@@ -808,6 +858,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 tool_call: tool_call.clone(),
             },
         );
+
+        // A real tool call is a productive turn — reset the empty-completion counter.
+        consecutive_empty_completions = 0;
 
         // An edit-class call's target path — resolved here (pre-dispatch) so the
         // baseline can be captured *before* the model's edit lands. Otherwise

@@ -4135,3 +4135,55 @@ async fn task_coverage_check_at_turn_cap_is_budget_exceeded() {
 
     assert_eq!(result.status, PhaseStatus::BudgetExceeded);
 }
+
+// --- M22 phase-01: empty-completion stall tests ---
+
+#[tokio::test]
+async fn empty_completions_hard_fail_at_threshold() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Script 5 empty-completion turns — the governor threshold is 3, so the
+    // loop must hard_fail on turn 3 (not burn to the turn cap).
+    let client = MockAiClientScript::new(vec![
+        vec![token("")],
+        vec![token("")],
+        vec![token("")],
+        vec![token("")], // never reached
+        vec![token("")], // never reached
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&input(), deps(&client, &registry, &budget, 20, dir.path()))
+        .await
+        .unwrap();
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    // The stall fires on the 3rd empty completion, not the turn cap.
+    assert_eq!(client.calls().len(), 3);
+}
+
+#[tokio::test]
+async fn single_empty_completion_then_recovers_does_not_hard_fail() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let path = dir.path().join("f.txt").to_string_lossy().to_string();
+    // Turn 1: empty completion (counter → 1, no stall).
+    // Turn 2: real tool call (counter resets to 0).
+    // Turn 3: clean text completion → Complete.
+    let client = MockAiClientScript::new(vec![
+        vec![token("")],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![token("now I'm done")],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+        .await
+        .unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert_eq!(client.calls().len(), 3);
+}

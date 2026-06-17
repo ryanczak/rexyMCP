@@ -439,7 +439,10 @@ mod tests {
 <!-- entries appended below this line -->\n";
         let path = write_phase_doc(&dir, doc);
         let msg = bookkeeping_feedback(&path).expect("should be Some");
-        assert!(msg.contains("Update Log"), "expected Update Log mention: {msg}");
+        assert!(
+            msg.contains("Update Log"),
+            "expected Update Log mention: {msg}"
+        );
     }
 
     #[test]
@@ -456,7 +459,10 @@ mod tests {
         let path = write_phase_doc(&dir, doc);
         let msg = bookkeeping_feedback(&path).expect("should be Some");
         assert!(msg.contains("Status"), "expected Status mention: {msg}");
-        assert!(msg.contains("Update Log"), "expected Update Log mention: {msg}");
+        assert!(
+            msg.contains("Update Log"),
+            "expected Update Log mention: {msg}"
+        );
     }
 
     #[test]

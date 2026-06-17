@@ -596,6 +596,7 @@ mod tests {
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
+                empty_completion_threshold: None,
             },
         );
 
@@ -712,6 +713,7 @@ mod tests {
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
+                empty_completion_threshold: None,
             },
         );
 

@@ -24,6 +24,9 @@ pub enum HardFailSignal {
         tool: String,
         bytes: usize,
     },
+    EmptyCompletionStall {
+        consecutive_count: u32,
+    },
     BackendError {
         message: String,
     },
@@ -45,6 +48,9 @@ impl HardFailSignal {
             }
             Self::RunawayOutput { tool, bytes } => {
                 format!("tool {tool} produced {bytes} bytes (over threshold)")
+            }
+            Self::EmptyCompletionStall { consecutive_count } => {
+                format!("model emitted {consecutive_count} consecutive empty completions")
             }
             Self::BackendError { message } => {
                 format!("backend error: {message}")
@@ -129,6 +135,22 @@ fn check_runaway_output(output: Option<(&str, usize)>, limit: usize) -> Option<H
         tool: tool.to_string(),
         bytes,
     })
+}
+
+/// Empty-completion stall: the model emitted `consecutive_empty` blank/think-only
+/// completions in a row (no tool call, no answer text). Distinct from
+/// `IdenticalToolCallRepetition`, which only sees turns that produced a tool call.
+pub fn check_empty_completion_stall(
+    consecutive_empty: usize,
+    threshold: usize,
+) -> Option<HardFailSignal> {
+    if consecutive_empty >= threshold {
+        Some(HardFailSignal::EmptyCompletionStall {
+            consecutive_count: threshold as u32,
+        })
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -315,5 +337,34 @@ mod tests {
             signal,
             HardFailSignal::IdenticalToolCallRepetition { .. }
         ));
+    }
+
+    // --- empty-completion stall tests ---
+
+    #[test]
+    fn empty_completion_stall_fires_at_threshold() {
+        let signal = check_empty_completion_stall(3, 3);
+        assert!(matches!(
+            signal,
+            Some(HardFailSignal::EmptyCompletionStall {
+                consecutive_count: 3
+            })
+        ));
+    }
+
+    #[test]
+    fn empty_completion_stall_silent_below_threshold() {
+        let signal = check_empty_completion_stall(2, 3);
+        assert!(signal.is_none());
+    }
+
+    #[test]
+    fn describe_empty_completion_stall() {
+        let signal = HardFailSignal::EmptyCompletionStall {
+            consecutive_count: 5,
+        };
+        let desc = signal.describe();
+        assert!(desc.contains("empty completions"));
+        assert!(desc.contains("5"));
     }
 }

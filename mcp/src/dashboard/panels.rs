@@ -187,7 +187,10 @@ pub(crate) fn reclaim_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     if summary.compaction_count > 0 {
         let before = summary.compaction_tokens_before;
         let after = summary.compaction_tokens_after;
-        lines.push(Line::from(format!("Compactions: {}", summary.compaction_count)));
+        lines.push(Line::from(format!(
+            "Compactions: {}",
+            summary.compaction_count
+        )));
         lines.push(Line::from(format!(
             "  Freed: {} tokens",
             before.saturating_sub(after)
