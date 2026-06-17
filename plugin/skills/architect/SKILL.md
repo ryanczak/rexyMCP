@@ -49,7 +49,7 @@ Before any step, check for these four artifacts in the target repo:
 - `rexymcp.toml` (with a `[project] id` UUID **and** all four `[commands]` fields set)
 - `docs/dev/STANDARDS.md`
 - `docs/dev/WORKFLOW.md`
-- `CLAUDE.md`
+- `REXYMCP.md` **and** a `CLAUDE.md` that imports it (`@REXYMCP.md`)
 
 If all four are present, report "Already bootstrapped" and skip to §2
 (explore-then-design). If some are missing, fill only the missing pieces.
@@ -135,16 +135,22 @@ If either file already exists, leave it alone and note this in your post-
 bootstrap summary ("STANDARDS.md already present; not overwritten. To refresh
 from template, delete the file and re-run `/rexymcp:architect`.").
 
-### Step 3 — Write `CLAUDE.md`
+### Step 3 — Write `REXYMCP.md` and wire the `CLAUDE.md` import
 
-Write `<target_repo>/CLAUDE.md` orienting Claude (in future sessions) as the
-architect for this specific project:
+rexyMCP's orientation is its **own** file, `REXYMCP.md` — the agent-neutral
+source of truth for the workflow. It reaches Claude's context through a one-line
+`@REXYMCP.md` import in `CLAUDE.md` (Claude Code auto-loads `CLAUDE.md` and
+inlines the import), so rexyMCP never co-opts or rewrites the user's `CLAUDE.md`
+content.
+
+**3a — Write `<target_repo>/REXYMCP.md`** (the owned contract), if it doesn't
+already exist:
 
 ```markdown
-# CLAUDE.md
+# REXYMCP.md
 
-This file orients Claude Code as the **architect** for the <project name>
-project, working alongside the rexyMCP MCP server and a local-LLM executor.
+The rexyMCP architect/executor workflow contract for the <project name> project —
+whatever agent acts as the architect reads this first.
 
 ## Read these first
 
@@ -174,8 +180,34 @@ To dispatch a phase: `/rexymcp:dispatch <phase>`. To review the result:
 `/rexymcp:review <phase>`.
 ```
 
-If `CLAUDE.md` already exists, leave it alone (idempotent). Same "delete to
-refresh" guidance.
+If `REXYMCP.md` already exists, leave it alone (idempotent; "delete to refresh"
+guidance applies).
+
+**3b — Ensure `CLAUDE.md` imports it.** Claude Code only auto-loads `CLAUDE.md`,
+so the import is what brings `REXYMCP.md` into context:
+
+- **No `CLAUDE.md`** → create a minimal shim:
+  ```markdown
+  # CLAUDE.md
+
+  This project uses the rexyMCP architect/executor workflow; the contract lives
+  in REXYMCP.md, imported below.
+
+  @REXYMCP.md
+  ```
+- **`CLAUDE.md` already exists** → **append** the `@REXYMCP.md` line **only if it
+  isn't already present**, and **never modify the rest of the file**. It's the
+  user's file; you are adding one import line, not taking it over. If it already
+  contains `@REXYMCP.md`, do nothing.
+
+**Legacy migration.** If you find a repo bootstrapped the old way — a full
+rexyMCP-authored `CLAUDE.md` (the pre-import orientation: a `## Read these first`
++ `## Commands` + `## Executor` body) and **no** `REXYMCP.md` — move that
+orientation block into `REXYMCP.md`, then reduce `CLAUDE.md` to the shim above.
+If the `CLAUDE.md` shows signs of user customization beyond that original
+template, do **not** rewrite it: write `REXYMCP.md`, append the import line, and
+flag it in your post-bootstrap summary so the user can prune the duplicated
+content themselves.
 
 ### Step 4 — MCP server registration (nothing to do)
 
@@ -193,13 +225,17 @@ to write `.mcp.json`.
 Each of these is a real way to break the contract or the user's trust. The
 trap is that each *looks* like the right thing to do.
 
-1. **Do NOT write `AGENTS.md` to the target repo.** It will look like the
-   natural complement to `CLAUDE.md` — Claude has its file, give the
-   executor its file. It is not. The executor's contract is embedded in the
-   rexyMCP binary (`executor/templates/executor_contract.md`, substituted at
-   every `execute_phase` call). A root `AGENTS.md` in the target repo would
-   be a parallel source of truth that drifts. The architecture is explicit:
-   rexyMCP-driven projects carry no `AGENTS.md`.
+1. **Do NOT write an `AGENTS.md` executor-contract to the target repo.** It will
+   look like the natural complement to the architect's orientation — Claude reads
+   `REXYMCP.md`, so give the executor its own file. It is not. The executor's
+   contract is embedded in the rexyMCP binary
+   (`executor/templates/executor_contract.md`, substituted at every
+   `execute_phase` call). A root `AGENTS.md` *holding executor instructions*
+   would be a parallel source of truth that drifts. The architecture is explicit:
+   rexyMCP-driven projects carry no executor-contract file. (A future non-Claude
+   architect could carry its own thin shim that simply `@`-imports the same
+   `REXYMCP.md` — that's fine; what's forbidden is a *second contract*, not an
+   import pointing at the one source of truth.)
 
 2. **Do NOT write `executor_contract.md` to the target repo for the same
    reason.** If the user asks "where's the executor's contract, I want to

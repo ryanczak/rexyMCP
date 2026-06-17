@@ -70,7 +70,7 @@ Two things make rexyMCP stand out:
 /rexymcp:architect          ← Claude explores your repo and writes the design
    │
    ├─ bootstrap (first run) ─→ rexymcp.toml · STANDARDS.md · WORKFLOW.md
-   │                            CLAUDE.md · .mcp.json   (idempotent — safe to re-run)
+   │                            REXYMCP.md (+ CLAUDE.md import)   (idempotent — safe to re-run)
    │
    ├─ writes docs/architecture.md
    ├─ writes docs/dev/milestones/M1-<slug>/README.md
@@ -249,8 +249,10 @@ The `rmcp` stdio server (`rexymcp serve`) exposes **seven** tools to Claude Code
 ### Project docs — what each file is for
 
 When rexyMCP bootstraps a target project it writes four files into `docs/dev/`
-(and a `CLAUDE.md` at the root) that the Architect and Executor use every
-session. Understanding them is the key to using the workflow correctly.
+(plus a `REXYMCP.md` orientation file at the root — imported into Claude's
+context by a one-line `@REXYMCP.md` in `CLAUDE.md`) that the Architect and
+Executor use every session. Understanding them is the key to using the workflow
+correctly.
 
 | File | Who reads it | What it contains |
 |---|---|---|
@@ -706,7 +708,7 @@ docs/       architecture + the architect/executor dev process for rexyMCP itself
 rexyMCP is built phase-by-phase by its own workflow — Claude architecting, a
 local model executing — dogfooding the product on itself. Contributors and AI
 agents work the phase-driven process documented in
-[`CLAUDE.md`](CLAUDE.md), [`docs/dev/STANDARDS.md`](docs/dev/STANDARDS.md), and
+[`REXYMCP.md`](REXYMCP.md), [`docs/dev/STANDARDS.md`](docs/dev/STANDARDS.md), and
 [`docs/dev/WORKFLOW.md`](docs/dev/WORKFLOW.md); the full design lives in
 [`docs/architecture.md`](docs/architecture.md). The gates (run as separate
 invocations, not chained):

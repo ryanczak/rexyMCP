@@ -462,26 +462,30 @@ then proceeds to explore and write the design:
    These resolve the `{…_COMMAND}` placeholders everywhere downstream.
 2. **Lay down the process docs.** Write the resolved `docs/dev/STANDARDS.md` and
    `WORKFLOW.md` from the embedded templates (placeholders filled in).
-3. **Write `CLAUDE.md`.** Orient Claude as the architect for this project: the
-   per-project command set, pointers to the process docs, and the note that the
-   executor is a local LLM reached through rexyMCP whose contract is embedded —
-   *not* a file in this repo.
+3. **Write `REXYMCP.md` and wire the import.** `REXYMCP.md` is rexyMCP's own,
+   agent-neutral orientation file (the per-project command set, pointers to the
+   process docs, and the note that the executor is a local LLM whose contract is
+   embedded — *not* a file in this repo). It reaches Claude's context through a
+   one-line `@REXYMCP.md` import appended to `CLAUDE.md` (the only file Claude
+   Code auto-loads); rexyMCP owns `REXYMCP.md` and never co-opts or rewrites the
+   user's `CLAUDE.md` content.
 4. **Register the server.** Ensure the rexyMCP MCP server is in `.mcp.json` (if
    the plugin install didn't already do it).
 
 It does **not** write an `AGENTS.md` or any executor-contract file — that content
 reaches the local model through the embedded, in-process system-prompt assembly
-(turn-cycle step 1), and reaches Claude through `CLAUDE.md` + the skills.
-Bootstrap is idempotent: an already-initialized repo is left alone (or only its
-missing pieces repaired).
+(turn-cycle step 1), and reaches Claude through `REXYMCP.md` (imported by
+`CLAUDE.md`) + the skills. Bootstrap is idempotent: an already-initialized repo
+is left alone (or only its missing pieces repaired).
 
 ## End-to-end flow
 
 1. The user gives Claude a product idea.
 2. The `architect` skill **initializes the project if needed** (bootstrap:
    resolve the command set into `rexymcp.toml`, lay down the resolved
-   `STANDARDS.md` / `WORKFLOW.md` + `CLAUDE.md`, register the MCP server — no
-   `AGENTS.md`, no executor-contract file; see "Project initialization"), then
+   `STANDARDS.md` / `WORKFLOW.md` + `REXYMCP.md` (imported by `CLAUDE.md`),
+   register the MCP server — no `AGENTS.md`, no executor-contract file; see
+   "Project initialization"), then
    explores the target repo and writes the design doc + M1 README + phase docs
    into `docs/dev/`.
 3. `/rexymcp:dispatch phase-01` → Claude calls the `execute_phase` MCP tool.
@@ -571,8 +575,9 @@ The project plan. Each entry becomes a milestone with its own
    end-to-end dogfood against a real repo. The `architect` skill also owns
    **project initialization** (see Layer 3): bootstrapping an uninitialized target
    repo — resolving the per-project command set, laying down the resolved process
-   docs + `CLAUDE.md`, registering the MCP server — with no root `AGENTS.md`, since
-   the executor contract is embedded rather than a file. The `architect` skill makes **pre-injection** an explicit
+   docs + `REXYMCP.md` (imported by `CLAUDE.md`), registering the MCP server —
+   with no root `AGENTS.md`, since the executor contract is embedded rather than a
+   file. The `architect` skill makes **pre-injection** an explicit
    responsibility (worked examples, idioms, few-shot tool-call exemplars, fetched
    reference docs baked into the phase doc) — the primary way Claude's capability
    reaches the local model, since there's no live callback. Phase progression is
