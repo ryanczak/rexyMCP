@@ -4,15 +4,27 @@ Single source of truth for which phase the executor works on next. The principal
 engineer (architect) maintains this file. The executor reads it first
 (AGENTS.md § "First action") and works the phase it points at.
 
-**Active phase:** M21 phase-01 —
-`docs/dev/milestones/M21-task-coverage-gate/phase-01-task-coverage-gate.md`
+**Active phase:** none — **M21 closed** (1/1 phase approved, 2026-06-16). The next
+milestone is a human-gated boundary: the user kicks off M22 explicitly.
 
-**M21 — Task Coverage Gate** (kicked off 2026-06-16). Single-phase milestone.
-Closes the `false_completion` blind spot on docs/no-code phases: a task-coverage
-check in the `NoToolCall` arm of `execute_phase`, symmetric with M19's gate-retry
-loop. When tasks are seeded and any remain incomplete at `NoToolCall` time, inject
-a named-task list and loop. ~120 lines across `command.rs` + `mod.rs`; no
-`LoopDeps` struct change, no blast radius.
+**M21 — Task Coverage Gate — done** (2026-06-16, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8). Single-phase milestone. Closed the `false_completion`
+blind spot on docs/no-code phases structurally: `execute_phase` keeps a
+`task_states` shadow map (initialised from `seeded`, updated in the task-metadata
+block as `update_task` calls land) and, after the M19 gate-retry check in the
+`NoToolCall` arm, calls `command::task_coverage_feedback` — if any seeded task is
+not `Done`, it injects a named-task list and loops; at the turn cap with tasks
+incomplete it returns `BudgetExceeded`, not `Complete`. Zero `LoopDeps` change;
+the `seeded.is_empty()` backward-compat pin kept all 807 pre-existing tests
+unmodified (now 814 with the 7 new). **Bounced once** (bug-01-1, `parse_format`,
+minor): first dispatch self-reported `complete` with a red `cargo fmt --all
+--check` (rustfmt wanted the `task_states` init collapsed to one line); notably
+M19's gate-retry did not fire because the executor's own gate run that turn
+passed `format` while the reviewer's independent `--check` flagged the diff — a
+1st-occurrence executor-vs-reviewer fmt divergence (data, not a fold; see
+retrospective). Re-dispatch fixed it in one 43-turn pass, logic byte-identical.
+**M19 + M21 now cover both `false_completion` variants structurally:** M19 the
+red-gate variant, M21 the no-gate-coverage variant.
 
 **M21 phase-01 — drafted** (2026-06-16): two files, two tasks each — (1)
 `command.rs`: new `task_coverage_feedback` helper + 5 unit tests (mirror of

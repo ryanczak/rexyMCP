@@ -1,7 +1,7 @@
 # Phase 01: Task-coverage gate in the NoToolCall completion arm
 
 **Milestone:** M21 — Task Coverage Gate
-**Status:** review
+**Status:** done
 **Depends on:** none (M19/M20 done; extends the M19 gate-retry arm)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -560,3 +560,30 @@ executor/src/agent/command.rs:    fn task_coverage_feedback_returns_none_when_no
 executor/src/agent/command.rs:    fn task_coverage_feedback_returns_none_when_all_tasks_done() {
 executor/src/agent/command.rs:    fn task_coverage_feedback_lists_pending_task_by_id_and_title() {
 executor/src/agent/command.rs:    fn task_coverage_feedback_labels_active_task() {
+
+### Review verdict — 2026-06-16
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 ([bug-01-1](bugs/bug-01-1.md), `parse_format`, minor) — first
+  dispatch self-reported `complete` with a red `cargo fmt --all --check` gate
+  (rustfmt wanted the `task_states` init chain collapsed onto one line after the
+  break at `=`). Caught at review on the independent gate re-run; the M19
+  gate-retry loop did not fire because the *executor's own* gate run that turn
+  apparently passed — the diff surfaced only on the reviewer's independent
+  `cargo fmt --all --check`. Re-dispatch fixed it in one pass (43 turns):
+  `mod.rs:141` collapsed to `seeded.iter().map(|t| (t.id.clone(), t.state)).collect()`,
+  logic byte-identical.
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. Two STANDARDS-driven adaptations the executor
+  flagged in Notes-for-review (both correct): removed the spec's `.clone()` on
+  `TaskState` per clippy `clone_on_copy` (`TaskState` is `Copy`), and the
+  format-collapse above.
+- **Calibration:** The bounce was `parse_format`, not a recurrence of the
+  `false_completion` class this milestone closes. Notably, the task-coverage gate
+  this phase *adds* does not guard against a red *format* gate — that is M19's
+  job, and M19's guard relies on the executor's own gate run agreeing with the
+  reviewer's. The one-turn divergence here (executor green, reviewer red on fmt)
+  is a 1st-occurrence data point on executor-vs-reviewer fmt disagreement, not a
+  fold. Watch for recurrence; if the executor's gate run and the reviewer's
+  `cargo fmt --all --check` disagree again, investigate whether the executor runs
+  `--check` at all in its gate set or only the writing form.
