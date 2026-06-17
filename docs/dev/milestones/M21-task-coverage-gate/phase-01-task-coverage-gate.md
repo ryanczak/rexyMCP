@@ -1,7 +1,7 @@
 # Phase 01: Task-coverage gate in the NoToolCall completion arm
 
 **Milestone:** M21 — Task Coverage Gate
-**Status:** in-progress (bug-01-1: format gate failure)
+**Status:** review
 **Depends on:** none (M19/M20 done; extends the M19 gate-retry arm)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -506,7 +506,7 @@ None. No new dependency, no `Cargo.toml` edit, no `architecture.md` edit.
 
 ### Update — 2026-06-17 00:18 (complete)
 
-**Summary:** Implemented the task-coverage gate in the `NoToolCall` completion arm of `execute_phase`, symmetric with M19's gate-retry loop. Added `task_coverage_feedback` helper in `command.rs`, a task-states shadow map in `execute_phase`, and the coverage check after the gate-retry block. All 7 new tests pass; all 814 pre-existing tests continue to pass unmodified. One clippy adaptation: removed `.clone()` on `TaskState` (which implements `Copy`) per clippy `clone_on_copy` lint.
+**Summary:** Implemented the task-coverage gate in the `NoToolCall` completion arm of `execute_phase`, symmetric with M19's gate-retry loop. Added `task_coverage_feedback` helper in `command.rs`, a task-states shadow map in `execute_phase`, and the coverage check after the gate-retry block. All 7 new tests pass; all 814 pre-existing tests continue to pass unmodified. One clippy adaptation: removed `.clone()` on `TaskState` (which implements `Copy`) per clippy `clone_on_copy` lint. One formatting fix: collapsed `task_states` initialization to a single line per `rustfmt` layout.
 
 **Acceptance criteria:** all ticked above.
 
@@ -549,7 +549,7 @@ N/A — phase ships no runtime-loadable artifact. The `execute_phase` function i
 **Commits:**
 - (pending) — `feat: add task-coverage gate to NoToolCall completion arm`
 
-**Notes for review:** Removed `.clone()` on `TaskState` (implements `Copy`) per clippy `clone_on_copy` lint — spec had `.clone()` but clippy flagged it.
+**Notes for review:** Removed `.clone()` on `TaskState` (implements `Copy`) per clippy `clone_on_copy` lint — spec had `.clone()` but clippy flagged it. Also collapsed `task_states` initialization to a single line per `rustfmt` layout requirements.
 
 **Verification summary:** fmt clean, build clean, clippy clean, 814 tests pass (807 pre-existing + 7 new).
 

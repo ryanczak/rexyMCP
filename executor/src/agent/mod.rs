@@ -138,10 +138,8 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Task-coverage shadow: tracks live state as update_task calls land.
     // All Pending at start; updated in the tool-result block below.
     // Only consulted when `task_tracking && !seeded.is_empty()`.
-    let mut task_states: HashMap<String, crate::store::sessions::event::TaskState> = seeded
-        .iter()
-        .map(|t| (t.id.clone(), t.state))
-        .collect();
+    let mut task_states: HashMap<String, crate::store::sessions::event::TaskState> =
+        seeded.iter().map(|t| (t.id.clone(), t.state)).collect();
     let system = format!(
         "{}{}{}",
         prompt::datetime_header((deps.clock)()),

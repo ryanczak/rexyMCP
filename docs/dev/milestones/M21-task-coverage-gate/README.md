@@ -4,7 +4,7 @@
 adding a task-coverage check to the `NoToolCall` completion arm, symmetric with
 M19's gate-retry loop.
 
-**Status:** in-progress (phase-01 active)
+**Status:** review (phase-01 in review)
 
 **Depends on:** M19 (gate-retry loop in the `NoToolCall` arm — we extend the
 same arm), M20 (closed; triggered this gap)
@@ -49,7 +49,7 @@ loop — exactly as the gate check does.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Task-coverage gate in the NoToolCall completion arm ([phase-01-task-coverage-gate.md](phase-01-task-coverage-gate.md)) | in-progress |
+| 01 | Task-coverage gate in the NoToolCall completion arm ([phase-01-task-coverage-gate.md](phase-01-task-coverage-gate.md)) | review |
 
 ## Notes
 
