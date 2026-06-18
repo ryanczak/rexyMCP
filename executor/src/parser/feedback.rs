@@ -54,6 +54,35 @@ pub fn format_no_match(response_excerpt: &str) -> String {
     )
 }
 
+/// Feedback for a turn the backend cut off at the output-token ceiling
+/// (`finish_reason == "length"`) before a tool call appeared — the model ran out
+/// of output budget mid-stream, so its stub is not a deliberate completion.
+pub fn format_truncated(response_excerpt: &str) -> String {
+    // char-safe truncation (do not byte-slice — multibyte boundaries panic).
+    let excerpt: String = response_excerpt.chars().take(200).collect();
+    format!(
+        "Your previous response was cut off at the output-token limit before you \
+         emitted a tool call. Do not keep reasoning — emit a single tool call in \
+         the expected format now, and keep any reasoning brief.\n\
+         Excerpt: {excerpt}"
+    )
+}
+
+/// Escalating feedback for consecutive empty completions: the first empty gets the
+/// standard "emit a tool call" nudge; a second or later empty escalates to a
+/// no-reasoning directive, since the model is spending the turn inside `<think>`
+/// and emitting nothing.
+pub fn empty_recovery_feedback(consecutive_empty: usize, response_excerpt: &str) -> String {
+    if consecutive_empty >= 2 {
+        "You have returned multiple empty responses in a row. Do NOT write any \
+          <think> reasoning this turn. Respond with exactly one tool call in the \
+         expected format and nothing else."
+            .to_string()
+    } else {
+        format_no_match(response_excerpt)
+    }
+}
+
 fn format_unknown_tool(attempted_name: &Option<String>, available_tools: &[String]) -> String {
     let tools_list = available_tools.join(", ");
 
@@ -410,5 +439,30 @@ mod tests {
         let msg = format_failure(&make_candidate(Some("read_file")), &err, &registry);
         assert!(msg.contains("requires"), "{msg}");
         assert!(!msg.contains("received"), "{msg}");
+    }
+
+    #[test]
+    fn format_truncated_tells_model_it_was_cut_off() {
+        let msg = format_truncated("some long response text");
+        assert!(msg.contains("cut off"), "{msg}");
+        assert!(msg.contains("tool call"), "{msg}");
+    }
+
+    #[test]
+    fn empty_recovery_feedback_first_empty_is_standard_nudge() {
+        let msg = empty_recovery_feedback(1, "x");
+        assert!(msg.contains("No tool call was found"), "{msg}");
+    }
+
+    #[test]
+    fn empty_recovery_feedback_escalates_after_two() {
+        let msg1 = empty_recovery_feedback(1, "x");
+        let msg2 = empty_recovery_feedback(2, "x");
+        assert!(msg2.contains("Do NOT write"), "{msg2}");
+        assert!(msg2.contains("nothing else"), "{msg2}");
+        assert_ne!(
+            msg2, msg1,
+            "escalated message must differ from first-empty message"
+        );
     }
 }

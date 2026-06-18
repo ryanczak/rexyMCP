@@ -1,7 +1,7 @@
 # Phase 02: Truncation-aware empty-completion recovery
 
 **Milestone:** M23 — Truncation & Empty-Completion Recovery
-**Status:** todo
+**Status:** review
 **Depends on:** M22 phase-01 (the `NoToolCall` empty branch + `consecutive_empty_completions` counter this phase extends). Independent of M23 phase-01 in code (different file), but dispatched after it so the raised `max_tokens` default reduces how often the truncation path fires.
 **Estimated diff:** ~170 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -367,3 +367,56 @@ broadened guard with cause-selected feedback).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 14:05 (started)
+
+Executor started phase 02: truncation-aware empty-completion recovery. Implementing Tasks 1–5: retain `finish_reason` per turn, add `format_truncated` / `empty_recovery_feedback` helpers, route truncated + empty turns by cause, unit tests, integration tests.
+
+### Update — 2026-06-18 14:15 (complete)
+
+**Summary:** Implemented truncation-aware empty-completion recovery. Two coupled changes to the `NoToolCall` arm: (1) a turn with `finish_reason == "length"` and no tool call is now routed to a truncation-specific recovery nudge instead of falling through to the gate/completion path; (2) after ≥ 2 consecutive empty completions, the empty-recovery feedback escalates from the standard "emit a tool call" nudge to a no-reasoning directive. `finish_reason` is retained per-turn in a new `turn_finish_reason` variable, and recovery feedback is selected by cause via `format_truncated` / `empty_recovery_feedback` helpers in `parser/feedback.rs`.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+(no output — clean)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(no output — clean)
+
+cargo test 2>&1 | tail -30
+test result: ok. 855 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.06s
+```
+
+**End-to-end verification:**
+
+N/A — phase ships no runtime-loadable artifact. `execute_phase` is the library entry point; the integration tests exercise the truncation/empty recovery path end-to-end against `MockAiClientScript` (scripting `finish_reason` per turn, asserting both what the loop did — re-prompt vs complete — and that it re-asked the model). The follow-up live netviz e2e run (post-M23) is the real-world check the user drives, not a phase artifact.
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — declared per-turn `turn_finish_reason`, captured it in `AiEvent::Completion` arm, broadened the empty-branch guard to also fire on truncated turns, selected feedback by cause
+- `executor/src/parser/feedback.rs` — added `format_truncated` and `empty_recovery_feedback` helpers, added 3 unit tests
+- `executor/src/agent/tests.rs` — added 2 integration tests (`truncated_turn_is_not_treated_as_completion`, `repeated_truncation_reaches_turn_cap_not_completion`)
+- `docs/dev/milestones/M23-truncation-recovery/phase-02-truncation-recovery.md` — status flip to `review`, Update Log entries
+- `docs/dev/milestones/M23-truncation-recovery/README.md` — phase table row status flip to `review`
+
+**New tests:**
+- `format_truncated_tells_model_it_was_cut_off` in `executor/src/parser/feedback.rs`
+- `empty_recovery_feedback_first_empty_is_standard_nudge` in `executor/src/parser/feedback.rs`
+- `empty_recovery_feedback_escalates_after_two` in `executor/src/parser/feedback.rs`
+- `truncated_turn_is_not_treated_as_completion` in `executor/src/agent/tests.rs`
+- `repeated_truncation_reaches_turn_cap_not_completion` in `executor/src/agent/tests.rs`
+
+**Commits:**
+- (pending — will be committed below)
+
+**Notes for review:**
+- Adjacent latent bug noted (not fixed per hard rules): `format_no_match` uses `&response_excerpt[..200]` byte-slicing which can panic on multibyte boundaries. The new `format_truncated` uses char-safe `chars().take(200)` to avoid adding a second panic path.
+- All pre-existing tests pass unmodified: M22 empty-completion tests (`empty_completions_hard_fail_at_threshold`, `single_empty_completion_then_recovers_does_not_hard_fail`) and gate/completion tests all pass.
+- Grep verification: `format_truncated` and `empty_recovery_feedback` confirmed present in `feedback.rs` at lines 60 and 75 respectively.
+

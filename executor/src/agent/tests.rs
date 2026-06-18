@@ -4311,3 +4311,75 @@ async fn self_revert_of_edited_file_is_refused() {
         "the git checkout of an edited file should be refused with a model-visible message"
     );
 }
+
+// --- M23 phase-02: truncation-aware empty-completion recovery tests ---
+
+#[tokio::test]
+async fn truncated_turn_is_not_treated_as_completion() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Turn 1: real reasoning tokens + finish_reason == "length", no tool call.
+    // Before the fix, this would fall through to "declare completion".
+    // After the fix, it is re-prompted with truncation feedback.
+    // Turn 2: clean text completion → Complete.
+    let client = MockAiClientScript::new(vec![
+        vec![
+            token("I think the answer is 42 because of the following reasoning..."),
+            AiEvent::Completion {
+                finish_reason: Some("length".into()),
+                model: None,
+            },
+        ],
+        vec![token("All done now.")],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+        .await
+        .unwrap();
+
+    // The run did NOT finish on turn 1 — it was re-prompted and reached turn 2.
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert_eq!(client.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn repeated_truncation_reaches_turn_cap_not_completion() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Every scripted turn is truncated (finish_reason == "length", no tool call).
+    // With max_turns = 3, the loop must hit budget_exceeded, not Complete.
+    let client = MockAiClientScript::new(vec![
+        vec![
+            token("reasoning text 1..."),
+            AiEvent::Completion {
+                finish_reason: Some("length".into()),
+                model: None,
+            },
+        ],
+        vec![
+            token("reasoning text 2..."),
+            AiEvent::Completion {
+                finish_reason: Some("length".into()),
+                model: None,
+            },
+        ],
+        vec![
+            token("reasoning text 3..."),
+            AiEvent::Completion {
+                finish_reason: Some("length".into()),
+                model: None,
+            },
+        ],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&input(), deps(&client, &registry, &budget, 3, dir.path()))
+        .await
+        .unwrap();
+
+    // Bounded by the turn cap, not a completion.
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+}

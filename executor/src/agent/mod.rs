@@ -391,6 +391,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
         let mut completion = String::new();
         let mut native_call: Option<ToolCall> = None;
+        let mut turn_finish_reason: Option<String> = None;
         while let Some(event) = rx.recv().await {
             match event {
                 AiEvent::Token(s) => completion.push_str(&s),
@@ -410,6 +411,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 } => {
                     if let Some(m) = model {
                         metrics.served_model = Some(m);
+                    }
+                    if finish_reason.is_some() {
+                        turn_finish_reason = finish_reason.clone();
                     }
                     if let Some(fr) = finish_reason {
                         metrics.total_finishes += 1;
@@ -515,62 +519,75 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             metrics.parse_attempts += 1;
             match parse(&completion, deps.registry) {
                 ParseResult::NoToolCall => {
-                    // A completion that is *only* a <think> block (empty after
-                    // stripping) is not a clean exit — the model reasoned but
-                    // emitted no action. Treat it as a recoverable parse failure
-                    // so it gets feedback to emit a tool call. bug-executor-1.
                     let post_think = crate::parser::strip_think_blocks(&completion);
-                    if post_think.trim().is_empty() {
-                        consecutive_empty_completions += 1;
-                        if let Some(signal) =
-                            crate::governor::hard_fail::check_empty_completion_stall(
+                    let truncated = turn_finish_reason.as_deref() == Some("length");
+                    if truncated || post_think.trim().is_empty() {
+                        // Unproductive turn — never a completion. Pick recovery feedback by cause.
+                        let feedback = if truncated {
+                            // Cut off at the output ceiling mid-stream. NOT an empty turn — leave the
+                            // empty-completion counter untouched (it tracks blank/think-only turns).
+                            crate::parser::feedback::format_truncated(&completion)
+                        } else {
+                            consecutive_empty_completions += 1;
+                            if let Some(signal) =
+                                crate::governor::hard_fail::check_empty_completion_stall(
+                                    consecutive_empty_completions,
+                                    deps.governor.empty_completion_threshold,
+                                )
+                            {
+                                log_event(
+                                    &log_handle,
+                                    &redactor,
+                                    deps.clock,
+                                    turns,
+                                    SessionEvent::HardFail {
+                                        reason: signal.describe(),
+                                    },
+                                );
+                                log_session_end(
+                                    &log_handle,
+                                    &redactor,
+                                    deps.clock,
+                                    "hard_fail",
+                                    turns,
+                                );
+                                emit_phase_run(
+                                    &deps,
+                                    input,
+                                    "hard_fail",
+                                    Gates::default(),
+                                    &metrics,
+                                    &scorer,
+                                    turns,
+                                );
+                                let artifacts = build_artifacts(
+                                    &pre_edit_content,
+                                    deps.project_root,
+                                    log_path.clone(),
+                                    "hard_fail",
+                                    turns,
+                                    CommandOutputs::default(),
+                                );
+                                return Ok(hard_fail_result(
+                                    input,
+                                    &recent_tool_calls,
+                                    deps.project_root,
+                                    last_author_diagnostics.clone(),
+                                    signal,
+                                    artifacts,
+                                ));
+                            }
+                            crate::parser::feedback::empty_recovery_feedback(
                                 consecutive_empty_completions,
-                                deps.governor.empty_completion_threshold,
+                                &completion,
                             )
-                        {
-                            log_event(
-                                &log_handle,
-                                &redactor,
-                                deps.clock,
-                                turns,
-                                SessionEvent::HardFail {
-                                    reason: signal.describe(),
-                                },
-                            );
-                            log_session_end(&log_handle, &redactor, deps.clock, "hard_fail", turns);
-                            emit_phase_run(
-                                &deps,
-                                input,
-                                "hard_fail",
-                                Gates::default(),
-                                &metrics,
-                                &scorer,
-                                turns,
-                            );
-                            let artifacts = build_artifacts(
-                                &pre_edit_content,
-                                deps.project_root,
-                                log_path.clone(),
-                                "hard_fail",
-                                turns,
-                                CommandOutputs::default(),
-                            );
-                            return Ok(hard_fail_result(
-                                input,
-                                &recent_tool_calls,
-                                deps.project_root,
-                                last_author_diagnostics.clone(),
-                                signal,
-                                artifacts,
-                            ));
-                        }
-
+                        };
                         metrics.parse_failures += 1;
                         let failure = crate::parser::ParseFailure {
                             raw: completion.clone(),
                             detected_format: None,
                             candidates: vec![],
-                            feedback: crate::parser::feedback::format_no_match(&completion),
+                            feedback,
                         };
                         log_event(
                             &log_handle,
@@ -618,8 +635,8 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         }
                         continue;
                     }
-                    // Reaching here means the completion had real post-think text
-                    // (not empty/think-only) — reset the empty-completion counter.
+                    // Reaching here means a productive, non-truncated completion with real
+                    // post-think text — reset the empty-completion counter.
                     consecutive_empty_completions = 0;
                     // Step 8 — run the final gate set BEFORE declaring completion. If any
                     // gate fails, inject the failure output and continue so the model must
