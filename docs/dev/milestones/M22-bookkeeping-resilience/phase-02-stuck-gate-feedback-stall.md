@@ -1,7 +1,7 @@
 # Phase 02: Stuck gate-feedback stall
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (both edit the `NoToolCall` arm of `mod.rs`; land 01 first)
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -321,3 +321,19 @@ Grep confirming pinned literals landed:
 - (to be committed below)
 
 **Notes for review:** The `mcp/src/runner.rs` edits were necessary because `ModelOverride` is a non-`#[derive(Default)]` struct in test code that uses struct literal syntax. The two existing initializers were missing the new field. No other adaptation was needed.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. The 2-line `mcp/src/runner.rs` touch is the
+  mechanically-required struct-literal consequence of the additive
+  `ModelOverride` field (identical to phase-01's same touch), not a widening.
+- **Calibration:** none. Clean 121-turn first-try. All four gates green on
+  independent re-run (829 passed / 2 ignored). The peek-guard sits above the
+  three untouched gate blocks exactly as specified; the M19/M21 path is intact.
+  Both pinned negatives (`task_coverage_check_loops_until_all_tasks_done`,
+  `gate_failure_loops_until_gates_pass`) pass unmodified. The integration test
+  `stuck_task_coverage_feedback_hard_fails` is mutation-verified (forcing
+  `check_repeated_gate_feedback` to never fire makes it fail).
