@@ -4,10 +4,35 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** M22 phase-02 — **Stuck gate-feedback stall**
-([phase-02-stuck-gate-feedback-stall.md](milestones/M22-bookkeeping-resilience/phase-02-stuck-gate-feedback-stall.md)).
-Already drafted, status `todo`. Dispatch with `/rexymcp:dispatch phase-02` when
-ready (it depends on phase-01, now landed).
+**Active phase:** M22 phase-03 — **Seeder precision: bold-name tasks + de-dup**
+([phase-03-seeder-precision.md](milestones/M22-bookkeeping-resilience/phase-03-seeder-precision.md)).
+Already drafted (with phases 04/05 — all five drafted up front), status `todo`.
+Dispatch with `/rexymcp:dispatch phase-03` when ready. Independent of phases
+01/02/04/05 — single file `executor/src/agent/tasks.rs`. Two changes: (B4) the
+`N.` list-item form requires a `**bold**` name (matching the documented
+`WORKFLOW.md` § Spec convention `N. **<Task name>** — …`), so a prose ordered
+list (`1. If packet.tcp…`) is no longer mis-seeded as a task; (B5) de-dup the
+seeded list by id and title. Anchors re-verified current at activation: the
+quoted `parse_task_line`/`extract_title` blocks match `tasks.rs` exactly (phases
+01/02 touched only `mod.rs`/governor, not `tasks.rs`); minor ≤1-line offsets in
+the cited test line numbers, but anchor text is exact. Closes the
+`session-phase-04-6a32f237` regression (byte-identical truncated titles from a
+seeded prose algorithm).
+
+**M22 phase-02 — done** (2026-06-18, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `93dbca8` feat / `d9b9a1e` approve). A3: the
+additive peek-guard (`check_repeated_gate_feedback` → `HardFailSignal`) sits
+**above** the three untouched M19/M21 gate blocks in the `NoToolCall` arm — the
+same gate feedback re-injected ≥ K times (default 5) with no state change now
+terminates as `hard_fail` (`StuckGateFeedback`), not an unbounded loop. Clean
+121-turn first-try; all four gates green on independent re-run (829 passed / 2
+ignored). Both pinned negatives
+(`task_coverage_check_loops_until_all_tasks_done`,
+`gate_failure_loops_until_gates_pass`) pass unmodified; the integration test
+`stuck_task_coverage_feedback_hard_fails` is mutation-verified. **Scope:** the
+2-line `mcp/src/runner.rs` touch is the same mechanically-required
+`ModelOverride` struct-literal consequence as phase-01, not a widening. **No
+calibration fold.**
 
 **M22 phase-01 — done** (2026-06-17, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `e618496` feat). A1 broadened the `NoToolCall`
