@@ -1,7 +1,7 @@
 # Phase 01: `patch` no-op recovery context
 
 **Milestone:** M24 — Edit-Loop Recovery
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~95 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -300,3 +300,69 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 17:45 (started)
+
+**Executor:** Claude (Opus) — direct execution
+
+Implementing patch no-op recovery context: removing the early flat-string guard, relocating the check after the file read, adding the `noop_hint` helper with line-numbered context window and multiplicity note, and writing three new tests.
+
+### Update — 2026-06-18 17:46 (complete)
+
+**Summary:** Relocated the `old_str == new_str` no-op guard from above the file read (lines 82–88) to below it (after `match_count`), so the tool can now return a recovery-oriented message with file location, a line-numbered context window, and a duplicate-occurrence note. Added the `noop_hint` free function next to `fuzzy_hint`. Added three new tests: `noop_patch_shows_location_and_context_window`, `noop_patch_flags_duplicate_occurrences`, `noop_patch_when_old_str_absent_suggests_read_file`. The existing `rejects_identical_old_and_new` test passes unmodified.
+
+**Acceptance criteria:** all ticked.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(no output — clean)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+   Compiling rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.99s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.1.3 (/home/matt/src/rexyMCP/executor)
+    Checking rexymcp v0.1.3 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.89s
+
+cargo test 2>&1 | tail -30
+test result: ok. 860 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+The unit tests invoke the real `Patch` tool over `TempDir`-scoped `Scope`. One rendered no-op error (single occurrence):
+
+```
+no-op patch: old_str and new_str are identical, so this patch would change nothing.
+
+The file already contains this exact text at /tmp/.../test.rs:2-2:
+   1 | fn foo() {}
+   2 | fn bar() {}
+   3 | fn baz() {}
+
+To make an edit, old_str and new_str must differ. If the file already has the content you intended, no patch is needed — re-read the file with read_file to confirm the current state, then move on to the next step.
+```
+
+Duplicate-occurrence error includes: `Note: this text appears 2 times in /tmp/.../test.txt.`
+
+Absent-text error includes: `old_str was not found in /tmp/.../test.txt, so the file does not currently contain this text. Call read_file to see the current content before patching.`
+
+**Grep verification:** `grep -n 'no-op patch: old_str equals new_str' executor/src/tools/patch.rs` returns nothing (exit 1) — old flat string fully replaced. `grep -n 'no-op patch:' executor/src/tools/patch.rs` returns line 196 — the new preamble.
+
+**Files changed:**
+- `executor/src/tools/patch.rs` — removed early no-op guard, added relocated check after file read, added `noop_hint` helper, added 3 new tests
+
+**New tests:**
+- `noop_patch_shows_location_and_context_window` in `executor/src/tools/patch.rs`
+- `noop_patch_flags_duplicate_occurrences` in `executor/src/tools/patch.rs`
+- `noop_patch_when_old_str_absent_suggests_read_file` in `executor/src/tools/patch.rs`
+
+**Commits:**
+- (pending — will commit now)
+
+**Notes for review:** One clippy fix during implementation: `err.contains(&path.to_string_lossy())` needed `&*` deref because `Cow<str>` doesn't implement `Pattern<char>`. No scope deviations.

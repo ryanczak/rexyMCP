@@ -64,7 +64,7 @@ than once (the duplicate tell), and name the escape (`read_file`, then move on).
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | `patch` no-op recovery context ([phase-01-patch-noop-context.md](phase-01-patch-noop-context.md)) | todo |
+| 01 | `patch` no-op recovery context ([phase-01-patch-noop-context.md](phase-01-patch-noop-context.md)) | review |
 
 Single phase for now. If the follow-up e2e shows the model also stalls on the
 ambiguous-match (`n =>`) or zero-match (`0 =>`) arms, a phase-02 would extend the
