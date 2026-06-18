@@ -80,7 +80,7 @@ impl Tool for UpdateTask {
             }
         };
 
-        let (id, title, state_value) = {
+        let (id, title, state_value, was_already, remaining) = {
             let mut tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
             let task = match tasks.iter_mut().find(|t| t.id == parsed.id) {
                 Some(t) => t,
@@ -93,13 +93,30 @@ impl Tool for UpdateTask {
             };
             let title = task.title.clone();
             let id = task.id.clone();
+            let was_already = task.state == new_state;
             task.state = new_state;
             let state_value = serde_json::to_value(task.state)?;
-            (id, title, state_value)
+            let remaining: Vec<String> = tasks
+                .iter()
+                .filter(|t| t.state != TaskState::Done)
+                .map(|t| t.id.clone())
+                .collect();
+            (id, title, state_value, was_already, remaining)
+        };
+
+        let remark = if was_already && new_state == TaskState::Done {
+            format!("task {id} \"{title}\" was already done")
+        } else {
+            format!("task {id} \"{title}\" → {}", parsed.state)
+        };
+        let tail = if remaining.is_empty() {
+            " — all tasks complete".to_string()
+        } else {
+            format!(" — still incomplete: {}", remaining.join(", "))
         };
 
         Ok(ToolResult {
-            output: format!("task {} \"{}\" → {}", id, title, parsed.state),
+            output: format!("{remark}{tail}"),
             error: None,
             metadata: Some(json!({
                 "task_update": {
@@ -124,6 +141,26 @@ mod tests {
             title: "First task".to_string(),
             state: TaskState::Pending,
         }]
+    }
+
+    fn make_three_tasks() -> Vec<Task> {
+        vec![
+            Task {
+                id: "1".to_string(),
+                title: "First task".to_string(),
+                state: TaskState::Pending,
+            },
+            Task {
+                id: "2".to_string(),
+                title: "Second task".to_string(),
+                state: TaskState::Pending,
+            },
+            Task {
+                id: "3".to_string(),
+                title: "Third task".to_string(),
+                state: TaskState::Pending,
+            },
+        ]
     }
 
     #[tokio::test]
@@ -200,5 +237,63 @@ mod tests {
         let result = tool.execute(json!({ "id": 1 })).await.unwrap();
 
         assert!(result.error.is_some());
+    }
+
+    #[tokio::test]
+    async fn result_lists_remaining_incomplete_ids() {
+        let tool: Arc<dyn Tool> = update_task(make_three_tasks());
+        let result = tool
+            .execute(json!({ "id": "1", "state": "done" }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("still incomplete"));
+        assert!(result.output.contains("2"));
+        assert!(result.output.contains("3"));
+        assert!(!result.output.contains("task 2 done"));
+    }
+
+    #[tokio::test]
+    async fn result_flags_redundant_remark() {
+        let mut tasks = make_tasks();
+        tasks[0].state = TaskState::Done;
+        let tool: Arc<dyn Tool> = update_task(tasks);
+        let result = tool
+            .execute(json!({ "id": "1", "state": "done" }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("was already done"));
+    }
+
+    #[tokio::test]
+    async fn result_reports_all_complete_when_last_done() {
+        let mut tasks = make_tasks();
+        tasks[0].state = TaskState::Active;
+        let tool: Arc<dyn Tool> = update_task(tasks);
+        let result = tool
+            .execute(json!({ "id": "1", "state": "done" }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        assert!(result.output.contains("all tasks complete"));
+    }
+
+    #[tokio::test]
+    async fn metadata_shape_is_unchanged() {
+        let tool: Arc<dyn Tool> = update_task(make_tasks());
+        let result = tool
+            .execute(json!({ "id": "1", "state": "done" }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_none());
+        let meta = result.metadata.as_ref().unwrap();
+        assert_eq!(meta["task_update"]["state"].as_str().unwrap(), "done");
+        assert_eq!(meta["task_update"]["id"].as_str().unwrap(), "1");
+        assert_eq!(meta["task_update"]["title"].as_str().unwrap(), "First task");
     }
 }

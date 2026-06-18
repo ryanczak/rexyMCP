@@ -1,7 +1,7 @@
 # Phase 04: update_task result echoes remaining ids
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** todo
+**Status:** review
 **Depends on:** none (independent of phases 01–03 and 05)
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -182,3 +182,33 @@ None. No new dependency, no `Cargo.toml`/`architecture.md` edit.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 01:36 (started)
+
+**Executor:** claude-code
+**Tasks:** Implementing Tasks 1 and 2 — echo remaining ids + flag redundant re-mark, and add four unit tests.
+
+### Update — 2026-06-18 01:37 (complete)
+
+**Executor:** claude-code
+**Tasks completed:** 1 (echo remaining ids + flag redundant re-mark), 2 (four unit tests).
+
+**Verification:**
+- `cargo fmt --all --check` — exit 0
+- `cargo build` — exit 0, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — exit 0
+- `cargo test` — 836 passed, 0 failed, 2 ignored
+- `cargo test -p rexymcp-executor -- update_task` — 11 passed (7 pre-existing + 4 new)
+
+**Grep for pinned literal:** `grep "still incomplete" executor/src/tools/update_task.rs` → 2 matches (line 115 production, line 251 test).
+
+**Files changed:**
+- `executor/src/tools/update_task.rs` — added `was_already` / `remaining` capture inside lock, appended `{remark}{tail}` to output; added `make_three_tasks` helper and 4 new tests.
+- `docs/dev/milestones/M22-bookkeeping-resilience/phase-04-coverage-feedback-echo.md` — status → review, update log entries.
+- `docs/dev/milestones/M22-bookkeeping-resilience/README.md` — phase 04 row → review.
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact beyond the tool result, which the unit tests exercise directly.
+
+**Notes for review:**
+- No existing test pinned the exact old output string by equality, so no pre-existing test needed updating. All 7 pre-existing `update_task` tests passed unchanged.
+- The `task_update` metadata shape is untouched — same `id`, `title`, `state` keys.
