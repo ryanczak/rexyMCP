@@ -949,7 +949,8 @@ The project plan. Each entry becomes a milestone with its own
     turn-cycle seam M19/M21 extended. (Server-authored bookkeeping — moving who
     authors the Status flip / Update Log — is deferred pending a contract
     discussion.)
-23. **M23 — Truncation & Empty-Completion Recovery** *(in progress)*. Recover
+23. **M23 — Truncation & Empty-Completion Recovery** *(done, 2026-06-18; 3/3
+    phases approved)*. Recover
     from the truncation/empty-output tail before hard-failing, one layer below
     M22's `EmptyCompletionStall` terminator. Diagnosed from a netviz e2e run where
     the per-turn output cap (`max_tokens`, **hardcoded 4096** in the OpenAI backend)
@@ -962,4 +963,19 @@ The project plan. Each entry becomes a milestone with its own
     truncation-specific recovery nudge instead of the completion path, and escalate
     the empty-recovery feedback to a no-reasoning directive after ≥ 2 consecutive
     empties. Additive; a dedicated truncation terminator is deferred (recover
-    first — the loop stays bounded by the turn cap and M22's empty stall).
+    first — the loop stays bounded by the turn cap and M22's empty stall). A
+    third cleanup phase collapsed the three sampling knobs into a `SamplingParams`
+    struct (retiring phase-01's `too_many_arguments` allow) and fixed a latent
+    `format_no_match` multibyte-slice panic.
+24. **M24 — Edit-Loop Recovery** *(in progress)*. Enrich the `patch` tool's
+    no-op error so the executor recovers before the governor halts it. Diagnosed
+    from a netviz e2e run where a MEDIUM-tier model introduced duplicate constants
+    with one patch, then re-emitted a byte-identical `old_str`/`new_str` (a no-op)
+    six times — the flat `no-op patch: old_str equals new_str` message gave it
+    nothing to act on — until M22's `IdenticalToolCallRepetition` stall fired three
+    turns later. Phase-01 moves the no-op check below the file read and replaces the
+    dead-end string with a recovery message: the current `path:start-end` location,
+    a line-numbered context window (mirroring `fuzzy_hint`), an occurrence-count
+    note when the text appears more than once (the duplicate tell), and a
+    `read_file`/move-on next step. Recover-first per M23: the governor stall stays
+    the backstop, unchanged.

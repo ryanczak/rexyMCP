@@ -4,9 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **none.** M23 — Truncation & Empty-Completion Recovery is
-**complete** (3/3 phases approved_first_try, 2026-06-18). Next milestone is a
-human-gated boundary — kick off the next via `/rexymcp:architect` when ready.
+**Active phase:** **M24 phase-01 — `patch` no-op recovery context**
+([phase-01-patch-noop-context.md](milestones/M24-edit-loop-recovery/phase-01-patch-noop-context.md)).
+Drafted 2026-06-18, ready to dispatch.
+
+**📌 M24 — Edit-Loop Recovery kicked off (2026-06-18, with the user).** Diagnosed
+from a fresh netviz e2e run (`google/gemma-4-26b-a4b-qat`, MEDIUM, phase-03,
+`session-phase-03-6a342a42.jsonl`) that hard-failed on a **new** mechanism (distinct
+from M22's empty spiral and M23's truncation). Turn 3: a `patch` succeeded but
+introduced **duplicate constants** (added `ETHERTYPE_IPV6`/`IPV6_HEADER_LENGTH`
+after `ETHERTYPE_IPV4` when they already existed lower in the file). Turns 5–10:
+the model tried to remove the dupes but submitted a **byte-identical
+`old_str`/`new_str`** (a no-op) — the flat `no-op patch: old_str equals new_str`
+error gave it nothing to act on, so it re-emitted the identical call until M22's
+`IdenticalToolCallRepetition` stall fired at turn 10 (three turns after the real
+failure). Milestone [README](milestones/M24-edit-loop-recovery/README.md) +
+`architecture.md` § Status #24 added. **Single phase** (phase-01): move the no-op
+check below the file read and replace the dead-end string with a recovery message —
+current `path:start-end` location, a line-numbered context window (mirroring
+`patch.rs`'s `fuzzy_hint`), an occurrence-count note when the text appears > 1 time
+(the duplicate tell), and a `read_file`/move-on next step. **Scope decisions
+(2026-06-18, with the user):** enrich the tool error, **no new terminator**
+(recover-first per M23; M22's governor stall stays the unchanged backstop); only the
+`patch` no-op arm (`patch_lines` and the other `patch` arms untouched); surface
+context, don't auto-fix duplicates. A phase-02 extending the same enrichment to the
+ambiguous/zero-match arms is held until the follow-up e2e shows a need.
 
 **M23 phase-03 — done** (2026-06-18, **approved_first_try**, executor
 **Claude Code (direct)**; commit `eed0213` refactor). The retrospective-cleanup
