@@ -27,10 +27,11 @@ Read before starting:
   model to mirror: a pure, `working_set`-style pre-dispatch refusal returning
   `Option<String>` (a model-visible advisory, not `Result::Err`). `resolve_path`
   (top of file) and `edit_target` are alongside it.
-- `executor/src/agent/mod.rs` — the pre-dispatch refusal seam (~826–869): the
+- `executor/src/agent/mod.rs` — the pre-dispatch refusal seam (~960–986, shifted
+  down after phases 01/02 added code to the `NoToolCall` arm above it): the
   `dedupe` check, then `match read_before_edit_refusal(…) { Some(refusal) => (false,
   refusal, None), None => { …dispatch… } }`. `pre_edit_content:
-  HashMap<PathBuf, Option<String>>` (declared ~171) is the **edited-this-session**
+  HashMap<PathBuf, Option<String>>` (declared line 178) is the **edited-this-session**
   set — its keys are exactly the files the model has edited (captured pre-edit).
 - `executor/src/security/bash_classify.rs` — the existing git blocklist
   (`BLOCK_SUBSTRINGS`, `GIT_RESET_HARD_RE`). This phase complements it; do not
@@ -64,7 +65,7 @@ pub(super) fn read_before_edit_refusal(
 }
 ```
 
-Wiring in `mod.rs` (~832):
+Wiring in `mod.rs` (~966):
 
 ```rust
 match read_before_edit_refusal(&tool_call, &working_set, deps.project_root) {
@@ -158,7 +159,7 @@ Imports: `restore_path_tokens` is private; `destructive_restore_refusal` uses
 all already imported in `tools.rs` (it already has `read_before_edit_refusal` with
 the same imports).
 
-### Task 2 — Wire it into the refusal seam (`mod.rs`, ~832)
+### Task 2 — Wire it into the refusal seam (`mod.rs`, ~966)
 
 Chain the new refusal **before** `read_before_edit_refusal` (they are disjoint —
 bash vs patch — so order is cosmetic):

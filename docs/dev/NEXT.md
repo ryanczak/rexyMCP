@@ -4,10 +4,33 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** M22 phase-04 — **update_task result echoes remaining ids (B6)**
-([phase-04-coverage-feedback-echo.md](milestones/M22-bookkeeping-resilience/phase-04-coverage-feedback-echo.md)).
-Already drafted (all five drafted up front), status `todo`.
-Dispatch with `/rexymcp:dispatch phase-04` when ready.
+**Active phase:** M22 phase-05 — **self-revert guard (C7)**
+([phase-05-self-revert-guard.md](milestones/M22-bookkeeping-resilience/phase-05-self-revert-guard.md)).
+Already drafted (all five drafted up front), status `todo`. Anchors refreshed at
+activation: the `mod.rs` pre-dispatch refusal seam shifted from the drafted
+`~832` to **line 966** (phases 01/02 added code to the `NoToolCall` arm above it),
+and `pre_edit_content` is declared at line 178 — both line refs corrected in the
+phase doc; the anchor text and structure match the live seam exactly
+(`dedupe` check → `match read_before_edit_refusal(…)`). **This is the last M22
+phase — after approval, M22 closes and the next `next` is a human-gated milestone
+boundary** (retrospective + fold review).
+Dispatch with `/rexymcp:dispatch phase-05` when ready.
+
+**M22 phase-04 — done** (2026-06-18, **approved_first_try**, executor
+**claude-code (direct)**; commit `83d1805` feat / `afe3216` approve). B6: the
+`update_task` tool result now appends the still-incomplete task ids (computed
+inside the lock in seeded order) and flags a redundant re-mark (`was_already`
+captured before the state flip), giving the model a per-call signal so it can
+self-correct instead of refixating on one task. `task_update` metadata shape
+untouched (same `id`/`title`/`state` keys — loop shadow intact). Single
+production file (`update_task.rs`); four new mutation-resistant tests (the base
+remark for `result_lists_remaining_incomplete_ids` contains no `"2"`, so the
+id-echo assertions only pass via the `remaining` clause); no pre-existing test
+pinned the old output by equality, so all 7 prior `update_task` tests passed
+unmodified. Clean first-try; all four gates green on independent re-run (836
+passed / 2 ignored). **No scope deviation, no calibration fold.** (NEXT.md
+pointer was left stale by the approve commit — which touched only README + the
+phase doc — and re-advanced here at the next `/rexymcp:architect next`.)
 
 **M22 phase-03 — done** (2026-06-18, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `5623004` feat). B4: `parse_task_line` now requires

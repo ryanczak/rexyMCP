@@ -6,7 +6,7 @@ spirals, stuck gate-feedback loops, bogus task seeding, and self-reverts — so 
 model that writes correct code can reliably *finish* the phase instead of burning
 the turn budget or hard-failing in the bookkeeping step.
 
-**Status:** planning
+**Status:** in-progress
 
 **Depends on:** M19 (gate-retry loop in the `NoToolCall` arm), M21 (task-coverage
 gate — we harden the same loop), M16 (seeder robustness — we tighten the same
