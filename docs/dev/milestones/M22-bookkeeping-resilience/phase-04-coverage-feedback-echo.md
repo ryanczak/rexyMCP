@@ -1,7 +1,7 @@
 # Phase 04: update_task result echoes remaining ids
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** review
+**Status:** done
 **Depends on:** none (independent of phases 01–03 and 05)
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -212,3 +212,19 @@ None. No new dependency, no `Cargo.toml`/`architecture.md` edit.
 **Notes for review:**
 - No existing test pinned the exact old output string by equality, so no pre-existing test needed updating. All 7 pre-existing `update_task` tests passed unchanged.
 - The `task_update` metadata shape is untouched — same `id`, `title`, `state` keys.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** claude-code (direct)
+- **Scope deviations:** none — `update_task.rs` only (production + tests), plus the
+  phase-doc/README status bookkeeping. Spec implemented byte-for-byte: `was_already`
+  captured before the state flip, `remaining` computed inside the lock in seeded
+  order, `{remark}{tail}` output, `task_update` metadata unchanged.
+- **Independent re-run:** all four gates green — `cargo fmt --all --check` clean,
+  `cargo build` zero warnings, `cargo clippy` clean, `cargo test` 836 passed / 2
+  ignored. Four new tests present and mutation-resistant (the base remark for
+  `result_lists_remaining_incomplete_ids` contains no `"2"`, so the id-echo
+  assertions only pass via the `remaining` clause).
+- **Calibration:** none.
