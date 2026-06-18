@@ -4,7 +4,7 @@
 to recover from a stuck edit loop on its own, instead of repeating an identical
 no-op patch until the governor halts the run.
 
-**Status:** in-progress (phase-01 drafted 2026-06-18)
+**Status:** committed scope complete (phase-01 done 2026-06-18; phase-02 held pending follow-up e2e)
 
 **Depends on:** M22 (the `IdenticalToolCallRepetition` governor stall that
 currently catches this loop as a *symptom*), M23 (the recover-first principle —
@@ -64,7 +64,7 @@ than once (the duplicate tell), and name the escape (`read_file`, then move on).
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | `patch` no-op recovery context ([phase-01-patch-noop-context.md](phase-01-patch-noop-context.md)) | review |
+| 01 | `patch` no-op recovery context ([phase-01-patch-noop-context.md](phase-01-patch-noop-context.md)) | done |
 
 Single phase for now. If the follow-up e2e shows the model also stalls on the
 ambiguous-match (`n =>`) or zero-match (`0 =>`) arms, a phase-02 would extend the
@@ -86,3 +86,34 @@ same enrichment there — held until the data shows a need.
   lives and flags duplicates; it does not try to detect or remove the duplicates
   itself. The model decides — the tool just stops withholding the information it
   already has.
+
+### Retrospective — 2026-06-18
+
+**phase-01 — approved_first_try** (executor Qwen/Qwen3.6-27B-FP8; commit
+`a6ff4fc` `fix(patch):`). The `patch` no-op arm now returns recovery context
+instead of the dead-end `no-op patch: old_str equals new_str` string: the
+`old_str == new_str` guard moved from above the file read to below it (after
+`match_count`), and a new `noop_hint` free fn — mirroring `fuzzy_hint`'s
+windowed shape with a `{lineno:>4} | {line}` gutter — emits the `path:start-end`
+location, a line-numbered context window, an `occurrences > 1` multiplicity
+note (the duplicate tell), and a `read_file`/move-on next step. The
+`content.find` `None` branch handles the absent-text case without fabricating a
+location. Three mutation-resistant tests added; the existing
+`rejects_identical_old_and_new` passed unmodified (new message still starts
+`no-op patch`). Clean 71-turn first-try; all four gates green on independent
+re-run (860 passed / 2 ignored). No scope deviation, no calibration fold. One
+in-flight clippy fix (`&*` deref on `Cow<str>` for `contains`) — implementation
+detail, not a defect.
+
+**Calibration (no fold):** the recurring cosmetic Update-Log identity
+self-stamp persisted ("Claude (Opus)" while the executor was Qwen) — date
+correct, machine telemetry records the real model; same known quirk, no new
+data.
+
+**Committed scope complete.** Per the kickoff scope decision, M24 is a single
+phase. A phase-02 extending the same enrichment to the ambiguous (`n =>`) and
+zero-match (`0 =>`) arms is **held until a follow-up netviz e2e shows the model
+also stalls there** — those arms already return actionable context, so there is
+no data justifying the work yet. Whether the M24 mechanism (duplicate-introduce
+→ no-op repair loop) recurs under the enriched message is the signal to watch on
+the next MEDIUM-tier e2e run.

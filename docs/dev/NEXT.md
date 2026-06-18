@@ -4,9 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M24 phase-01 — `patch` no-op recovery context**
-([phase-01-patch-noop-context.md](milestones/M24-edit-loop-recovery/phase-01-patch-noop-context.md)).
-Drafted 2026-06-18, ready to dispatch.
+**Active phase:** **none.** M24 phase-01 done (approved_first_try, 2026-06-18).
+M24's committed scope (single phase) is complete; phase-02 (extend the
+enrichment to the ambiguous / zero-match arms) is **held pending a follow-up
+netviz e2e** that shows the model also stalls there. Next milestone is a
+human-gated boundary — kick off via `/rexymcp:architect`.
+
+**M24 phase-01 — done** (2026-06-18, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `a6ff4fc` fix). The `patch` no-op arm now returns
+recovery context instead of the dead-end `no-op patch: old_str equals new_str`
+string: the `old_str == new_str` guard moved from above the file read to below it
+(after `match_count`), and a new `noop_hint` free fn — mirroring `fuzzy_hint`'s
+windowed shape with a `{lineno:>4} | {line}` gutter — emits the `path:start-end`
+location, a line-numbered context window, an `occurrences > 1` multiplicity note,
+and a `read_file`/move-on next step; the `content.find` `None` branch handles the
+absent-text case without fabricating a location. 3 mutation-resistant tests;
+existing `rejects_identical_old_and_new` passed unmodified. Clean 71-turn
+first-try; all four gates green on independent re-run (860 passed / 2 ignored).
+No scope deviation, no calibration fold. Cosmetic Update-Log identity self-stamp
+("Claude (Opus)") recurred — date correct, telemetry records the real Qwen model.
 
 **📌 M24 — Edit-Loop Recovery kicked off (2026-06-18, with the user).** Diagnosed
 from a fresh netviz e2e run (`google/gemma-4-26b-a4b-qat`, MEDIUM, phase-03,

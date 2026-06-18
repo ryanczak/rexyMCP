@@ -1,7 +1,7 @@
 # Phase 01: `patch` no-op recovery context
 
 **Milestone:** M24 — Edit-Loop Recovery
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~95 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -366,3 +366,24 @@ Absent-text error includes: `old_str was not found in /tmp/.../test.txt, so the 
 - (pending — will commit now)
 
 **Notes for review:** One clippy fix during implementation: `err.contains(&path.to_string_lossy())` needed `&*` deref because `Cow<str>` doesn't implement `Pattern<char>`. No scope deviations.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (Update Log self-stamps "Claude (Opus)" — the recurring cosmetic identity quirk; health check confirms Qwen, no model override)
+- **Scope deviations:** none
+- **Calibration:** none
+
+All three Spec tasks implemented as written: the early `old_str == new_str`
+guard relocated below the file read, the `noop_hint` helper added next to
+`fuzzy_hint` with a line-numbered gutter and `occurrences > 1` multiplicity
+note, and three mutation-resistant tests. All seven acceptance criteria
+verified independently — old flat string gone (`grep` empty), present-text
+case returns `path:start-end` + window, duplicate case flags the count,
+absent case returns "not found … read_file" with no fabricated location and
+no gutter, `rejects_identical_old_and_new` passes unmodified, governor and
+`patch_lines` untouched. Four gates green on independent re-run (fmt clean,
+build clean, clippy clean, 860 passed / 2 ignored). No new `unwrap`/`panic`/
+`TODO` in the helper; one conventional `fix(patch):` commit confined to
+`patch.rs` + docs.
