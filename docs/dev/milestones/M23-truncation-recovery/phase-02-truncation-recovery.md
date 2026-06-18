@@ -1,7 +1,7 @@
 # Phase 02: Truncation-aware empty-completion recovery
 
 **Milestone:** M23 — Truncation & Empty-Completion Recovery
-**Status:** review
+**Status:** done
 **Depends on:** M22 phase-01 (the `NoToolCall` empty branch + `consecutive_empty_completions` counter this phase extends). Independent of M23 phase-01 in code (different file), but dispatched after it so the raised `max_tokens` default reduces how often the truncation path fires.
 **Estimated diff:** ~170 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -420,3 +420,30 @@ N/A — phase ships no runtime-loadable artifact. `execute_phase` is the library
 - All pre-existing tests pass unmodified: M22 empty-completion tests (`empty_completions_hard_fail_at_threshold`, `single_empty_completion_then_recovers_does_not_hard_fail`) and gate/completion tests all pass.
 - Grep verification: `format_truncated` and `empty_recovery_feedback` confirmed present in `feedback.rs` at lines 60 and 75 respectively.
 
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. All 5 Spec tasks landed verbatim; no out-of-scope
+  files touched (`format_no_match`'s `[..200]` byte-slice correctly left alone and
+  flagged in Notes-for-review; no `architecture.md`/`Cargo.toml` edit; no new
+  `TruncationStall` terminator per the recover-first scope decision).
+- **Independent re-run:** `cargo fmt --all --check` clean · `cargo build` zero new
+  warnings · `cargo clippy --all-targets --all-features -- -D warnings` clean ·
+  `cargo test` 855 passed / 0 failed / 2 ignored (+5 over the 850 baseline).
+- **Tests verified mutation-resistant:** `truncated_turn_is_not_treated_as_completion`
+  pins `client.calls().len() == 2` — without the Task 3 routing change turn 1 falls
+  through to completion (1 call), so the assertion refutes the pre-fix behavior;
+  `repeated_truncation_reaches_turn_cap_not_completion` pins `BudgetExceeded` (bounded
+  loop, not `Complete`); `empty_recovery_feedback_escalates_after_two` asserts the
+  count-2 message differs from count-1 (refutes a non-escalating impl). Correctness
+  crux verified: `turn_finish_reason` is declared inside the per-turn loop body
+  (`mod.rs:394`, alongside `completion`), so it resets to `None` each turn — a later
+  plain completion is not mis-flagged as truncated.
+- **Pinned negatives hold:** M22 `empty_completions_hard_fail_at_threshold` /
+  `single_empty_completion_then_recovers_does_not_hard_fail` and
+  `gate_failure_loops_until_gates_pass` all pass **unmodified** — the empty arm's
+  counter+stall logic is preserved verbatim; only the feedback string is now
+  selected via `empty_recovery_feedback` (count 1 → the same `format_no_match` text).
+- **Calibration:** none. Clean 89-turn first-try.

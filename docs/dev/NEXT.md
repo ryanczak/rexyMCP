@@ -4,14 +4,32 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M23 phase-02 — Truncation-aware empty-completion recovery**
-([phase-02-truncation-recovery.md](milestones/M23-truncation-recovery/phase-02-truncation-recovery.md)).
-Drafted at kickoff; all load-bearing anchors re-verified current at activation
-(`mod.rs` completion-decl 392–393 / `AiEvent::Completion` 407 / `NoToolCall`
-guard 517–523 / reset 623; `feedback.rs` `format_no_match` 43 + the `[..200]`
-byte-slice 45; `testing.rs` `MockAiClientScript::new` 108; `tests.rs`
-`length_finish_rate_*` 2907 / `empty_completions_hard_fail_at_threshold` 4140 —
-phase-01 touched none of these files). Ready to dispatch.
+**Active phase:** **none.** 🛑 **Milestone boundary — M23 closed (2/2 phases done,
+2026-06-18), awaiting human sign-off before the next milestone.** Both M23 phases
+landed **approved_first_try** (Qwen/Qwen3.6-27B-FP8); the netviz truncation
+failure is closed on both fronts (configurable `max_tokens` default 8192 +
+`finish_reason == "length"` routing to a truncation nudge). See the
+[M23 retrospective](milestones/M23-truncation-recovery/README.md#retrospective--2026-06-18)
+for calibration data (the `too_many_arguments` allow — 1st occurrence — and the
+twice-deferred `format_no_match` byte-slice panic) and the open items
+(`TruncationStall` terminator pending the follow-up live netviz e2e;
+`max_tokens` runtime clamp; D8/D9 server-authored bookkeeping). The user kicks
+off the next milestone explicitly via `/rexymcp:architect`.
+
+**M23 phase-02 — done** (2026-06-18, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `6608df3` feat). Acts on `finish_reason`: a new
+per-turn `turn_finish_reason` (declared inside the loop body so it resets each
+turn), captured in the `AiEvent::Completion` arm; the `NoToolCall` empty branch
+guard broadened to `truncated || post_think.trim().is_empty()` with feedback
+selected by cause — `format_truncated` for a `length`-cut turn (leaves the empty
+counter untouched), `empty_recovery_feedback` for a blank turn (count ≥ 2
+escalates to a no-`<think>` directive). Two new `feedback.rs` helpers + 3 unit
+tests; 2 integration tests (`truncated_turn_is_not_treated_as_completion` pins
+`calls().len() == 2`; `repeated_truncation_reaches_turn_cap_not_completion` pins
+`BudgetExceeded`). Clean 89-turn first-try; all four gates green on independent
+re-run (855 passed / 2 ignored). M22 empty-stall + gate tests pass unmodified.
+The `format_no_match` `[..200]` byte-slice panic was correctly held out of scope
+(2nd deferral; `format_truncated` uses char-safe `chars().take(200)`).
 
 **M23 phase-01 — done** (2026-06-18, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `5eec632` feat / `8a68b06` approve). `max_tokens`

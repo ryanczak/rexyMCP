@@ -8,7 +8,7 @@ per-turn output ceiling so a thinking model can finish its reasoning *and* emit 
 tool call, and when the backend still cuts a turn off mid-stream, tell the model
 exactly that instead of mis-reading the stub as a completion attempt.
 
-**Status:** todo
+**Status:** done (2/2 phases, 2026-06-18)
 
 **Depends on:** M22 (the `NoToolCall` empty branch + `consecutive_empty_completions`
 counter this milestone extends), M18 (the `[models]` per-model override +
@@ -97,7 +97,7 @@ unraised cap pulled it back in.
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Configurable `max_tokens` (config + backend + init template) ([phase-01-configurable-max-tokens.md](phase-01-configurable-max-tokens.md)) | done |
-| 02 | Truncation-aware empty-completion recovery (finish_reason routing + no-think escalation) ([phase-02-truncation-recovery.md](phase-02-truncation-recovery.md)) | review |
+| 02 | Truncation-aware empty-completion recovery (finish_reason routing + no-think escalation) ([phase-02-truncation-recovery.md](phase-02-truncation-recovery.md)) | done |
 
 Dispatch in order and review-gate each. Phase 01 is config/backend plumbing
 (mirrors the `temperature`/`seed` path); phase 02 edits the `NoToolCall` arm of
@@ -136,3 +136,58 @@ follow-up e2e run.
   The executor talks to heterogeneous OpenAI-compatible endpoints (vLLM / LM Studio
   / Ollama) whose chat templates handle `<think>` server-side; the portable lever
   is the injected user message, not a per-backend prefill.
+
+### Retrospective — 2026-06-18
+
+**Outcome:** 2/2 phases **approved_first_try**, executor Qwen/Qwen3.6-27B-FP8.
+Both gates of the netviz truncation failure are now closed: the per-turn output
+ceiling is configurable (default raised 4096 → 8192), and a `length`-truncated
+`NoToolCall` turn is routed to a truncation nudge instead of being mis-read as a
+completion. Commits `5eec632` (phase-01 feat) / `6608df3` (phase-02 feat).
+
+**What worked.**
+- **The config/loop seam split (M18 precedent) held again.** phase-01 was
+  wide-but-shallow plumbing (every `build_chat_body`/`OpenAiClient::new` call
+  site); phase-02 was a focused single-arm edit. Each review surface stayed a
+  finite checklist, and neither phase's blast radius bled into the other's files
+  — so phase-02's anchors were still exact at activation despite phase-01 landing
+  between draft and dispatch.
+- **Heavy pre-injection paid off on the loop edit.** phase-02 quoted the full
+  `AiEvent::Completion` arm and the entire `NoToolCall` empty branch verbatim as
+  the before/after shape, including the divergent `return hard_fail_result(…)`
+  inside the `let feedback = …` initializer. The executor restructured a 50-line
+  block (the largest single-arm churn this milestone) with zero bounces.
+- **Pinned negatives did their job.** Both phases named the exact pre-existing
+  tests that must pass unmodified (M22 empty-stall tests, gate tests) and the
+  executor preserved the counter/stall logic verbatim — only the feedback string
+  selection changed.
+
+**Calibration data (no folds this milestone).**
+- **`too_many_arguments` allow (phase-01, 1st occurrence).** The spec's "mirror
+  `temperature`/`seed` **exactly**" instruction pushed `OpenAiClient::new` to 8
+  positional args, tripping clippy's threshold (7) and requiring a function-scoped
+  `#[allow(clippy::too_many_arguments)]`. Accepted as a spec-mandated consequence;
+  the only alternative (a params-struct/builder refactor of the constructor) was
+  out of the phase's authorized scope. **Data, not a trend** — but the pattern to
+  watch: the sampling-knob constructor (`temperature`/`seed`/`max_tokens` and
+  whatever knob M24+ adds next) is now at the lint ceiling, so the *next* knob
+  added to `OpenAiClient::new` forces either a 2nd allow or the refactor. A future
+  phase that collapses these into a `SamplingParams`/`GenerationConfig` struct
+  would retire the allow and stop the recurrence pre-emptively. Flagged for the
+  user; no fold yet.
+- **`format_no_match` byte-slice panic, held out of scope a 2nd time.** Both
+  M23 phases brushed `feedback.rs` and both correctly left the pre-existing
+  `&response_excerpt[..200]` multibyte-boundary panic alone (phase-02's new
+  `format_truncated` used char-safe `chars().take(200)`). Still latent; worth a
+  dedicated one-line fix in a future phase that legitimately touches `feedback.rs`.
+
+**Deferred / open.**
+- **`TruncationStall` terminator** — deliberately not shipped (recover-first). The
+  real test is the **follow-up live netviz e2e run** (user-driven): does the raised
+  8192 ceiling + the truncation nudge keep the loop out of the truncation/empty
+  endgame, or does a truncation loop still ride the turn cap to `budget_exceeded`?
+  Add the terminator only if that run shows the loop persists.
+- **`max_tokens` runtime clamp** vs the model's context length — noted in phase-01
+  as a possible follow-up; the endpoint enforces its own limit today.
+- **D8/D9 (server-authored bookkeeping)** — still deferred from M22, needs a
+  design conversation before authoring.
