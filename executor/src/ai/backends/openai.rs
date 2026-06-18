@@ -87,6 +87,7 @@ pub fn build_chat_body(
     tools: Option<&[ToolSchema]>,
     temperature: Option<f64>,
     seed: Option<u64>,
+    max_tokens: u32,
 ) -> Value {
     let mut combined_system = String::from(system);
     let mut non_system = Vec::with_capacity(messages.len());
@@ -107,7 +108,7 @@ pub fn build_chat_body(
 
     let mut body = json!({
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": max_tokens,
         "stream": true,
         "stream_options": { "include_usage": true },
         "messages": full_messages,
@@ -137,9 +138,11 @@ pub struct OpenAiClient {
     stream_idle_timeout: Duration,
     temperature: Option<f64>,
     seed: Option<u64>,
+    max_tokens: u32,
 }
 
 impl OpenAiClient {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: String,
         model: String,
@@ -148,6 +151,7 @@ impl OpenAiClient {
         stream_idle_timeout: Duration,
         temperature: Option<f64>,
         seed: Option<u64>,
+        max_tokens: u32,
     ) -> Self {
         let resolved_url = if base_url.is_empty() {
             "https://api.openai.com/v1".to_string()
@@ -162,6 +166,7 @@ impl OpenAiClient {
             stream_idle_timeout,
             temperature,
             seed,
+            max_tokens,
         }
     }
 }
@@ -183,6 +188,7 @@ impl AiClient for OpenAiClient {
             tools,
             self.temperature,
             self.seed,
+            self.max_tokens,
         );
 
         let mut first_token_seen = false;
@@ -618,17 +624,17 @@ mod tests {
 
     #[test]
     fn build_chat_body_has_stream_true_and_model() {
-        let body = build_chat_body("qwen2.5", "system prompt", vec![], None, None, None);
+        let body = build_chat_body("qwen2.5", "system prompt", vec![], None, None, None, 8192);
         assert_eq!(body["stream"], true);
         assert_eq!(body["model"], "qwen2.5");
     }
 
     #[test]
     fn build_chat_body_tool_choice_none_when_no_tools() {
-        let body = build_chat_body("m", "sys", vec![], None, None, None);
+        let body = build_chat_body("m", "sys", vec![], None, None, None, 8192);
         assert_eq!(body["tool_choice"], "none");
 
-        let body = build_chat_body("m", "sys", vec![], Some(&[]), None, None);
+        let body = build_chat_body("m", "sys", vec![], Some(&[]), None, None, 8192);
         assert_eq!(body["tool_choice"], "none");
     }
 
@@ -639,30 +645,42 @@ mod tests {
             description: "bar".into(),
             parameters: json!({}),
         }];
-        let body = build_chat_body("m", "sys", vec![], Some(&tools), None, None);
+        let body = build_chat_body("m", "sys", vec![], Some(&tools), None, None, 8192);
         assert_eq!(body["tool_choice"], "auto");
         assert!(body.get("tools").is_some());
     }
 
     #[test]
     fn build_chat_body_includes_temperature_and_seed_when_set() {
-        let body = build_chat_body("m", "sys", vec![], None, Some(0.2), Some(42));
+        let body = build_chat_body("m", "sys", vec![], None, Some(0.2), Some(42), 8192);
         assert_eq!(body["temperature"], 0.2);
         assert_eq!(body["seed"], 42);
     }
 
     #[test]
     fn build_chat_body_omits_sampling_keys_when_none() {
-        let body = build_chat_body("m", "sys", vec![], None, None, None);
+        let body = build_chat_body("m", "sys", vec![], None, None, None, 8192);
         assert!(body.get("temperature").is_none());
         assert!(body.get("seed").is_none());
     }
 
     #[test]
     fn build_chat_body_omits_only_unset_key() {
-        let body = build_chat_body("m", "sys", vec![], None, Some(0.7), None);
+        let body = build_chat_body("m", "sys", vec![], None, Some(0.7), None, 8192);
         assert_eq!(body["temperature"], 0.7);
         assert!(body.get("seed").is_none());
+    }
+
+    #[test]
+    fn build_chat_body_uses_configured_max_tokens() {
+        let body = build_chat_body("m", "sys", vec![], None, None, None, 8192);
+        assert_eq!(body["max_tokens"], 8192);
+    }
+
+    #[test]
+    fn build_chat_body_max_tokens_reflects_arg_not_default() {
+        let body = build_chat_body("m", "sys", vec![], None, None, None, 1234);
+        assert_eq!(body["max_tokens"], 1234);
     }
 
     #[test]

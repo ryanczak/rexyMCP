@@ -193,6 +193,7 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
         Duration::from_secs(cfg.stream_idle_timeout_secs),
         cfg.temperature,
         cfg.seed,
+        cfg.max_tokens,
     ))
 }
 
@@ -248,6 +249,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            max_tokens: 8192,
             task_tracking: true,
             tier: None,
         };
@@ -265,6 +267,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            max_tokens: 8192,
             task_tracking: true,
             tier: None,
         };
@@ -282,6 +285,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            max_tokens: 8192,
             task_tracking: true,
             tier: None,
         };

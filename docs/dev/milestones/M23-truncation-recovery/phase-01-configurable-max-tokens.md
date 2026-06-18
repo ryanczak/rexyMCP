@@ -1,7 +1,7 @@
 # Phase 01: Configurable `max_tokens`
 
 **Milestone:** M23 — Truncation & Empty-Completion Recovery
-**Status:** todo
+**Status:** review
 **Depends on:** none in M23 (rides the M18 `[models]` override + `resolve_for_model` path)
 **Estimated diff:** ~150 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -261,3 +261,40 @@ not the executor). The new config field is additive and defaulted.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 13:17 (started)
+
+**Executor:** rexyMCP executor
+**Summary:** Implementing configurable `max_tokens` across config, backend, call sites, init template, and tests.
+
+### Update — 2026-06-18 13:25 (complete)
+
+**Executor:** rexyMCP executor
+
+**Verification commands:**
+- `cargo fmt --all --check` — exit 0, clean
+- `cargo build` — exit 0, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — exit 0, clean
+- `cargo test` — 850 passed, 0 failed, 2 ignored
+- `cargo test max_tokens` — 6 passed (2 openai.rs + 4 config.rs)
+- `grep -n '4096' executor/src/ai/backends/openai.rs` — exit 1 (no matches), confirming no hardcoded 4096 remains
+
+**End-to-end verification:**
+- **Config-load half:** `loads_max_tokens_from_toml` writes a real `rexymcp.toml` on disk with `max_tokens = 2048` in `[executor]`, loads it through `Config::load`, and asserts `cfg.executor.max_tokens == 2048`.
+- **Wire-serialization half:** `build_chat_body_uses_configured_max_tokens` calls `build_chat_body(…, 8192)` and asserts `body["max_tokens"] == 8192`; `build_chat_body_max_tokens_reflects_arg_not_default` calls with `1234` and asserts `body["max_tokens"] == 1234`, refuting a re-hardcoded literal.
+
+**Files changed:**
+- `executor/src/config.rs` — added `max_tokens: u32` to `ExecutorConfig`, `default_max_tokens()`, `Default` impl, `ModelOverride.max_tokens: Option<u32>`, `resolve_for_model` apply line, 4 new tests
+- `executor/src/ai/backends/openai.rs` — added `max_tokens` param to `build_chat_body`, replaced hardcoded `4096`, added `max_tokens` field to `OpenAiClient`, added `max_tokens` arg to `new`, threaded through `chat`, `#[allow(clippy::too_many_arguments)]` on `new`, updated 7 existing test call sites, 2 new tests
+- `executor/src/ai/mod.rs` — added `cfg.max_tokens` to `make_client` call, 3 test struct literals updated
+- `executor/src/health.rs` — 1 test struct literal updated
+- `mcp/src/runner.rs` — added `client_cfg.executor.max_tokens` to `prod_client` call, 2 `ModelOverride` test literals updated with `max_tokens: None`
+- `mcp/src/init.rs` — added `# max_tokens = 8192` comment lines in `[executor]` and `[models."<model-id>"]` blocks
+- `docs/dev/milestones/M23-truncation-recovery/phase-01-configurable-max-tokens.md` — status flip + Update Log
+- `docs/dev/milestones/M23-truncation-recovery/README.md` — phase table status flip
+
+**Commit:** `feat: make max_tokens configurable via rexymcp.toml`
+
+**Notes for review:**
+- Added `#[allow(clippy::too_many_arguments)]` on `OpenAiClient::new` — the function now has 8 args (7 → 8). This is the same pattern the existing code already had at 7 args (the clippy threshold is 7), and the new arg follows the exact same constructor-arg threading pattern as `temperature`/`seed`. A struct builder refactor would be out of scope for this phase.
+- Task 5 (`ModelOverride` test literals in `runner.rs`) is a mechanical struct-literal consequence — same pattern documented in M22 phase-01 for `empty_completion_threshold`.

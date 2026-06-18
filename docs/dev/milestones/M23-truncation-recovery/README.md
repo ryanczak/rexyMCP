@@ -96,7 +96,7 @@ unraised cap pulled it back in.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Configurable `max_tokens` (config + backend + init template) ([phase-01-configurable-max-tokens.md](phase-01-configurable-max-tokens.md)) | todo |
+| 01 | Configurable `max_tokens` (config + backend + init template) ([phase-01-configurable-max-tokens.md](phase-01-configurable-max-tokens.md)) | review |
 | 02 | Truncation-aware empty-completion recovery (finish_reason routing + no-think escalation) ([phase-02-truncation-recovery.md](phase-02-truncation-recovery.md)) | todo |
 
 Dispatch in order and review-gate each. Phase 01 is config/backend plumbing

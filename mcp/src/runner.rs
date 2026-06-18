@@ -280,6 +280,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         std::time::Duration::from_secs(client_cfg.executor.stream_idle_timeout_secs),
         client_cfg.executor.temperature,
         client_cfg.executor.seed,
+        client_cfg.executor.max_tokens,
     );
 
     let client: &dyn AiClient = match inp.test_client {
@@ -593,6 +594,7 @@ mod tests {
                 temperature: Some(0.2),
                 seed: None,
                 task_tracking: None,
+                max_tokens: None,
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
@@ -711,6 +713,7 @@ mod tests {
                 temperature: Some(0.2),
                 seed: None,
                 task_tracking: None,
+                max_tokens: None,
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,

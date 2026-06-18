@@ -200,6 +200,7 @@ pub struct ModelOverride {
     pub task_tracking: Option<bool>,
     pub temperature: Option<f64>,
     pub seed: Option<u64>,
+    pub max_tokens: Option<u32>,
     pub identical_call_threshold: Option<usize>,
     pub verifier_persistence_threshold: Option<usize>,
     pub runaway_output_bytes: Option<usize>,
@@ -264,6 +265,14 @@ pub struct ExecutorConfig {
     /// Deterministic sampling seed sent on every chat request. `None` omits it.
     #[serde(default)]
     pub seed: Option<u64>,
+    /// Per-response output-token ceiling (`max_tokens`) sent on every chat
+    /// request. Carved out of the remaining context window — `prompt + max_tokens`
+    /// must fit in the model's context length. The prior hardcoded 4096 truncated
+    /// thinking models mid-reasoning before they reached a tool call; 8192 leaves
+    /// headroom for a full reasoning block + tool call while keeping a runaway turn
+    /// bounded.
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
     /// Whether the loop seeds a per-session task list from the phase doc's
     /// `## Spec` and emits `TaskUpdate` events as the executor flips state
     /// (M12 Arc A). Default on; set false for a control run with no task
@@ -288,6 +297,10 @@ fn default_task_tracking() -> bool {
     true
 }
 
+fn default_max_tokens() -> u32 {
+    8192
+}
+
 impl Default for ExecutorConfig {
     fn default() -> Self {
         Self {
@@ -299,6 +312,7 @@ impl Default for ExecutorConfig {
             stream_idle_timeout_secs: default_stream_idle_timeout_secs(),
             temperature: None,
             seed: None,
+            max_tokens: default_max_tokens(),
             task_tracking: default_task_tracking(),
             tier: None,
         }
@@ -440,6 +454,9 @@ impl Config {
         }
         if let Some(v) = over.seed {
             self.executor.seed = Some(v);
+        }
+        if let Some(v) = over.max_tokens {
+            self.executor.max_tokens = v;
         }
         if let Some(v) = over.identical_call_threshold {
             self.governor.identical_call_threshold = v;
@@ -1382,5 +1399,140 @@ model = "claude-opus-4-8"
             ..DashboardConfig::default()
         };
         assert_eq!(d.effective_rates(), (3.0, 15.0));
+    }
+
+    #[test]
+    fn loads_default_max_tokens_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.max_tokens, 8192);
+    }
+
+    #[test]
+    fn loads_max_tokens_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+max_tokens = 2048
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.max_tokens, 2048);
+    }
+
+    #[test]
+    fn resolve_for_model_applies_max_tokens_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+max_tokens = 8192
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+
+[models."m"]
+max_tokens = 2048
+"#,
+        )
+        .unwrap();
+
+        let mut cfg = Config::load(&path).unwrap();
+        cfg.resolve_for_model("m");
+        assert_eq!(cfg.executor.max_tokens, 2048);
+    }
+
+    #[test]
+    fn resolve_for_model_leaves_max_tokens_when_override_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+max_tokens = 8192
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+
+[models."m"]
+temperature = 0.1
+"#,
+        )
+        .unwrap();
+
+        let mut cfg = Config::load(&path).unwrap();
+        cfg.resolve_for_model("m");
+        assert_eq!(cfg.executor.max_tokens, 8192);
     }
 }

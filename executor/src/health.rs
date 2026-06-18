@@ -153,6 +153,7 @@ mod tests {
             stream_idle_timeout_secs: 90,
             temperature: None,
             seed: None,
+            max_tokens: 8192,
             task_tracking: true,
             tier: None,
         };
