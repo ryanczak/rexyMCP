@@ -184,6 +184,24 @@ pub async fn stream_next_with_timeout<B>(
     }
 }
 
+/// Sampling knobs forwarded verbatim to every chat request.
+#[derive(Debug, Clone, Copy)]
+pub struct SamplingParams {
+    pub temperature: Option<f64>,
+    pub seed: Option<u64>,
+    pub max_tokens: u32,
+}
+
+impl Default for SamplingParams {
+    fn default() -> Self {
+        Self {
+            temperature: None,
+            seed: None,
+            max_tokens: 8192,
+        }
+    }
+}
+
 pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
     Box::new(OpenAiClient::new(
         cfg.api_key.clone().unwrap_or_default(),
@@ -191,9 +209,11 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
         cfg.base_url.clone(),
         Duration::from_secs(cfg.first_token_timeout_secs),
         Duration::from_secs(cfg.stream_idle_timeout_secs),
-        cfg.temperature,
-        cfg.seed,
-        cfg.max_tokens,
+        SamplingParams {
+            temperature: cfg.temperature,
+            seed: cfg.seed,
+            max_tokens: cfg.max_tokens,
+        },
     ))
 }
 
@@ -305,5 +325,10 @@ mod tests {
             err_msg.contains("1s"),
             "error should report the actual budget: {err_msg}"
         );
+    }
+
+    #[test]
+    fn sampling_params_default_max_tokens_is_8192() {
+        assert_eq!(SamplingParams::default().max_tokens, 8192);
     }
 }

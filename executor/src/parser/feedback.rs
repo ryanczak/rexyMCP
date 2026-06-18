@@ -41,8 +41,11 @@ pub fn format_failure(
 /// Used when no candidates were extracted at all. Short, generic guidance —
 /// there's no specific value to point at.
 pub fn format_no_match(response_excerpt: &str) -> String {
-    let excerpt = if response_excerpt.len() > 200 {
-        format!("{}...", &response_excerpt[..200])
+    let excerpt = if response_excerpt.chars().count() > 200 {
+        format!(
+            "{}...",
+            response_excerpt.chars().take(200).collect::<String>()
+        )
     } else {
         response_excerpt.to_string()
     };
@@ -464,5 +467,12 @@ mod tests {
             msg2, msg1,
             "escalated message must differ from first-empty message"
         );
+    }
+
+    #[test]
+    fn format_no_match_handles_multibyte_boundary() {
+        let input = "a".repeat(199) + "é" + "bbb";
+        let result = format_no_match(&input);
+        assert!(result.contains("No tool call"), "{result}");
     }
 }

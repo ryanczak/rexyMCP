@@ -6,7 +6,7 @@ use rexymcp_executor::agent::command::CommandRunner;
 use rexymcp_executor::agent::progress::ProgressCallback;
 use rexymcp_executor::agent::verify::FileVerifier;
 use rexymcp_executor::agent::{self, LoopDeps, PhaseInput};
-use rexymcp_executor::ai::{AiClient, OpenAiClient, ToolSchema};
+use rexymcp_executor::ai::{AiClient, OpenAiClient, SamplingParams, ToolSchema};
 use rexymcp_executor::config::Config;
 use rexymcp_executor::context::budget::Budget;
 use rexymcp_executor::phase::PhaseResult;
@@ -278,9 +278,11 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         client_cfg.executor.base_url.clone(),
         std::time::Duration::from_secs(client_cfg.executor.first_token_timeout_secs),
         std::time::Duration::from_secs(client_cfg.executor.stream_idle_timeout_secs),
-        client_cfg.executor.temperature,
-        client_cfg.executor.seed,
-        client_cfg.executor.max_tokens,
+        SamplingParams {
+            temperature: client_cfg.executor.temperature,
+            seed: client_cfg.executor.seed,
+            max_tokens: client_cfg.executor.max_tokens,
+        },
     );
 
     let client: &dyn AiClient = match inp.test_client {

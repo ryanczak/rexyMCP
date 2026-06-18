@@ -4,8 +4,9 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::super::types::{AiEvent, Message, TokenBreakdown, ToolSchema};
-use super::super::{AiClient, http, send_with_retry, stream_next_with_timeout};
+use crate::ai::SamplingParams;
+use crate::ai::types::{AiEvent, Message, TokenBreakdown, ToolSchema};
+use crate::ai::{AiClient, http, send_with_retry, stream_next_with_timeout};
 
 pub(crate) fn parse_openai_usage(u: &serde_json::Map<String, Value>) -> TokenBreakdown {
     let total_prompt = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
@@ -85,9 +86,7 @@ pub fn build_chat_body(
     system: &str,
     messages: Vec<Value>,
     tools: Option<&[ToolSchema]>,
-    temperature: Option<f64>,
-    seed: Option<u64>,
-    max_tokens: u32,
+    sampling: SamplingParams,
 ) -> Value {
     let mut combined_system = String::from(system);
     let mut non_system = Vec::with_capacity(messages.len());
@@ -108,7 +107,7 @@ pub fn build_chat_body(
 
     let mut body = json!({
         "model": model,
-        "max_tokens": max_tokens,
+        "max_tokens": sampling.max_tokens,
         "stream": true,
         "stream_options": { "include_usage": true },
         "messages": full_messages,
@@ -121,10 +120,10 @@ pub fn build_chat_body(
     } else {
         body["tool_choice"] = json!("none");
     }
-    if let Some(t) = temperature {
+    if let Some(t) = sampling.temperature {
         body["temperature"] = json!(t);
     }
-    if let Some(s) = seed {
+    if let Some(s) = sampling.seed {
         body["seed"] = json!(s);
     }
     body
@@ -136,22 +135,17 @@ pub struct OpenAiClient {
     base_url: String,
     first_token_timeout: Duration,
     stream_idle_timeout: Duration,
-    temperature: Option<f64>,
-    seed: Option<u64>,
-    max_tokens: u32,
+    sampling: SamplingParams,
 }
 
 impl OpenAiClient {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api_key: String,
         model: String,
         base_url: String,
         first_token_timeout: Duration,
         stream_idle_timeout: Duration,
-        temperature: Option<f64>,
-        seed: Option<u64>,
-        max_tokens: u32,
+        sampling: SamplingParams,
     ) -> Self {
         let resolved_url = if base_url.is_empty() {
             "https://api.openai.com/v1".to_string()
@@ -164,9 +158,7 @@ impl OpenAiClient {
             base_url: resolved_url,
             first_token_timeout,
             stream_idle_timeout,
-            temperature,
-            seed,
-            max_tokens,
+            sampling,
         }
     }
 }
@@ -181,15 +173,7 @@ impl AiClient for OpenAiClient {
         tools: Option<&[ToolSchema]>,
     ) -> Result<()> {
         let converted = convert_messages(messages);
-        let body = build_chat_body(
-            &self.model,
-            system,
-            converted,
-            tools,
-            self.temperature,
-            self.seed,
-            self.max_tokens,
-        );
+        let body = build_chat_body(&self.model, system, converted, tools, self.sampling);
 
         let mut first_token_seen = false;
         let mut retries = 0;
@@ -513,6 +497,7 @@ mod tests {
         emit_tool_call_generic, is_retriable_transport, parse_openai_usage, render_openai_tools,
         select_timeout, should_retry_stall, stream_retry_backoff,
     };
+    use crate::ai::SamplingParams;
     use futures_util::{StreamExt, stream};
     use serde_json::{Value, json};
     use std::sync::Arc;
@@ -624,17 +609,23 @@ mod tests {
 
     #[test]
     fn build_chat_body_has_stream_true_and_model() {
-        let body = build_chat_body("qwen2.5", "system prompt", vec![], None, None, None, 8192);
+        let body = build_chat_body(
+            "qwen2.5",
+            "system prompt",
+            vec![],
+            None,
+            SamplingParams::default(),
+        );
         assert_eq!(body["stream"], true);
         assert_eq!(body["model"], "qwen2.5");
     }
 
     #[test]
     fn build_chat_body_tool_choice_none_when_no_tools() {
-        let body = build_chat_body("m", "sys", vec![], None, None, None, 8192);
+        let body = build_chat_body("m", "sys", vec![], None, SamplingParams::default());
         assert_eq!(body["tool_choice"], "none");
 
-        let body = build_chat_body("m", "sys", vec![], Some(&[]), None, None, 8192);
+        let body = build_chat_body("m", "sys", vec![], Some(&[]), SamplingParams::default());
         assert_eq!(body["tool_choice"], "none");
     }
 
@@ -645,41 +636,70 @@ mod tests {
             description: "bar".into(),
             parameters: json!({}),
         }];
-        let body = build_chat_body("m", "sys", vec![], Some(&tools), None, None, 8192);
+        let body = build_chat_body("m", "sys", vec![], Some(&tools), SamplingParams::default());
         assert_eq!(body["tool_choice"], "auto");
         assert!(body.get("tools").is_some());
     }
 
     #[test]
     fn build_chat_body_includes_temperature_and_seed_when_set() {
-        let body = build_chat_body("m", "sys", vec![], None, Some(0.2), Some(42), 8192);
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                temperature: Some(0.2),
+                seed: Some(42),
+                max_tokens: 8192,
+            },
+        );
         assert_eq!(body["temperature"], 0.2);
         assert_eq!(body["seed"], 42);
     }
 
     #[test]
     fn build_chat_body_omits_sampling_keys_when_none() {
-        let body = build_chat_body("m", "sys", vec![], None, None, None, 8192);
+        let body = build_chat_body("m", "sys", vec![], None, SamplingParams::default());
         assert!(body.get("temperature").is_none());
         assert!(body.get("seed").is_none());
     }
 
     #[test]
     fn build_chat_body_omits_only_unset_key() {
-        let body = build_chat_body("m", "sys", vec![], None, Some(0.7), None, 8192);
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                temperature: Some(0.7),
+                seed: None,
+                max_tokens: 8192,
+            },
+        );
         assert_eq!(body["temperature"], 0.7);
         assert!(body.get("seed").is_none());
     }
 
     #[test]
     fn build_chat_body_uses_configured_max_tokens() {
-        let body = build_chat_body("m", "sys", vec![], None, None, None, 8192);
+        let body = build_chat_body("m", "sys", vec![], None, SamplingParams::default());
         assert_eq!(body["max_tokens"], 8192);
     }
 
     #[test]
     fn build_chat_body_max_tokens_reflects_arg_not_default() {
-        let body = build_chat_body("m", "sys", vec![], None, None, None, 1234);
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                max_tokens: 1234,
+                ..SamplingParams::default()
+            },
+        );
         assert_eq!(body["max_tokens"], 1234);
     }
 
