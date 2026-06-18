@@ -1,7 +1,7 @@
 # Phase 02: Stuck gate-feedback stall
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (both edit the `NoToolCall` arm of `mod.rs`; land 01 first)
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -271,3 +271,53 @@ edit.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 00:03 (complete)
+
+**Summary:** Implemented the stuck gate-feedback stall (A3). Added `StuckGateFeedback` hard-fail signal with pure check `check_repeated_gate_feedback`, a `gate_feedback_repeat_threshold` config field (default 5) on both `GovernorConfig` and `ModelOverride`, and an additive peek-guard in `mod.rs` that sits above the three existing gate blocks. The guard peeks at whichever feedback will fire (same precedence), tracks byte-identical repeats, and hard-fails at the threshold. The three existing blocks are untouched — the double-evaluation of pure feedback fns is intentional and cheap. Also fixed two `ModelOverride` struct initializers in `mcp/src/runner.rs` that were missing the new field.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(exit 0, no output)
+
+cargo build 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+cargo test 2>&1 | tail -30
+test result: ok. 829 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.05s
+```
+
+**End-to-end verification:**
+
+Not applicable — phase ships no runtime-loadable artifact. The integration test `stuck_task_coverage_feedback_hard_fails` exercises the stuck-feedback path end-to-end against `MockAiClientScript`.
+
+Grep confirming pinned literals landed:
+- `StuckGateFeedback` found in `hard_fail.rs` (enum variant, describe arm, check function, 3 tests) and `config.rs` (doc comment).
+- `gate_feedback_repeat_threshold` found in `config.rs` (GovernorConfig field + default, ModelOverride field + apply), `mod.rs` (peek-guard threshold access), `runner.rs` (2 test initializers).
+
+**Files changed:**
+- `executor/src/governor/hard_fail.rs` — Added `StuckGateFeedback` variant, `describe()` arm, `check_repeated_gate_feedback` pure check, 3 unit tests.
+- `executor/src/config.rs` — Added `gate_feedback_repeat_threshold` to `GovernorConfig` (default 5), `ModelOverride` (Option<usize>), and apply line in `apply_overrides`.
+- `executor/src/agent/mod.rs` — Added `last_gate_feedback`/`consecutive_gate_repeats` counters and the peek-guard block above the three gate blocks.
+- `executor/src/agent/tests.rs` — Added `stuck_task_coverage_feedback_hard_fails` integration test.
+- `mcp/src/runner.rs` — Added `gate_feedback_repeat_threshold: None` to two `ModelOverride` struct initializers.
+- `docs/dev/milestones/M22-bookkeeping-resilience/README.md` — Phase 02 status → review.
+- `docs/dev/milestones/M22-bookkeeping-resilience/phase-02-stuck-gate-feedback-stall.md` — Status → review, Update Log entry.
+
+**New tests:**
+- `repeated_gate_feedback_fires_at_threshold` in `executor/src/governor/hard_fail.rs`
+- `repeated_gate_feedback_silent_below_threshold` in `executor/src/governor/hard_fail.rs`
+- `describe_stuck_gate_feedback` in `executor/src/governor/hard_fail.rs`
+- `stuck_task_coverage_feedback_hard_fails` in `executor/src/agent/tests.rs`
+
+**Commits:**
+- (to be committed below)
+
+**Notes for review:** The `mcp/src/runner.rs` edits were necessary because `ModelOverride` is a non-`#[derive(Default)]` struct in test code that uses struct literal syntax. The two existing initializers were missing the new field. No other adaptation was needed.

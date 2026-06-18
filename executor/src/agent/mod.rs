@@ -166,6 +166,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Empty-completion stall counter (M22 phase-01).
     let mut consecutive_empty_completions: usize = 0;
 
+    // Stuck gate-feedback stall counters (M22 phase-02).
+    let mut last_gate_feedback: Option<String> = None;
+    let mut consecutive_gate_repeats: usize = 0;
+
     // Read-before-edit working set (07d): resolved path → mtime at last read/edit.
     let mut working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
 
@@ -631,6 +635,83 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     };
                     let (command_outputs, gates) =
                         run_command_set(deps.runner, deps.commands, deps.project_root, &emit).await;
+
+                    // A3 (M22): stuck-gate-feedback stall. Peek at the gate feedback that will fire
+                    // this turn (same precedence as the blocks below); if it is byte-identical to the
+                    // last one and has repeated past the threshold, the loop is stuck — hard_fail
+                    // instead of re-injecting forever. The three blocks below re-evaluate these pure
+                    // fns and inject as before.
+                    let pending_gate_feedback =
+                        command::gate_failure_feedback(&gates, &command_outputs)
+                            .or_else(|| command::task_coverage_feedback(&seeded, &task_states))
+                            .or_else(|| {
+                                command::bookkeeping_feedback(std::path::Path::new(
+                                    &input.phase_doc_path,
+                                ))
+                            });
+                    match &pending_gate_feedback {
+                        Some(fb) => {
+                            if last_gate_feedback.as_deref() == Some(fb.as_str()) {
+                                consecutive_gate_repeats += 1;
+                            } else {
+                                consecutive_gate_repeats = 1;
+                                last_gate_feedback = Some(fb.clone());
+                            }
+                            if let Some(signal) =
+                                crate::governor::hard_fail::check_repeated_gate_feedback(
+                                    consecutive_gate_repeats,
+                                    deps.governor.gate_feedback_repeat_threshold,
+                                )
+                            {
+                                log_event(
+                                    &log_handle,
+                                    &redactor,
+                                    deps.clock,
+                                    turns,
+                                    SessionEvent::HardFail {
+                                        reason: signal.describe(),
+                                    },
+                                );
+                                log_session_end(
+                                    &log_handle,
+                                    &redactor,
+                                    deps.clock,
+                                    "hard_fail",
+                                    turns,
+                                );
+                                emit_phase_run(
+                                    &deps,
+                                    input,
+                                    "hard_fail",
+                                    Gates::default(),
+                                    &metrics,
+                                    &scorer,
+                                    turns,
+                                );
+                                let artifacts = build_artifacts(
+                                    &pre_edit_content,
+                                    deps.project_root,
+                                    log_path.clone(),
+                                    "hard_fail",
+                                    turns,
+                                    CommandOutputs::default(),
+                                );
+                                return Ok(hard_fail_result(
+                                    input,
+                                    &recent_tool_calls,
+                                    deps.project_root,
+                                    last_author_diagnostics.clone(),
+                                    signal,
+                                    artifacts,
+                                ));
+                            }
+                        }
+                        None => {
+                            consecutive_gate_repeats = 0;
+                            last_gate_feedback = None;
+                        }
+                    }
+
                     if let Some(feedback) = command::gate_failure_feedback(&gates, &command_outputs)
                     {
                         log_event(

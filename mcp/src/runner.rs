@@ -597,6 +597,7 @@ mod tests {
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
                 empty_completion_threshold: None,
+                gate_feedback_repeat_threshold: None,
             },
         );
 
@@ -714,6 +715,7 @@ mod tests {
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
                 empty_completion_threshold: None,
+                gate_feedback_repeat_threshold: None,
             },
         );
 

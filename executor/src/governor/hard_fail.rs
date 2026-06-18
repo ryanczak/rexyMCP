@@ -27,6 +27,9 @@ pub enum HardFailSignal {
     EmptyCompletionStall {
         consecutive_count: u32,
     },
+    StuckGateFeedback {
+        consecutive_count: u32,
+    },
     BackendError {
         message: String,
     },
@@ -51,6 +54,11 @@ impl HardFailSignal {
             }
             Self::EmptyCompletionStall { consecutive_count } => {
                 format!("model emitted {consecutive_count} consecutive empty completions")
+            }
+            Self::StuckGateFeedback { consecutive_count } => {
+                format!(
+                    "the same gate feedback was re-injected {consecutive_count} times with no progress"
+                )
             }
             Self::BackendError { message } => {
                 format!("backend error: {message}")
@@ -146,6 +154,22 @@ pub fn check_empty_completion_stall(
 ) -> Option<HardFailSignal> {
     if consecutive_empty >= threshold {
         Some(HardFailSignal::EmptyCompletionStall {
+            consecutive_count: threshold as u32,
+        })
+    } else {
+        None
+    }
+}
+
+/// Stuck gate-feedback stall: the loop re-injected byte-identical gate feedback
+/// (gate-retry / task-coverage / bookkeeping) `consecutive_repeats` times in a row
+/// with no intervening state change.
+pub fn check_repeated_gate_feedback(
+    consecutive_repeats: usize,
+    threshold: usize,
+) -> Option<HardFailSignal> {
+    if consecutive_repeats >= threshold {
+        Some(HardFailSignal::StuckGateFeedback {
             consecutive_count: threshold as u32,
         })
     } else {
@@ -366,5 +390,34 @@ mod tests {
         let desc = signal.describe();
         assert!(desc.contains("empty completions"));
         assert!(desc.contains("5"));
+    }
+
+    // --- M22 phase-02: stuck gate-feedback stall tests ---
+
+    #[test]
+    fn repeated_gate_feedback_fires_at_threshold() {
+        let signal = check_repeated_gate_feedback(5, 5);
+        assert_eq!(
+            signal,
+            Some(HardFailSignal::StuckGateFeedback {
+                consecutive_count: 5
+            })
+        );
+    }
+
+    #[test]
+    fn repeated_gate_feedback_silent_below_threshold() {
+        let signal = check_repeated_gate_feedback(4, 5);
+        assert!(signal.is_none());
+    }
+
+    #[test]
+    fn describe_stuck_gate_feedback() {
+        let signal = HardFailSignal::StuckGateFeedback {
+            consecutive_count: 7,
+        };
+        let desc = signal.describe();
+        assert!(desc.contains("re-injected"));
+        assert!(desc.contains("7"));
     }
 }

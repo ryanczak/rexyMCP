@@ -4187,3 +4187,50 @@ async fn single_empty_completion_then_recovers_does_not_hard_fail() {
     assert_eq!(result.status, PhaseStatus::Complete);
     assert_eq!(client.calls().len(), 3);
 }
+
+// --- M22 phase-02: stuck gate-feedback stall tests ---
+
+#[tokio::test]
+async fn stuck_task_coverage_feedback_hard_fails() {
+    use crate::tools::update_task as make_update_task;
+
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+
+    // Phase doc with one seeded task.
+    let phase_doc = "## Spec\n\n1. **Foo** — do the thing.\n";
+    let seeded_tasks = tasks::seed_from_spec(phase_doc);
+
+    // Registry with update_task so the tool call actually resolves.
+    let mut registry = registry_over(scope);
+    registry.register(make_update_task(seeded_tasks));
+
+    let commands = all_commands_configured();
+    // The model returns a completion signal on every turn and never calls
+    // update_task, so task_coverage_feedback fires identically each turn.
+    // With the default gate_feedback_repeat_threshold of 5, the loop must
+    // hard_fail at turn 5 (not burn to the turn cap).
+    let client = MockAiClientScript::new(vec![
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")], // never reached — stall fires at 5
+        vec![token("All done.")], // never reached
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let mut inp = input();
+    inp.phase_doc = phase_doc.to_string();
+
+    let mut d = deps(&client, &registry, &budget, 20, dir.path());
+    d.commands = &commands;
+    d.runner = &NoopRunner; // gates always pass, so task_coverage_feedback fires
+
+    let result = execute_phase(&inp, d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    // The stall fires at the threshold (5), not the turn cap (20).
+    assert_eq!(client.calls().len(), 5);
+}
