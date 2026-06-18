@@ -6,7 +6,7 @@ spirals, stuck gate-feedback loops, bogus task seeding, and self-reverts — so 
 model that writes correct code can reliably *finish* the phase instead of burning
 the turn budget or hard-failing in the bookkeeping step.
 
-**Status:** in-progress
+**Status:** done
 
 **Depends on:** M19 (gate-retry loop in the `NoToolCall` arm), M21 (task-coverage
 gate — we harden the same loop), M16 (seeder robustness — we tighten the same
@@ -90,7 +90,7 @@ M19/M21 closed for `false_completion`. M22 closes them in the executor.
 | 02 | Stuck gate-feedback stall (A3) ([phase-02-stuck-gate-feedback-stall.md](phase-02-stuck-gate-feedback-stall.md)) | done |
 | 03 | Seeder precision: bold-name tasks + de-dup (B4+B5) ([phase-03-seeder-precision.md](phase-03-seeder-precision.md)) | done |
 | 04 | update_task result echoes remaining ids (B6) ([phase-04-coverage-feedback-echo.md](phase-04-coverage-feedback-echo.md)) | done |
-| 05 | Self-revert guard (C7) ([phase-05-self-revert-guard.md](phase-05-self-revert-guard.md)) | review |
+| 05 | Self-revert guard (C7) ([phase-05-self-revert-guard.md](phase-05-self-revert-guard.md)) | done |
 
 Dispatch in order and review-gate each. Phases 01 and 02 both edit the
 `NoToolCall` arm of `mod.rs`; 02's anchors are written against pre-M22 code, so
@@ -121,6 +121,60 @@ line number. Phases 03 (`tasks.rs`), 04 (`update_task.rs`), and 05
   survivable; D8/D9 would change *who authors* the bookkeeping and touches the
   executor contract.
 
-### Retrospective
+### Retrospective — 2026-06-18
 
-(Filled in at milestone close.)
+**Outcome: 5/5 phases `approved_first_try`, zero bounces.** The cleanest
+milestone to date. Each phase closed one diagnosed loop-failure mechanism from
+the netviz e2e run:
+
+| # | Mechanism | Fix | Executor | Turns |
+|---|---|---|---|---|
+| 01 | Empty-output death spiral (147× blank completions) | `NoToolCall` empty-guard broadened to route a blank `raw:""` to the recovery nudge + governor `EmptyCompletionStall` (consecutive-empty counter → `hard_fail`, default 3) | Qwen/Qwen3.6-27B-FP8 | 98 |
+| 02 | Stuck non-empty gate-feedback loop | additive peek-guard above the 3 gate blocks: same feedback re-injected ≥ K=5× with no state change → `StuckGateFeedback` hard_fail | Qwen/Qwen3.6-27B-FP8 | 121 |
+| 03 | Bogus prose-algorithm seeding + identical-title fixation | `N.` list form requires a `**bold**` name (matches the documented Spec convention; excludes prose steps, kills title truncation) + de-dup seeded tasks by id & title | Qwen/Qwen3.6-27B-FP8 | 64 |
+| 04 | `update_task` refixation | tool result echoes still-incomplete ids (seeded order, inside the lock) + flags a redundant re-mark; metadata shape unchanged | claude-code (direct) | — |
+| 05 | Self-revert (`git checkout <edited-file>`) | working-set-aware `destructive_restore_refusal` mirroring `read_before_edit_refusal`, chained `.or_else()` at the refusal seam; complements the stateless `bash_classify` blocklist | Qwen/Qwen3.6-27B-FP8 | 84 |
+
+**Why it went clean — what to keep doing:**
+
+- **All five fixes were additive.** New governor signals, a new pure refusal
+  fn, an appended tool-result clause, a tightened parser predicate — every
+  change kept the codebase compiling at each step and let all pre-existing tests
+  pass unmodified (phase-03's 3 intentional test updates were the one exception,
+  and that fork was resolved with the user up front). The "prefer additive change
+  shapes" discipline (WORKFLOW.md) is doing exactly what it's for.
+- **Worked examples quoted inline carried the load.** Phases 02/05 quoted the
+  exact seam to mirror (`gate_failure_feedback`, `read_before_edit_refusal`) in a
+  fenced block with the structure to replicate — the executor pattern-matched
+  rather than implemented-from-scratch. This is the highest-leverage
+  pre-injection and it showed.
+
+**Calibration data (no folds warranted):**
+
+1. **Anchor refresh at activation works.** Phase-05 was drafted up front against
+   pre-M22 `mod.rs`; phases 01/02 shifted its refusal seam from `~832` to line
+   966. At activation the architect re-verified by the quoted anchor *text* (not
+   the line number), found the structure intact, and corrected the stale refs
+   before dispatch — clean landing. This is the existing "re-locate by anchor
+   text, not line number" guidance paying off; no new fold.
+2. **Identity self-stamp quirk persists (cosmetic).** Phase-05's Update Log
+   self-stamps "Claude (sonnet-4-5-20250514)" though the executor was
+   Qwen/Qwen3.6-27B-FP8 (dispatch ran against `http://brain:8000/v1`). The
+   **date** is correct (`2026-06-18`). Long-recurring, cosmetic only, machine
+   records (telemetry, `executor_health`) correct. No fold.
+3. **Mid-milestone NEXT.md "staleness" is by-design, not a defect.** Phase-04's
+   approve commit correctly left the NEXT.md pointer for `/rexymcp:architect
+   next` to advance (review skill §7d: only the *last* in-scope phase sets NEXT
+   to "none"; mid-milestone advances are the architect-next step's job). The
+   pointer reading "phase-04 active" between approval and the next `architect
+   next` is the intended gate window. Re-flagged here only to retire the earlier
+   over-flag — no process change needed.
+
+**M22 retrospective: no new code-quality or spec-writing patterns; no folds to
+STANDARDS.md or WORKFLOW.md.**
+
+**Deferred, awaiting a design conversation:** D8/D9 (pre-filled / server-authored
+bookkeeping — rexyMCP writing the Status flip + a baseline Update Log entry
+itself). M22 made the executor's *own* bookkeeping loop survivable; D8/D9 would
+move *who authors* the bookkeeping from executor to server and touches the
+executor contract — a talk-through, not a quiet next milestone.

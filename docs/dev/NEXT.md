@@ -4,17 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** M22 phase-05 — **self-revert guard (C7)**
-([phase-05-self-revert-guard.md](milestones/M22-bookkeeping-resilience/phase-05-self-revert-guard.md)).
-Already drafted (all five drafted up front), status `todo`. Anchors refreshed at
-activation: the `mod.rs` pre-dispatch refusal seam shifted from the drafted
-`~832` to **line 966** (phases 01/02 added code to the `NoToolCall` arm above it),
-and `pre_edit_content` is declared at line 178 — both line refs corrected in the
-phase doc; the anchor text and structure match the live seam exactly
-(`dedupe` check → `match read_before_edit_refusal(…)`). **This is the last M22
-phase — after approval, M22 closes and the next `next` is a human-gated milestone
-boundary** (retrospective + fold review).
-Dispatch with `/rexymcp:dispatch phase-05` when ready.
+**Active phase:** none — **M22 closed (2026-06-18, 5/5 `approved_first_try`).**
+This is a **human-gated milestone boundary.** The next milestone is not started
+until the user kicks it off. Candidate next work: **D8/D9** (pre-filled /
+server-authored bookkeeping) — explicitly deferred from M22 and requiring a
+design conversation before authoring (it moves *who authors* the bookkeeping from
+executor to server and touches the executor contract). See the
+[M22 retrospective](milestones/M22-bookkeeping-resilience/README.md#retrospective--2026-06-18).
+
+**M22 phase-05 — done** (2026-06-18, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `eded524` feat). C7: working-set-aware
+`destructive_restore_refusal` (+ `restore_path_tokens`) in `tools.rs`, chained
+`.or_else()` before `read_before_edit_refusal` at the `mod.rs` refusal seam —
+refuses a single-file `git checkout/restore <path>` of a file edited this session
+(keyed off `pre_edit_content`), as a model-visible advisory, not a hard_fail or
+governor strike. Complements the stateless `bash_classify` wholesale-form
+blocklist (untouched — the working-set check needs loop state the classifier
+can't see). 7 unit tests + 1 integration test (`self_revert_of_edited_file_is_refused`,
+mutation-verified). Clean 84-turn first-try; all four gates green on independent
+re-run (844 passed / 2 ignored). No new dependency, no scope deviation, no fold.
 
 **M22 phase-04 — done** (2026-06-18, **approved_first_try**, executor
 **claude-code (direct)**; commit `83d1805` feat / `afe3216` approve). B6: the

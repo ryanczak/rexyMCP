@@ -1,7 +1,7 @@
 # Phase 05: Self-revert guard
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** review
+**Status:** done
 **Depends on:** none (independent of phases 01–04)
 **Estimated diff:** ~150 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -288,3 +288,27 @@ Implemented `destructive_restore_refusal` in `tools.rs`, wired into the refusal 
 **End-to-end verification:** N/A — phase ships no runtime-loadable artifact. The refusal is exercised through the integration test via `execute_phase`.
 
 **Grep for pinned literal:** `grep -r "refusing to run" executor/src/agent/tools.rs` confirms the refusal message landed in the right place.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (the Update Log self-stamps "Claude
+  (sonnet-4-5-20250514)" — the recurring cosmetic identity quirk; the dispatch
+  ran against the Qwen endpoint `http://brain:8000/v1`, date stamp `2026-06-18`
+  correct)
+- **Scope deviations:** none — touched only `tools.rs` (production +
+  `restore_path_tokens` + 7 unit tests), `mod.rs` (import + `.or_else()` wiring
+  at the refusal seam), and `tests.rs` (1 integration test), plus the phase
+  doc/README status bookkeeping. `bash_classify.rs` correctly left untouched
+  (the working-set-aware refusal belongs in the loop, not the stateless
+  classifier). No new dependency.
+- **Independent re-run:** all four gates green — `cargo fmt --all --check` clean,
+  `cargo build` zero warnings, `cargo clippy` clean, `cargo test` 844 passed / 2
+  ignored. The integration test `self_revert_of_edited_file_is_refused` is
+  mutation-verified (neutering the `restore_path_tokens` loop in
+  `destructive_restore_refusal` to always-`continue` fails it); the 7 unit tests
+  carry real `is_some`/`is_none`/`msg.contains` assertions and the pinned
+  negatives (`allows_branch_switch`, `allows_checkout_of_unedited_file`,
+  `ignores_non_bash_calls`) guard the false-positive boundary.
+- **Calibration:** none.
