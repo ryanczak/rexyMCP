@@ -8,7 +8,7 @@ per-turn output ceiling so a thinking model can finish its reasoning *and* emit 
 tool call, and when the backend still cuts a turn off mid-stream, tell the model
 exactly that instead of mis-reading the stub as a completion attempt.
 
-**Status:** done (2/2 phases, 2026-06-18)
+**Status:** in-progress (2/3 phases done, phase-03 added 2026-06-18)
 
 **Depends on:** M22 (the `NoToolCall` empty branch + `consecutive_empty_completions`
 counter this milestone extends), M18 (the `[models]` per-model override +
@@ -98,6 +98,7 @@ unraised cap pulled it back in.
 |----|-------|--------|
 | 01 | Configurable `max_tokens` (config + backend + init template) ([phase-01-configurable-max-tokens.md](phase-01-configurable-max-tokens.md)) | done |
 | 02 | Truncation-aware empty-completion recovery (finish_reason routing + no-think escalation) ([phase-02-truncation-recovery.md](phase-02-truncation-recovery.md)) | done |
+| 03 | `SamplingParams` refactor + `format_no_match` fix ([phase-03-sampling-params-cleanup.md](phase-03-sampling-params-cleanup.md)) | todo |
 
 Dispatch in order and review-gate each. Phase 01 is config/backend plumbing
 (mirrors the `temperature`/`seed` path); phase 02 edits the `NoToolCall` arm of

@@ -4,17 +4,9 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **none.** 🛑 **Milestone boundary — M23 closed (2/2 phases done,
-2026-06-18), awaiting human sign-off before the next milestone.** Both M23 phases
-landed **approved_first_try** (Qwen/Qwen3.6-27B-FP8); the netviz truncation
-failure is closed on both fronts (configurable `max_tokens` default 8192 +
-`finish_reason == "length"` routing to a truncation nudge). See the
-[M23 retrospective](milestones/M23-truncation-recovery/README.md#retrospective--2026-06-18)
-for calibration data (the `too_many_arguments` allow — 1st occurrence — and the
-twice-deferred `format_no_match` byte-slice panic) and the open items
-(`TruncationStall` terminator pending the follow-up live netviz e2e;
-`max_tokens` runtime clamp; D8/D9 server-authored bookkeeping). The user kicks
-off the next milestone explicitly via `/rexymcp:architect`.
+**Active phase:** **M23 phase-03 — `SamplingParams` refactor + `format_no_match` fix**
+([phase-03-sampling-params-cleanup.md](milestones/M23-truncation-recovery/phase-03-sampling-params-cleanup.md)).
+Drafted 2026-06-18, ready to dispatch.
 
 **M23 phase-02 — done** (2026-06-18, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `6608df3` feat). Acts on `finish_reason`: a new
