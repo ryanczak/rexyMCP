@@ -47,9 +47,9 @@ use metrics::{RunMetrics, emit_phase_run};
 use outcome::{budget_exceeded_result, build_artifacts, hard_fail_result, turns_line};
 use progress::{EmitCtx, ProgressCallback, emit_progress};
 use tools::{
-    append_tool_exchange, assistant_text, dispatch, edit_target, evict_superseded_reads,
-    output_preview, read_before_edit_refusal, record_mtime, redundant_read_reference,
-    render_diagnostics, resolve_path, user_text,
+    append_tool_exchange, assistant_text, destructive_restore_refusal, dispatch, edit_target,
+    evict_superseded_reads, output_preview, read_before_edit_refusal, record_mtime,
+    redundant_read_reference, render_diagnostics, resolve_path, user_text,
 };
 use verify::FileVerifier;
 
@@ -963,7 +963,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         let (succeeded, content, tool_meta) = if let Some((reference, _, _)) = &dedupe {
             (true, reference.clone(), None)
         } else {
-            match read_before_edit_refusal(&tool_call, &working_set, deps.project_root) {
+            match destructive_restore_refusal(&tool_call, &pre_edit_content, deps.project_root)
+                .or_else(|| read_before_edit_refusal(&tool_call, &working_set, deps.project_root))
+            {
                 Some(refusal) => (false, refusal, None),
                 None => {
                     if let Some(path) = &edit_path

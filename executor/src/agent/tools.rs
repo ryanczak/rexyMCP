@@ -82,6 +82,74 @@ pub(super) fn record_mtime(working_set: &mut HashMap<PathBuf, SystemTime>, path:
     }
 }
 
+/// Refuse a single-file `git checkout <path>` / `git restore <path>` of a file the
+/// executor has edited this session — it would silently discard the model's own
+/// uncommitted work. `None` = allowed. `bash`-only; the wholesale forms
+/// (`git checkout .` / `git reset --hard` / …) are already blocked by
+/// `security::bash_classify`. Pure over `edited` for unit-testability.
+pub(super) fn destructive_restore_refusal(
+    tool_call: &ToolCall,
+    edited: &HashMap<PathBuf, Option<String>>,
+    project_root: &Path,
+) -> Option<String> {
+    if tool_call.name != "bash" {
+        return None;
+    }
+    let command = tool_call
+        .arguments
+        .get("command")
+        .and_then(|v| v.as_str())?;
+    for token in restore_path_tokens(command) {
+        let resolved = project_root.join(token);
+        if edited.contains_key(&resolved) {
+            return Some(format!(
+                "refusing to run `{command}`: it would discard your uncommitted edits to {} \
+                 this session. Do not revert your own work — fix forward from the current \
+                 state, and only commit if you need a checkpoint.",
+                resolved.display()
+            ));
+        }
+    }
+    None
+}
+
+/// Path-like argument tokens of a `git checkout` / `git restore` sub-command, across
+/// `&&` / `;` / `|`-joined segments. Conservative and NOT a shell parser: it returns
+/// every non-flag token after a `checkout`/`restore` subcommand (skipping `-x` flags
+/// and a `--` separator marker). Branch names like `main` are harmless — the caller
+/// gates on membership in the edited set, which a branch name is never in.
+fn restore_path_tokens(command: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    for segment in command.split(['&', ';', '|']) {
+        let mut toks = segment.split_whitespace();
+        // advance to a `git` invocation
+        let mut found_git = false;
+        let mut in_restore = false;
+        for tok in toks.by_ref() {
+            if !found_git {
+                if tok == "git" {
+                    found_git = true;
+                }
+                continue;
+            }
+            if !in_restore {
+                match tok {
+                    "checkout" | "restore" => in_restore = true,
+                    // any other subcommand in this segment: stop scanning it
+                    _ => break,
+                }
+                continue;
+            }
+            // in_restore: collect non-flag, non-`--` tokens as candidate paths
+            if tok == "--" || tok.starts_with('-') {
+                continue;
+            }
+            out.push(tok);
+        }
+    }
+    out
+}
+
 /// Stable marker prefix for an evicted (superseded) read result. Used both to
 /// build the breadcrumb and to detect an already-evicted result (idempotence).
 const SUPERSEDED_PREFIX: &str = "[superseded:";
@@ -891,6 +959,123 @@ mod tests {
         assert!(
             result.is_none(),
             "no live prior read → no dedupe (safety gate)"
+        );
+    }
+
+    // ── destructive_restore_refusal tests ─────────────────────────────────
+
+    fn make_bash_call(command: &str) -> ToolCall {
+        ToolCall {
+            name: "bash".to_string(),
+            arguments: json!({ "command": command }),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    fn make_patch_call() -> ToolCall {
+        ToolCall {
+            name: "patch".to_string(),
+            arguments: json!({ "path": "foo.rs", "old_str": "a", "new_str": "b" }),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    #[test]
+    fn refuses_checkout_of_edited_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_bash_call("git checkout src/x.ts");
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(
+            msg.contains("src/x.ts"),
+            "message should name the file: {msg}"
+        );
+    }
+
+    #[test]
+    fn refuses_restore_of_edited_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_bash_call("git restore src/x.ts");
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn refuses_checkout_head_dashdash_form() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_bash_call("git checkout HEAD -- src/x.ts");
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(
+            result.is_some(),
+            "HEAD and -- should be skipped, src/x.ts should match"
+        );
+    }
+
+    #[test]
+    fn allows_checkout_of_unedited_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_bash_call("git checkout src/y.ts");
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(result.is_none(), "unedited file should be allowed");
+    }
+
+    #[test]
+    fn allows_branch_switch() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_bash_call("git checkout -b feature");
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(result.is_none(), "branch creation should be allowed");
+
+        let call2 = make_bash_call("git checkout main");
+        let result2 = destructive_restore_refusal(&call2, &edited, dir.path());
+        assert!(result2.is_none(), "branch switch should be allowed");
+    }
+
+    #[test]
+    fn ignores_non_bash_calls() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_patch_call();
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(result.is_none(), "non-bash calls should be ignored");
+    }
+
+    #[test]
+    fn refuses_in_compound_command() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut edited = HashMap::new();
+        let file = dir.path().join("src/x.ts");
+        edited.insert(file, Some("old".to_string()));
+
+        let call = make_bash_call("npm test && git checkout src/x.ts");
+        let result = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(
+            result.is_some(),
+            "compound command should find the restore segment"
         );
     }
 }

@@ -4232,3 +4232,82 @@ async fn stuck_task_coverage_feedback_hard_fails() {
     // The stall fires at the threshold (5), not the turn cap (20).
     assert_eq!(client.calls().len(), 5);
 }
+
+// ── M22 phase-05: self-revert guard ──────────────────────────────────
+
+#[tokio::test]
+async fn self_revert_of_edited_file_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("src/flow.ts");
+    file.parent().map(|p| std::fs::create_dir_all(p).ok());
+    std::fs::write(&file, "original content").unwrap();
+    let path = file.to_string_lossy().to_string();
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let mut registry = ToolRegistry::new();
+    registry.register(read_file(scope.clone()));
+    registry.register(write_file(scope.clone()));
+    registry.register(patch(scope.clone()));
+    registry.register(bash_with_filter(scope, 30, true));
+
+    // Turn 1: write_file edits the file (puts it in pre_edit_content)
+    // Turn 2: bash git checkout of that file → should be refused
+    // Turn 3: done
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "edited content" }),
+        )],
+        vec![native(
+            "bash",
+            json!({ "command": "git checkout src/flow.ts" }),
+        )],
+        vec![token("done")],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(
+        &input(),
+        LoopDeps {
+            client: &client,
+            registry: &registry,
+            tools: &[],
+            budget: &budget,
+            max_turns: 8,
+            project_root: dir.path(),
+            model: "test-model",
+            session_id: SESSION_ID,
+            clock: &clock_zero,
+            verifier: &NoopVerifier,
+            commands: &EMPTY_COMMANDS,
+            runner: &NoopRunner,
+            generation_params: GenerationParams::default(),
+            telemetry_dir: None,
+            progress: None,
+            context_window: None,
+            governor: GovernorConfig::default(),
+            task_tracking: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+
+    // The third model call (index 2) should contain the refusal in the bash
+    // tool result — the run continues, it's not a hard_fail.
+    let third_call_messages = &client.calls()[2].messages;
+    let has_refusal = third_call_messages.iter().any(|m| {
+        m.tool_results.as_ref().is_some_and(|trs| {
+            trs.iter().any(|t| {
+                t.tool_name == "bash"
+                    && t.content.contains("refusing to run")
+                    && t.content.contains("discard your uncommitted edits")
+            })
+        })
+    });
+    assert!(
+        has_refusal,
+        "the git checkout of an edited file should be refused with a model-visible message"
+    );
+}

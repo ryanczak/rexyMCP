@@ -90,7 +90,7 @@ M19/M21 closed for `false_completion`. M22 closes them in the executor.
 | 02 | Stuck gate-feedback stall (A3) ([phase-02-stuck-gate-feedback-stall.md](phase-02-stuck-gate-feedback-stall.md)) | done |
 | 03 | Seeder precision: bold-name tasks + de-dup (B4+B5) ([phase-03-seeder-precision.md](phase-03-seeder-precision.md)) | done |
 | 04 | update_task result echoes remaining ids (B6) ([phase-04-coverage-feedback-echo.md](phase-04-coverage-feedback-echo.md)) | done |
-| 05 | Self-revert guard (C7) ([phase-05-self-revert-guard.md](phase-05-self-revert-guard.md)) | todo |
+| 05 | Self-revert guard (C7) ([phase-05-self-revert-guard.md](phase-05-self-revert-guard.md)) | review |
 
 Dispatch in order and review-gate each. Phases 01 and 02 both edit the
 `NoToolCall` arm of `mod.rs`; 02's anchors are written against pre-M22 code, so

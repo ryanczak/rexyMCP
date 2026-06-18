@@ -1,7 +1,7 @@
 # Phase 05: Self-revert guard
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** todo
+**Status:** review
 **Depends on:** none (independent of phases 01–04)
 **Estimated diff:** ~150 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -255,3 +255,36 @@ complement to the existing stateless blocklist).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 02:09 (started)
+
+**Executor:** Claude (sonnet-4-5-20250514)
+
+Implemented `destructive_restore_refusal` in `tools.rs`, wired into the refusal seam in `mod.rs`, added 7 unit tests and 1 integration test.
+
+### Update — 2026-06-18 02:11 (complete)
+
+**Executor:** Claude (sonnet-4-5-20250514)
+
+**Tasks completed:** All 4 spec tasks.
+
+**Acceptance criteria:** All met.
+
+**Verification commands:**
+- `cargo fmt --all --check`: clean
+- `cargo build`: clean
+- `cargo clippy --all-targets --all-features -- -D warnings`: clean
+- `cargo test`: 844 passed, 0 failed, 2 ignored
+
+**Files changed:**
+- `executor/src/agent/tools.rs` — added `destructive_restore_refusal`, `restore_path_tokens`, and 7 unit tests
+- `executor/src/agent/mod.rs` — imported `destructive_restore_refusal`, wired into refusal seam before `read_before_edit_refusal`
+- `executor/src/agent/tests.rs` — added `self_revert_of_edited_file_is_refused` integration test
+
+**One commit:** `feat: refuse single-file git checkout/restore of edited files (C7)`
+
+**Notes for review:** None — implementation matches the spec exactly.
+
+**End-to-end verification:** N/A — phase ships no runtime-loadable artifact. The refusal is exercised through the integration test via `execute_phase`.
+
+**Grep for pinned literal:** `grep -r "refusing to run" executor/src/agent/tools.rs` confirms the refusal message landed in the right place.
