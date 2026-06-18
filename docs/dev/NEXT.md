@@ -4,20 +4,21 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** M22 phase-03 — **Seeder precision: bold-name tasks + de-dup**
-([phase-03-seeder-precision.md](milestones/M22-bookkeeping-resilience/phase-03-seeder-precision.md)).
-Already drafted (with phases 04/05 — all five drafted up front), status `todo`.
-Dispatch with `/rexymcp:dispatch phase-03` when ready. Independent of phases
-01/02/04/05 — single file `executor/src/agent/tasks.rs`. Two changes: (B4) the
-`N.` list-item form requires a `**bold**` name (matching the documented
-`WORKFLOW.md` § Spec convention `N. **<Task name>** — …`), so a prose ordered
-list (`1. If packet.tcp…`) is no longer mis-seeded as a task; (B5) de-dup the
-seeded list by id and title. Anchors re-verified current at activation: the
-quoted `parse_task_line`/`extract_title` blocks match `tasks.rs` exactly (phases
-01/02 touched only `mod.rs`/governor, not `tasks.rs`); minor ≤1-line offsets in
-the cited test line numbers, but anchor text is exact. Closes the
-`session-phase-04-6a32f237` regression (byte-identical truncated titles from a
-seeded prose algorithm).
+**Active phase:** M22 phase-04 — **update_task result echoes remaining ids (B6)**
+([phase-04-coverage-feedback-echo.md](milestones/M22-bookkeeping-resilience/phase-04-coverage-feedback-echo.md)).
+Already drafted (all five drafted up front), status `todo`.
+Dispatch with `/rexymcp:dispatch phase-04` when ready.
+
+**M22 phase-03 — done** (2026-06-18, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `5623004` feat). B4: `parse_task_line` now requires
+a `**bold**` name — the `extract_title` fallback deleted; non-bold numbered items
+no longer seed as tasks. B5: `seed_from_spec` de-dupes the seeded list by id and
+title (first occurrence wins). Three existing contract tests updated; three new
+tests added (`ignores_prose_numbered_list_without_bold`, `dedupes_colliding_ids`,
+`dedupes_identical_titles`). Two integration tests in `tests.rs` also updated —
+their fixtures had non-bold items (`2. Second task — do that`) that would fail
+under the new contract; correct and required. Clean 64-turn first-try; 832 passed
+/ 2 ignored.
 
 **M22 phase-02 — done** (2026-06-18, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `93dbca8` feat / `d9b9a1e` approve). A3: the

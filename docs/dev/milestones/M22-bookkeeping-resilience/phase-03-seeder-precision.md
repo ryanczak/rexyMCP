@@ -1,7 +1,7 @@
 # Phase 03: Seeder precision — bold-name tasks + de-dup
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** review
+**Status:** done
 **Depends on:** none (independent of phases 01/02/04/05)
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -285,3 +285,11 @@ N/A — phase ships no runtime-loadable artifact. `seed_from_spec` is a pure fun
 - `5623004` — feat: require bold name for list-form tasks and de-dup seeded tasks
 
 **Notes for review:** Two integration tests in `executor/src/agent/tests.rs` (`loop_seeds_task_updates_from_spec` and `loop_still_seeds_task_updates_when_tracking_on`) had spec fixtures with a non-bold list item (`2. Second task — do that`). These were updated to use bold names (`2. **Second task** — do that`) to match the new contract. This was not called out in the phase spec but was required for the tests to pass — the spec only mentioned the three unit tests in `tasks.rs`.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** Executor also updated 2 integration tests in `tests.rs` not listed in the phase spec (`loop_seeds_task_updates_from_spec`, `loop_still_seeds_task_updates_when_tracking_on`) — both had non-bold list-item fixtures that would fail under the new contract; correct and required.
+- **Calibration:** none
