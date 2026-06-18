@@ -282,6 +282,6 @@ N/A — phase ships no runtime-loadable artifact. `seed_from_spec` is a pure fun
 - `loop_still_seeds_task_updates_when_tracking_on` in `tests.rs` — made item 2 bold
 
 **Commits:**
-- pending
+- `5623004` — feat: require bold name for list-form tasks and de-dup seeded tasks
 
 **Notes for review:** Two integration tests in `executor/src/agent/tests.rs` (`loop_seeds_task_updates_from_spec` and `loop_still_seeds_task_updates_when_tracking_on`) had spec fixtures with a non-bold list item (`2. Second task — do that`). These were updated to use bold names (`2. **Second task** — do that`) to match the new contract. This was not called out in the phase spec but was required for the tests to pass — the spec only mentioned the three unit tests in `tasks.rs`.
