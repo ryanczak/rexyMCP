@@ -507,6 +507,10 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
   command run by the post-write hook (step 5a above) — not advertised to the
   executor model, not a gate command,
 - budget knobs (context %, max turns, escalation slots),
+- **`[executor] max_tokens`** (M23) — per-response output-token ceiling sent on
+  every chat request (default 8192; per-model overridable in `[models."<id>"]`).
+  Carved out of the remaining context window; the prior hardcoded 4096 truncated
+  thinking models mid-reasoning before they reached a tool call,
 - **`[escalation]`** (M20) — tier (`LARGE`/`MEDIUM`/`SMALL`) and tier-derived
   defaults for `max_turns`, `escalation_slots`, `doc_level`,
 - **`[architect]`** (M20) — Claude model id and cost rates
@@ -945,3 +949,17 @@ The project plan. Each entry becomes a milestone with its own
     turn-cycle seam M19/M21 extended. (Server-authored bookkeeping — moving who
     authors the Status flip / Update Log — is deferred pending a contract
     discussion.)
+23. **M23 — Truncation & Empty-Completion Recovery** *(in progress)*. Recover
+    from the truncation/empty-output tail before hard-failing, one layer below
+    M22's `EmptyCompletionStall` terminator. Diagnosed from a netviz e2e run where
+    the per-turn output cap (`max_tokens`, **hardcoded 4096** in the OpenAI backend)
+    cut a MEDIUM-tier thinking model off mid-`<think>` before it reached a tool
+    call — at only 45% context use — and the loop then mis-read the truncated stub
+    as a completion attempt (`finish_reason` was captured for the scorecard but
+    never acted on). Two phases: (01) make `max_tokens` a `[executor]` /
+    `[models."<id>"]` config knob (default 8192) threaded through the backend; (02)
+    in the `NoToolCall` arm, route a `finish_reason == "length"` turn to a
+    truncation-specific recovery nudge instead of the completion path, and escalate
+    the empty-recovery feedback to a no-reasoning directive after ≥ 2 consecutive
+    empties. Additive; a dedicated truncation terminator is deferred (recover
+    first — the loop stays bounded by the turn cap and M22's empty stall).

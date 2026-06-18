@@ -4,12 +4,44 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** none — **M22 closed (2026-06-18, 5/5 `approved_first_try`).**
-This is a **human-gated milestone boundary.** The next milestone is not started
-until the user kicks it off. Candidate next work: **D8/D9** (pre-filled /
-server-authored bookkeeping) — explicitly deferred from M22 and requiring a
-design conversation before authoring (it moves *who authors* the bookkeeping from
-executor to server and touches the executor contract). See the
+**Active phase:** **M23 phase-01 — Configurable `max_tokens`**
+([phase-01-configurable-max-tokens.md](milestones/M23-truncation-recovery/phase-01-configurable-max-tokens.md)).
+Drafted, ready to dispatch.
+
+**📌 M23 — Truncation & Empty-Completion Recovery kicked off (2026-06-18, with the
+user).** Diagnosed from a fresh netviz e2e run (`google/gemma-4-26b-a4b-qat`,
+MEDIUM, `session-phase-03-6a33e58c.jsonl`) that hard-failed on the exact mechanism
+M22 phase-01 added the `EmptyCompletionStall` terminator for — but the log shows
+the terminator firing on a *symptom*. The model was being truncated mid-`<think>`:
+`max_tokens` is **hardcoded to 4096** (`openai.rs:110`), so on turns 12/14/15 it
+generated exactly 4096 output tokens of reasoning and was cut off
+(`finish_reason == "length"`) before reaching a tool call — at only **45% context
+use** (output cap, not context length, was the wall). `finish_reason` is captured
+(`mod.rs:414`) but only counted for the scorecard; nothing acts on it, so the
+truncated stub falls through and is mis-read as a completion, after which the model
+collapses to 0-token EOS responses (turns 16–18) that M22's stall finally
+terminates — three turns *after* the real failure. Two phases (milestone
+[README](milestones/M23-truncation-recovery/README.md); `architecture.md` § Status
+#23 + § Configuration bullet added):
+- **phase-01 (config substrate):** make `max_tokens` a `[executor]` /
+  `[models."<id>"]` knob (default **8192**, up from 4096), threaded through the
+  backend exactly like `temperature`/`seed`.
+- **phase-02 (loop behavior):** retain `finish_reason` per turn; in the
+  `NoToolCall` arm, route a `length`-truncated turn to a truncation-specific
+  recovery nudge instead of the completion path, and escalate the empty-recovery
+  feedback to a no-reasoning directive after ≥ 2 consecutive empties.
+
+**Scope decisions (2026-06-18, with the user):** default `max_tokens` = 8192
+(16384 lets a runaway turn burn ~2× before cut; 4096 keeps the truncation);
+two-phase config/loop split per the M18 substrate→behavior precedent; **recover
+first** — no new truncation terminator this milestone (the loop stays bounded by
+the turn cap + M22's empty stall; add a `TruncationStall` only if the follow-up
+e2e shows truncation loops persist). Dispatch 01 then 02, review-gate each.
+
+**Deferred (D8/D9), to discuss before authoring:** pre-filled / server-authored
+bookkeeping — explicitly deferred from M22, requiring a design conversation (it
+moves *who authors* the bookkeeping from executor to server and touches the
+executor contract). See the
 [M22 retrospective](milestones/M22-bookkeeping-resilience/README.md#retrospective--2026-06-18).
 
 **M22 phase-05 — done** (2026-06-18, **approved_first_try**, executor
