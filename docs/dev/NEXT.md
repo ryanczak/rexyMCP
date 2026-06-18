@@ -4,9 +4,27 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M23 phase-03 — `SamplingParams` refactor + `format_no_match` fix**
-([phase-03-sampling-params-cleanup.md](milestones/M23-truncation-recovery/phase-03-sampling-params-cleanup.md)).
-Drafted 2026-06-18, ready to dispatch.
+**Active phase:** **none.** M23 — Truncation & Empty-Completion Recovery is
+**complete** (3/3 phases approved_first_try, 2026-06-18). Next milestone is a
+human-gated boundary — kick off the next via `/rexymcp:architect` when ready.
+
+**M23 phase-03 — done** (2026-06-18, **approved_first_try**, executor
+**Claude Code (direct)**; commit `eed0213` refactor). The retrospective-cleanup
+phase that closed M23. Collapsed the three sampling knobs (`temperature`, `seed`,
+`max_tokens`) into a single `Copy` `SamplingParams` struct in `executor/src/ai/mod.rs`
+(manual `Default` with `max_tokens: 8192`), threaded as one `sampling:` arg through
+`build_chat_body` (5 args), `OpenAiClient::new` (6 args), `chat`, and both call
+sites (`make_client` + `mcp/src/runner.rs`) — retiring the phase-01
+`#[allow(clippy::too_many_arguments)]` (grep-confirmed gone). Also fixed
+`format_no_match` in `feedback.rs` (the 2×-deferred latent panic): `&response_excerpt[..200]`
+→ `chars().take(200).collect::<String>()` + `len()` → `chars().count()` guard,
+matching `format_truncated`. 9 mechanical `build_chat_body` test-call-site updates
+(same struct-literal churn as M23 phase-01's `ModelOverride` literals); 2 new
+mutation-resistant tests (`sampling_params_default_max_tokens_is_8192`,
+`format_no_match_handles_multibyte_boundary`). Clean 87-turn first-try; all four
+gates green on independent re-run (857 executor + 431 mcp pass, 2 ignored). **No
+scope deviation, no calibration debt** — both items it was authored to close
+(the `too_many_arguments` allow + the `format_no_match` panic) are now retired.
 
 **M23 phase-02 — done** (2026-06-18, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `6608df3` feat). Acts on `finish_reason`: a new

@@ -8,7 +8,7 @@ per-turn output ceiling so a thinking model can finish its reasoning *and* emit 
 tool call, and when the backend still cuts a turn off mid-stream, tell the model
 exactly that instead of mis-reading the stub as a completion attempt.
 
-**Status:** in-progress (2/3 phases done, phase-03 added 2026-06-18)
+**Status:** done (3/3 phases done, 2026-06-18)
 
 **Depends on:** M22 (the `NoToolCall` empty branch + `consecutive_empty_completions`
 counter this milestone extends), M18 (the `[models]` per-model override +
@@ -98,7 +98,7 @@ unraised cap pulled it back in.
 |----|-------|--------|
 | 01 | Configurable `max_tokens` (config + backend + init template) ([phase-01-configurable-max-tokens.md](phase-01-configurable-max-tokens.md)) | done |
 | 02 | Truncation-aware empty-completion recovery (finish_reason routing + no-think escalation) ([phase-02-truncation-recovery.md](phase-02-truncation-recovery.md)) | done |
-| 03 | `SamplingParams` refactor + `format_no_match` fix ([phase-03-sampling-params-cleanup.md](phase-03-sampling-params-cleanup.md)) | review |
+| 03 | `SamplingParams` refactor + `format_no_match` fix ([phase-03-sampling-params-cleanup.md](phase-03-sampling-params-cleanup.md)) | done |
 
 Dispatch in order and review-gate each. Phase 01 is config/backend plumbing
 (mirrors the `temperature`/`seed` path); phase 02 edits the `NoToolCall` arm of
@@ -140,11 +140,14 @@ follow-up e2e run.
 
 ### Retrospective — 2026-06-18
 
-**Outcome:** 2/2 phases **approved_first_try**, executor Qwen/Qwen3.6-27B-FP8.
-Both gates of the netviz truncation failure are now closed: the per-turn output
-ceiling is configurable (default raised 4096 → 8192), and a `length`-truncated
-`NoToolCall` turn is routed to a truncation nudge instead of being mis-read as a
-completion. Commits `5eec632` (phase-01 feat) / `6608df3` (phase-02 feat).
+**Outcome:** 3/3 phases **approved_first_try** (phases 01–02 executor
+Qwen/Qwen3.6-27B-FP8; phase-03 executor Claude Code direct). Both gates of the
+netviz truncation failure are now closed: the per-turn output ceiling is
+configurable (default raised 4096 → 8192), and a `length`-truncated `NoToolCall`
+turn is routed to a truncation nudge instead of being mis-read as a completion.
+Phase-03 then retired the two calibration items the recovery work left behind (the
+`too_many_arguments` allow and the `format_no_match` byte-slice panic). Commits
+`5eec632` (phase-01 feat) / `6608df3` (phase-02 feat) / `eed0213` (phase-03 refactor).
 
 **What worked.**
 - **The config/loop seam split (M18 precedent) held again.** phase-01 was
@@ -174,13 +177,18 @@ completion. Commits `5eec632` (phase-01 feat) / `6608df3` (phase-02 feat).
   whatever knob M24+ adds next) is now at the lint ceiling, so the *next* knob
   added to `OpenAiClient::new` forces either a 2nd allow or the refactor. A future
   phase that collapses these into a `SamplingParams`/`GenerationConfig` struct
-  would retire the allow and stop the recurrence pre-emptively. Flagged for the
-  user; no fold yet.
+  would retire the allow and stop the recurrence pre-emptively. **Resolved in
+  phase-03:** `SamplingParams { temperature, seed, max_tokens }` collapsed the
+  three trailing args back to one, dropping `OpenAiClient::new` to 6 args and
+  retiring the `#[allow]` (grep-confirmed gone). Never reached a 2nd occurrence.
 - **`format_no_match` byte-slice panic, held out of scope a 2nd time.** Both
   M23 phases brushed `feedback.rs` and both correctly left the pre-existing
   `&response_excerpt[..200]` multibyte-boundary panic alone (phase-02's new
-  `format_truncated` used char-safe `chars().take(200)`). Still latent; worth a
-  dedicated one-line fix in a future phase that legitimately touches `feedback.rs`.
+  `format_truncated` used char-safe `chars().take(200)`). **Resolved in phase-03:**
+  replaced with `chars().take(200).collect::<String>()` and the `len()` guard with
+  `chars().count()`, matching `format_truncated`; pinned by
+  `format_no_match_handles_multibyte_boundary` (199 ASCII + `é` + more — panics
+  under the old slice, passes after).
 
 **Deferred / open.**
 - **`TruncationStall` terminator** — deliberately not shipped (recover-first). The

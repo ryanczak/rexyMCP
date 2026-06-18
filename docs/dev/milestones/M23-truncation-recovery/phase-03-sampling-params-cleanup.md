@@ -1,7 +1,7 @@
 # Phase 03: `SamplingParams` refactor + `format_no_match` fix
 
 **Milestone:** M23 — Truncation & Empty-Completion Recovery
-**Status:** review
+**Status:** done
 **Depends on:** M23 phase-01 (which added `max_tokens` as the third sampling knob and
 introduced the `#[allow(clippy::too_many_arguments)]` on `OpenAiClient::new`)
 **Estimated diff:** ~90 lines
@@ -449,3 +449,11 @@ Not applicable — pure refactor, no new runtime-loadable artifact. The `build_c
 - (to be committed)
 
 **Notes for review:** The 9 `build_chat_body` test call site updates are the same mechanical struct-literal churn pattern as M23 phase-01's `ModelOverride` test literals and M22 phase-01's `empty_completion_threshold`. The `#[allow(clippy::too_many_arguments)]` grep returns nothing (exit 1 = no matches), confirming it was fully removed.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct)
+- **Scope deviations:** none — both flagged retrospective items (the `too_many_arguments` allow and the `format_no_match` byte-slice) retired exactly as drafted; no `architecture.md`/`Cargo.toml` edit, no new dependency.
+- **Calibration:** none. All four gates green on independent re-run (857 executor + 431 mcp pass, 2 ignored). `#[allow(clippy::too_many_arguments)]` grep-confirmed gone from `openai.rs`; the two new tests are mutation-resistant (`format_no_match_handles_multibyte_boundary` panics under the old `[..200]` byte-slice; `sampling_params_default_max_tokens_is_8192` pins the manual `Default` against a derive regression). Closes the 1st-occurrence `too_many_arguments` and the 2nd-deferral `format_no_match` panic, both flagged in the M23 retrospective — no remaining calibration debt for this milestone.
