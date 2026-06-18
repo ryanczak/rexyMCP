@@ -1,7 +1,7 @@
 # Phase 01: Configurable `max_tokens`
 
 **Milestone:** M23 — Truncation & Empty-Completion Recovery
-**Status:** review
+**Status:** done
 **Depends on:** none in M23 (rides the M18 `[models]` override + `resolve_for_model` path)
 **Estimated diff:** ~150 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -298,3 +298,30 @@ not the executor). The new config field is additive and defaulted.
 **Notes for review:**
 - Added `#[allow(clippy::too_many_arguments)]` on `OpenAiClient::new` — the function now has 8 args (7 → 8). This is the same pattern the existing code already had at 7 args (the clippy threshold is 7), and the new arg follows the exact same constructor-arg threading pattern as `temperature`/`seed`. A struct builder refactor would be out of scope for this phase.
 - Task 5 (`ModelOverride` test literals in `runner.rs`) is a mechanical struct-literal consequence — same pattern documented in M22 phase-01 for `empty_completion_threshold`.
+
+### Review verdict — 2026-06-18
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none. All 8 Spec tasks landed verbatim; no out-of-scope
+  files touched (`GenerationParams`/`architecture.md` correctly left alone).
+- **Independent re-run:** `cargo fmt --all --check` clean · `cargo build` zero new
+  warnings · `cargo clippy --all-targets --all-features -- -D warnings` clean ·
+  `cargo test` 850 passed / 0 failed / 2 ignored. `grep -n '4096'
+  executor/src/ai/backends/openai.rs` returns nothing (hardcoded ceiling gone).
+- **Tests verified mutation-resistant:** `build_chat_body_max_tokens_reflects_arg_not_default`
+  (1234 ≠ any re-hardcoded literal), `resolve_for_model_applies_max_tokens_override`
+  (override 2048 over global 8192), `resolve_for_model_leaves_max_tokens_when_override_absent`
+  (temperature-only override leaves 8192). All `unwrap`/`expect`/`panic!` confined
+  to `#[cfg(test)]` blocks (boundaries openai.rs:508, config.rs:479) — no new
+  production-path uses.
+- **Calibration (1st occurrence, data — no fold):** the spec's "mirror
+  `temperature`/`seed` **exactly**" instruction pushed `OpenAiClient::new` to 8
+  positional args, crossing clippy's `too_many_arguments` threshold (7) and
+  necessitating a function-scoped `#[allow(clippy::too_many_arguments)]`. The
+  executor flagged it transparently in Notes-for-review; the only alternative —
+  a builder/config-struct refactor of `OpenAiClient::new` — was out of this
+  phase's authorized scope. Accepted as a spec-mandated consequence. Data point
+  for whether a future phase should collapse the constructor's sampling knobs
+  into a params struct.
