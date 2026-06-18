@@ -3634,8 +3634,7 @@ async fn loop_does_not_dedupe_after_edit() {
 #[tokio::test]
 async fn loop_seeds_task_updates_from_spec() {
     let dir = TempDir::new().unwrap();
-    let phase_doc =
-        "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n3. **Third** — last\n";
+    let phase_doc = "## Spec\n\n1. **First task** — do this\n2. **Second task** — do that\n3. **Third** — last\n";
     let client = MockAiClientScript::new(vec![vec![token("done")]]);
     let verifier = MockFileVerifier::new(vec![]);
 
@@ -3782,8 +3781,7 @@ async fn loop_emits_no_task_updates_when_tracking_off() {
 #[tokio::test]
 async fn loop_still_seeds_task_updates_when_tracking_on() {
     let dir = TempDir::new().unwrap();
-    let phase_doc =
-        "## Spec\n\n1. **First task** — do this\n2. Second task — do that\n3. **Third** — last\n";
+    let phase_doc = "## Spec\n\n1. **First task** — do this\n2. **Second task** — do that\n3. **Third** — last\n";
     let client = MockAiClientScript::new(vec![vec![token("done")]]);
     let _verifier = MockFileVerifier::new(vec![]);
 

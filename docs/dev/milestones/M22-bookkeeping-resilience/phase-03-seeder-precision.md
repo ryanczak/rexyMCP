@@ -1,7 +1,7 @@
 # Phase 03: Seeder precision — bold-name tasks + de-dup
 
 **Milestone:** M22 — Bookkeeping-Loop Resilience
-**Status:** todo
+**Status:** review
 **Depends on:** none (independent of phases 01/02/04/05)
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -232,3 +232,56 @@ the user — out of scope here.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-18 00:56 (started)
+
+**By:** executor
+
+### Update — 2026-06-18 00:56 (complete)
+
+**Summary:** Made `parse_task_line` require a bold `**...**` name (B4), so prose numbered lists like `1. If packet.tcp...` no longer seed as tasks. Added de-duplication by id and title in `seed_from_spec` (B5). Deleted the now-unused `extract_title` function. Updated two integration tests in `tests.rs` whose spec fixtures used non-bold list items.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+<exit 0, no diff>
+
+cargo build 2>&1 | tail -20
+<exit 0>
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+<exit 0>
+
+cargo test 2>&1 | tail -30
+test result: ok. 832 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+N/A — phase ships no runtime-loadable artifact. `seed_from_spec` is a pure function; unit tests exercise it against real `## Spec` fixtures including the netviz regression shape.
+
+**Files changed:**
+- `executor/src/agent/tasks.rs` — B4: require bold name in `parse_task_line`, delete `extract_title`; B5: de-dup by id/title; Task 3: update 3 contract tests; Task 4: add 3 new tests
+- `executor/src/agent/tests.rs` — fix 2 integration tests whose spec fixtures used non-bold list items
+- `docs/dev/milestones/M22-bookkeeping-resilience/phase-03-seeder-precision.md` — status flip + update log
+- `docs/dev/milestones/M22-bookkeeping-resilience/README.md` — phase table status flip
+
+**New tests:**
+- `ignores_prose_numbered_list_without_bold` in `executor/src/agent/tasks.rs`
+- `dedupes_colliding_ids` in `executor/src/agent/tasks.rs`
+- `dedupes_identical_titles` in `executor/src/agent/tasks.rs`
+
+**Updated tests:**
+- `seeds_top_level_numbered_items` — made all items bold
+- `ignores_list_item_without_bold_name` (was `seeds_plain_title_keeps_whole_remainder`) — repurposed
+- `parses_multi_digit_ids` — made items bold
+- `loop_seeds_task_updates_from_spec` in `tests.rs` — made item 2 bold
+- `loop_still_seeds_task_updates_when_tracking_on` in `tests.rs` — made item 2 bold
+
+**Commits:**
+- pending
+
+**Notes for review:** Two integration tests in `executor/src/agent/tests.rs` (`loop_seeds_task_updates_from_spec` and `loop_still_seeds_task_updates_when_tracking_on`) had spec fixtures with a non-bold list item (`2. Second task — do that`). These were updated to use bold names (`2. **Second task** — do that`) to match the new contract. This was not called out in the phase spec but was required for the tests to pass — the spec only mentioned the three unit tests in `tasks.rs`.

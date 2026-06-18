@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::store::sessions::event::TaskState;
 
 /// One architect-seeded task. `id` is the Spec item's number ("1", "2", …);
@@ -30,6 +32,18 @@ pub fn seed_from_spec(phase_doc: &str) -> Vec<Task> {
             tasks.push(task);
         }
     }
+
+    let mut seen_ids = HashSet::new();
+    let mut seen_titles = HashSet::new();
+    tasks.retain(|t| {
+        if seen_ids.contains(&t.id) || seen_titles.contains(&t.title) {
+            false
+        } else {
+            seen_ids.insert(t.id.clone());
+            seen_titles.insert(t.title.clone());
+            true
+        }
+    });
 
     tasks
 }
@@ -65,25 +79,17 @@ fn parse_task_line(line: &str) -> Option<Task> {
         return None;
     }
 
-    let title = extract_title(rest);
+    let trimmed = rest.trim_start();
+    let title = trimmed
+        .strip_prefix("**")
+        .and_then(|after| after.split_once("**"))
+        .map(|(name, _)| name.trim().to_string())
+        .filter(|name| !name.is_empty())?;
     Some(Task {
         id: digits.to_string(),
         title,
         state: TaskState::Pending,
     })
-}
-
-/// Extract the task title from the remainder after `<digits>. `.
-/// If the trimmed text starts with `**`, extract the bold span.
-/// Otherwise, use the whole trimmed remainder.
-fn extract_title(rest: &str) -> String {
-    let trimmed = rest.trim_start();
-    if let Some(after_open) = trimmed.strip_prefix("**")
-        && let Some(title) = after_open.split_once("**")
-    {
-        return title.0.trim().to_string();
-    }
-    trimmed.trim_end().to_string()
 }
 
 /// Parse a task subheading. Recognizes both `### N. Title` (dot, decimal-safe)
@@ -151,13 +157,13 @@ mod tests {
 
     #[test]
     fn seeds_top_level_numbered_items() {
-        let doc = "## Spec\n\n1. **First task** — do this first\n2. Second task — do this second\n3. **Third** — last one\n";
+        let doc = "## Spec\n\n1. **First task** — do this first\n2. **Second task** — do this second\n3. **Third** — last one\n";
         let tasks = seed_from_spec(doc);
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[0].id, "1");
         assert_eq!(tasks[0].title, "First task");
         assert_eq!(tasks[1].id, "2");
-        assert_eq!(tasks[1].title, "Second task — do this second");
+        assert_eq!(tasks[1].title, "Second task");
         assert_eq!(tasks[2].id, "3");
         assert_eq!(tasks[2].title, "Third");
         for t in &tasks {
@@ -174,11 +180,10 @@ mod tests {
     }
 
     #[test]
-    fn seeds_plain_title_keeps_whole_remainder() {
+    fn ignores_list_item_without_bold_name() {
         let doc = "## Spec\n\n2. plain text\n";
         let tasks = seed_from_spec(doc);
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].title, "plain text");
+        assert!(tasks.is_empty(), "non-bold list item must not seed");
     }
 
     #[test]
@@ -217,7 +222,7 @@ mod tests {
 
     #[test]
     fn parses_multi_digit_ids() {
-        let doc = "## Spec\n\n10. Tenth item\n11. Eleventh item\n";
+        let doc = "## Spec\n\n10. **Tenth item**\n11. **Eleventh item**\n";
         let tasks = seed_from_spec(doc);
         assert_eq!(tasks.len(), 2);
         assert_eq!(tasks[0].id, "10");
@@ -385,5 +390,39 @@ More detail.\n\
         for t in &tasks {
             assert_eq!(t.state, TaskState::Pending);
         }
+    }
+
+    #[test]
+    fn ignores_prose_numbered_list_without_bold() {
+        let doc = "## Spec\n\n#### Algorithm\n\n1. If foo is set and bar\n2. If baz\n\n### Tasks\n\n1. **Parse the header** — do it\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "prose 1./2. must not seed; only the bold task"
+        );
+        assert_eq!(tasks[0].title, "Parse the header");
+    }
+
+    #[test]
+    fn dedupes_colliding_ids() {
+        let doc = "## Spec\n\n### 1. Foo\n\n1. **Bar**\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "heading ### 1. and list 1. collide; first wins"
+        );
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "Foo");
+    }
+
+    #[test]
+    fn dedupes_identical_titles() {
+        let doc = "## Spec\n\n1. **Same title** — first\n2. **Same title** — second\n";
+        let tasks = seed_from_spec(doc);
+        assert_eq!(tasks.len(), 1, "identical titles: first occurrence wins");
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "Same title");
     }
 }
