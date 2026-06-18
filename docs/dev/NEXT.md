@@ -4,9 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M23 phase-01 — Configurable `max_tokens`**
-([phase-01-configurable-max-tokens.md](milestones/M23-truncation-recovery/phase-01-configurable-max-tokens.md)).
-Drafted, ready to dispatch.
+**Active phase:** **M23 phase-02 — Truncation-aware empty-completion recovery**
+([phase-02-truncation-recovery.md](milestones/M23-truncation-recovery/phase-02-truncation-recovery.md)).
+Drafted at kickoff; all load-bearing anchors re-verified current at activation
+(`mod.rs` completion-decl 392–393 / `AiEvent::Completion` 407 / `NoToolCall`
+guard 517–523 / reset 623; `feedback.rs` `format_no_match` 43 + the `[..200]`
+byte-slice 45; `testing.rs` `MockAiClientScript::new` 108; `tests.rs`
+`length_finish_rate_*` 2907 / `empty_completions_hard_fail_at_threshold` 4140 —
+phase-01 touched none of these files). Ready to dispatch.
+
+**M23 phase-01 — done** (2026-06-18, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `5eec632` feat / `8a68b06` approve). `max_tokens`
+is now a `[executor]` knob (default **8192**, up from the hardcoded 4096) +
+per-model `[models."<id>"]` override, threaded through `build_chat_body` /
+`OpenAiClient::new` / both call sites exactly like `temperature`/`seed`; the
+hardcoded `4096` at `openai.rs:110` is gone (grep-confirmed). 6 new tests (2
+`openai.rs` wire-serialization, 4 `config.rs` default/load/override/inherit),
+all mutation-resistant. Clean 145-turn first-try; all four gates green on
+independent re-run (850 passed / 2 ignored). **Calibration (1st occurrence,
+data — no fold):** the spec's "mirror `temperature`/`seed` **exactly**"
+instruction pushed `OpenAiClient::new` to 8 args, crossing clippy's
+`too_many_arguments` threshold (7) and necessitating a function-scoped
+`#[allow(clippy::too_many_arguments)]` — accepted as a spec-mandated
+consequence (the only alternative, a builder/params-struct refactor of the
+constructor, was out of the phase's authorized scope); flagged for a possible
+future fold.
 
 **📌 M23 — Truncation & Empty-Completion Recovery kicked off (2026-06-18, with the
 user).** Diagnosed from a fresh netviz e2e run (`google/gemma-4-26b-a4b-qat`,
