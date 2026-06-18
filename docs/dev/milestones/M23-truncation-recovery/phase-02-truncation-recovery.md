@@ -413,7 +413,7 @@ N/A — phase ships no runtime-loadable artifact. `execute_phase` is the library
 - `repeated_truncation_reaches_turn_cap_not_completion` in `executor/src/agent/tests.rs`
 
 **Commits:**
-- (pending — will be committed below)
+- `6608df3` — feat: truncation-aware empty-completion recovery
 
 **Notes for review:**
 - Adjacent latent bug noted (not fixed per hard rules): `format_no_match` uses `&response_excerpt[..200]` byte-slicing which can panic on multibyte boundaries. The new `format_truncated` uses char-safe `chars().take(200)` to avoid adding a second panic path.
