@@ -1,12 +1,12 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M17 and M19–M23 are fully implemented and
-> closed; M18 (capability-aware adaptation) remains open — its committed scope is
-> in progress; M24 (edit-loop recovery) is in progress (phase-01 done, approved).
-> This document is the source of truth for the *intended* design; the code under
-> `executor/` and `mcp/` is the source of truth for what actually runs.
-> Milestones are listed in the **Status** section at the bottom — that list is
-> the project plan.
+> **Status:** Living design doc. M1–M23 are fully implemented and closed (M18's
+> thread 4 / cold-start calibration battery is shelved by design, outside its
+> committed scope); M24 (edit-loop recovery) is in progress (phase-01 done,
+> approved). This document is the source of truth for the *intended* design; the
+> code under `executor/` and `mcp/` is the source of truth for what actually
+> runs. Milestones are listed in the **Status** section at the bottom — that list
+> is the project plan.
 
 ## What rexyMCP is
 
@@ -868,7 +868,8 @@ The project plan. Each entry becomes a milestone with its own
     dropped). No new `SessionEvent` and no new dependency in any phase. See
     `docs/dev/milestones/M17-dashboard-polish-3/README.md`.
 
-18. **M18 — Capability-Aware Adaptation** *(in progress, kicked off 2026-06-13)*.
+18. **M18 — Capability-Aware Adaptation** *(done, 2026-06-15; 7/7 in-scope
+    phases approved, thread 4 / phase-08 shelved by design)*.
     Make rexyMCP characterize each local model's strengths and failure modes and
     compensate for them — at draft time and at runtime — instead of relearning
     them by per-phase trial-and-error. **Foundational fix:** the supervision half
