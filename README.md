@@ -42,6 +42,7 @@ Two things make rexyMCP stand out:
 ## Table of contents
 
 - [How it works (the herd loop)](#how-it-works-the-herd-loop)
+- [Watch it work — the live dashboard](#watch-it-work--the-live-dashboard)
 - [Install & quick start](#install--quick-start)
 - [The Claude Code plugin](#the-claude-code-plugin)
   - [Skills](#skills-rexymcpname)
@@ -117,6 +118,64 @@ Claude rather than calling out to any cloud LLM itself.
 rexymcp dashboard --repo /path/to/your/repo   # full-screen TUI — stays open, auto-follows sessions
 rexymcp status    --repo /path/to/your/repo   # one-shot summary; scriptable with --json
 ```
+
+---
+
+## Watch it work — the live dashboard
+
+`execute_phase` is opaque *and* blocking: once Claude dispatches a phase, the
+local model can churn for minutes while the MCP call sits there returning
+nothing until it's done. That's the right boundary for protecting Claude's
+context — but it leaves *you* with no idea what's happening. **`rexymcp
+dashboard` is the window into that black box.**
+
+```bash
+rexymcp dashboard --repo /path/to/your/repo
+```
+
+![The rexymcp dashboard](docs/rexymcp_dashboard.png)
+
+Point it at your target repo and it opens a full-screen TUI that polls the
+executor's session JSONL every 500 ms, **auto-following** whichever session is
+currently live (start a new dispatch and the dashboard jumps to it — no
+restart). It stays open until you press `q`/`Esc`/`Ctrl-C`. At a glance you see
+exactly what rexyMCP is working on:
+
+- **Session** — which milestone, phase, model, and session is running; current
+  state, turn count, and stage, with a dog-chases-its-brain liveness spinner so
+  you can tell motion from a stall.
+- **Budget** — tokens in/out and tok/s, plus a **Savings** block pricing the
+  local run against a hypothetical cloud baseline (Baseline / Executor / Net
+  across Session · Milestone · Project).
+- **Context** — context-window utilization (green/yellow/red) and how many
+  tokens each reclaim lever has recovered.
+- **Activity** — the full, scrollable transcript of the run: every prompt, tool
+  call, tool result, verifier outcome, and parse repair, color-coded by type and
+  filterable with `f`. This is where you *watch the model think and act*.
+- **Tasks** — the phase's Spec-seeded checklist, checked off live as the
+  executor completes each step.
+- **Files** — every file the executor has touched, with its `+added / -removed`
+  numstat.
+
+It is a **read-only monitoring view** — it never drives the executor, only
+reflects it (see [Non-goals in the
+architecture](docs/architecture.md#non-goals)).
+
+### Pairs perfectly with tmux + Claude Code
+
+The dashboard really shines in a **tmux split alongside Claude Code**:
+
+- One pane runs **Claude Code** as the Architect — you `/rexymcp:dispatch` a
+  phase and Claude blocks on the `execute_phase` MCP call.
+- The other pane runs **`rexymcp dashboard --repo .`** — and immediately lights
+  up with the live run Claude just kicked off, auto-following the new session.
+
+So while Claude waits on the opaque MCP boundary, you get a real-time feed of
+exactly what the local model is doing turn-by-turn: which tool it just called,
+whether the verifier is happy, how much context it's burned, which tasks are
+left. When the phase finishes, Claude surfaces the `PhaseResult` in its pane and
+you've already watched the whole thing happen in the other. It turns a
+minutes-long black box into a glass cockpit.
 
 ---
 
@@ -530,6 +589,7 @@ first_token_timeout_secs = 600            # wait for the first token (prefill)  
 stream_idle_timeout_secs = 240            # max gap between tokens once streaming  (default 240)
 # temperature = 0.2                       # sent on every request; omitted → endpoint default
 # seed        = 42                        # deterministic sampling seed; omitted → none
+# max_tokens  = 8192                      # per-response output ceiling (default 8192); raise for thinking models
 task_tracking = true                      # seed a per-session checklist from the phase Spec (default true)
 # tier = "MEDIUM"                         # "LARGE" | "MEDIUM" | "SMALL" — usually set via `rexymcp calibrate`
 
@@ -584,6 +644,7 @@ max_assists = 3                           # autonomous architect assists before 
 [models."Qwen/Qwen3.6-27B-FP8"]
 temperature                    = 0.2      # any of these override the global value for this model only
 # seed                         = 7
+# max_tokens                   = 16384     # per-model output ceiling (thinking models often need more)
 # task_tracking                = false
 # identical_call_threshold     = 8
 # verifier_persistence_threshold = 8
@@ -595,7 +656,7 @@ temperature                    = 0.2      # any of these override the global val
 | Section | Purpose |
 |---|---|
 | `[project]` | `id` — per-project UUID (from `rexymcp init`) that scopes telemetry to this project regardless of path. |
-| `[executor]` | The local model + connection: `provider`, `model`, `base_url`, `api_key`, the two streaming timeouts, sampling (`temperature`, `seed`), `task_tracking`, and `tier`. |
+| `[executor]` | The local model + connection: `provider`, `model`, `base_url`, `api_key`, the two streaming timeouts, sampling (`temperature`, `seed`, `max_tokens`), `task_tracking`, and `tier`. |
 | `[commands]` | The `format` / `build` / `lint` / `test` (+ optional `lint_fix`) commands run as the final gate. |
 | `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `escalation_slots`, `gate_retries`. |
 | `[telemetry]` | `dir` — the cross-project store. Omit to disable; `~` is expanded. |
