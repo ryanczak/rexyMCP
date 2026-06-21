@@ -1,13 +1,12 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M7 and M9–M20 are fully implemented
-> and closed (M8 and M18 remain open — see below); M8 (live session dashboard)
-> is implemented but open — the wireframe redesign shipped (2026-06-03) and M8
-> remains open for live-session confirmation and bug fixes before its milestone
-> close; M18 (capability-aware adaptation) is in progress. This document is the
-> source of truth for the *intended* design; the code under `executor/` and `mcp/` is the source
-> of truth for what actually runs. Milestones are listed in the **Status** section
-> at the bottom — that list is the project plan.
+> **Status:** Living design doc. M1–M17 and M19–M23 are fully implemented and
+> closed; M18 (capability-aware adaptation) remains open — its committed scope is
+> in progress; M24 (edit-loop recovery) is in progress (phase-01 done, approved).
+> This document is the source of truth for the *intended* design; the code under
+> `executor/` and `mcp/` is the source of truth for what actually runs.
+> Milestones are listed in the **Status** section at the bottom — that list is
+> the project plan.
 
 ## What rexyMCP is
 
@@ -400,8 +399,8 @@ Practical concerns this layer owns:
   `SessionEvent::Progress` records are written unconditionally (independent of any
   live watcher), and `rexymcp status` is what surfaces motion to the human; MCP
   progress fires only if a future client opts in with a token. A richer live view
-  over this same JSONL — a full-screen, continuously refreshed dashboard — is
-  planned as **M8** (`rexymcp dashboard`): the opacity of a blocking
+  over this same JSONL — a full-screen, continuously refreshed dashboard —
+  shipped as **M8** (`rexymcp dashboard`): the opacity of a blocking
   `execute_phase` call is exactly what leaves the user without insight mid-phase,
   and a one-shot `status` only partly answers it.
 - **Context hygiene.** Returned output is capped (`MAX_MCP_OUTPUT_TOKENS`) so a
@@ -522,7 +521,7 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
 - **No interactive TUI agent.** The executor loop is headless; rexyMCP is a
   bridge, not an interactive coding agent, and the executor surfaces its progress
   through the session log and MCP, not a terminal interface. This does **not**
-  exclude a **read-only** live dashboard over that session data (the planned
+  exclude a **read-only** live dashboard over that session data (the shipped
   `rexymcp dashboard`, M8) — a monitoring view of the same JSONL `rexymcp status`
   already reads is a viewer, not an agent surface.
 - **No local planning/decomposition.** The architect (Claude) owns milestone and
@@ -628,8 +627,8 @@ The project plan. Each entry becomes a milestone with its own
      and appends a truncation notice with the file's total line count and shown
      range. Prevents `RunawayOutput` hard-fails when an executor reads a large
      source file whole.
-8. **M8 — Live session dashboard** *(wireframe complete, 2026-06-03; open for
-   testing / bug fixes)*. **Why it matters:** `execute_phase` is opaque *and*
+8. **M8 — Live session dashboard** *(done, 2026-06-07; 16/16 phases complete,
+   both exit criteria met)*. **Why it matters:** `execute_phase` is opaque *and*
    blocking — the MCP client sends no `progressToken`, so progress notifications
    never fire (see Layer 2 § "Liveness"), leaving the user blind for minutes at a
    time. `rexymcp status` gives a one-shot read; `rexymcp dashboard` is the live,
