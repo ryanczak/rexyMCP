@@ -15,6 +15,10 @@ errors straight back into the next turn, and refusing to let the LLM touch anyth
 outside the repo. The Architect designs; the Executor codes; **rexyMCP keeps the
 herd together and moving toward the goal.**
 
+Your *Architect* runs in either **Claude Code** or **Google Antigravity** —
+rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
+whichever you drive.
+
 Two things make rexyMCP stand out:
 
 1. **It is purpose-built for small local models.** A 7B–27B model *will* make
@@ -44,7 +48,7 @@ Two things make rexyMCP stand out:
 - [How it works (the herd loop)](#how-it-works-the-herd-loop)
 - [Watch it work — the live dashboard](#watch-it-work--the-live-dashboard)
 - [Install & quick start](#install--quick-start)
-- [The Claude Code plugin](#the-claude-code-plugin)
+- [The plugin (Claude Code & Antigravity)](#the-plugin-claude-code--antigravity)
   - [Skills](#skills-rexymcpname)
   - [MCP tools](#mcp-tools)
 - [The workflow in depth](#the-workflow-in-depth)
@@ -71,7 +75,7 @@ Two things make rexyMCP stand out:
 /rexymcp:architect          ← Claude explores your repo and writes the design
    │
    ├─ bootstrap (first run) ─→ rexymcp.toml · STANDARDS.md · WORKFLOW.md
-   │                            REXYMCP.md (+ CLAUDE.md import)   (idempotent — safe to re-run)
+   │                            REXYMCP.md (+ CLAUDE.md / .agents/AGENTS.md)  (idempotent — safe to re-run)
    │
    ├─ writes docs/architecture.md
    ├─ writes docs/dev/milestones/M1-<slug>/README.md
@@ -230,13 +234,13 @@ rexymcp health --config rexymcp.toml    # endpoint reachable? list models
 rexymcp doctor --config rexymcp.toml    # are the [commands] binaries on PATH?
 ```
 
-**4 — Install the Claude Code plugin** (see [the plugin section](#the-claude-code-plugin) for all options):
+**4 — Install the plugin** (see [the plugin section](#the-plugin-claude-code--antigravity) for all options, including Google Antigravity):
 
 ```bash
 claude plugin install ./plugin          # from the local checkout
 ```
 
-**5 — Bootstrap your project** — open Claude Code *in your target repo* and run:
+**5 — Bootstrap your project** — open Claude Code (or Google Antigravity) *in your target repo* and run:
 
 ```
 /rexymcp:architect
@@ -250,14 +254,16 @@ you through the first design session. Everything is idempotent — safe to re-ru
 
 ---
 
-## The Claude Code plugin
+## The plugin (Claude Code & Antigravity)
 
 The plugin (`plugin/`, manifest version **0.1.1**) bundles the MCP server with
 the architect/executor workflow as **four skills** and **seven MCP tools**. Its
 `.mcp.json` launches `rexymcp serve --config ./rexymcp.toml`, so the binary must
-be on `$PATH`.
+be on `$PATH`. The same package drives both **Claude Code** and **Google
+Antigravity** — they consume the identical skills and MCP tools, so the workflow
+is the same in either harness.
 
-**Install options:**
+### Claude Code
 
 ```bash
 # A — test mode (no permanent install; good for trying it out)
@@ -278,6 +284,27 @@ a fork or private mirror, point at your own URL:
 claude plugin install git+https://your-host/rexyMCP.git
 ```
 
+### Google Antigravity
+
+Add the plugin to your global customization root by copying or symlinking the
+`plugin/` directory there (e.g. `~/.gemini/config/plugins/rexymcp-plugin`), then
+register the MCP server in your global `~/.gemini/config/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rexymcp": {
+      "command": "rexymcp",
+      "args": ["serve", "--config", "./rexymcp.toml"]
+    }
+  }
+}
+```
+
+Antigravity auto-loads project rules from `.agents/AGENTS.md` (the bootstrap
+writes one pointing at `REXYMCP.md`), and the architect skill uses Antigravity's
+`ask_question` tool wherever Claude Code would use an interactive prompt.
+
 ### Skills (`/rexymcp:<name>`)
 
 | Skill | Model | Args | What it does |
@@ -293,7 +320,7 @@ The `rmcp` stdio server (`rexymcp serve`) exposes **seven** tools to Claude Code
 
 | Tool | What it does |
 |---|---|
-| `execute_phase` | Run the executor against a phase doc + target repo; returns a `PhaseResult`. The `repo_path` is corroborated against the MCP client's `roots/list` and `CLAUDE_PROJECT_DIR` — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
+| `execute_phase` | Run the executor against a phase doc + target repo; returns a `PhaseResult`. The `repo_path` is corroborated against the MCP client's `roots/list` and the project-dir env var (`CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`) — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
 | `executor_health` | Check connectivity to the configured LLM endpoint and list models. Optional `base_url` override. |
 | `executor_log_search` | Search a session JSONL log by `event_type` (exact), `tool_name` (substring, on tool events), and/or `query_text` (substring) — all AND-ed. Capped per-record, limit default 20 / max 50. |
 | `executor_log_tail` | Return the last *N* records of a session log (default 10, max 50), each capped per field. |
@@ -308,10 +335,11 @@ The `rmcp` stdio server (`rexymcp serve`) exposes **seven** tools to Claude Code
 ### Project docs — what each file is for
 
 When rexyMCP bootstraps a target project it writes four files into `docs/dev/`
-(plus a `REXYMCP.md` orientation file at the root — imported into Claude's
-context by a one-line `@REXYMCP.md` in `CLAUDE.md`) that the Architect and
-Executor use every session. Understanding them is the key to using the workflow
-correctly.
+(plus a `REXYMCP.md` orientation file at the root — pulled into the Architect's
+context by a one-line `@REXYMCP.md` import in `CLAUDE.md` for Claude Code, or by
+a rule in `.agents/AGENTS.md` that directs Antigravity to read it) that the
+Architect and Executor use every session. Understanding them is the key to using
+the workflow correctly.
 
 | File | Who reads it | What it contains |
 |---|---|---|
@@ -745,9 +773,10 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
 ```
 executor/   library — the headless single-phase agent loop (crate `rexymcp-executor`)
 mcp/        binary  — the `rexymcp` CLI and rmcp stdio MCP server (bin `rexymcp`)
-plugin/     Claude Code plugin package
+plugin/     plugin package (Claude Code & Google Antigravity)
   ├── .claude-plugin/
-  │     └── plugin.json           plugin manifest (name, version, description)
+  │     └── plugin.json           Claude Code plugin manifest (name, version, description)
+  ├── plugin.json                 Antigravity plugin manifest
   ├── .mcp.json                   MCP server registration → `rexymcp serve --config ./rexymcp.toml`
   ├── skills/
   │     ├── architect/SKILL.md    /rexymcp:architect
@@ -759,6 +788,8 @@ plugin/     Claude Code plugin package
         └── WORKFLOW.md           generalized workflow template
 .claude-plugin/
   └── marketplace.json            marketplace metadata (install via GitHub URL); source → ./plugin
+.agents/
+  └── AGENTS.md                   Antigravity project rules → read REXYMCP.md before working
 docs/       architecture + the architect/executor dev process for rexyMCP itself
 ```
 
