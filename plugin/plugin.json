@@ -1,0 +1,17 @@
+{
+  "name": "rexymcp-plugin",
+  "version": "0.1.1",
+  "description": "rexyMCP architect/executor workflow plugin for Google Antigravity.",
+  "author": {
+    "name": "Matt Ryanczak"
+  },
+  "license": "MIT",
+  "keywords": [
+    "local-llm",
+    "executor",
+    "mcp",
+    "architect",
+    "workflow",
+    "phases"
+  ]
+}

@@ -32,8 +32,8 @@ the target repo — those may not exist yet):
 The plugin directory is where this skill lives. Templates are at
 `plugin/templates/STANDARDS.md` and `plugin/templates/WORKFLOW.md` relative to
 the rexyMCP repo root. Once the plugin is installed in a target repo, the
-templates are at the plugin's install location — use `${CLAUDE_PLUGIN_DIR}` or
-walk from the skill's own directory (`${CLAUDE_SKILL_DIR}`) up to the plugin
+templates are at the plugin's install location — use `${CLAUDE_PLUGIN_DIR}` / `${ANTIGRAVITY_PLUGIN_DIR}` or
+walk from the skill's own directory (using `${CLAUDE_SKILL_DIR}` / `${ANTIGRAVITY_SKILL_DIR}` or by parsing the absolute path of this skill file) up to the plugin
 root, then into `templates/`.
 
 ## 1. Bootstrap routine (idempotent)
@@ -49,9 +49,9 @@ Before any step, check for these four artifacts in the target repo:
 - `rexymcp.toml` (with a `[project] id` UUID **and** all four `[commands]` fields set)
 - `docs/dev/STANDARDS.md`
 - `docs/dev/WORKFLOW.md`
-- `REXYMCP.md` **and** a `CLAUDE.md` that imports it (`@REXYMCP.md`)
+- `REXYMCP.md` **and** either a `CLAUDE.md` that imports it (`@REXYMCP.md`) or a `.agents/AGENTS.md` referencing it
 
-If all four are present, report "Already bootstrapped" and skip to §2
+If all are present, report "Already bootstrapped" and skip to §2
 (explore-then-design). If some are missing, fill only the missing pieces.
 
 ### Step 1 — Resolve the command set
@@ -73,8 +73,9 @@ inspecting the repo:
   before writing.
 
 **Confirm with the user** even on confident detection — the user can override
-(e.g. their `cargo` invocation is `cargo +nightly …`). Use Claude Code's
-interactive prompts.
+(e.g. their `cargo` invocation is `cargo +nightly …`). Use the agent's interactive
+input capabilities (such as Claude Code's interactive prompts, or Google Antigravity's
+`ask_question` tool).
 
 **Then verify the resolved toolchain is actually installed.** Detection found
 the *commands*; this step confirms the *binaries* exist on the executor host —
@@ -183,22 +184,34 @@ To dispatch a phase: `/rexymcp:dispatch <phase>`. To review the result:
 If `REXYMCP.md` already exists, leave it alone (idempotent; "delete to refresh"
 guidance applies).
 
-**3b — Ensure `CLAUDE.md` imports it.** Claude Code only auto-loads `CLAUDE.md`,
-so the import is what brings `REXYMCP.md` into context:
+**3b — Ensure `CLAUDE.md` imports it (for Claude Code) or `.agents/AGENTS.md` references it (for Google Antigravity).** Claude Code only auto-loads `CLAUDE.md`, so the import is what brings `REXYMCP.md` into context. Google Antigravity loads customization rules from `.agents/AGENTS.md`.
 
-- **No `CLAUDE.md`** → create a minimal shim:
-  ```markdown
-  # CLAUDE.md
+- **For Claude Code / `CLAUDE.md`**:
+  - **No `CLAUDE.md`** → create a minimal shim:
+    ```markdown
+    # CLAUDE.md
 
-  This project uses the rexyMCP architect/executor workflow; the contract lives
-  in REXYMCP.md, imported below.
+    This project uses the rexyMCP architect/executor workflow; the contract lives
+    in REXYMCP.md, imported below.
 
-  @REXYMCP.md
-  ```
-- **`CLAUDE.md` already exists** → **append** the `@REXYMCP.md` line **only if it
-  isn't already present**, and **never modify the rest of the file**. It's the
-  user's file; you are adding one import line, not taking it over. If it already
-  contains `@REXYMCP.md`, do nothing.
+    @REXYMCP.md
+    ```
+  - **`CLAUDE.md` already exists** → **append** the `@REXYMCP.md` line **only if it
+    isn't already present**, and **never modify the rest of the file**. It's the
+    user's file; you are adding one import line, not taking it over. If it already
+    contains `@REXYMCP.md`, do nothing.
+- **For Google Antigravity / `.agents/AGENTS.md`**:
+  - **No `.agents/AGENTS.md`** → create a minimal shim:
+    ```markdown
+    # AGENTS.md
+
+    This project uses the rexyMCP architect/executor workflow. The contract lives
+    in REXYMCP.md. Please read the workflow contract before proceeding.
+
+    [REXYMCP.md](REXYMCP.md)
+    ```
+  - **`.agents/AGENTS.md` already exists** → **append** the reference to `REXYMCP.md` **only if it
+    isn't already present**, and **never modify the rest of the file**.
 
 **Legacy migration.** If you find a repo bootstrapped the old way — a full
 rexyMCP-authored `CLAUDE.md` (the pre-import orientation: a `## Read these first`
@@ -218,7 +231,8 @@ commands across every project. **Do not create a `.mcp.json` in the target
 repo** — a project-level registration duplicates the plugin's server, which
 produces duplicate tool entries and prevents the skill slash commands from
 loading. If the MCP tools are missing, the fix is to install the plugin, not
-to write `.mcp.json`.
+to write `.mcp.json`. For Google Antigravity, the server is registered globally
+in `~/.gemini/config/mcp_config.json` rather than per-project.
 
 ### Bootstrap pitfalls — five things that look fine but aren't
 
