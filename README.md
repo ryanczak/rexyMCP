@@ -284,7 +284,7 @@ a fork or private mirror, point at your own URL:
 claude plugin install git+https://your-host/rexyMCP.git
 ```
 
-### Google Antigravity
+### Google Antigravity (Desktop or CLI versions)
 
 Add the plugin to your global customization root by copying or symlinking the
 `plugin/` directory there (e.g. `~/.gemini/config/plugins/rexymcp-plugin`), then
