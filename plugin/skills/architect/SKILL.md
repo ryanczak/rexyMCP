@@ -184,7 +184,7 @@ To dispatch a phase: `/rexymcp:dispatch <phase>`. To review the result:
 If `REXYMCP.md` already exists, leave it alone (idempotent; "delete to refresh"
 guidance applies).
 
-**3b — Ensure `CLAUDE.md` imports it (for Claude Code) or `.agents/AGENTS.md` references it (for Google Antigravity).** Claude Code only auto-loads `CLAUDE.md`, so the import is what brings `REXYMCP.md` into context. Google Antigravity loads customization rules from `.agents/AGENTS.md`.
+**3b — Ensure `CLAUDE.md` imports it (for Claude Code) or `.agents/AGENTS.md` references it (for Google Antigravity).** Claude Code only auto-loads `CLAUDE.md`, so the `@import` is what inlines `REXYMCP.md` into context. Google Antigravity auto-loads `.agents/AGENTS.md` but does **not** inline linked files — the rules must explicitly instruct the agent to read `REXYMCP.md` with its `view_file` tool before doing any work.
 
 - **For Claude Code / `CLAUDE.md`**:
   - **No `CLAUDE.md`** → create a minimal shim:
@@ -201,17 +201,23 @@ guidance applies).
     user's file; you are adding one import line, not taking it over. If it already
     contains `@REXYMCP.md`, do nothing.
 - **For Google Antigravity / `.agents/AGENTS.md`**:
-  - **No `.agents/AGENTS.md`** → create a minimal shim:
+  - **No `.agents/AGENTS.md`** → create a minimal shim (note the `../` — the
+    link is relative to the `.agents/` directory the file lives in, so it points
+    up to `REXYMCP.md` at the repo root):
     ```markdown
-    # AGENTS.md
+    # Antigravity Rules
 
-    This project uses the rexyMCP architect/executor workflow. The contract lives
-    in REXYMCP.md. Please read the workflow contract before proceeding.
+    This file defines project-specific rules for Antigravity in this workspace.
 
-    [REXYMCP.md](REXYMCP.md)
+    - **CRITICAL**: Before doing any work or answering user prompts, read the
+      contract file [REXYMCP.md](../REXYMCP.md) using the `view_file` tool to
+      understand the repository rules, workflow, and standards.
+    - Follow all commands, coding standards, and directory layouts defined in
+      [REXYMCP.md](../REXYMCP.md).
     ```
-  - **`.agents/AGENTS.md` already exists** → **append** the reference to `REXYMCP.md` **only if it
-    isn't already present**, and **never modify the rest of the file**.
+  - **`.agents/AGENTS.md` already exists** → **append** the `CRITICAL` rule
+    pointing at `../REXYMCP.md` **only if a reference to `REXYMCP.md` isn't
+    already present**, and **never modify the rest of the file**.
 
 **Legacy migration.** If you find a repo bootstrapped the old way — a full
 rexyMCP-authored `CLAUDE.md` (the pre-import orientation: a `## Read these first`
