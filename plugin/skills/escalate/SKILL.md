@@ -33,7 +33,7 @@ Before any action:
 5. Read any open bug reports in the milestone's `bugs/` directory that
    reference this phase.
 
-The repo root is `<repo>` — resolve it from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, `PROJECT_DIR`, or the
+The repo root is `<repo>` — resolve it from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, or the
 nearest directory containing the milestone layout.
 
 ## 1. Refuse non-failure results

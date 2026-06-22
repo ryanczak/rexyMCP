@@ -23,8 +23,8 @@ pub enum MatchedSource {
 }
 
 /// Pure corroboration. `roots` are raw URIs (`file:///foo/bar`) as advertised
-/// by the client; `project_dir` is `CLAUDE_PROJECT_DIR` already read by the
-/// caller (None when unset/empty).
+/// by the client; `project_dir` is the project-dir env var (`CLAUDE_PROJECT_DIR`
+/// or `ANTIGRAVITY_PROJECT_DIR`) already read by the caller (None when unset/empty).
 pub fn corroborate(
     repo_path: &Path,
     roots: &[String],
@@ -104,11 +104,12 @@ pub fn format_mismatch_error(
     };
 
     format!(
-        "repo_path {} does not corroborate against any MCP root or CLAUDE_PROJECT_DIR.\n\
+        "repo_path {} does not corroborate against any MCP root or the project-dir \
+         env var (CLAUDE_PROJECT_DIR / ANTIGRAVITY_PROJECT_DIR).\n\
          Inspected roots: {}   (or \"none advertised\")\n\
-         CLAUDE_PROJECT_DIR: {}\n\
+         Project dir: {}\n\
          This usually means the architect passed the wrong repo_path, or the MCP\
-         client roots / CLAUDE_PROJECT_DIR are misconfigured. Fix one of those and\
+         client roots / project-dir env var are misconfigured. Fix one of those and\
          re-dispatch.",
         repo_path.display(),
         roots_str,

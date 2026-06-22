@@ -32,7 +32,7 @@ Before any action:
    context, use that. If not available, query via `executor_log_tail` +
    `get_turn` MCP tools using the phase's `log_path` from `rexymcp.toml`.
 
-The repo root is `<repo>` — resolve it from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, `PROJECT_DIR`, or the
+The repo root is `<repo>` — resolve it from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, or the
 nearest directory containing the milestone layout.
 
 ## 1. Refuse non-review-status phases

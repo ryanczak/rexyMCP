@@ -502,7 +502,6 @@ impl ServerHandler for RexyMcpServer {
 
                 let project_dir = std::env::var_os("CLAUDE_PROJECT_DIR")
                     .or_else(|| std::env::var_os("ANTIGRAVITY_PROJECT_DIR"))
-                    .or_else(|| std::env::var_os("PROJECT_DIR"))
                     .map(PathBuf::from)
                     .filter(|p| !p.as_os_str().is_empty());
 

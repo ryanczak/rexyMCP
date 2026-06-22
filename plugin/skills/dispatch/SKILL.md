@@ -32,7 +32,7 @@ Before any action:
    `[executor]` and `[commands]` sections are present). If missing, point the
    user at `/rexymcp:architect` to bootstrap first.
 
-The repo root is `<repo>` — resolve it from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, `PROJECT_DIR`, or the
+The repo root is `<repo>` — resolve it from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, or the
 nearest directory containing the milestone layout (`docs/dev/milestones/`).
 
 ## 1. Pre-flight: executor reachability
@@ -52,7 +52,7 @@ Call the `execute_phase` MCP tool with these arguments:
 - `phase_doc_path`: the absolute path to the phase doc. Resolve from the
   `<phase>` argument using the milestone convention:
   `docs/dev/milestones/M<n>-<slug>/phase-<nn>-<slug>.md`.
-- `repo_path`: the target repo root (from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, `PROJECT_DIR`, or the
+- `repo_path`: the target repo root (from `CLAUDE_PROJECT_DIR`, `ANTIGRAVITY_PROJECT_DIR`, or the
   client's workspace roots).
 - `model` (optional): if the user supplied a model override, pass it here.
 
