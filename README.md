@@ -1,6 +1,6 @@
 # rexyMCP
 
-**Let Claude be the *Architect*. Let a local model do the *execution*.**
+**Let Claude|Antigravity be the *Architect*. Let a local model do the *execution*.**
 
 rexyMCP is named after Rexy, my cattle dog. Rexy lives to herd — to keep the
 flock moving in one direction, to circle back the stragglers, to never let the
