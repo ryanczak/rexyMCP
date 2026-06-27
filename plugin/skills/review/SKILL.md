@@ -213,19 +213,22 @@ e. **Tell the user:** "Bounced. Re-dispatch via `/rexymcp:dispatch <phase>`
 
 f. **Stop.** Do not fix the bug yourself — that is the executor's job.
 
-## 9. On milestone close
+## 9. Last phase in a milestone
 
-If this phase was the milestone's last in-scope phase and all sibling phases
-are `done`:
+If this phase was the milestone's last in-scope phase and all sibling phases are
+now `done`, the normal approval steps (§7a–e) are all that happen here.
 
-- Write the **milestone retrospective** in the README's Notes section — what
-  worked, what broke, calibration data.
-- Fold any calibration lessons into `WORKFLOW.md` (with user sign-off) per
-  `WORKFLOW.md` § "Calibration — fold lessons in": one occurrence is data,
-  two is a trend, three is a fix.
-- Update `<repo>/docs/dev/NEXT.md` to "none".
-- Tell the user the milestone is complete and ask whether to proceed to the
-  next milestone. The user kicks off the next milestone explicitly.
+**Do not** write the milestone retrospective. **Do not** update `NEXT.md` to
+"none." **Do not** fold calibration lessons. Milestone close is a separate explicit
+step — it belongs to the architect skill, triggered by the human.
+
+After the normal commit (§7e), tell the user:
+
+> "All M<n> phases are now `done`. Run `/rexymcp:architect` to close the
+> milestone — write the milestone retrospective, fold any calibration lessons,
+> and update `NEXT.md` to none."
+
+Then **stop**.
 
 ## 10. What you do not do
 

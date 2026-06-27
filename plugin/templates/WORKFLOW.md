@@ -377,9 +377,12 @@ dispatch the next phase on its own. This keeps the review a real gate and the
 human in control of scope.
 
 **Milestone boundaries are always a human gate.** When a milestone's in-scope
-phases are all `done`, the architect stops for human sign-off regardless of mode.
-This is where the retrospective and doc-folding happen, which is human judgment —
-never automated.
+phases are all `done`, the review skill approves the final phase as normal and
+stops — it does **not** write the retrospective or close the milestone. Milestone
+close is a separate explicit step: the human invokes `/rexymcp:architect` to write
+the milestone-specific retrospective, fold calibration lessons into `WORKFLOW.md`
+(with sign-off), and update `NEXT.md` to "none". This is where direction changes
+happen; it is never automated by the review step.
 
 **Opt-in autonomous loop (off by default).** For hands-off runs, the user may
 turn on an autonomous mode that chains draft -> dispatch -> review across phases,
@@ -391,10 +394,25 @@ through this workflow is a single-purpose executor: it has the project's tool se
 the embedded contract + STANDARDS + the phase doc, and a bounded turn budget. It
 does *not* have web access, cannot escalate mid-phase to a stronger model, and
 does not negotiate scope. Treat its outputs as the work of a junior engineer who
-cannot ask clarifying questions: the spec must front-load everything (worked
-examples, idioms, few-shot exemplars, fetched reference docs — the *pre-injection*
-the architect owns). Mismatched-expectations bugs are *spec bugs*, not executor
-bugs.
+cannot ask clarifying questions. Mismatched-expectations bugs are *spec bugs*, not
+executor bugs.
+
+**Front-load by task shape, not by default.** Whether to pre-inject — and how much
+— depends on the kind of work:
+
+- **Design-discovery phases** (the executor must find a load-bearing API or
+  architecture constraint the spec does not fully determine): front-load the key
+  constraint — the load-bearing seam, the critical API call, a worked example of
+  the exact pattern to follow. One focused paragraph beats an exhaustive wall of
+  context.
+- **Mechanical phases** (move/rename/extract whose shape the spec fully
+  determines): normal density; no front-loading needed.
+
+**Lean bias: prefer under-specification over over-specification.** The architect
+runs on a cloud model (Claude); the executor runs locally. Every extra token in the
+spec costs cloud budget. A bounce from the local executor is cheaper than an
+over-specified spec written by Claude. Front-load just enough to prevent the
+predictable bounce — not everything you could say.
 
 ---
 
