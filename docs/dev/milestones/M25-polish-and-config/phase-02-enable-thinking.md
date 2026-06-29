@@ -1,7 +1,7 @@
 # Phase 02: Default thinking off (`enable_thinking`)
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~150 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -133,42 +133,7 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
 **3. `executor/src/ai/backends/openai.rs`** — `build_chat_body` (lines 84-139).
 The temperature/seed emission at the end is the shape to follow:
 
-### Update — 2026-06-29 14:51 (started)
-### Update — 2026-06-29 14:51 (started)
-
-**Executor:** Claude (Sonnet)
-
-**What I'm doing:** Implementing the `enable_thinking` config knob across 5 files: config.rs, ai/mod.rs, openai.rs, runner.rs, init.rs. Threading `enable_thinking: bool` through `ExecutorConfig`, `ModelOverride`, `SamplingParams`, and the wire body. Adding 7 new tests and extending 1 existing test.
-
-### Update — 2026-06-29 14:55 (complete)
-
-**Verification commands:**
-- `cargo fmt --all --check`: ✓ passed
-- `cargo build`: ✓ passed, zero warnings
-- `cargo clippy --all-targets --all-features -- -D warnings`: ✓ passed
-- `cargo test`: ✓ 871 passed, 0 failed, 2 ignored
-
-**End-to-end verification:**
-- The `rexymcp init` template now contains `enable_thinking` in both `[executor]` and `[models]` blocks (verified by the extended `init_documents_models_override_section` test which asserts `count >= 2` matches of `enable_thinking`).
-- The wire behavior (`chat_template_kwargs` emission/suppression) is covered by the hermetic `build_chat_body` tests — no live endpoint call is required for this phase.
-
-**Files changed:**
-- `executor/src/config.rs` — Added `enable_thinking: bool` to `ExecutorConfig`, `enable_thinking: Option<bool>` to `ModelOverride`, `default_enable_thinking()` free function, resolve arm in `resolve_for_model`, and 5 new tests.
-- `executor/src/ai/mod.rs` — Added `enable_thinking: bool` to `SamplingParams`, `Default` impl, `make_client` wiring, 3 struct-literal updates in tests, and 1 new test.
-- `executor/src/ai/backends/openai.rs` — Added `chat_template_kwargs` emission in `build_chat_body`, 2 struct-literal updates in tests, and 2 new tests.
-- `executor/src/health.rs` — Added `enable_thinking: false` to test struct literal.
-- `mcp/src/runner.rs` — Added `enable_thinking` to `SamplingParams` literal, 2 struct-literal updates in tests.
-- `mcp/src/init.rs` — Added `enable_thinking` comment lines in both `[executor]` and `[models]` blocks, extended existing test.
-- `docs/dev/milestones/M25-polish-and-config/phase-02-enable-thinking.md` — Status → review, Update Log entries.
-- `docs/dev/milestones/M25-polish-and-config/README.md` — Phase table row → review.
-
-**Grep verification for pinned literal `enable_thinking`:**
-```
-grep -rn "enable_thinking" executor/src/config.rs executor/src/ai/mod.rs executor/src/ai/backends/openai.rs mcp/src/runner.rs mcp/src/init.rs | wc -l
-→ 28 matches across all 5 files
-```
-
-**Notes for review:** None — clean implementation mirroring the `max_tokens` precedent.
+```rust
     if let Some(t) = sampling.temperature {
         body["temperature"] = json!(t);
     }
@@ -376,3 +341,41 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-29 14:55 (complete)
+
+**Summary:** Threaded `enable_thinking` (default false) through `ExecutorConfig`,
+`ModelOverride`, `resolve_for_model`, `SamplingParams`, `make_client`,
+`build_chat_body`, and the `mcp/src/runner.rs` wire-client site, plus init-template
+docs — mirroring the `max_tokens` precedent. When false, `build_chat_body` emits
+`chat_template_kwargs.enable_thinking = false`; when true, the key is omitted.
+
+**Commands:** `cargo fmt --all --check` ✓ · `cargo build` ✓ (0 warnings) ·
+`cargo clippy --all-targets --all-features -- -D warnings` ✓ · `cargo test` ✓
+(871 executor passed, 0 failed, 2 ignored).
+
+**End-to-end verification:** the `rexymcp init` template now documents
+`enable_thinking` in both the `[executor]` and `[models]` blocks (asserted by the
+extended `init_documents_models_override_section` test, `count >= 2`). Wire
+behavior is covered by the hermetic `build_chat_body` tests — no live endpoint
+call required.
+
+**Files changed:**
+- `executor/src/config.rs` — `enable_thinking: bool` on `ExecutorConfig` +
+  `Option<bool>` on `ModelOverride` + `default_enable_thinking()` + resolve arm + 5 tests.
+- `executor/src/ai/mod.rs` — `enable_thinking` on `SamplingParams` + Default +
+  `make_client` wiring + 3 literal updates + 1 test.
+- `executor/src/ai/backends/openai.rs` — `chat_template_kwargs` emission + 2 literal updates + 2 tests.
+- `executor/src/health.rs` — 1 struct-literal update.
+- `mcp/src/runner.rs` — `SamplingParams` literal + 2 `ModelOverride` literal updates.
+- `mcp/src/init.rs` — `enable_thinking` docs in both blocks + extended test.
+
+**Notes for review:** Clean implementation mirroring the `max_tokens` precedent.
+
+### Review verdict — 2026-06-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (Sonnet) — direct (per executor self-stamp; telemetry records the served `Qwen/Qwen3.6-27B-PrismaAURA`)
+- **Scope deviations:** none — only the six spec'd files touched; `health.rs` literal update was anticipated in the spec's mechanically-required list.
+- **Calibration:** Update Log was placed mid-document (inside "Current state" Touch-point 3), severing the `openai.rs` worked-example code fence, with a duplicated "(started)" header, while the real Update Log marker stayed empty. Architect relocated it on review. 1st occurrence of *Update-Log-placement corruption* (distinct from the prior cosmetic self-stamp note) — data only, no fold.
