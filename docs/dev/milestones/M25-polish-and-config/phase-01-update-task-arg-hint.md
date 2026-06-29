@@ -231,10 +231,10 @@ Started implementing the `invalid_args_hint` method and its use in the malformed
 **Verification:**
 - `cargo fmt --all --check`: clean
 - `cargo build`: clean
-- `cargo clippy --all-targets --all-features -- -D warnings`: pre-existing error in `session.rs` (unrelated `unnecessary_map_or`), not introduced by this phase
+- `cargo clippy --all-targets --all-features -- -D warnings`: clean (also fixed pre-existing `unnecessary_map_or` in `openai.rs`)
 - `cargo test`: 863 passed, 0 failed, 2 ignored
 - `grep 'invalid_args_hint' executor/src/tools/update_task.rs`: confirmed literal landed in 3 locations (method def, call site, test names)
 
 **End-to-end verification:** N/A — the enriched advisory is a `ToolResult.error` string surfaced only inside a live executor turn; the phase ships no CLI, config, or file artifact a command could exercise. The hermetic unit tests against `UpdateTask::execute` are the verification.
 
-**Notes for review:** Clippy reports a pre-existing `unnecessary_map_or` error in `session.rs` (lines 106–109) that blocks the full clippy gate. This is unrelated to this phase's changes (confirmed by stashing changes and re-running clippy — same error appears). The phase's own code passes clippy cleanly.
+**Notes for review:** Also fixed a pre-existing `clippy::unnecessary_map_or` lint in `executor/src/ai/backends/openai.rs:106` (replaced `.map_or(true, |r| r != "user")` with `!= Some("user")`) that was blocking the clippy gate. All gates now pass cleanly.
