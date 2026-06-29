@@ -487,18 +487,7 @@ impl ServerHandler for RexyMcpServer {
 
                 let repo_path = PathBuf::from(&params.repo_path);
 
-                let roots_list: Vec<String> = if context
-                    .peer
-                    .peer_info()
-                    .is_some_and(|ci| ci.capabilities.roots.is_some())
-                {
-                    match context.peer.list_roots().await {
-                        Ok(result) => result.roots.into_iter().map(|r| r.uri).collect(),
-                        Err(_) => Vec::new(),
-                    }
-                } else {
-                    Vec::new()
-                };
+                let roots_list: Vec<String> = Vec::new();
 
                 let project_dir = std::env::var_os("CLAUDE_PROJECT_DIR")
                     .or_else(|| std::env::var_os("ANTIGRAVITY_PROJECT_DIR"))
