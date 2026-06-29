@@ -4,24 +4,23 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M25 phase-01** — `update_task` null-args recovery hint
-([phase-01-update-task-arg-hint.md](milestones/M25-polish-and-config/phase-01-update-task-arg-hint.md)),
-status `todo`. Dispatch via `/rexymcp:dispatch phase-01`.
+**Active phase:** **M25 phase-02** — Default thinking off (`enable_thinking`),
+not yet drafted. Draft via `/rexymcp:architect next`, then dispatch.
 
-**📌 M25 — Polish & Config Pass kicked off (2026-06-28, with the user).** A
-grab-bag of six dogfooding issues batched into one milestone, grouped by
-subsystem into four phases (milestone
-[README](milestones/M25-polish-and-config/README.md); `architecture.md` § Status
-#25 added; M24 marked done/committed-scope). Phases: (01) `update_task` actionable
-recovery hint on null/empty/malformed args [drafted]; (02) `enable_thinking` knob
-(`[executor]` default false, per-model overridable) → `chat_template_kwargs`
-[not drafted]; (03) Budget panel — Executor/Architect rows only when > $0.00 and
-as parenthesized debits + Session panel — remove `Last update` [not drafted]; (04)
-Activity word-boundary wrap + Tasks 2× pan speed [not drafted]. **Decisions with
-the user:** issue 3 = remove `Last update` entirely; issue 6 = per-model
-overridable. **Working-tree note:** an uncommitted "Begin." user-seed sits in
-`openai.rs` (the file phase-02 edits) — commit/stash before dispatching phase-02.
-Only phase-01 drafted (on-demand); expand 02–04 via `/rexymcp:architect next`.
+**📌 M25 — Polish & Config Pass** (9 phases, milestone
+[README](milestones/M25-polish-and-config/README.md)). Expanded 2026-06-29 to
+include five dependency major-version bumps (phases 05–09). Phase-01 done
+(2026-06-29, `approved_first_try`). Remaining:
+- (02) `enable_thinking` knob (`[executor]` default false, per-model overridable) → `chat_template_kwargs` [not drafted]
+- (03) Budget panel — Executor/Architect rows only when > $0.00, parenthesized debits + Session panel — remove `Last update` [not drafted]
+- (04) Activity word-boundary wrap + Tasks 2× pan speed [not drafted]
+- (05) `similar` 2→3 [not drafted]
+- (06) `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 [not drafted]
+- (07) `toml_edit` 0.22→0.25 [not drafted]
+- (08) `toml` 0.8→1.x [not drafted]
+- (09) `reqwest` 0.12→0.13 [not drafted]
+
+**Decisions with the user:** issue 3 = remove `Last update` entirely; issue 6 = per-model overridable; dep phases ordered smallest-to-largest blast radius (05→09). Dispatch 02–04 before 05–09 (polish first); expand on-demand via `/rexymcp:architect next`.
 
 **M24 — committed scope complete** (phase-01 done 2026-06-18; phase-02 — extend
 the enrichment to the ambiguous / zero-match arms — held pending a follow-up

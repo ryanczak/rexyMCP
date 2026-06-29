@@ -1,8 +1,9 @@
 # M25 — Polish & Config Pass
 
-**Goal:** Land a batch of operator-facing polish and executor-configuration fixes
-— grouped by subsystem so each phase is one executor session — without changing
-any session-event/telemetry schema or adding a dependency.
+**Goal:** Land a batch of operator-facing polish, executor-configuration fixes,
+and dependency major-version bumps — grouped by subsystem so each phase is one
+executor session — without changing any session-event/telemetry schema or adding
+a new dependency.
 
 **Status:** in-progress
 
@@ -42,6 +43,9 @@ subsystem they form one coherent polish pass:
 - The Tasks panel title pan advances twice as fast per tick as before.
 - All four gates green; no `SessionEvent`/telemetry schema change; no new
   dependency.
+- `similar`, `tree-sitter`/`tree-sitter-python`, `toml_edit`, `toml`, and
+  `reqwest` are each bumped to their latest major version with no compilation
+  errors; all four gates green after each bump.
 
 ## Architecture references
 
@@ -65,6 +69,11 @@ subsystem they form one coherent polish pass:
 | 02 | Default thinking off (`enable_thinking`) | not drafted |
 | 03 | Budget & Session panel polish | not drafted |
 | 04 | Activity & Tasks panel polish | not drafted |
+| 05 | `similar` 2→3 | not drafted |
+| 06 | `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 | not drafted |
+| 07 | `toml_edit` 0.22→0.25 | not drafted |
+| 08 | `toml` 0.8→1.x | not drafted |
+| 09 | `reqwest` 0.12→0.13 | not drafted |
 
 Phases are drafted **on demand** via `/rexymcp:architect next` — only phase-01 is
 drafted now.
@@ -87,10 +96,21 @@ drafted now.
   separate phases); 1/2/3 are all `panels.rs` (one phase); 4/5 split `render.rs` +
   `panels.rs` (one phase). Each phase is < ~250 lines of diff.
 
-### Working-tree note (2026-06-28)
+### Dependency update phases (05–09) — decisions (2026-06-29, with the user)
 
-At kickoff, `executor/src/ai/backends/openai.rs` carried an **uncommitted** change
-(a "Begin." user-seed for vLLM/Qwen3 payloads that reject a non-user opening
-turn). It is unrelated to M25 but lives in the file phase-02 edits. Commit or
-stash it before dispatching phase-02 so the clean-tree pre-flight holds and the
-two changes don't entangle.
+Five direct dependencies have new major versions available that `cargo update`
+cannot reach because they require bumping `Cargo.toml` constraints. Ordered
+smallest-to-largest blast radius; dispatch in order, review-gate each:
+
+- **Phase 05 — `similar` 2→3**: one crate, diff-utility only; minimal surface.
+- **Phase 06 — `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25**: two
+  related crates (grammar and parser always move together); medium surface in
+  `executor/src/tools/symbols.rs`.
+- **Phase 07 — `toml_edit` 0.22→0.25**: one call site in `mcp/src/calibrate.rs`;
+  medium risk.
+- **Phase 08 — `toml` 0.8→1.x**: config deserialization; medium risk.
+- **Phase 09 — `reqwest` 0.12→0.13**: AI-backend HTTP client; highest surface
+  area in `executor/src/ai/backends/openai.rs`.
+
+Each phase: bump the version constraint in the relevant `Cargo.toml`, run
+`cargo update`, fix any API breaks the compiler flags, verify all four gates.
