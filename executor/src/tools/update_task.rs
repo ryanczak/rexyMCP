@@ -31,6 +31,30 @@ fn advisory(msg: &str) -> ToolResult {
     }
 }
 
+impl UpdateTask {
+    fn invalid_args_hint(&self) -> String {
+        let remaining: Vec<String> = {
+            let tasks = self.tasks.lock().unwrap_or_else(|e| e.into_inner());
+            tasks
+                .iter()
+                .filter(|t| t.state != TaskState::Done)
+                .map(|t| t.id.clone())
+                .collect()
+        };
+        let tail = if remaining.is_empty() {
+            "all tasks are already complete".to_string()
+        } else {
+            format!("tasks still incomplete: {}", remaining.join(", "))
+        };
+        format!(
+            "update_task: missing or invalid arguments. Call it with both \
+             fields — e.g. {{\"id\": \"2\", \"state\": \"done\"}}. `id` is a \
+             Spec item number (a string); `state` is one of: active, done, \
+             pending. {tail}"
+        )
+    }
+}
+
 #[async_trait]
 impl Tool for UpdateTask {
     fn name(&self) -> &str {
@@ -63,9 +87,7 @@ impl Tool for UpdateTask {
         let parsed = match serde_json::from_value::<UpdateTaskArgs>(args) {
             Ok(v) => v,
             Err(_) => {
-                return Ok(advisory(
-                    "update_task: invalid arguments — expected {id, state}",
-                ));
+                return Ok(advisory(&self.invalid_args_hint()));
             }
         };
 
@@ -295,5 +317,64 @@ mod tests {
         assert_eq!(meta["task_update"]["state"].as_str().unwrap(), "done");
         assert_eq!(meta["task_update"]["id"].as_str().unwrap(), "1");
         assert_eq!(meta["task_update"]["title"].as_str().unwrap(), "First task");
+    }
+
+    #[tokio::test]
+    async fn null_args_returns_recovery_hint() {
+        let tool: Arc<dyn Tool> = update_task(make_tasks());
+        let result = tool.execute(Value::Null).await.unwrap();
+
+        assert!(result.error.is_some(), "should have error");
+        assert!(result.metadata.is_none(), "metadata should be none");
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("\"id\""), "should mention id");
+        assert!(err.contains("\"state\""), "should mention state");
+        assert!(err.contains("active"), "should list active");
+        assert!(err.contains("done"), "should list done");
+        assert!(err.contains("pending"), "should list pending");
+        assert!(
+            err.contains("\"id\": \"2\""),
+            "should contain copyable example object"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_args_hint_lists_incomplete_ids() {
+        let tasks = vec![
+            Task {
+                id: "7".to_string(),
+                title: "Task 7".to_string(),
+                state: TaskState::Pending,
+            },
+            Task {
+                id: "8".to_string(),
+                title: "Task 8".to_string(),
+                state: TaskState::Pending,
+            },
+        ];
+        let tool: Arc<dyn Tool> = update_task(tasks);
+        let result = tool.execute(json!({})).await.unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("7"), "should list task 7 as incomplete");
+        assert!(err.contains("8"), "should list task 8 as incomplete");
+    }
+
+    #[tokio::test]
+    async fn invalid_args_hint_reports_all_complete() {
+        let tasks = vec![Task {
+            id: "1".to_string(),
+            title: "Done task".to_string(),
+            state: TaskState::Done,
+        }];
+        let tool: Arc<dyn Tool> = update_task(tasks);
+        let result = tool.execute(Value::Null).await.unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("complete"), "should mention complete");
+        assert!(
+            !err.contains("still incomplete"),
+            "should not say still incomplete when all are done"
+        );
     }
 }

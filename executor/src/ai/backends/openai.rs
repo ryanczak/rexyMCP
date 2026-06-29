@@ -106,7 +106,7 @@ pub fn build_chat_body(
     let needs_seed = non_system
         .first()
         .and_then(|m| m.get("role").and_then(|r| r.as_str()))
-        .map_or(true, |r| r != "user");
+        != Some("user");
     if needs_seed {
         // Some vLLM-served models (e.g. Qwen3) reject payloads that don't open
         // with a user turn after the system message.
