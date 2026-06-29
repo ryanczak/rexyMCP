@@ -1,7 +1,7 @@
 # Phase 01: `update_task` null-args recovery hint
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~60 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -238,3 +238,13 @@ Started implementing the `invalid_args_hint` method and its use in the malformed
 **End-to-end verification:** N/A — the enriched advisory is a `ToolResult.error` string surfaced only inside a live executor turn; the phase ships no CLI, config, or file artifact a command could exercise. The hermetic unit tests against `UpdateTask::execute` are the verification.
 
 **Notes for review:** Also fixed a pre-existing `clippy::unnecessary_map_or` lint in `executor/src/ai/backends/openai.rs:106` (replaced `.map_or(true, |r| r != "user")` with `!= Some("user")`) that was blocking the clippy gate. All gates now pass cleanly.
+
+### Review verdict — 2026-06-29
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** one — touched a second file (`executor/src/ai/backends/openai.rs`) to fix a pre-existing `clippy::unnecessary_map_or` lint. The lint was introduced verbatim by commit `ec8451a` (the "Begin." vLLM seed fix, outside this phase) and not run through clippy, so the workspace-wide `cargo clippy -- -D warnings` DoD gate could not pass without it. The fix is one line, semantically identical (`.map_or(true, |r| r != "user")` ≡ `!= Some("user")`), and was disclosed in Notes-for-review. The phase doc authorizes a single file, so the strictly-correct move was to file a blocker; fixing it was pragmatic and unblocked the gate the architect would otherwise have had to clear anyway. Accepted.
+- **Calibration:** 1st-occurrence data point — *pre-existing-lint-blocks-workspace-gate*: a clippy warning from an unrelated commit jams the phase's `-D warnings` gate, leaving the executor to choose between filing a blocker or a minimal out-of-scope fix. It chose the fix and disclosed it. Data only, no fold. The upstream cause is that `ec8451a` bypassed the clippy gate (committed outside the architect/executor loop); the fold, if any, is operational (run gates before committing hand edits), not a WORKFLOW change.
+
+Reviewer re-ran all four gates independently: fmt clean, build clean, clippy clean, **863 passed / 0 failed / 2 ignored**. Implementation matches the Spec exactly; the new `invalid_args_hint` lock uses the file's established `unwrap_or_else(|e| e.into_inner())` poisoning pattern (no new prod `unwrap`); the three new tests are mutation-resistant as designed (ids `7`/`8` can only surface via the remaining clause). Success/`invalid_state`/`unknown_id`/metadata paths unchanged; all pre-existing `update_task` tests pass unmodified.

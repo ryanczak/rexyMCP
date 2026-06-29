@@ -61,7 +61,7 @@ subsystem they form one coherent polish pass:
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | `update_task` null-args recovery hint ([phase-01-update-task-arg-hint.md](phase-01-update-task-arg-hint.md)) | review |
+| 01 | `update_task` null-args recovery hint ([phase-01-update-task-arg-hint.md](phase-01-update-task-arg-hint.md)) | done |
 | 02 | Default thinking off (`enable_thinking`) | not drafted |
 | 03 | Budget & Session panel polish | not drafted |
 | 04 | Activity & Tasks panel polish | not drafted |
