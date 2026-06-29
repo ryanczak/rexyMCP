@@ -4,11 +4,28 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **none.** M24 phase-01 done (approved_first_try, 2026-06-18).
-M24's committed scope (single phase) is complete; phase-02 (extend the
-enrichment to the ambiguous / zero-match arms) is **held pending a follow-up
-netviz e2e** that shows the model also stalls there. Next milestone is a
-human-gated boundary — kick off via `/rexymcp:architect`.
+**Active phase:** **M25 phase-01** — `update_task` null-args recovery hint
+([phase-01-update-task-arg-hint.md](milestones/M25-polish-and-config/phase-01-update-task-arg-hint.md)),
+status `todo`. Dispatch via `/rexymcp:dispatch phase-01`.
+
+**📌 M25 — Polish & Config Pass kicked off (2026-06-28, with the user).** A
+grab-bag of six dogfooding issues batched into one milestone, grouped by
+subsystem into four phases (milestone
+[README](milestones/M25-polish-and-config/README.md); `architecture.md` § Status
+#25 added; M24 marked done/committed-scope). Phases: (01) `update_task` actionable
+recovery hint on null/empty/malformed args [drafted]; (02) `enable_thinking` knob
+(`[executor]` default false, per-model overridable) → `chat_template_kwargs`
+[not drafted]; (03) Budget panel — Executor/Architect rows only when > $0.00 and
+as parenthesized debits + Session panel — remove `Last update` [not drafted]; (04)
+Activity word-boundary wrap + Tasks 2× pan speed [not drafted]. **Decisions with
+the user:** issue 3 = remove `Last update` entirely; issue 6 = per-model
+overridable. **Working-tree note:** an uncommitted "Begin." user-seed sits in
+`openai.rs` (the file phase-02 edits) — commit/stash before dispatching phase-02.
+Only phase-01 drafted (on-demand); expand 02–04 via `/rexymcp:architect next`.
+
+**M24 — committed scope complete** (phase-01 done 2026-06-18; phase-02 — extend
+the enrichment to the ambiguous / zero-match arms — held pending a follow-up
+netviz e2e that shows the model also stalls there).
 
 **M24 phase-01 — done** (2026-06-18, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `a6ff4fc` fix). The `patch` no-op arm now returns

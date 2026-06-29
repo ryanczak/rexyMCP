@@ -2,8 +2,9 @@
 
 > **Status:** Living design doc. M1–M23 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
-> committed scope); M24 (edit-loop recovery) is in progress (phase-01 done,
-> approved). This document is the source of truth for the *intended* design; the
+> committed scope); M24 (edit-loop recovery) is done (committed scope — single
+> phase). M25 (polish & config pass) is in progress. This document is the source
+> of truth for the *intended* design; the
 > code under `executor/` and `mcp/` is the source of truth for what actually
 > runs. Milestones are listed in the **Status** section at the bottom — that list
 > is the project plan.
@@ -967,7 +968,7 @@ The project plan. Each entry becomes a milestone with its own
     third cleanup phase collapsed the three sampling knobs into a `SamplingParams`
     struct (retiring phase-01's `too_many_arguments` allow) and fixed a latent
     `format_no_match` multibyte-slice panic.
-24. **M24 — Edit-Loop Recovery** *(in progress)*. Enrich the `patch` tool's
+24. **M24 — Edit-Loop Recovery** *(done; committed scope — single phase)*. Enrich the `patch` tool's
     no-op error so the executor recovers before the governor halts it. Diagnosed
     from a netviz e2e run where a MEDIUM-tier model introduced duplicate constants
     with one patch, then re-emitted a byte-identical `old_str`/`new_str` (a no-op)
@@ -979,3 +980,19 @@ The project plan. Each entry becomes a milestone with its own
     note when the text appears more than once (the duplicate tell), and a
     `read_file`/move-on next step. Recover-first per M23: the governor stall stays
     the backstop, unchanged.
+25. **M25 — Polish & Config Pass** *(in progress)*. A grab-bag of operator-facing
+    polish and executor-configuration fixes batched into one milestone, grouped by
+    subsystem. Four phases: (01) `update_task` returns an actionable recovery hint
+    (the canonical call shape + the still-incomplete task ids) when it receives
+    null/empty/malformed arguments, instead of the generic
+    `invalid arguments — expected {id, state}` advisory — the null→`{}` coercion at
+    `parser/validate.rs` stays; only the tool's message gets richer. (02) A new
+    `enable_thinking` knob (`[executor]` default **false**, per-model overridable
+    via `[models."<id>"]` like `temperature`/`seed`/`max_tokens`) emitted on the
+    wire as `chat_template_kwargs.enable_thinking` so reasoning models default to
+    thinking off. (03) Budget panel — show the Executor/Architect savings rows only
+    when their cost is > $0.00 and render them as parenthesized debits; Session
+    panel — remove the `Last update` line. (04) Activity panel — wrap on word
+    boundaries instead of mid-word; Tasks panel — double the title pan speed. All
+    display-only for 03/04 (no `SessionEvent`/telemetry change); 01/02 are executor
+    crate. No new dependencies.

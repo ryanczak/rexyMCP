@@ -103,6 +103,15 @@ pub fn build_chat_body(
         }
     }
     let mut full_messages = vec![json!({"role": "system", "content": combined_system})];
+    let needs_seed = non_system
+        .first()
+        .and_then(|m| m.get("role").and_then(|r| r.as_str()))
+        .map_or(true, |r| r != "user");
+    if needs_seed {
+        // Some vLLM-served models (e.g. Qwen3) reject payloads that don't open
+        // with a user turn after the system message.
+        full_messages.push(json!({"role": "user", "content": "Begin."}));
+    }
     full_messages.extend(non_system);
 
     let mut body = json!({
