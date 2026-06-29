@@ -190,6 +190,7 @@ pub struct SamplingParams {
     pub temperature: Option<f64>,
     pub seed: Option<u64>,
     pub max_tokens: u32,
+    pub enable_thinking: bool,
 }
 
 impl Default for SamplingParams {
@@ -198,6 +199,7 @@ impl Default for SamplingParams {
             temperature: None,
             seed: None,
             max_tokens: 8192,
+            enable_thinking: false,
         }
     }
 }
@@ -213,6 +215,7 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
             temperature: cfg.temperature,
             seed: cfg.seed,
             max_tokens: cfg.max_tokens,
+            enable_thinking: cfg.enable_thinking,
         },
     ))
 }
@@ -270,6 +273,7 @@ mod tests {
             temperature: None,
             seed: None,
             max_tokens: 8192,
+            enable_thinking: false,
             task_tracking: true,
             tier: None,
         };
@@ -288,6 +292,7 @@ mod tests {
             temperature: None,
             seed: None,
             max_tokens: 8192,
+            enable_thinking: false,
             task_tracking: true,
             tier: None,
         };
@@ -306,6 +311,7 @@ mod tests {
             temperature: None,
             seed: None,
             max_tokens: 8192,
+            enable_thinking: false,
             task_tracking: true,
             tier: None,
         };
@@ -330,5 +336,10 @@ mod tests {
     #[test]
     fn sampling_params_default_max_tokens_is_8192() {
         assert_eq!(SamplingParams::default().max_tokens, 8192);
+    }
+
+    #[test]
+    fn sampling_params_default_enable_thinking_is_false() {
+        assert!(!SamplingParams::default().enable_thinking);
     }
 }

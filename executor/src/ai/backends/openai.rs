@@ -135,6 +135,9 @@ pub fn build_chat_body(
     if let Some(s) = sampling.seed {
         body["seed"] = json!(s);
     }
+    if !sampling.enable_thinking {
+        body["chat_template_kwargs"] = json!({ "enable_thinking": false });
+    }
     body
 }
 
@@ -661,6 +664,7 @@ mod tests {
                 temperature: Some(0.2),
                 seed: Some(42),
                 max_tokens: 8192,
+                enable_thinking: false,
             },
         );
         assert_eq!(body["temperature"], 0.2);
@@ -685,6 +689,7 @@ mod tests {
                 temperature: Some(0.7),
                 seed: None,
                 max_tokens: 8192,
+                enable_thinking: false,
             },
         );
         assert_eq!(body["temperature"], 0.7);
@@ -695,6 +700,42 @@ mod tests {
     fn build_chat_body_uses_configured_max_tokens() {
         let body = build_chat_body("m", "sys", vec![], None, SamplingParams::default());
         assert_eq!(body["max_tokens"], 8192);
+    }
+
+    #[test]
+    fn build_chat_body_suppresses_thinking_when_disabled() {
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                enable_thinking: false,
+                ..SamplingParams::default()
+            },
+        );
+        assert_eq!(
+            body["chat_template_kwargs"]["enable_thinking"], false,
+            "chat_template_kwargs.enable_thinking must be false when disabled"
+        );
+    }
+
+    #[test]
+    fn build_chat_body_omits_chat_template_kwargs_when_thinking_enabled() {
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                enable_thinking: true,
+                ..SamplingParams::default()
+            },
+        );
+        assert!(
+            body.get("chat_template_kwargs").is_none(),
+            "chat_template_kwargs must be absent when enable_thinking is true"
+        );
     }
 
     #[test]

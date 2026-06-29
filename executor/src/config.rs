@@ -201,6 +201,7 @@ pub struct ModelOverride {
     pub temperature: Option<f64>,
     pub seed: Option<u64>,
     pub max_tokens: Option<u32>,
+    pub enable_thinking: Option<bool>,
     pub identical_call_threshold: Option<usize>,
     pub verifier_persistence_threshold: Option<usize>,
     pub runaway_output_bytes: Option<usize>,
@@ -273,6 +274,13 @@ pub struct ExecutorConfig {
     /// bounded.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
+    /// Whether the served model's chat template renders its reasoning block.
+    /// Default **false** (thinking off) to stop thinking models from burning the
+    /// output budget on `<think>` reasoning before reaching a tool call. When
+    /// false, the backend sends `chat_template_kwargs.enable_thinking = false`;
+    /// when true, the key is omitted and the endpoint applies its own default.
+    #[serde(default = "default_enable_thinking")]
+    pub enable_thinking: bool,
     /// Whether the loop seeds a per-session task list from the phase doc's
     /// `## Spec` and emits `TaskUpdate` events as the executor flips state
     /// (M12 Arc A). Default on; set false for a control run with no task
@@ -291,6 +299,10 @@ fn default_first_token_timeout_secs() -> u64 {
 
 fn default_stream_idle_timeout_secs() -> u64 {
     240
+}
+
+fn default_enable_thinking() -> bool {
+    false
 }
 
 fn default_task_tracking() -> bool {
@@ -313,6 +325,7 @@ impl Default for ExecutorConfig {
             temperature: None,
             seed: None,
             max_tokens: default_max_tokens(),
+            enable_thinking: default_enable_thinking(),
             task_tracking: default_task_tracking(),
             tier: None,
         }
@@ -457,6 +470,9 @@ impl Config {
         }
         if let Some(v) = over.max_tokens {
             self.executor.max_tokens = v;
+        }
+        if let Some(v) = over.enable_thinking {
+            self.executor.enable_thinking = v;
         }
         if let Some(v) = over.identical_call_threshold {
             self.governor.identical_call_threshold = v;
@@ -1534,5 +1550,145 @@ temperature = 0.1
         let mut cfg = Config::load(&path).unwrap();
         cfg.resolve_for_model("m");
         assert_eq!(cfg.executor.max_tokens, 8192);
+    }
+
+    #[test]
+    fn enable_thinking_defaults_false() {
+        assert!(!ExecutorConfig::default().enable_thinking);
+    }
+
+    #[test]
+    fn loads_enable_thinking_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+enable_thinking = true
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert!(cfg.executor.enable_thinking);
+    }
+
+    #[test]
+    fn enable_thinking_absent_keeps_default_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert!(!cfg.executor.enable_thinking);
+    }
+
+    #[test]
+    fn resolve_for_model_applies_enable_thinking_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+enable_thinking = false
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+
+[models."m"]
+enable_thinking = true
+"#,
+        )
+        .unwrap();
+
+        let mut cfg = Config::load(&path).unwrap();
+        cfg.resolve_for_model("m");
+        assert!(cfg.executor.enable_thinking);
+    }
+
+    #[test]
+    fn resolve_for_model_leaves_enable_thinking_when_override_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+enable_thinking = true
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+
+[models."m"]
+temperature = 0.1
+"#,
+        )
+        .unwrap();
+
+        let mut cfg = Config::load(&path).unwrap();
+        cfg.resolve_for_model("m");
+        assert!(cfg.executor.enable_thinking);
     }
 }

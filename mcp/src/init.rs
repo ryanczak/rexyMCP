@@ -20,6 +20,7 @@ base_url = "http://localhost:1234/v1"
 # api_key = ""                    # optional; most local endpoints ignore it
 # temperature = 0.2               # sampling temperature (omit for endpoint default)
 # max_tokens = 8192               # per-response output token ceiling (default 8192)
+# enable_thinking = false          # render the model's <think> reasoning block (default false = off)
 # first_token_timeout_secs = 600  # wait before first token in seconds (default 600)
 # stream_idle_timeout_secs = 240  # gap between tokens before timeout (default 240)
 # task_tracking = true            # seed + track a per-session task list from the phase Spec (M12)
@@ -42,6 +43,7 @@ runaway_output_bytes = 102400     # single tool output bytes → hard-fail (100 
 # temperature = 0.2                  # override [executor] temperature
 # seed = 7                           # override [executor] seed
 # max_tokens = 8192                  # override [executor] max_tokens
+# enable_thinking = false            # override [executor] enable_thinking
 # identical_call_threshold = 8       # override [governor] identical_call_threshold
 # verifier_persistence_threshold = 8 # override [governor] verifier_persistence_threshold
 # runaway_output_bytes = 204800      # override [governor] runaway_output_bytes
@@ -201,6 +203,18 @@ mod tests {
         assert!(
             cfg.models.is_empty(),
             "commented [models] block must not populate config.models"
+        );
+
+        // Verify enable_thinking appears in both [executor] and [models] blocks.
+        assert!(
+            content.contains("enable_thinking"),
+            "generated config must document enable_thinking"
+        );
+        // Count occurrences — should appear in both [executor] and [models] blocks.
+        let count = content.matches("enable_thinking").count();
+        assert!(
+            count >= 2,
+            "enable_thinking should appear in both [executor] and [models] blocks, found {count}"
         );
     }
 }

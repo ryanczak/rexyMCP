@@ -5,13 +5,14 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:** **M25 phase-02** — Default thinking off (`enable_thinking`),
-not yet drafted. Draft via `/rexymcp:architect next`, then dispatch.
+**drafted** ([phase-02-enable-thinking.md](milestones/M25-polish-and-config/phase-02-enable-thinking.md)).
+Dispatch via `/rexymcp:dispatch phase-02`.
 
 **📌 M25 — Polish & Config Pass** (9 phases, milestone
 [README](milestones/M25-polish-and-config/README.md)). Expanded 2026-06-29 to
 include five dependency major-version bumps (phases 05–09). Phase-01 done
 (2026-06-29, `approved_first_try`). Remaining:
-- (02) `enable_thinking` knob (`[executor]` default false, per-model overridable) → `chat_template_kwargs` [not drafted]
+- (02) `enable_thinking` knob (`[executor]` default false, per-model overridable) → `chat_template_kwargs` [**drafted**]
 - (03) Budget panel — Executor/Architect rows only when > $0.00, parenthesized debits + Session panel — remove `Last update` [not drafted]
 - (04) Activity word-boundary wrap + Tasks 2× pan speed [not drafted]
 - (05) `similar` 2→3 [not drafted]

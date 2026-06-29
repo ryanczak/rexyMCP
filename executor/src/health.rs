@@ -154,6 +154,7 @@ mod tests {
             temperature: None,
             seed: None,
             max_tokens: 8192,
+            enable_thinking: false,
             task_tracking: true,
             tier: None,
         };

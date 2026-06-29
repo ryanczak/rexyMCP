@@ -282,6 +282,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
             temperature: client_cfg.executor.temperature,
             seed: client_cfg.executor.seed,
             max_tokens: client_cfg.executor.max_tokens,
+            enable_thinking: client_cfg.executor.enable_thinking,
         },
     );
 
@@ -597,6 +598,7 @@ mod tests {
                 seed: None,
                 task_tracking: None,
                 max_tokens: None,
+                enable_thinking: None,
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
@@ -604,7 +606,6 @@ mod tests {
                 gate_feedback_repeat_threshold: None,
             },
         );
-
         let mock = MockAiClient::new(vec!["Done.".to_string()]);
 
         let clock = || 1234567890u64;
@@ -716,6 +717,7 @@ mod tests {
                 seed: None,
                 task_tracking: None,
                 max_tokens: None,
+                enable_thinking: None,
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
