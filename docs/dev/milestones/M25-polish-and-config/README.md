@@ -67,7 +67,7 @@ subsystem they form one coherent polish pass:
 |----|-------|--------|
 | 01 | `update_task` null-args recovery hint ([phase-01-update-task-arg-hint.md](phase-01-update-task-arg-hint.md)) | done |
 | 02 | Default thinking off (`enable_thinking`) ([phase-02-enable-thinking.md](phase-02-enable-thinking.md)) | done |
-| 03 | Budget & Session panel polish | not drafted |
+| 03 | Budget & Session panel polish ([phase-03-budget-session-polish.md](phase-03-budget-session-polish.md)) | review |
 | 04 | Activity & Tasks panel polish | not drafted |
 | 05 | `similar` 2→3 | not drafted |
 | 06 | `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 | not drafted |

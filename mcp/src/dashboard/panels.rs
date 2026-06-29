@@ -81,10 +81,6 @@ pub(crate) fn session_lines(summary: &StatusSummary, now_ms: u64) -> Vec<Line<'s
         )));
     }
 
-    if let Some(line) = last_update_line(summary, now_ms) {
-        lines.push(line);
-    }
-
     let stage = summary.latest_stage.as_deref().unwrap_or("<none>");
     lines.push(Line::from(format!(
         "Turn {}, stage {stage}",
@@ -561,7 +557,16 @@ pub(crate) fn savings_lines(
         }
     };
 
-    vec![
+    let paren = |v: String| format!("({v})");
+    let debit_row =
+        |label: &str, sess: String, mile: String, proj: String| -> Option<Line<'static>> {
+            if sess == "$0.00" && mile == "$0.00" && proj == "$0.00" {
+                return None;
+            }
+            Some(make_row(label, paren(sess), paren(mile), paren(proj)))
+        };
+
+    let mut out = vec![
         header,
         make_row(
             "Baseline:",
@@ -569,54 +574,44 @@ pub(crate) fn savings_lines(
             baseline_val(mile.executor_in, mile.executor_out),
             baseline_val(project_costs.executor_in, project_costs.executor_out),
         ),
-        make_row(
-            "Executor:",
-            executor_val(sess_in, sess_out),
-            executor_val(mile.executor_in, mile.executor_out),
-            executor_val(project_costs.executor_in, project_costs.executor_out),
-        ),
-        make_row(
-            "Architect:",
-            architect_val(0, 0),
-            architect_val(mile.architect_in, mile.architect_out),
-            architect_val(project_costs.architect_in, project_costs.architect_out),
-        ),
-        make_row(
-            "Net:",
-            net_val(sess_in, sess_out, 0, 0),
-            net_val(
-                mile.executor_in,
-                mile.executor_out,
-                mile.architect_in,
-                mile.architect_out,
-            ),
-            net_val(
-                project_costs.executor_in,
-                project_costs.executor_out,
-                project_costs.architect_in,
-                project_costs.architect_out,
-            ),
-        ),
-        Line::from(format!("  Assists: {project_escalation_count}")),
-    ]
-}
+    ];
 
-/// "last update: …" freshness line for the Budget panel — the age of the most
-/// recent record, with the average update interval when enough records exist.
-/// `Some` whenever the session has at least one record (`last_ts`); `None` for an
-/// empty log. Returns an optional single line, unlike the multi-line
-/// `savings_lines` block.
-pub(crate) fn last_update_line(summary: &StatusSummary, now_ms: u64) -> Option<Line<'static>> {
-    let ts = summary.last_ts?;
-    let age_str = status::humanize_age(now_ms.saturating_sub(ts));
-    let line = match summary.update_interval_avg_ms {
-        Some(avg) => format!(
-            "Last update: {age_str} ago (avg: {})",
-            status::humanize_age(avg),
+    if let Some(row) = debit_row(
+        "Executor:",
+        executor_val(sess_in, sess_out),
+        executor_val(mile.executor_in, mile.executor_out),
+        executor_val(project_costs.executor_in, project_costs.executor_out),
+    ) {
+        out.push(row);
+    }
+
+    if let Some(row) = debit_row(
+        "Architect:",
+        architect_val(0, 0),
+        architect_val(mile.architect_in, mile.architect_out),
+        architect_val(project_costs.architect_in, project_costs.architect_out),
+    ) {
+        out.push(row);
+    }
+
+    out.push(make_row(
+        "Net:",
+        net_val(sess_in, sess_out, 0, 0),
+        net_val(
+            mile.executor_in,
+            mile.executor_out,
+            mile.architect_in,
+            mile.architect_out,
         ),
-        None => format!("Last update: {age_str} ago"),
-    };
-    Some(Line::from(line))
+        net_val(
+            project_costs.executor_in,
+            project_costs.executor_out,
+            project_costs.architect_in,
+            project_costs.architect_out,
+        ),
+    ));
+    out.push(Line::from(format!("  Assists: {project_escalation_count}")));
+    out
 }
 
 /// Wrap lines in a bordered `Block` with the given title.
@@ -693,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn session_lines_includes_last_update_when_ts_present() {
+    fn session_lines_omits_last_update() {
         let summary = StatusSummary {
             last_ts: Some(1000),
             update_interval_avg_ms: Some(500),
@@ -702,38 +697,8 @@ mod tests {
         let lines = session_lines(&summary, 4000);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(
-            text.iter().any(|s| s.contains("Last update:")),
-            "session_lines must contain 'Last update:' when last_ts is set, got: {text:?}",
-        );
-    }
-
-    #[test]
-    fn session_lines_places_last_update_under_duration() {
-        let summary = StatusSummary {
-            session_id: Some("abc".into()),
-            started_at: Some(0),
-            last_ts: Some(1000),
-            latest_turn: 2,
-            latest_stage: Some("plan".into()),
-            ..StatusSummary::default()
-        };
-        let lines = session_lines(&summary, 4000);
-        let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let dur_idx = text
-            .iter()
-            .position(|s| s.contains("Duration:"))
-            .expect("Duration: line missing");
-        let lu_idx = text
-            .iter()
-            .position(|s| s.contains("Last update:"))
-            .expect("Last update: line missing");
-        let turn_idx = text
-            .iter()
-            .position(|s| s.contains("Turn"))
-            .expect("Turn line missing");
-        assert!(
-            dur_idx < lu_idx && lu_idx < turn_idx,
-            "Last update: (idx {lu_idx}) must be after Duration: (idx {dur_idx}) and before Turn (idx {turn_idx}), got: {text:?}",
+            !text.iter().any(|s| s.contains("Last update")),
+            "session_lines must not contain 'Last update': {text:?}",
         );
     }
 
@@ -914,51 +879,6 @@ mod tests {
     #[test]
     fn session_duration_ms_none_for_empty_log() {
         assert_eq!(session_duration_ms(&StatusSummary::default(), 5000), None);
-    }
-
-    // --- last_update_line tests ---
-
-    #[test]
-    fn last_update_line_shows_age() {
-        let summary = StatusSummary {
-            last_ts: Some(1000),
-            ..StatusSummary::default()
-        };
-        let line = last_update_line(&summary, 4000);
-        assert!(line.is_some());
-        let text = format!("{}", line.unwrap());
-        assert!(text.contains("Last update: 3s ago"));
-    }
-
-    #[test]
-    fn last_update_line_none_for_empty_log() {
-        assert_eq!(last_update_line(&StatusSummary::default(), 4000), None);
-    }
-
-    #[test]
-    fn last_update_line_shows_interval_stats() {
-        let summary = StatusSummary {
-            last_ts: Some(5000),
-            update_interval_avg_ms: Some(2000),
-            update_interval_max_ms: Some(3000),
-            update_interval_min_ms: Some(1000),
-            ..StatusSummary::default()
-        };
-        let line = last_update_line(&summary, 5000).unwrap();
-        let text = format!("{line}");
-        assert!(text.contains("avg:"), "expected avg in: {text}");
-    }
-
-    #[test]
-    fn last_update_line_omits_interval_stats_without_enough_data() {
-        let summary = StatusSummary {
-            last_ts: Some(5000),
-            update_interval_avg_ms: None,
-            ..StatusSummary::default()
-        };
-        let line = last_update_line(&summary, 5000).unwrap();
-        let text = format!("{line}");
-        assert!(!text.contains("avg:"), "unexpected avg in: {text}");
     }
 
     // --- files_lines tests ---
@@ -1809,8 +1729,9 @@ mod tests {
     }
 
     #[test]
-    fn savings_lines_produces_six_lines_with_session_metrics() {
-        // header + Baseline + Executor + Architect + Net + Assists = 6 lines
+    fn savings_lines_omits_zero_debit_rows() {
+        // With default costs, Executor and Architect rows are omitted:
+        // header + Baseline + Net + Assists = 4 lines
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1823,13 +1744,19 @@ mod tests {
             ScopeCosts::default(),
             0,
         );
-        assert_eq!(lines.len(), 6, "exactly 6 lines: {lines:?}");
+        assert_eq!(lines.len(), 4, "exactly 4 lines: {lines:?}");
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(texts[1].contains("Baseline:"), "row 1 is Baseline");
-        assert!(texts[2].contains("Executor:"), "row 2 is Executor");
-        assert!(texts[3].contains("Architect:"), "row 3 is Architect");
-        assert!(texts[4].contains("Net:"), "row 4 is Net");
-        assert!(texts[5].contains("Assists:"), "row 5 is Assists");
+        assert!(texts[2].contains("Net:"), "row 2 is Net");
+        assert!(texts[3].contains("Assists:"), "row 3 is Assists");
+        assert!(
+            !texts.iter().any(|s| s.contains("Executor:")),
+            "Executor row must be omitted with zero costs"
+        );
+        assert!(
+            !texts.iter().any(|s| s.contains("Architect:")),
+            "Architect row must be omitted with zero costs"
+        );
     }
 
     #[test]
@@ -1847,35 +1774,23 @@ mod tests {
             0,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let baseline_line = texts
+            .iter()
+            .find(|s| s.contains("Baseline:"))
+            .expect("Baseline row missing");
+        let net_line = texts
+            .iter()
+            .find(|s| s.contains("Net:"))
+            .expect("Net row missing");
         assert!(
-            texts[1].contains('—'),
+            baseline_line.contains('—'),
             "Baseline shows — when no rates: {}",
-            texts[1]
+            baseline_line
         );
         assert!(
-            texts[4].contains('—'),
+            net_line.contains('—'),
             "Net shows — when no rates: {}",
-            texts[4]
-        );
-    }
-
-    #[test]
-    fn savings_lines_executor_always_shows_zero_dollars() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(1_000_000),
-            last_output_tokens: Some(500_000),
-            ..StatusSummary::default()
-        };
-        let rates = BudgetRates {
-            input_per_mtok: 5.0,
-            output_per_mtok: 25.0,
-            ..BudgetRates::default()
-        };
-        let lines = savings_lines(&summary, rates, None, ScopeCosts::default(), 0);
-        let exec_row = format!("{}", lines[2]);
-        assert!(
-            exec_row.contains("$0.00"),
-            "Executor always $0.00: {exec_row}"
+            net_line
         );
     }
 
@@ -1901,11 +1816,14 @@ mod tests {
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        // Project Architect column: 1M tokens × $5/MTok = $5.00
+        let arch_line = texts
+            .iter()
+            .find(|s| s.contains("Architect:"))
+            .expect("Architect row must be present with non-zero architect cost");
         assert!(
-            texts[3].contains("$5.00"),
-            "Architect project column shows $5.00: {}",
-            texts[3]
+            arch_line.contains("($5.00)"),
+            "Architect project column shows ($5.00): {}",
+            arch_line
         );
     }
 
@@ -1931,16 +1849,24 @@ mod tests {
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let baseline_line = texts
+            .iter()
+            .find(|s| s.contains("Baseline:"))
+            .expect("Baseline row missing");
+        let net_line = texts
+            .iter()
+            .find(|s| s.contains("Net:"))
+            .expect("Net row missing");
         // Baseline project: 1M × $5 = $5.00; Architect project: 1M × $1 = $1.00; Net = $4.00
         assert!(
-            texts[1].contains("$5.00"),
+            baseline_line.contains("$5.00"),
             "Baseline project $5.00: {}",
-            texts[1]
+            baseline_line
         );
         assert!(
-            texts[4].contains("$4.00"),
+            net_line.contains("$4.00"),
             "Net project $4.00: {}",
-            texts[4]
+            net_line
         );
     }
 
@@ -1958,7 +1884,11 @@ mod tests {
             ScopeCosts::default(),
             3,
         );
-        let assists_row = format!("{}", lines[5]);
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let assists_row = texts
+            .iter()
+            .find(|s| s.contains("Assists:"))
+            .expect("Assists row missing");
         assert!(
             assists_row.contains("Assists: 3"),
             "Assists row: {assists_row}"
@@ -1967,7 +1897,7 @@ mod tests {
 
     #[test]
     fn savings_lines_data_rows_equal_width_for_alignment() {
-        // All four data rows (Baseline/Executor/Architect/Net) must be equal width
+        // All money rows (Baseline/Executor/Architect/Net) must be equal width
         // so values land in the same columns.
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
@@ -1977,20 +1907,31 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 3.0,
             output_per_mtok: 15.0,
-            ..BudgetRates::default()
+            architect_input_per_mtok: 5.0,
+            architect_output_per_mtok: 25.0,
         };
         let project_costs = ScopeCosts {
             executor_in: 5_000_000,
             executor_out: 2_000_000,
-            architect_in: 0,
+            architect_in: 1_000_000,
             architect_out: 0,
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
-        let texts: Vec<String> = lines[1..5].iter().map(|l| format!("{l}")).collect();
-        let widths: Vec<usize> = texts.iter().map(|s| s.chars().count()).collect();
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let money_texts: Vec<String> = texts
+            .iter()
+            .filter(|s| {
+                s.contains("Baseline:")
+                    || s.contains("Executor:")
+                    || s.contains("Architect:")
+                    || s.contains("Net:")
+            })
+            .cloned()
+            .collect();
+        let widths: Vec<usize> = money_texts.iter().map(|s| s.chars().count()).collect();
         assert!(
-            widths.iter().all(|&w| w == widths[0]),
-            "all data rows must be equal width for column alignment: {widths:?}",
+            !widths.is_empty() && widths.iter().all(|&w| w == widths[0]),
+            "all money rows must be equal width for column alignment: {widths:?}, rows: {money_texts:?}",
         );
     }
 
