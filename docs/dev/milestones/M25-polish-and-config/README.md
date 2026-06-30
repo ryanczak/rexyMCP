@@ -72,7 +72,7 @@ subsystem they form one coherent polish pass:
 | 05 | `similar` 2→3 ([phase-05-similar-3.md](phase-05-similar-3.md)) | done |
 | 06 | `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 ([phase-06-tree-sitter-026.md](phase-06-tree-sitter-026.md)) | done |
 | 07 | `toml_edit` 0.22→0.25 ([phase-07-toml-edit-025.md](phase-07-toml-edit-025.md)) | done |
-| 08 | `toml` 0.8→1.x | not drafted |
+| 08 | `toml` 0.8→1.x ([phase-08-toml-1.md](phase-08-toml-1.md)) | review |
 | 09 | `reqwest` 0.12→0.13 | not drafted |
 
 Phases are drafted **on demand** via `/rexymcp:architect next` — only phase-01 is
