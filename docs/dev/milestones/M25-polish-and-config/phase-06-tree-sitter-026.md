@@ -1,7 +1,7 @@
 # Phase 06: `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** todo
+**Status:** review
 **Depends on:** none (phase-05 already landed the `similar` bump; this is independent)
 **Estimated diff:** ~3 lines (two `Cargo.toml` constraints + the `Cargo.lock` churn)
 **Tags:** language=rust, kind=refactor, size=s
@@ -253,3 +253,41 @@ would churn unrelated crates — use the package-scoped form.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-30 14:05 (started)
+
+**Executor:** rexyMCP executor
+**Action:** Bumping `tree-sitter` 0.25→0.26 and `tree-sitter-python` 0.23→0.25 per M25 spec.
+
+### Update — 2026-06-30 14:05 (complete)
+
+**Executor:** rexyMCP executor
+**Action:** Completed tree-sitter 0.25→0.26 + tree-sitter-python 0.23→0.25 bump.
+
+**Commands run:**
+- `cargo build` — succeeded, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo fmt --all --check` — passed
+- `cargo test` — 871 passed, 0 failed, 2 ignored
+- `cargo test symbols` — 31 passed, 0 failed
+
+**End-to-end verification:**
+- `cargo tree -i tree-sitter` → `tree-sitter v0.26.10` (linked via rexymcp-executor)
+- `cargo tree -i tree-sitter-python` → `tree-sitter-python v0.25.0` (linked via rexymcp-executor)
+- `grep -A2 'name = "tree-sitter-rust"' Cargo.lock` → `version = "0.24.2"` (unchanged)
+
+**Files changed:**
+- `Cargo.toml` — bumped `tree-sitter = "0.26"` and `tree-sitter-python = "0.25"` (2 lines)
+- `Cargo.lock` — updated via `cargo update -p tree-sitter -p tree-sitter-python`
+
+**Notes for review:** No source edits were required. `executor/src/tools/symbols.rs` was not touched. The 0.26 core API is fully backward-compatible with the call sites in `symbols.rs`.
+
+**Grep verification:**
+```
+$ grep 'tree-sitter = "0.26"' Cargo.toml
+tree-sitter = "0.26"
+$ grep 'tree-sitter-python = "0.25"' Cargo.toml
+tree-sitter-python = "0.25"
+$ grep 'tree-sitter-rust = "0.24"' Cargo.toml
+tree-sitter-rust = "0.24"
+```
