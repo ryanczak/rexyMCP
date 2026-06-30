@@ -1,7 +1,7 @@
 # Phase 04: Activity & Tasks panel polish
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -319,3 +319,33 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-06-30 13:20 (started)
+
+**Who:** executor LLM
+
+**Summary:** Implementing word-boundary wrapping in `wrap_line` and doubling the Tasks pan speed in `scrolled_title`.
+
+### Update — 2026-06-30 13:20 (complete)
+
+**Who:** executor LLM
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed (exit 0)
+- `cargo build` — passed (exit 0, zero new warnings)
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed (exit 0)
+- `cargo test` — passed (871 passed, 0 failed, 2 ignored)
+- `cargo test wrap_line` — 11 passed (existing + 3 new)
+- `cargo test scrolled_title` — 5 passed
+
+**Files changed:**
+- `mcp/src/dashboard/render.rs` — replaced `wrap_line` with word-boundary version, added `row_to_line` coalescing helper, added 3 new tests
+- `mcp/src/dashboard/panels.rs` — changed `step = t * 3 / 4` → `t * 3 / 2` in `scrolled_title`, updated inline comment, updated test expectations and comments
+
+**Commits:** one conventional commit covering all changes.
+
+**Notes for review:**
+- Grep confirms `t * 3 / 2` landed at `panels.rs:350` and `row_to_line` at `render.rs:105,110`.
+- End-to-end verification: `wrap_line` and `scrolled_title` are pure functions fully covered by hermetic unit tests. Representative output: `wrap_line("hello world foo", 8)` produces rows containing "hello", "world" (own row), and "foo"; `scrolled_title(FIXTURE, 10, Some(4))` returns `"ghijklmnop"` confirming the doubled step.
+
+**End-to-end verification:** N/A — both functions are pure, fully covered by unit tests. No separately-loadable artifact.

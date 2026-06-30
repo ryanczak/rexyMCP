@@ -37,36 +37,93 @@ pub(crate) fn visible_offset(follow: bool, offset: u16, total_lines: usize, view
     if follow { max } else { offset.min(max) }
 }
 
-/// Hard-wrap one styled line to `width` characters, preserving span styles by
-/// splitting spans at the wrap column. A line that already fits returns a single
-/// row; an empty line returns a single empty row. Char-count based (not unicode
-/// display width) — a wide-glyph line may still clip by a cell, acceptable here.
+/// Wrap one styled line to `width` columns on **word boundaries**, preserving
+/// span styles. A word — a maximal run of non-space chars — is never split
+/// across rows when it would fit on a row by itself; it moves whole to the next
+/// row instead. A word longer than `width` has no fitting row, so it is
+/// hard-split to fill each row (the prior mid-word behavior, now only the
+/// fallback). Spaces are placed as encountered, so no characters are dropped and
+/// concatenating all rows reproduces the input. `width == 0` or an empty line
+/// returns a single row unchanged. Char-count based (not unicode display width).
 pub(crate) fn wrap_line(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
     if width == 0 {
         return vec![line.clone()];
     }
-    let mut rows: Vec<Line<'static>> = Vec::new();
-    let mut cur: Vec<Span<'static>> = Vec::new();
+    let chars: Vec<(char, Style)> = line
+        .spans
+        .iter()
+        .flat_map(|s| s.content.chars().map(move |c| (c, s.style)))
+        .collect();
+    if chars.is_empty() {
+        return vec![line.clone()];
+    }
+
+    let mut rows: Vec<Vec<(char, Style)>> = Vec::new();
+    let mut cur: Vec<(char, Style)> = Vec::new();
     let mut col = 0usize;
-    for span in &line.spans {
-        let mut buf = String::new();
-        for ch in span.content.chars() {
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i].0 == ' ' {
+            // Space: place it; break only when the row is already full.
             if col == width {
-                if !buf.is_empty() {
-                    cur.push(Span::styled(std::mem::take(&mut buf), span.style));
-                }
-                rows.push(Line::from(std::mem::take(&mut cur)));
+                rows.push(std::mem::take(&mut cur));
                 col = 0;
             }
-            buf.push(ch);
+            cur.push(chars[i]);
             col += 1;
+            i += 1;
+            continue;
         }
-        if !buf.is_empty() {
-            cur.push(Span::styled(std::mem::take(&mut buf), span.style));
+        // Measure the next word (a run of non-space chars).
+        let start = i;
+        while i < chars.len() && chars[i].0 != ' ' {
+            i += 1;
+        }
+        let word = &chars[start..i];
+        if word.len() <= width {
+            // Word fits on a row: break before it if it won't fit on this one.
+            if col + word.len() > width {
+                rows.push(std::mem::take(&mut cur));
+                col = 0;
+            }
+            cur.extend_from_slice(word);
+            col += word.len();
+        } else {
+            // Word longer than any row: hard-split to fill each row.
+            for &c in word {
+                if col == width {
+                    rows.push(std::mem::take(&mut cur));
+                    col = 0;
+                }
+                cur.push(c);
+                col += 1;
+            }
         }
     }
-    rows.push(Line::from(cur));
-    rows
+    rows.push(cur);
+
+    rows.into_iter().map(row_to_line).collect()
+}
+
+/// Coalesce a row of styled chars into a `Line`, merging adjacent equal-styled
+/// chars into a single span (so the span count matches the prior behavior).
+fn row_to_line(row: Vec<(char, Style)>) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let mut cur_style: Option<Style> = None;
+    for (ch, style) in row {
+        if cur_style != Some(style) {
+            if let Some(s) = cur_style {
+                spans.push(Span::styled(std::mem::take(&mut buf), s));
+            }
+            cur_style = Some(style);
+        }
+        buf.push(ch);
+    }
+    if let Some(s) = cur_style {
+        spans.push(Span::styled(buf, s));
+    }
+    Line::from(spans)
 }
 
 /// Wrap every line in `lines` to `width` characters with a hanging indent: the
@@ -401,5 +458,63 @@ mod tests {
             assert!(total <= 14, "continuation row exceeds 14 chars: {total}");
             assert!(total > 4, "continuation row is indent-only: {total}");
         }
+    }
+
+    #[test]
+    fn wrap_line_breaks_on_word_boundary() {
+        let line = Line::from("hello world foo");
+        let rows = wrap_line(&line, 8);
+        let row_texts: Vec<String> = rows.iter().map(|r| format!("{r}")).collect();
+        // "hello" (5) + " " (1) = 6 chars, "world" (5) won't fit (6 + 5 > 8),
+        // so "world" moves to its own row.
+        assert!(
+            row_texts.iter().any(|t| t.contains("hello")),
+            "some row should contain 'hello'"
+        );
+        assert!(
+            row_texts.iter().any(|t| t.trim() == "world"),
+            "'world' should occupy its own row"
+        );
+        assert!(
+            row_texts.iter().any(|t| t.contains("foo")),
+            "some row should contain 'foo'"
+        );
+    }
+
+    #[test]
+    fn wrap_line_hard_splits_word_longer_than_width() {
+        let line = Line::from("supercalifragi");
+        let rows = wrap_line(&line, 8);
+        assert_eq!(rows.len(), 2, "should produce 2 rows");
+        let joined: String = rows
+            .iter()
+            .flat_map(|r| r.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert_eq!(joined, "supercalifragi");
+    }
+
+    #[test]
+    fn wrap_line_word_boundary_preserves_styles() {
+        let line = Line::from(vec![
+            Span::styled("hello", Style::new().fg(Color::Red)),
+            Span::raw(" "),
+            Span::styled("world", Style::new().fg(Color::Blue)),
+        ]);
+        let rows = wrap_line(&line, 8);
+        // Find the row containing "world" and check its style.
+        let world_row = rows
+            .iter()
+            .find(|r| format!("{r}").contains("world"))
+            .expect("should have a row with 'world'");
+        let world_span = world_row
+            .spans
+            .iter()
+            .find(|s| s.content.as_ref().contains("world"))
+            .expect("should have a span with 'world'");
+        assert_eq!(
+            world_span.style.fg,
+            Some(Color::Blue),
+            "'world' should carry blue style"
+        );
     }
 }

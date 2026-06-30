@@ -346,8 +346,8 @@ fn scrolled_title(title: &str, max: usize, tick: Option<usize>) -> String {
     let start = match tick {
         Some(t) => {
             // Triangle wave over [0, overflow]: pan right, then back left.
-            // 0.75 chars/tick (3 chars per 4 ticks).
-            let step = t * 3 / 4;
+            // 1.5 chars/tick (3 chars per 2 ticks).
+            let step = t * 3 / 2;
             let period = overflow * 2;
             let phase = step % period;
             if phase <= overflow {
@@ -1159,7 +1159,7 @@ mod tests {
     #[test]
     fn tasks_lines_non_active_tasks_do_not_pan() {
         // 30-char title; title_max = 20, overflow = 10.
-        // At tick=4: step = 4*3/4 = 3, so Active window shifts to chars[3..23].
+        // At tick=4: step = 4*3/2 = 6, so Active window shifts to chars[6..26].
         // Done/Pending receive tick=None → truncate_title → frozen at "abcdefghijklmnopqrst…".
         let long = "abcdefghijklmnopqrstuvwxyzABCD".to_string(); // 30 distinct chars
         let summary = StatusSummary {
@@ -1323,8 +1323,8 @@ mod tests {
         let max = 10;
         // tick = 0 → start 0 → "abcdefghij"
         assert_eq!(scrolled_title(FIXTURE, max, Some(0)), "abcdefghij");
-        // tick = 4 → step = 4*3/4 = 3 → start 3 → "defghijklm"
-        assert_eq!(scrolled_title(FIXTURE, max, Some(4)), "defghijklm");
+        // tick = 4 → step = 4*3/2 = 6 → start 6 → "ghijklmnop"
+        assert_eq!(scrolled_title(FIXTURE, max, Some(4)), "ghijklmnop");
     }
 
     #[test]
