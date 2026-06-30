@@ -511,6 +511,10 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
   every chat request (default 8192; per-model overridable in `[models."<id>"]`).
   Carved out of the remaining context window; the prior hardcoded 4096 truncated
   thinking models mid-reasoning before they reached a tool call,
+- **`[executor] enable_thinking`** (M25) — opt-in reasoning toggle (default
+  **false**; per-model overridable in `[models."<id>"]`). When false it is emitted
+  on the wire as `chat_template_kwargs.enable_thinking = false`, so reasoning
+  models default to thinking off unless a model's override turns it on,
 - **`[escalation]`** (M20) — tier (`LARGE`/`MEDIUM`/`SMALL`) and tier-derived
   defaults for `max_turns`, `escalation_slots`, `doc_level`,
 - **`[architect]`** (M20) — Claude model id and cost rates

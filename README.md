@@ -537,8 +537,9 @@ answer to that constraint:
 |---|---|
 | Small models emit malformed tool calls — trailing commas, fenced JSON, near-miss key names | **Forgiving parser** recognizes six output formats (Hermes, fenced/loose JSON, YAML, XML-variant, plain text) and applies repair transforms (fuzzy name match, param aliasing, type coercion, default-fill, JSON repair, string-escape) before giving up — and when it must give up, it feeds *model-visible* feedback instead of silently aborting the turn |
 | The model loops, retrying the same broken edit | **Governor loop detector** trips on N identical consecutive tool calls (default 6) and converts it to a `hard_fail` briefing before it burns the turn budget |
+| The model stalls in the tail — emits an empty or mid-`<think>`-truncated completion, or re-submits a no-op edit, instead of finishing | **Stall recovery** (M22–M24): an empty completion or a `finish_reason="length"` truncation is routed to a cause-specific recovery nudge rather than mis-read as "done" (consecutive empties escalate to a no-reasoning directive); a no-op `patch` (identical `old_str`/`new_str`) returns the file's current text + location and an occurrence count instead of a dead-end error; dedicated governor stalls (empty-completion, stuck-gate-feedback) cap the loop as the backstop |
 | The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit and injects the diagnostics back into the turn (with language-appropriate detail — e.g. compiler suggested-fixes and structured test digests for Rust, TypeScript, and Python today) so the model fixes it without a wasted round-trip |
-| Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: a `patch` is refused on any file the model hasn't `read_file`'d this session (or whose mtime changed since), preventing blind overwrites |
+| Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: a `patch` is refused on any file the model hasn't `read_file`'d this session (or whose mtime changed since), preventing blind overwrites; a working-set-aware refusal likewise blocks a `git checkout`/`restore` that would discard the model's own edits this session |
 | The context window fills up mid-phase | **Context budgeting + the M10 reclaim levers**: `max_context_pct` triggers value-ranked compaction (noisiest tool output first; the last 3 turns protected). An output filter trims and de-dups command output at the boundary (ANSI strip, a structured compressor for noisy build output, overflow spilled to a recovery file); a read-lifecycle lever evicts superseded file reads after an edit and dedupes re-reads. Every lever is metered and visible live |
 | The model uses `bash` irresponsibly | **Scope confinement** restricts every file and shell op to the target-repo root, and a bash classifier blocks the destructive command categories (`rm -rf`, `git push --force`, `git reset --hard`, `mkfs`, `curl … \| sh`, publish/upload, fork bombs, …) |
 | You don't know if a model is actually good for your codebase | **Per-run telemetry** records the objective outcome of every dispatch so you accumulate real evidence about which models and settings earn their keep |
@@ -618,6 +619,7 @@ stream_idle_timeout_secs = 240            # max gap between tokens once streamin
 # temperature = 0.2                       # sent on every request; omitted → endpoint default
 # seed        = 42                        # deterministic sampling seed; omitted → none
 # max_tokens  = 8192                      # per-response output ceiling (default 8192); raise for thinking models
+# enable_thinking = false                 # opt-in reasoning toggle → chat_template_kwargs (default false)
 task_tracking = true                      # seed a per-session checklist from the phase Spec (default true)
 # tier = "MEDIUM"                         # "LARGE" | "MEDIUM" | "SMALL" — usually set via `rexymcp calibrate`
 
@@ -673,6 +675,7 @@ max_assists = 3                           # autonomous architect assists before 
 temperature                    = 0.2      # any of these override the global value for this model only
 # seed                         = 7
 # max_tokens                   = 16384     # per-model output ceiling (thinking models often need more)
+# enable_thinking              = true      # turn reasoning on for this model only (global default is false)
 # task_tracking                = false
 # identical_call_threshold     = 8
 # verifier_persistence_threshold = 8
@@ -684,7 +687,7 @@ temperature                    = 0.2      # any of these override the global val
 | Section | Purpose |
 |---|---|
 | `[project]` | `id` — per-project UUID (from `rexymcp init`) that scopes telemetry to this project regardless of path. |
-| `[executor]` | The local model + connection: `provider`, `model`, `base_url`, `api_key`, the two streaming timeouts, sampling (`temperature`, `seed`, `max_tokens`), `task_tracking`, and `tier`. |
+| `[executor]` | The local model + connection: `provider`, `model`, `base_url`, `api_key`, the two streaming timeouts, sampling (`temperature`, `seed`, `max_tokens`), `enable_thinking`, `task_tracking`, and `tier`. |
 | `[commands]` | The `format` / `build` / `lint` / `test` (+ optional `lint_fix`) commands run as the final gate. |
 | `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `escalation_slots`, `gate_retries`. |
 | `[telemetry]` | `dir` — the cross-project store. Omit to disable; `~` is expanded. |
@@ -693,7 +696,7 @@ temperature                    = 0.2      # any of these override the global val
 | `[context]` | `output_filter` kill-switch for the M10 boundary filter. |
 | `[governor]` | The three hard-fail thresholds (identical-call, verifier-persistence, runaway-output). |
 | `[escalation]` | `max_assists` for SMALL-tier autonomous architect assists. |
-| `[models."<id>"]` | Per-model overrides (exact-id match) for sampling, task-tracking, and the governor thresholds. |
+| `[models."<id>"]` | Per-model overrides (exact-id match) for sampling (`temperature`/`seed`/`max_tokens`/`enable_thinking`), task-tracking, and the governor thresholds. |
 
 **Known-model rate table** (recognized by `[architect] model` and `[dashboard]
 saved_model`, in USD/Mtok input/output): `claude-opus-4-8`/`-4-7`/`-4-6` →
