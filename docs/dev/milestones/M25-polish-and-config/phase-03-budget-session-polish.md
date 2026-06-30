@@ -1,7 +1,7 @@
 # Phase 03: Budget & Session panel polish
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -379,3 +379,11 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit.
 
 **Grep verification:**
 - `grep -n "savings_lines_net_row_not_parenthesized" mcp/src/dashboard/panels.rs` → matches at test definition
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-03-1 — missing `Net` row not-parenthesized negative pin)
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none — re-dispatch added only the missing `test:` pin; no production change (`savings_lines`/`session_lines` untouched since the pre-bounce `feat` commit).
+- **Calibration:** the bounce was a `false_completion` — the first dispatch self-reported complete with all four gates green by construction, but the spec-required `savings_lines_net_row_not_parenthesized` pin was absent (the existing `$4.00`-substring and equal-width tests passed under a parenthesized Net, so a regression would not have been caught). Recurrence of the no-gate-coverage `false_completion` pattern: a green suite is not evidence a *required* test exists. The added pin is mutation-resistant — the same call renders the Architect row parenthesized (`$1.00` project architect cost), so it proves parenthesization is active while asserting Net carries no `(`.
