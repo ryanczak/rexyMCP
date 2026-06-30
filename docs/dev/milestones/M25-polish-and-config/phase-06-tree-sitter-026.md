@@ -1,7 +1,7 @@
 # Phase 06: `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none (phase-05 already landed the `similar` bump; this is independent)
 **Estimated diff:** ~3 lines (two `Cargo.toml` constraints + the `Cargo.lock` churn)
 **Tags:** language=rust, kind=refactor, size=s
@@ -291,3 +291,21 @@ tree-sitter-python = "0.25"
 $ grep 'tree-sitter-rust = "0.24"' Cargo.toml
 tree-sitter-rust = "0.24"
 ```
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none
+- **Calibration:** none
+
+Independent re-run confirmed all four gates green: `cargo fmt --all --check`
+clean, `cargo build` zero warnings, `cargo clippy --all-targets --all-features
+-- -D warnings` clean, `cargo test` 871 executor + 429 mcp passed (2 ignored).
+`cargo test symbols` → 31 passed (real Rust+Python parse against the bumped
+crates — the regression guard). `Cargo.lock` pins `tree-sitter v0.26.10`,
+`tree-sitter-python v0.25.0`, `tree-sitter-rust v0.24.2` (unchanged),
+`tree-sitter-language v0.1.7` (unchanged). No `.rs` source edited — the commit
+touches only `Cargo.toml`, `Cargo.lock`, and docs. Smallest-possible-diff bump
+as specified.
