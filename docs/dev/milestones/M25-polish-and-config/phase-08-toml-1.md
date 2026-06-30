@@ -1,7 +1,7 @@
 # Phase 08: `toml` 0.8→1.x
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none (phase-07 landed the `toml_edit` bump; this is independent)
 **Estimated diff:** ~2 lines (one workspace-root `Cargo.toml` constraint + the `Cargo.lock` churn)
 **Tags:** language=rust, kind=refactor, size=s
@@ -318,3 +318,17 @@ Bumping `toml` from `0.8` to `1` in workspace-root `Cargo.toml`.
 **Notes for review:** None. Clean bump, no source edits required. All acceptance criteria met.
 
 **Commit:** `chore: bump toml 0.8 → 1`
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none
+- **Calibration:** none — clean dependency bump, no source edits. All four gates
+  green on independent re-run (871 passed / 2 ignored); `cargo tree -i toml` →
+  `toml v1.1.2+spec-1.1.0` linked into `rexymcp-executor`; `toml 0.8.23` and the
+  orphaned `toml_edit 0.22.27` / `toml_datetime 0.6.11` / `serde_spanned 0.6.9`
+  subtree dropped from the lock; `toml_edit 0.25.12+spec-1.1.0` (phase-07, `mcp`
+  direct) intact; `config.rs` unedited; 58 config deserialize tests green against
+  the new version.
