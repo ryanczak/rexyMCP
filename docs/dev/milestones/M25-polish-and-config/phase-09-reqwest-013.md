@@ -1,7 +1,7 @@
 # Phase 09: `reqwest` 0.12→0.13
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none (phase-08 landed the `toml` bump; this is independent)
 **Estimated diff:** ~1 line (one workspace-root `Cargo.toml` constraint + the `Cargo.lock` churn)
 **Tags:** language=rust, kind=refactor, size=s
@@ -372,3 +372,24 @@ Bumped `reqwest` version constraint from `"0.12"` to `"0.13"` in workspace-root 
 **Grep for pinned literal:** `grep 'version = "0.13"' Cargo.toml` → matches line 20.
 
 **Commit:** `refactor: bump reqwest 0.12→0.13 (rustls default TLS)`
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none
+- **Calibration:** none
+
+Independent re-run: all four gates green (fmt clean, build zero warnings, clippy
+clean, 871 passed / 2 ignored). `cargo tree -i reqwest` → `0.13.4` linked through
+`rexymcp-executor → rexymcp`; `cargo tree -i native-tls` / `-i openssl-sys` both
+report no match (native-tls/openssl subtree dropped); `cargo tree -i rustls`
+resolves through `reqwest v0.13.4` and `aws-lc-rs` is present — the rustls/aws-lc
+TLS swap landed as the accepted, intended outcome. `Cargo.toml:20` carries the
+bare `version = "0.13", features = ["json", "stream"]` form with no
+`default-features`/TLS/`query`/`form` keys; `executor/Cargo.toml` and
+`mcp/Cargo.toml` untouched; no source edits to `ai/mod.rs` or
+`ai/backends/openai.rs`. The real-`reqwest::Error` guard
+`is_retriable_transport_true_for_reqwest_error` compiles and passes against the
+0.13 client API. Last M25 dep bump — closes the M25 dependency thread.
