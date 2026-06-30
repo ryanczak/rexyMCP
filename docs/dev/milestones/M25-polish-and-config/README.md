@@ -5,7 +5,7 @@ and dependency major-version bumps — grouped by subsystem so each phase is one
 executor session — without changing any session-event/telemetry schema or adding
 a new dependency.
 
-**Status:** in-progress
+**Status:** done (9/9 phases done, 2026-06-30)
 
 **Depends on:** none (each phase is independent; dispatch in any order, though the
 numbering is the suggested order).
@@ -114,3 +114,53 @@ smallest-to-largest blast radius; dispatch in order, review-gate each:
 
 Each phase: bump the version constraint in the relevant `Cargo.toml`, run
 `cargo update`, fix any API breaks the compiler flags, verify all four gates.
+
+### Retrospective — 2026-06-30
+
+**Outcome: 9/9 phases done, 8 approved_first_try, 1 approved_after_1.** Executor
+was Qwen/Qwen3.6-27B-PrismaAURA throughout. The milestone split cleanly into a
+**polish/config thread** (phases 01–04) and a **dependency-bump thread** (phases
+05–09, added 2026-06-29).
+
+**Per-phase:**
+- **01** `update_task` null-args recovery hint — approved_first_try.
+- **02** `enable_thinking` knob (`[executor]` default false, per-model
+  overridable → `chat_template_kwargs`) — approved_first_try.
+- **03** Budget panel parenthesized debits / >$0.00 gating + Session-panel
+  `Last update` removal — **approved_after_1** (bug-03-1; see Calibration).
+- **04** Activity word-boundary wrap + Tasks 2× pan speed — approved_first_try.
+- **05** `similar` 2→3 — approved_first_try.
+- **06** `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 —
+  approved_first_try.
+- **07** `toml_edit` 0.22→0.25 — approved_first_try.
+- **08** `toml` 0.8→1 — approved_first_try.
+- **09** `reqwest` 0.12→0.13 (rustls/aws-lc TLS swap accepted) —
+  approved_first_try.
+
+**The dependency-bump recipe validated (5/5 clean).** Phases 05–09 ran a uniform
+recipe — bump the one constraint, `cargo update -p <crate>`, react only to what
+the compiler flags, verify four gates — and every one landed approved_first_try
+with **zero source edits**. Ordering smallest-to-largest blast radius (05→09)
+held: even phase-09, the only non-behavior-preserving bump (the rustls + aws-lc-rs
+default-TLS swap), needed no code change because the executor calls a stable
+slice of the reqwest client API and uses neither `query` nor `form`. Pre-injecting
+the complete reqwest API surface, the exact lock churn (native-tls/openssl subtree
+out, rustls/aws-lc in), and the "this swap is the intended outcome, not a
+regression to fix" framing kept the executor from defensively pinning a TLS
+feature. The recipe + per-phase pre-injection is the reusable pattern for future
+major-version bumps.
+
+**Calibration — no new folds.** One bounce (phase-03, bug-03-1) was a
+`false_completion`: the first dispatch self-reported complete with all four gates
+green *by construction*, but the spec-required negative pin
+(`savings_lines_net_row_not_parenthesized`) was absent — the existing
+substring/equal-width tests passed under a parenthesized Net, so a regression
+would not have been caught. This is a **recurrence of the known no-gate-coverage
+`false_completion` pattern** (M19 closed the red-gate variant structurally; the
+missing-*required*-test variant is not catchable by a gate-retry loop because a
+missing test is not a red gate). One occurrence this milestone = data, not a
+fold; the structural lever (M19/M21) already exists for the catchable variant,
+and the residual "a green suite is not evidence a required test exists" is a
+review-discipline reminder already implicit in the DoD ("New code is covered by
+tests per §3"). **M25 retrospective: no new patterns warranting a STANDARDS.md or
+WORKFLOW.md fold.**

@@ -4,29 +4,22 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M25 phase-07** — `toml_edit` 0.22→0.25 dependency bump
-([phase-07-toml-edit-025.md](milestones/M25-polish-and-config/phase-07-toml-edit-025.md)),
-drafted 2026-06-30, `todo`. Dispatch via `/rexymcp:dispatch phase-07`.
+**Active phase:** **none** — **M25 closed 2026-06-30** at a human-gated milestone
+boundary. Awaiting the user to kick off the next milestone via `/rexymcp:architect`.
 
-(NEXT.md's prior `phase-06` pointer was left stale by phase-06's approve commit
-`6106191` — which touched only the README + phase doc — and is re-advanced here.
-Phase-06 `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 is **done**,
-approved_first_try 2026-06-30.)
-
-**📌 M25 — Polish & Config Pass** (9 phases, milestone
-[README](milestones/M25-polish-and-config/README.md)). Expanded 2026-06-29 to
-include five dependency major-version bumps (phases 05–09). Phase-01 done
-(2026-06-29, `approved_first_try`). Remaining:
-- (02) `enable_thinking` knob (`[executor]` default false, per-model overridable) → `chat_template_kwargs` [**done** 2026-06-29, approved_first_try]
-- (03) Budget panel — Executor/Architect rows only when > $0.00, parenthesized debits + Session panel — remove `Last update` [**done** 2026-06-30, approved_after_1]
-- (04) Activity word-boundary wrap + Tasks 2× pan speed [**done** 2026-06-30, approved_first_try]
-- (05) `similar` 2→3 [**done** 2026-06-30, approved_first_try]
-- (06) `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 [**done** 2026-06-30, approved_first_try]
-- (07) `toml_edit` 0.22→0.25 [**drafted** 2026-06-30, todo]
-- (08) `toml` 0.8→1.x [not drafted]
-- (09) `reqwest` 0.12→0.13 [not drafted]
-
-**Decisions with the user:** issue 3 = remove `Last update` entirely; issue 6 = per-model overridable; dep phases ordered smallest-to-largest blast radius (05→09). Dispatch 02–04 before 05–09 (polish first); expand on-demand via `/rexymcp:architect next`.
+**M25 — Polish & Config Pass — done** (9/9 phases, 2026-06-30; executor
+Qwen/Qwen3.6-27B-PrismaAURA). 8 approved_first_try, 1 approved_after_1 (phase-03
+`false_completion`, bug-03-1 — missing required negative pin). Two threads: a
+polish/config thread (01 `update_task` recovery hint · 02 `enable_thinking` knob ·
+03 Budget/Session panel polish · 04 Activity/Tasks panel polish) and a
+dependency-bump thread (05 `similar` 2→3 · 06 `tree-sitter` 0.25→0.26 +
+`tree-sitter-python` 0.23→0.25 · 07 `toml_edit` 0.22→0.25 · 08 `toml` 0.8→1 · 09
+`reqwest` 0.12→0.13). The dep-bump recipe (bump one constraint → `cargo update -p`
+→ react only to compiler flags → four gates) ran 5/5 clean with **zero source
+edits**, including the reqwest 0.13 rustls/aws-lc default-TLS swap. **No new
+calibration folds** (the phase-03 `false_completion` is a known-pattern recurrence,
+data not a fold). See the milestone
+[README retrospective](milestones/M25-polish-and-config/README.md#retrospective--2026-06-30).
 
 **M24 — committed scope complete** (phase-01 done 2026-06-18; phase-02 — extend
 the enrichment to the ambiguous / zero-match arms — held pending a follow-up

@@ -3,7 +3,7 @@
 > **Status:** Living design doc. M1–M23 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
 > committed scope); M24 (edit-loop recovery) is done (committed scope — single
-> phase). M25 (polish & config pass) is in progress. This document is the source
+> phase). M25 (polish & config pass) is done (9/9 phases). This document is the source
 > of truth for the *intended* design; the
 > code under `executor/` and `mcp/` is the source of truth for what actually
 > runs. Milestones are listed in the **Status** section at the bottom — that list
@@ -980,11 +980,12 @@ The project plan. Each entry becomes a milestone with its own
     note when the text appears more than once (the duplicate tell), and a
     `read_file`/move-on next step. Recover-first per M23: the governor stall stays
     the backstop, unchanged.
-25. **M25 — Polish & Config Pass** *(in progress)*. A grab-bag of operator-facing
-    polish and executor-configuration fixes batched into one milestone, grouped by
-    subsystem. Four phases: (01) `update_task` returns an actionable recovery hint
-    (the canonical call shape + the still-incomplete task ids) when it receives
-    null/empty/malformed arguments, instead of the generic
+25. **M25 — Polish & Config Pass** *(done — 9/9 phases, 2026-06-30)*. A grab-bag of
+    operator-facing polish, executor-configuration fixes, and dependency
+    major-version bumps batched into one milestone, grouped by subsystem. Two
+    threads. **Polish/config (01–04):** (01) `update_task` returns an actionable
+    recovery hint (the canonical call shape + the still-incomplete task ids) when it
+    receives null/empty/malformed arguments, instead of the generic
     `invalid arguments — expected {id, state}` advisory — the null→`{}` coercion at
     `parser/validate.rs` stays; only the tool's message gets richer. (02) A new
     `enable_thinking` knob (`[executor]` default **false**, per-model overridable
@@ -995,4 +996,14 @@ The project plan. Each entry becomes a milestone with its own
     panel — remove the `Last update` line. (04) Activity panel — wrap on word
     boundaries instead of mid-word; Tasks panel — double the title pan speed. All
     display-only for 03/04 (no `SessionEvent`/telemetry change); 01/02 are executor
-    crate. No new dependencies.
+    crate. **Dependency bumps (05–09, added 2026-06-29):** major-version bumps that
+    `cargo update` alone cannot reach because they require a `Cargo.toml` constraint
+    change — (05) `similar` 2→3, (06) `tree-sitter` 0.25→0.26 + `tree-sitter-python`
+    0.23→0.25, (07) `toml_edit` 0.22→0.25, (08) `toml` 0.8→1, (09) `reqwest`
+    0.12→0.13. Ordered smallest-to-largest blast radius; each ran the same recipe
+    (bump the one constraint → `cargo update -p <crate>` → react only to
+    compiler-flagged breaks → verify four gates) and landed with **zero source
+    edits**. No crate was *added* by hand; phase-09's bump flips reqwest's default
+    TLS backend from native-tls/openssl to rustls + aws-lc-rs (the rustls/aws-lc
+    subtree appearing is an accepted automatic resolver consequence, decided with
+    the user).
