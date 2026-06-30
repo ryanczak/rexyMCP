@@ -1,7 +1,7 @@
 # Phase 03: Budget & Session panel polish
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** in-progress (bounced — see bugs/bug-03-1.md)
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=m
