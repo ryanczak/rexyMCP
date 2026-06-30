@@ -4,17 +4,17 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M25 phase-03** — Budget & Session panel polish
-([phase-03-budget-session-polish.md](milestones/M25-polish-and-config/phase-03-budget-session-polish.md)),
-drafted 2026-06-29, `todo`. Dispatch via `/rexymcp:dispatch phase-03`.
+**Active phase:** **M25 phase-04** — Activity & Tasks panel polish
+([phase-04-activity-tasks-polish.md](milestones/M25-polish-and-config/phase-04-activity-tasks-polish.md)),
+drafted 2026-06-30, `todo`. Dispatch via `/rexymcp:dispatch phase-04`.
 
 **📌 M25 — Polish & Config Pass** (9 phases, milestone
 [README](milestones/M25-polish-and-config/README.md)). Expanded 2026-06-29 to
 include five dependency major-version bumps (phases 05–09). Phase-01 done
 (2026-06-29, `approved_first_try`). Remaining:
 - (02) `enable_thinking` knob (`[executor]` default false, per-model overridable) → `chat_template_kwargs` [**done** 2026-06-29, approved_first_try]
-- (03) Budget panel — Executor/Architect rows only when > $0.00, parenthesized debits + Session panel — remove `Last update` [**drafted** 2026-06-29, todo]
-- (04) Activity word-boundary wrap + Tasks 2× pan speed [not drafted]
+- (03) Budget panel — Executor/Architect rows only when > $0.00, parenthesized debits + Session panel — remove `Last update` [**done** 2026-06-30, approved_after_1]
+- (04) Activity word-boundary wrap + Tasks 2× pan speed [**drafted** 2026-06-30, todo]
 - (05) `similar` 2→3 [not drafted]
 - (06) `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 [not drafted]
 - (07) `toml_edit` 0.22→0.25 [not drafted]
