@@ -1,7 +1,7 @@
 # Phase 05: `similar` 2→3
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~2 lines
 **Tags:** language=rust, kind=refactor, size=s
@@ -221,3 +221,16 @@ test result: ok. 871 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fi
 - pending — `chore: bump similar 2→3`
 
 **Notes for review:** No source edits were required — the `similar` 3.0 breaking changes do not touch any API surface used by this codebase. Clean dependency bump.
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none — only `Cargo.toml`/`Cargo.lock` + the two docs
+  changed; no `executor/src/` source edit (the bump was clean as predicted). The
+  `Cargo.lock` churn is package-scoped to `similar` 2.7.0 → 3.1.1 (gaining a
+  `bstr` dep already present in the tree); no unrelated crates moved.
+- **Calibration:** none. Independent re-run of all four gates green (fmt clean,
+  build zero-warning, clippy clean, 871 passed / 2 ignored); `cargo tree -i
+  similar` confirms `v3.1.1` linked.
