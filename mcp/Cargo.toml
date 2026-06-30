@@ -20,7 +20,7 @@ ratatui = "0.30"
 crossterm = "0.29"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }
 uuid.workspace = true
-toml_edit = "0.22"
+toml_edit = "0.25"
 
 [dev-dependencies]
 async-trait.workspace = true
