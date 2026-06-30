@@ -1,7 +1,7 @@
 # Phase 07: `toml_edit` 0.22→0.25
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none (phase-06 landed the tree-sitter bump; this is independent)
 **Estimated diff:** ~2 lines (one `mcp/Cargo.toml` constraint + the `Cargo.lock` churn)
 **Tags:** language=rust, kind=refactor, size=s
@@ -307,3 +307,11 @@ Both `toml_edit` versions present as expected: `0.25.12` linked directly by `rex
 - (pending — see below)
 
 **Notes for review:** No deviations from spec. Clean bump, no source edits required.
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none. `mcp/Cargo.toml` line 23 is `toml_edit = "0.25"`; workspace-root `Cargo.toml` untouched (no `toml_edit` line; `toml = "0.8"` intact). `Cargo.lock` carries both `toml_edit 0.25.12+spec-1.1.0` (direct, into `rexymcp`) and the expected transitive `0.22.27` (via `toml 0.8.23`, which stays pinned). `mcp/src/calibrate.rs` not edited — confirmed absent from the feat commit's file stat. All four gates green on independent re-run (fmt/build/clippy clean; 871 passed / 2 ignored); the 10 `calibrate` round-trip tests pass against the new version and `cargo tree` confirms `0.25.12` links directly into `rexymcp`.
+- **Calibration:** the `refactor:` feat commit (`f2569a2`) swept the architect's uncommitted draft files (`NEXT.md`, this phase doc, the milestone README) into itself — the recurring dirty-tree-at-dispatch operational pattern (architect-side Pre-flight-4 miss), not an executor defect. Cosmetic Update-Log identity self-stamp ("Claude (Opus)") recurred; date correct, telemetry records the real Qwen model.
