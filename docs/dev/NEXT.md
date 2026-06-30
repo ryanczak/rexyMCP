@@ -4,9 +4,14 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M25 phase-05** — `similar` 2→3 dependency bump
-([phase-05-similar-3.md](milestones/M25-polish-and-config/phase-05-similar-3.md)),
-drafted 2026-06-30, `todo`. Dispatch via `/rexymcp:dispatch phase-05`.
+**Active phase:** **M25 phase-06** — `tree-sitter` 0.25→0.26 + `tree-sitter-python`
+0.23→0.25 dependency bump
+([phase-06-tree-sitter-026.md](milestones/M25-polish-and-config/phase-06-tree-sitter-026.md)),
+drafted 2026-06-30, `todo`. Dispatch via `/rexymcp:dispatch phase-06`.
+
+(NEXT.md's prior `phase-05` pointer was left stale by phase-05's approve commit
+`3ab03c3` — which touched only the README + phase doc — and is re-advanced here.
+Phase-05 `similar` 2→3 is **done**, approved_first_try 2026-06-30.)
 
 **📌 M25 — Polish & Config Pass** (9 phases, milestone
 [README](milestones/M25-polish-and-config/README.md)). Expanded 2026-06-29 to
@@ -15,8 +20,8 @@ include five dependency major-version bumps (phases 05–09). Phase-01 done
 - (02) `enable_thinking` knob (`[executor]` default false, per-model overridable) → `chat_template_kwargs` [**done** 2026-06-29, approved_first_try]
 - (03) Budget panel — Executor/Architect rows only when > $0.00, parenthesized debits + Session panel — remove `Last update` [**done** 2026-06-30, approved_after_1]
 - (04) Activity word-boundary wrap + Tasks 2× pan speed [**done** 2026-06-30, approved_first_try]
-- (05) `similar` 2→3 [**drafted** 2026-06-30, todo]
-- (06) `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 [not drafted]
+- (05) `similar` 2→3 [**done** 2026-06-30, approved_first_try]
+- (06) `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 [**drafted** 2026-06-30, todo]
 - (07) `toml_edit` 0.22→0.25 [not drafted]
 - (08) `toml` 0.8→1.x [not drafted]
 - (09) `reqwest` 0.12→0.13 [not drafted]

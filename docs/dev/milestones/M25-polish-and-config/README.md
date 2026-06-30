@@ -70,7 +70,7 @@ subsystem they form one coherent polish pass:
 | 03 | Budget & Session panel polish ([phase-03-budget-session-polish.md](phase-03-budget-session-polish.md)) | done |
 | 04 | Activity & Tasks panel polish ([phase-04-activity-tasks-polish.md](phase-04-activity-tasks-polish.md)) | done |
 | 05 | `similar` 2→3 ([phase-05-similar-3.md](phase-05-similar-3.md)) | done |
-| 06 | `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 | not drafted |
+| 06 | `tree-sitter` 0.25→0.26 + `tree-sitter-python` 0.23→0.25 ([phase-06-tree-sitter-026.md](phase-06-tree-sitter-026.md)) | todo |
 | 07 | `toml_edit` 0.22→0.25 | not drafted |
 | 08 | `toml` 0.8→1.x | not drafted |
 | 09 | `reqwest` 0.12→0.13 | not drafted |
