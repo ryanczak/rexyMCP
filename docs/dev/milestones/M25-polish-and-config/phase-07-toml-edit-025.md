@@ -1,7 +1,7 @@
 # Phase 07: `toml_edit` 0.22→0.25
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** in-progress
+**Status:** review
 **Depends on:** none (phase-06 landed the tree-sitter bump; this is independent)
 **Estimated diff:** ~2 lines (one `mcp/Cargo.toml` constraint + the `Cargo.lock` churn)
 **Tags:** language=rust, kind=refactor, size=s
