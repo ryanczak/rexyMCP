@@ -1,7 +1,7 @@
 # Phase 04: Activity & Tasks panel polish
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -349,3 +349,21 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit.
 - End-to-end verification: `wrap_line` and `scrolled_title` are pure functions fully covered by hermetic unit tests. Representative output: `wrap_line("hello world foo", 8)` produces rows containing "hello", "world" (own row), and "foo"; `scrolled_title(FIXTURE, 10, Some(4))` returns `"ghijklmnop"` confirming the doubled step.
 
 **End-to-end verification:** N/A — both functions are pure, fully covered by unit tests. No separately-loadable artifact.
+
+### Review verdict — 2026-06-30
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none
+- **Calibration:** none
+
+Both Spec tasks landed byte-for-byte against the pinned shapes. All four gates
+green on independent re-run (fmt/build/clippy clean; 871 passed, 2 ignored). The
+3 new `wrap_line` tests are mutation-resistant — `wrap_line_breaks_on_word_boundary`
+pins `"world"` to its own row (refuting a mid-word split), `wrap_line_hard_splits_word_longer_than_width`
+pins the over-long fallback, and `wrap_line_word_boundary_preserves_styles` pins the
+blue span survives the break. The 8 listed regression tests pass unmodified; the
+doubled-step acceptance check is verified by `scrolled_title_pans_overflowing_title`
+(`Some(4)` → `"ghijklmnop"`). No new prod `unwrap`/`expect`/`panic`, no `#[allow]`,
+no `unsafe`, no `architecture.md` touch.
