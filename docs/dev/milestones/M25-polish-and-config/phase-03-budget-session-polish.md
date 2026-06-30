@@ -1,7 +1,7 @@
 # Phase 03: Budget & Session panel polish
 
 **Milestone:** M25 — Polish & Config Pass
-**Status:** in-progress (bounced — see bugs/bug-03-1.md)
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~130 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -351,3 +351,31 @@ None. No new dependency, no `Cargo.toml` edit, no `docs/architecture.md` edit.
 - `grep -n "last_update_line" mcp/src/dashboard/panels.rs` → no matches (function fully removed)
 - `grep -n "(\$5.00)" mcp/src/dashboard/panels.rs` → matches at test line confirming parenthesized debit literal
 - `grep -n "paren(" mcp/src/dashboard/panels.rs` → matches at `debit_row` closure confirming parenthesization logic
+
+### Update — 2026-06-30 12:57 (complete — bug-03-1 fix)
+
+**Executor:** rexyMCP executor
+
+**Bug fixed:** bug-03-1 — missing `Net` row not-parenthesized negative pin test.
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed (exit 0)
+- `cargo build` — passed (exit 0, zero new warnings)
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed (exit 0)
+- `cargo test` — passed (872 passed, 0 failed, 2 ignored)
+
+**Verification summary:** All four gates passed clean. New test `savings_lines_net_row_not_parenthesized` added and passing.
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — added `savings_lines_net_row_not_parenthesized` test.
+- `docs/dev/milestones/M25-polish-and-config/phase-03-budget-session-polish.md` — status → review, Update Log entry.
+- `docs/dev/milestones/M25-polish-and-config/README.md` — phase table row → review.
+
+**Commits:** 1 conventional commit.
+
+**End-to-end verification:** N/A — test is hermetic unit test against pure function.
+
+**Notes for review:** No production code change. Test pins that `Net:` row is never parenthesized, mutation-resistant against future routing through `debit_row`.
+
+**Grep verification:**
+- `grep -n "savings_lines_net_row_not_parenthesized" mcp/src/dashboard/panels.rs` → matches at test definition

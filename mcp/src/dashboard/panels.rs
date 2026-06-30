@@ -1871,6 +1871,39 @@ mod tests {
     }
 
     #[test]
+    fn savings_lines_net_row_not_parenthesized() {
+        // Net row must never be parenthesized, even when Architect row is shown.
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(0),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+            architect_input_per_mtok: 1.0,
+            architect_output_per_mtok: 5.0,
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 0,
+            architect_in: 1_000_000,
+            architect_out: 0,
+        };
+        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let net_line = texts
+            .iter()
+            .find(|s| s.contains("Net:"))
+            .expect("Net row missing");
+        assert!(
+            !net_line.contains('('),
+            "Net row must never be parenthesized: {}",
+            net_line
+        );
+    }
+
+    #[test]
     fn savings_lines_assists_shows_project_escalation_count() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
