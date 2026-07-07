@@ -4,14 +4,13 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:**
-[`M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md`](milestones/M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md)
-— **todo** (drafted 2026-07-07; dispatch via `/rexymcp:dispatch phase-02`).
-M26 phase-01
-([done](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md),
-2026-07-07, approved_first_try). Phases 03–09 remain planned in the
+**Active phase:** **none drafted** — M26 phase-01
+([done](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md))
+and phase-02
+([done](milestones/M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md)),
+both 2026-07-07, both approved_first_try. Phases 03–09 remain planned in the
 [milestone README](milestones/M26-polish-and-hardening/README.md) but not yet
-drafted.
+drafted. Next: `/rexymcp:architect next` to draft phase-03.
 
 **📌 M26 — Polish & Hardening kicked off (2026-07-07, with the user).** Seeded
 from the post-M25 whole-codebase review

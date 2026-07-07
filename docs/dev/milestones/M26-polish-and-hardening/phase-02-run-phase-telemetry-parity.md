@@ -1,7 +1,7 @@
 # Phase 02: `run-phase` telemetry parity
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -346,6 +346,14 @@ mcp/src/runner.rs:121:    if no_telemetry {
 - `cli_parse_run_phase_no_telemetry_flag_sets_true` in `mcp/src/main.rs`
 
 **Commits:**
-- (pending — will commit after this entry)
+- `8fc41ce` — fix: wire telemetry dir through run-phase CLI (--no-telemetry opt-out)
 
 **Notes for review:** None — implementation matches the spec exactly.
+
+### Review verdict — 2026-07-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (Update Log self-stamped "rexyMCP executor LLM" — telemetry and `rexymcp.toml` confirm the real executor)
+- **Scope deviations:** none — diff matched the pre-injected spec snippets essentially verbatim, touched exactly `mcp/src/main.rs` and `mcp/src/runner.rs` as authorized
+- **Calibration:** none
