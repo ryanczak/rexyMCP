@@ -60,6 +60,7 @@ pub fn cap_phase_result(result: PhaseResult) -> PhaseResult {
         update_log,
         briefing,
         log_path: result.log_path,
+        warnings: result.warnings,
     }
 }
 
@@ -129,6 +130,7 @@ mod tests {
             update_log: String::new(),
             briefing: None,
             log_path: None,
+            warnings: Vec::new(),
         }
     }
 

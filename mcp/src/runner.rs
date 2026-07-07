@@ -125,6 +125,41 @@ pub fn resolve_telemetry_dir(cfg: &Config, no_telemetry: bool) -> Option<&Path> 
     }
 }
 
+/// Collect non-fatal warnings about a phase run's inputs, for surfacing in
+/// `PhaseResult.warnings`. A blank (whitespace-only or absent) STANDARDS
+/// string or an unparsed Goal / Acceptance-criteria section each means the
+/// executor is running degraded, and today that is silent.
+pub fn collect_input_warnings(
+    standards: &str,
+    goal: &str,
+    acceptance_criteria: &str,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if standards.trim().is_empty() {
+        warnings.push(
+            "STANDARDS.md is empty or missing at <repo>/docs/dev/STANDARDS.md — \
+             the executor ran without a Definition of Done. Confirm the file \
+             exists and is readable."
+                .to_string(),
+        );
+    }
+    if goal.trim().is_empty() {
+        warnings.push(
+            "Phase doc has no parseable '## Goal' section — the executor ran \
+             without a stated goal. Confirm the heading is exactly '## Goal'."
+                .to_string(),
+        );
+    }
+    if acceptance_criteria.trim().is_empty() {
+        warnings.push(
+            "Phase doc has no parseable '## Acceptance criteria' section. \
+             Confirm the heading is exactly '## Acceptance criteria'."
+                .to_string(),
+        );
+    }
+    warnings
+}
+
 /// Derive the milestone directory slug from a phase-doc path.
 /// `…/milestones/M17-dashboard-polish-3/phase-09.md` → `Some("M17-dashboard-polish-3")`.
 /// Returns `None` when the immediate parent does not look like `M<n>-…`.
@@ -214,6 +249,9 @@ async fn run_phase_with(
         inp.cfg.budget.max_context_pct,
     );
 
+    let input_warnings =
+        collect_input_warnings(inp.standards, &fields.goal, &fields.acceptance_criteria);
+
     let input = PhaseInput {
         standards: inp.standards.to_string(),
         phase_doc,
@@ -253,7 +291,9 @@ async fn run_phase_with(
         task_tracking: cfg.executor.task_tracking,
     };
 
-    agent::execute_phase(&input, deps).await
+    let mut result = agent::execute_phase(&input, deps).await?;
+    result.warnings.extend(input_warnings);
+    Ok(result)
 }
 
 /// Configuration parameters for `run_phase`, grouped to stay under
@@ -802,5 +842,113 @@ mod tests {
 
         let cfg_no_dir = Config::default();
         assert_eq!(resolve_telemetry_dir(&cfg_no_dir, true), None);
+    }
+
+    // --- collect_input_warnings ---
+
+    #[test]
+    fn collect_input_warnings_empty_when_all_present() {
+        let warnings = collect_input_warnings("s", "g", "a");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn collect_input_warnings_flags_blank_standards() {
+        let warnings = collect_input_warnings("", "g", "a");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("STANDARDS"));
+    }
+
+    #[test]
+    fn collect_input_warnings_flags_whitespace_only_standards() {
+        let warnings = collect_input_warnings("   \n", "g", "a");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("STANDARDS"));
+    }
+
+    #[test]
+    fn collect_input_warnings_flags_blank_goal() {
+        let warnings = collect_input_warnings("s", "", "a");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("Goal"));
+    }
+
+    #[test]
+    fn collect_input_warnings_flags_blank_criteria() {
+        let warnings = collect_input_warnings("s", "g", "");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("Acceptance criteria"));
+    }
+
+    #[test]
+    fn collect_input_warnings_multiple_blank_inputs() {
+        let warnings = collect_input_warnings("", "", "");
+        assert_eq!(warnings.len(), 3);
+    }
+
+    // --- end-to-end: run_phase_with stamps input warnings ---
+
+    #[tokio::test]
+    async fn run_phase_with_stamps_input_warnings() {
+        let dir = TempDir::new().unwrap();
+
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join(".gitkeep"), "").unwrap();
+
+        let phase_doc_path = repo_dir.join("phase-01.md");
+        std::fs::write(
+            &phase_doc_path,
+            "# Phase 01\n\n## Goal\n\nDo a thing.\n\n## Acceptance criteria\n\n- done\n",
+        )
+        .unwrap();
+
+        let cfg = Config::default();
+
+        let mock = MockAiClient::new(vec!["Done.".to_string()]);
+
+        let clock = || 1234567890u64;
+
+        let seams = Seams {
+            client: &mock,
+            verifier: &NoopVerifier,
+            runner: &NoopRunner,
+            clock: &clock,
+        };
+
+        let inp = AssemblyInput {
+            cfg: &cfg,
+            phase_doc_path: &phase_doc_path,
+            repo_path: &repo_dir,
+            standards: "",
+            model: "test-model",
+            telemetry_dir: None,
+            progress: None,
+            context_window: None,
+            project_id: None,
+        };
+
+        let result = run_phase_with(&inp, &seams).await;
+
+        assert!(
+            result.is_ok(),
+            "run_phase_with should succeed: {:?}",
+            result
+        );
+        let phase_result = result.unwrap();
+
+        assert!(
+            !phase_result.warnings.is_empty(),
+            "expected warnings when standards are blank"
+        );
+        let has_standards_warning = phase_result
+            .warnings
+            .iter()
+            .any(|w| w.contains("STANDARDS"));
+        assert!(
+            has_standards_warning,
+            "expected a STANDARDS warning in: {:?}",
+            phase_result.warnings
+        );
     }
 }

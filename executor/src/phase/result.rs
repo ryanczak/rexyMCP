@@ -56,6 +56,12 @@ pub struct PhaseResult {
     /// Path to the on-disk JSONL session log Claude can query; `None` when the log
     /// failed to open.
     pub log_path: Option<PathBuf>,
+    /// Non-fatal warnings about the run's *inputs* — e.g. an empty/missing
+    /// STANDARDS.md, or a phase doc whose Goal / Acceptance-criteria sections
+    /// did not parse. Empty in the common case; surfaced to the architect so a
+    /// silently-degraded run is visible in the structured result.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 impl PhaseResult {
@@ -83,6 +89,7 @@ impl PhaseResult {
             update_log: artifacts.update_log,
             briefing,
             log_path: artifacts.log_path,
+            warnings: Vec::new(),
         }
     }
 }
@@ -171,5 +178,31 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         let back: PhaseResult = serde_json::from_str(&json).unwrap();
         assert_eq!(result, back);
+    }
+
+    #[test]
+    fn phase_result_warnings_round_trip() {
+        let mut result = PhaseResult::complete(artifacts());
+        result.warnings = vec!["STANDARDS.md is empty".to_string()];
+        let json = serde_json::to_string(&result).unwrap();
+        let back: PhaseResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.warnings, back.warnings);
+    }
+
+    #[test]
+    fn phase_result_empty_warnings_omitted_from_json() {
+        let result = PhaseResult::complete(artifacts());
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"warnings\""),
+            "empty warnings must be omitted from JSON, got: {json}"
+        );
+    }
+
+    #[test]
+    fn phase_result_missing_warnings_key_defaults_empty() {
+        let json = r#"{"status":"complete","files_changed":[],"diff":"","command_outputs":{"format":null,"build":null,"lint":null,"test":null},"update_log":"","briefing":null,"log_path":null}"#;
+        let result: PhaseResult = serde_json::from_str(json).unwrap();
+        assert!(result.warnings.is_empty());
     }
 }

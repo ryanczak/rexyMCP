@@ -1,7 +1,7 @@
 # Phase 03: Surface silent input degradations as architect-visible warnings
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -372,3 +372,38 @@ None from STANDARDS.md §5. This phase authorizes edits to exactly
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-07 22:05 (started)
+
+**Who:** executor (claude-code)
+
+**Notes:** Implementing PhaseResult.warnings field, collect_input_warnings helper, wiring into run_phase_with, cap.rs fixes, and tests.
+
+### Update — 2026-07-07 22:05 (complete)
+
+**Who:** executor (claude-code)
+
+**Summary:** Added `warnings: Vec<String>` to `PhaseResult` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]`, populated in `run_phase_with` via a pure `collect_input_warnings` helper that checks for blank STANDARDS, Goal, and Acceptance criteria. Stamped onto the result with `extend` so future executor-internal warnings aren't clobbered.
+
+**Files changed:**
+- `executor/src/phase/result.rs` — added `warnings` field + `assemble` initialization; 3 serde tests
+- `mcp/src/runner.rs` — added `collect_input_warnings` helper; wired into `run_phase_with`; 6 pure-helper tests + 1 end-to-end test
+- `mcp/src/cap.rs` — added `warnings` to both `PhaseResult` struct literals
+
+**Verification summary:**
+- `cargo fmt --all --check`: clean
+- `cargo build`: clean, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: clean
+- `cargo test`: 874 passed, 0 failed, 2 ignored
+
+**End-to-end verification:** `run_phase_with_stamps_input_warnings` drives the real `run_phase_with` with `standards: ""` and asserts `phase_result.warnings` contains a `"STANDARDS"` warning — confirming the stamping reaches the real returned result. Test output: `test result: ok. 1 passed`.
+
+**Grep proof for pinned literals:**
+```
+$ grep -rn 'warnings' executor/src/phase/result.rs
+59:    /// Non-fatal warnings about the run's *inputs*
+64:    pub warnings: Vec<String>,
+92:            warnings: Vec::new(),
+```
+
+**Notes for review:** None — implementation follows the spec exactly.
