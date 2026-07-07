@@ -287,7 +287,7 @@ claude plugin install git+https://your-host/rexyMCP.git
 ### Google Antigravity (Desktop or CLI versions)
 
 Add the plugin to your global customization root by copying or symlinking the
-`plugin/` directory there (e.g. `~/.gemini/config/plugins/rexymcp-plugin`), then
+`plugin/` directory there (e.g. `~/.gemini/config/plugins/rexymcp`), then
 register the MCP server in your global `~/.gemini/antigravity/mcp_config.json`:
 
 ```json

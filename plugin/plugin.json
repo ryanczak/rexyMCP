@@ -1,7 +1,7 @@
 {
-  "name": "rexymcp-plugin",
+  "name": "rexymcp",
   "version": "0.1.1",
-  "description": "rexyMCP architect/executor workflow plugin for Google Antigravity.",
+  "description": "Architect/executor workflow over MCP — Claude Code or Google Antigravity drives a local LLM executor through structured phases, review gates, and telemetry.",
   "author": {
     "name": "Matt Ryanczak"
   },

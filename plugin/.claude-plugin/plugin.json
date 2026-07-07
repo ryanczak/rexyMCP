@@ -2,5 +2,5 @@
   "name": "rexymcp",
   "displayName": "RexyMCP",
   "version": "0.1.1",
-  "description": "Architect/executor workflow over MCP — Claude Code drives a local LLM as an executor with structured phases, review gates, and telemetry."
+  "description": "Architect/executor workflow over MCP — Claude Code or Google Antigravity drives a local LLM executor through structured phases, review gates, and telemetry."
 }

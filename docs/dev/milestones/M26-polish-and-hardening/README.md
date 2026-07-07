@@ -71,7 +71,7 @@ Two threads, grouped by subsystem so each phase is one executor session:
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Contract-doc & plugin-manifest consistency ([phase-01-contract-docs-and-manifests.md](phase-01-contract-docs-and-manifests.md)) | todo |
+| 01 | Contract-doc & plugin-manifest consistency ([phase-01-contract-docs-and-manifests.md](phase-01-contract-docs-and-manifests.md)) | review |
 | 02 | `run-phase` telemetry parity (`--no-telemetry` opt-out) | todo (not drafted) |
 | 03 | Wire `roots/list` corroboration in `execute_phase` | todo (not drafted) |
 | 04 | Surface silent degradations as architect-visible warnings | todo (not drafted) |

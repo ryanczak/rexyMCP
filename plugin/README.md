@@ -44,7 +44,7 @@ claude plugin install github:<owner>/rexyMCP
 
 ### Google Antigravity
 
-To use the rexyMCP workflow in Google Antigravity, add it as a plugin by copying or symlinking the `plugin` directory to your global customization root (e.g. `~/.gemini/config/plugins/rexymcp-plugin`).
+To use the rexyMCP workflow in Google Antigravity, add it as a plugin by copying or symlinking the `plugin` directory to your global customization root (e.g. `~/.gemini/config/plugins/rexymcp`).
 
 You must also register the MCP server in your global `~/.gemini/antigravity/mcp_config.json`:
 
