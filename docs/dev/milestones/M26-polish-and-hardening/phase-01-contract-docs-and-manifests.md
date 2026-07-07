@@ -1,7 +1,7 @@
 # Phase 01: Contract-doc & plugin-manifest consistency
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~30 lines
 **Tags:** language=markdown, kind=bugfix, size=s
@@ -268,6 +268,15 @@ Verification summary: fmt clean, build clean, clippy clean, 871 tests passed, al
 
 **New tests:** none (no Rust changes).
 
-**Commits:** pending.
+**Commits:**
+- `9c94935` — fix: unify plugin identity and refresh stale contract docs
 
 **Notes for review:** The `git diff --stat` shows 8 files (not the 6 in the acceptance criteria) because the phase doc itself and the milestone README were also edited for status tracking — these are required by the phase lifecycle and do not violate the scope constraint. The codebase-review doc (`docs/dev/codebase-review-2026-07-07.md`) was intentionally left untouched.
+
+### Review verdict — 2026-07-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (Update Log self-stamped "Claude (direct)" — known cosmetic identity quirk; telemetry and `rexymcp.toml` confirm the real executor)
+- **Scope deviations:** none — diff touched exactly the six authorized files plus the two status-tracking files (phase doc, milestone README)
+- **Calibration:** none
