@@ -1011,3 +1011,28 @@ The project plan. Each entry becomes a milestone with its own
     TLS backend from native-tls/openssl to rustls + aws-lc-rs (the rustls/aws-lc
     subtree appearing is an accepted automatic resolver consequence, decided with
     the user).
+26. **M26 — Polish & Hardening** *(in progress — kicked off 2026-07-07)*. A
+    consistency and hardening pass seeded by the post-M25 whole-codebase review
+    (`docs/dev/codebase-review-2026-07-07.md`) rather than a dogfooding failure —
+    the review surfaced seams that fail *silently*, so no e2e run trips them. Two
+    threads. **Housekeeping (01–04):** refresh the stale `REXYMCP.md` contract
+    lines (pre-M5 `mcp`-crate description; a hardcoded "M7 active" frontier —
+    replaced by a pointer to `NEXT.md`/this section so it cannot rot again) and
+    unify the divergent plugin manifests on one name (`rexymcp`); make
+    `rexymcp run-phase` telemeter by default (`--no-telemetry` opt-out) so CLI
+    runs stop vanishing from the scorecard; wire the client's real `roots/list`
+    into `execute_phase` corroboration (today hardcoded to an empty list while
+    the tool description claims otherwise); surface today-silent degradations
+    (missing `STANDARDS.md`, unwritable session-log dir, phase-doc heading
+    drift) as architect-visible warnings via an additive `warnings` field on
+    `PhaseResult`. **Loop hardening (05–09):** extend the read-before-edit gate
+    to `write_file` (today only `patch` is gated); make the post-write format
+    hook actually rewrite touched files (today it runs the verify-only `--check`
+    form — a no-op); wire or retire the dead budget/tier knobs
+    (`gate_retries`, `escalation_slots`, `tier`, `max_assists` — defined,
+    tested, and written by `calibrate`, consumed nowhere); add governor
+    detectors for the blind spots adjacent to M22's (A,B,A,B oscillation,
+    windowed cumulative output, an optional wall-clock ceiling); resolve the TS
+    verifier's `tsc` via `node_modules/.bin` → `npx` → PATH so it stops
+    silently `Skipped`-ing in real Node repos. No new features, no new
+    dependencies; schema changes additive only.

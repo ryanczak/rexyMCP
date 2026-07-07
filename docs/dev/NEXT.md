@@ -4,8 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **none** — **M25 closed 2026-06-30** at a human-gated milestone
-boundary. Awaiting the user to kick off the next milestone via `/rexymcp:architect`.
+**Active phase:**
+[`M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md`](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md)
+— **todo** (drafted 2026-07-07; dispatch via `/rexymcp:dispatch phase-01`).
+
+**📌 M26 — Polish & Hardening kicked off (2026-07-07, with the user).** Seeded
+from the post-M25 whole-codebase review
+([codebase-review-2026-07-07.md](codebase-review-2026-07-07.md)) rather than an
+e2e failure — the review surfaced seams that fail silently, so no dogfooding run
+trips them. Two threads across nine planned phases: **housekeeping (01–04)** —
+stale `REXYMCP.md` contract lines + divergent plugin manifests (01),
+untelemetered `run-phase` (02), dead `roots/list` corroboration (03),
+silent degradations surfaced as `PhaseResult` warnings (04) — and **loop
+hardening (05–09)** — `write_file` read-before-edit gate (05), post-write format
+hook writing form (06), wire-or-retire the dead budget/tier knobs (07, decision
+with the user at draft time), governor blind-spot detectors (08), verifier `tsc`
+resolution (09). Milestone
+[README](milestones/M26-polish-and-hardening/README.md) +
+`architecture.md` § Status #26 added at kickoff; phases drafted on demand via
+`/rexymcp:architect next`. **M25 closed 2026-06-30** at the human-gated boundary
+below.
 
 **M25 — Polish & Config Pass — done** (9/9 phases, 2026-06-30; executor
 Qwen/Qwen3.6-27B-PrismaAURA). 8 approved_first_try, 1 approved_after_1 (phase-03
