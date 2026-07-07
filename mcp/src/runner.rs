@@ -112,6 +112,19 @@ struct AssemblyInput<'a> {
     project_id: Option<String>,
 }
 
+/// Resolve the telemetry directory for a CLI-driven `run-phase` invocation:
+/// `--no-telemetry` forces telemetry off regardless of config; otherwise
+/// defer to `cfg.telemetry.dir`, matching the MCP `execute_phase` path
+/// (`server.rs::execute_phase_inner_with_client`), which always telemeters
+/// when `[telemetry] dir` is set.
+pub fn resolve_telemetry_dir(cfg: &Config, no_telemetry: bool) -> Option<&Path> {
+    if no_telemetry {
+        None
+    } else {
+        cfg.telemetry.dir.as_deref()
+    }
+}
+
 /// Derive the milestone directory slug from a phase-doc path.
 /// `…/milestones/M17-dashboard-polish-3/phase-09.md` → `Some("M17-dashboard-polish-3")`.
 /// Returns `None` when the immediate parent does not look like `M<n>-…`.
@@ -764,5 +777,30 @@ mod tests {
             Some(0.8),
             "temperature must be the global (0.8) since 'different-model' has no [models] entry"
         );
+    }
+
+    // --- resolve_telemetry_dir tests ---
+
+    #[test]
+    fn resolve_telemetry_dir_defers_to_config_when_flag_absent() {
+        let mut cfg = Config::default();
+        cfg.telemetry.dir = Some(PathBuf::from("/tmp/telemetry"));
+        assert_eq!(
+            resolve_telemetry_dir(&cfg, false),
+            Some(Path::new("/tmp/telemetry"))
+        );
+
+        let cfg_no_dir = Config::default();
+        assert_eq!(resolve_telemetry_dir(&cfg_no_dir, false), None);
+    }
+
+    #[test]
+    fn resolve_telemetry_dir_forces_none_when_flag_present() {
+        let mut cfg = Config::default();
+        cfg.telemetry.dir = Some(PathBuf::from("/tmp/telemetry"));
+        assert_eq!(resolve_telemetry_dir(&cfg, true), None);
+
+        let cfg_no_dir = Config::default();
+        assert_eq!(resolve_telemetry_dir(&cfg_no_dir, true), None);
     }
 }

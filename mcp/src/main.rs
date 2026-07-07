@@ -88,6 +88,11 @@ enum Commands {
         /// Override the model ID from config
         #[arg(long)]
         model: Option<String>,
+
+        /// Skip writing a PhaseRun telemetry record for this run, even if
+        /// [telemetry] dir is configured
+        #[arg(long)]
+        no_telemetry: bool,
     },
     /// Run the MCP stdio server
     Serve {
@@ -312,6 +317,7 @@ async fn main() -> anyhow::Result<()> {
             phase_doc,
             repo,
             model,
+            no_telemetry,
         } => {
             let cfg = Config::load_with_env(&config)?;
 
@@ -328,7 +334,7 @@ async fn main() -> anyhow::Result<()> {
                 repo_path: &repo,
                 standards: &standards,
                 model_override: model.as_deref(),
-                telemetry_dir: None,
+                telemetry_dir: runner::resolve_telemetry_dir(&cfg, no_telemetry),
                 progress: None,
                 project_id,
                 test_client: None,
@@ -625,6 +631,7 @@ mod tests {
                 phase_doc,
                 repo,
                 model,
+                no_telemetry,
             }) => {
                 assert_eq!(config, PathBuf::from("rexymcp.toml"));
                 assert_eq!(
@@ -633,6 +640,7 @@ mod tests {
                 );
                 assert_eq!(repo, PathBuf::from("/tmp/repo"));
                 assert_eq!(model.as_deref(), Some("qwen2.5-coder"));
+                assert!(!no_telemetry);
             }
             _ => panic!("expected RunPhase"),
         }
@@ -664,6 +672,29 @@ mod tests {
     fn cli_parse_run_phase_missing_required_arg_fails() {
         let result = Cli::try_parse_from(["rexymcp", "run-phase", "--config", "rexymcp.toml"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_run_phase_no_telemetry_flag_sets_true() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "run-phase",
+            "--config",
+            "rexymcp.toml",
+            "--phase-doc",
+            "phase-doc.md",
+            "--repo",
+            "/tmp/repo",
+            "--no-telemetry",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::RunPhase { no_telemetry, .. }) => {
+                assert!(no_telemetry);
+            }
+            _ => panic!("expected RunPhase"),
+        }
     }
 
     #[test]

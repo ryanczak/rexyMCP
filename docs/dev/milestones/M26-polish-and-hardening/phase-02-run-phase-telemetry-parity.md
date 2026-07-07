@@ -1,7 +1,7 @@
 # Phase 02: `run-phase` telemetry parity
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -280,3 +280,72 @@ None from STANDARDS.md §5. This phase authorizes edits to exactly
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-07 20:45 (started)
+
+**Executor:** rexyMCP executor LLM
+
+Implementing `--no-telemetry` flag for `run-phase` CLI and wiring `resolve_telemetry_dir` helper to restore telemetry parity with the MCP `execute_phase` path.
+
+### Update — 2026-07-07 20:45 (complete)
+
+**Summary:** Added `--no-telemetry` flag to `run-phase` CLI and a pure `resolve_telemetry_dir` helper in `runner.rs`. The `Commands::RunPhase` match arm now calls `runner::resolve_telemetry_dir(&cfg, no_telemetry)` instead of hardcoding `telemetry_dir: None`, matching the MCP `execute_phase` path which always telemeters when `[telemetry] dir` is configured. No deviations from the spec.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+<exit 0, no output>
+
+cargo build 2>&1 | tail -20
+<exit 0, 0 warnings>
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+<exit 0, 0 warnings>
+
+cargo test -p rexymcp 2>&1 | tail -5
+test result: ok. 432 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+```
+$ cargo run -p rexymcp -- run-phase --help
+...
+      --no-telemetry           Skip writing a PhaseRun telemetry record for this run, even if [telemetry] dir is configured
+...
+```
+`--no-telemetry` appears in the listed options with its docstring.
+
+**Literal grep (spec-pinned):**
+```
+$ grep -rn 'no_telemetry' mcp/src/main.rs mcp/src/runner.rs
+mcp/src/main.rs:95:        no_telemetry: bool,
+mcp/src/main.rs:320:            no_telemetry,
+mcp/src/main.rs:337:                telemetry_dir: runner::resolve_telemetry_dir(&cfg, no_telemetry),
+mcp/src/main.rs:634:                no_telemetry,
+mcp/src/main.rs:643:                assert!(!no_telemetry);
+mcp/src/main.rs:678:    fn cli_parse_run_phase_no_telemetry_flag_sets_true() {
+mcp/src/main.rs:693:            Some(Commands::RunPhase { no_telemetry, .. }) => {
+mcp/src/main.rs:694:                assert!(no_telemetry);
+mcp/src/runner.rs:120:pub fn resolve_telemetry_dir(cfg: &Config, no_telemetry: bool) -> Option<&Path> {
+mcp/src/runner.rs:121:    if no_telemetry {
+```
+
+**Files changed:**
+- `mcp/src/runner.rs` — Added `resolve_telemetry_dir` helper and two unit tests
+- `mcp/src/main.rs` — Added `--no-telemetry` flag to `RunPhase` variant, wired into match arm, updated existing CLI-parsing tests, added new `cli_parse_run_phase_no_telemetry_flag_sets_true` test
+- `docs/dev/milestones/M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md` — Status `todo` → `review`, Update Log entries
+- `docs/dev/milestones/M26-polish-and-hardening/README.md` — Phase 02 row status `todo` → `review`
+
+**New tests:**
+- `resolve_telemetry_dir_defers_to_config_when_flag_absent` in `mcp/src/runner.rs`
+- `resolve_telemetry_dir_forces_none_when_flag_present` in `mcp/src/runner.rs`
+- `cli_parse_run_phase_no_telemetry_flag_sets_true` in `mcp/src/main.rs`
+
+**Commits:**
+- (pending — will commit after this entry)
+
+**Notes for review:** None — implementation matches the spec exactly.
