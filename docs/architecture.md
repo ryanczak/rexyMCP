@@ -1020,12 +1020,15 @@ The project plan. Each entry becomes a milestone with its own
     replaced by a pointer to `NEXT.md`/this section so it cannot rot again) and
     unify the divergent plugin manifests on one name (`rexymcp`); make
     `rexymcp run-phase` telemeter by default (`--no-telemetry` opt-out) so CLI
-    runs stop vanishing from the scorecard; wire the client's real `roots/list`
-    into `execute_phase` corroboration (today hardcoded to an empty list while
-    the tool description claims otherwise); surface today-silent degradations
-    (missing `STANDARDS.md`, unwritable session-log dir, phase-doc heading
-    drift) as architect-visible warnings via an additive `warnings` field on
-    `PhaseResult`. **Loop hardening (05–09):** extend the read-before-edit gate
+    runs stop vanishing from the scorecard; surface today-silent degradations
+    (empty-or-missing `STANDARDS.md`, phase-doc heading drift) as
+    architect-visible warnings via an additive `warnings` field on `PhaseResult`.
+    (A fourth housekeeping item — wiring the client's real `roots/list` into
+    `execute_phase` corroboration — was **deferred** 2026-07-07: rmcp 1.8.0
+    deprecated `list_roots` per MCP SEP-2577, so wiring it would need a
+    forbidden `#[allow(deprecated)]` and build on a protocol feature being
+    removed. See the M26 README § "Roots corroboration deferred".) **Loop
+    hardening:** extend the read-before-edit gate
     to `write_file` (today only `patch` is gated); make the post-write format
     hook actually rewrite touched files (today it runs the verify-only `--check`
     form — a no-op); wire or retire the dead budget/tier knobs

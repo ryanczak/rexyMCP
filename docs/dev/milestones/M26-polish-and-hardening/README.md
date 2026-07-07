@@ -39,13 +39,15 @@ Two threads, grouped by subsystem so each phase is one executor session:
   description; no `rexymcp-plugin` reference remains in `README.md` or `plugin/`.
 - `rexymcp run-phase` writes a `PhaseRun` record by default when telemetry is
   configured; a `--no-telemetry` flag suppresses it.
-- `execute_phase` corroborates `repo_path` against the client's **real**
-  `roots/list` when the client advertises roots; the tool description matches
-  actual behavior (today `roots_list` is hardcoded empty at
-  `mcp/src/server.rs:490` while the description claims corroboration).
-- A missing `docs/dev/STANDARDS.md`, an unwritable session-log directory, and a
-  phase doc that parses to an empty goal/acceptance-criteria each produce an
-  architect-visible warning instead of silence.
+- ~~`execute_phase` corroborates `repo_path` against the client's real
+  `roots/list`~~ — **deferred** (see Notes § "Roots corroboration deferred");
+  rmcp 1.8.0 deprecated `list_roots` per MCP SEP-2577.
+- An empty-or-missing `docs/dev/STANDARDS.md` and a phase doc that parses to an
+  empty `## Goal` / `## Acceptance criteria` section each produce an
+  architect-visible warning in `PhaseResult.warnings` instead of silence. (The
+  third review item — an unwritable session-log directory — is deferred; it is
+  generated deep inside the loop and needs different plumbing. See the phase-03
+  doc § Out of scope.)
 - `write_file` to an existing file the executor has not read (or whose mtime
   changed since the read) is refused with the read-first advisory, mirroring
   `patch`.
@@ -71,19 +73,23 @@ Two threads, grouped by subsystem so each phase is one executor session:
 
 | #  | Phase | Status |
 |----|-------|--------|
+| #  | Phase | Status |
+|----|-------|--------|
 | 01 | Contract-doc & plugin-manifest consistency ([phase-01-contract-docs-and-manifests.md](phase-01-contract-docs-and-manifests.md)) | done |
 | 02 | `run-phase` telemetry parity (`--no-telemetry` opt-out) ([phase-02-run-phase-telemetry-parity.md](phase-02-run-phase-telemetry-parity.md)) | done |
-| 03 | Wire `roots/list` corroboration in `execute_phase` | todo (not drafted) |
-| 04 | Surface silent degradations as architect-visible warnings | todo (not drafted) |
-| 05 | `write_file` read-before-edit gate | todo (not drafted) |
-| 06 | Post-write format hook: writing form on touched files | todo (not drafted) |
-| 07 | Wire or retire the dead budget/tier knobs | todo (not drafted) |
-| 08 | Governor blind-spot detectors (oscillation, windowed output, wall clock) | todo (not drafted) |
-| 09 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
+| 03 | Surface silent degradations as architect-visible warnings ([phase-03-silent-degradation-warnings.md](phase-03-silent-degradation-warnings.md)) | todo |
+| 04 | `write_file` read-before-edit gate | todo (not drafted) |
+| 05 | Post-write format hook: writing form on touched files | todo (not drafted) |
+| 06 | Wire or retire the dead budget/tier knobs | todo (not drafted) |
+| 07 | Governor blind-spot detectors (oscillation, windowed output, wall clock) | todo (not drafted) |
+| 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
+| —  | ~~Wire `roots/list` corroboration~~ | **deferred** (rmcp 1.8.0 / SEP-2577) |
 
 Phases are drafted **on demand** via `/rexymcp:architect next`; the rows above
 are the milestone plan, not final specs. Numbering is the suggested dispatch
-order (housekeeping first, smallest blast radius first).
+order (housekeeping first, smallest blast radius first). Phases 04–08 were
+renumbered down by one when the roots phase (originally 03) was deferred
+2026-07-07.
 
 ## Notes
 
@@ -98,15 +104,37 @@ order (housekeeping first, smallest blast radius first).
   so renaming the manifest to `rexymcp` is safe and the install-path examples
   change with it. If review of phase-01 shows Antigravity binds to the manifest
   `name`, bounce the phase and revisit.
-- **Phase-07 is wire-*or*-retire, decided at draft time with the user.** Wiring
-  honors `calibrate`'s intent (tier-derived `effective_max_turns` /
+- **Phase-06 (was 07) is wire-*or*-retire, decided at draft time with the user.**
+  Wiring honors `calibrate`'s intent (tier-derived `effective_max_turns` /
   `gate_retries` bounding the loop); retiring shrinks config surface but guts
   `calibrate`. The choice touches `[escalation]`/`[architect]` semantics from
   M20, so it gets a talk-through before the phase doc is written.
-- **Phase-04 shape:** prefer an additive `warnings: Vec<String>` field on
+- **Phase-03 (was 04) shape:** an additive `warnings: Vec<String>` field on
   `PhaseResult` with `#[serde(default)]` (WORKFLOW § "Prefer additive change
-  shapes"); no existing field changes meaning.
-- **Phase-08 may re-split** (08a detectors / 08b wall-clock ceiling) at draft
-  time if the combined diff estimate exceeds one session.
+  shapes"); no existing field changes meaning. Implemented at draft time by
+  stamping the warnings onto the returned `PhaseResult` in `runner::run_phase_with`
+  (the single choke point both the MCP and CLI paths route through), avoiding an
+  11-site change to `PhaseInput` constructors.
+- **Phase-07 (was 08) may re-split** (07a detectors / 07b wall-clock ceiling) at
+  draft time if the combined diff estimate exceeds one session.
+
+### Roots corroboration deferred (2026-07-07, with the user)
+
+The originally-planned phase-03 was to wire the client's real `roots/list` into
+`execute_phase`'s corroboration (today `roots_list` is a hardcoded empty `Vec` at
+`mcp/src/server.rs:490`, while the tool description claims roots/list
+corroboration). At draft time the architect found that **rmcp 1.8.0** — the
+resolved version — marks `Peer::list_roots` `#[deprecated(since = "1.8.0")]`
+because MCP itself is removing the roots feature per **SEP-2577** ("Roots is
+deprecated … and will be removed in a future release"). Wiring it would (a)
+require `#[allow(deprecated)]`, which the hard rules forbid as masking a
+diagnostic, and (b) build on a protocol feature slated for removal — the next
+rmcp bump likely breaks it. The user chose to **defer** rather than adopt a
+doomed API or drop the roots claim from the description now. Revisit if/when MCP
+settles on a roots replacement. The `roots.rs` corroboration logic (already
+complete and tested) and the env-var (`CLAUDE_PROJECT_DIR` /
+`ANTIGRAVITY_PROJECT_DIR`) path stay as they are; only the aspirational roots
+half is parked. Recorded here rather than in `architecture.md`'s roadmap because
+it is a milestone-scoping decision, not a design change.
 
 <!-- retrospective appended at milestone close -->
