@@ -26,8 +26,8 @@ Two threads, grouped by subsystem so each phase is one executor session:
 
 | Thread | Phases | Area |
 |---|---|---|
-| Housekeeping / corrections | 01–04 | contract docs, plugin manifests, `mcp` crate seams |
-| Executor-loop hardening | 05–09 | tools gates, hooks, budget knobs, governor, verifier |
+| Housekeeping / corrections | 01–03 | contract docs, plugin manifests, `mcp` crate seams |
+| Executor-loop hardening | 04–08 | tools gates, hooks, budget knobs, governor, verifier |
 
 ## Exit criteria
 
@@ -73,11 +73,9 @@ Two threads, grouped by subsystem so each phase is one executor session:
 
 | #  | Phase | Status |
 |----|-------|--------|
-| #  | Phase | Status |
-|----|-------|--------|
 | 01 | Contract-doc & plugin-manifest consistency ([phase-01-contract-docs-and-manifests.md](phase-01-contract-docs-and-manifests.md)) | done |
 | 02 | `run-phase` telemetry parity (`--no-telemetry` opt-out) ([phase-02-run-phase-telemetry-parity.md](phase-02-run-phase-telemetry-parity.md)) | done |
-| 03 | Surface silent degradations as architect-visible warnings ([phase-03-silent-degradation-warnings.md](phase-03-silent-degradation-warnings.md)) | review |
+| 03 | Surface silent degradations as architect-visible warnings ([phase-03-silent-degradation-warnings.md](phase-03-silent-degradation-warnings.md)) | done |
 | 04 | `write_file` read-before-edit gate | todo (not drafted) |
 | 05 | Post-write format hook: writing form on touched files | todo (not drafted) |
 | 06 | Wire or retire the dead budget/tier knobs | todo (not drafted) |

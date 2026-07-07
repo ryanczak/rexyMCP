@@ -4,17 +4,19 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:**
-[`M26-polish-and-hardening/phase-03-silent-degradation-warnings.md`](milestones/M26-polish-and-hardening/phase-03-silent-degradation-warnings.md)
-— **todo** (drafted 2026-07-07; dispatch via `/rexymcp:dispatch phase-03`).
-M26 phase-01
-([done](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md))
-and phase-02
-([done](milestones/M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md)),
-both 2026-07-07, both approved_first_try. The originally-planned roots-corroboration
-phase was **deferred** (rmcp 1.8.0 deprecated `list_roots` per MCP SEP-2577 — see
-the [milestone README](milestones/M26-polish-and-hardening/README.md) § "Roots
-corroboration deferred"); remaining phases 04–08 renumbered down by one.
+**Active phase:** **none drafted** — M26 phases 01–03 all
+**done** (2026-07-07, all approved_first_try):
+[01](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md)
+contract docs & manifests,
+[02](milestones/M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md)
+run-phase telemetry parity,
+[03](milestones/M26-polish-and-hardening/phase-03-silent-degradation-warnings.md)
+silent-degradation warnings. The originally-planned roots-corroboration phase was
+**deferred** (rmcp 1.8.0 deprecated `list_roots` per MCP SEP-2577 — see the
+[milestone README](milestones/M26-polish-and-hardening/README.md) § "Roots
+corroboration deferred"). Remaining phases 04–08 are planned in the README but not
+yet drafted. Next: `/rexymcp:architect next` to draft phase-04 (`write_file`
+read-before-edit gate).
 
 **📌 M26 — Polish & Hardening kicked off (2026-07-07, with the user).** Seeded
 from the post-M25 whole-codebase review

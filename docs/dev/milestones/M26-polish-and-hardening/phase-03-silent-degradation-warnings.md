@@ -1,7 +1,7 @@
 # Phase 03: Surface silent input degradations as architect-visible warnings
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -407,3 +407,11 @@ $ grep -rn 'warnings' executor/src/phase/result.rs
 ```
 
 **Notes for review:** None — implementation follows the spec exactly.
+
+### Review verdict — 2026-07-07
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (Update Log self-stamped "executor (claude-code)" — telemetry and `rexymcp.toml` confirm the real executor)
+- **Scope deviations:** none — diff touched exactly `executor/src/phase/result.rs`, `mcp/src/runner.rs`, `mcp/src/cap.rs` (the three authorized files) plus the two status-tracking docs. Post-hoc stamping, the use-after-move ordering, and the two `cap.rs` literals all match the spec; the deferred session-log-open warning was correctly left untouched.
+- **Calibration:** none. (Unrelated to the executor: the architect's phase-03 draft commit introduced a duplicated milestone-README table header and left the "Why now" thread ranges stale after the roots renumber; both fixed in this review commit.)
