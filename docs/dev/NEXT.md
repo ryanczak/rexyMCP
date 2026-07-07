@@ -4,8 +4,22 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **none drafted** — M26 phases 01–03 all
-**done** (2026-07-07, all approved_first_try):
+**Active phase:** **M26 phase-04** — `write_file` read-before-edit gate
+([phase-04-write-file-read-before-edit-gate.md](milestones/M26-polish-and-hardening/phase-04-write-file-read-before-edit-gate.md),
+**drafted 2026-07-07, todo**). Extends `read_before_edit_refusal` to gate a
+`write_file` **overwrite** of an existing unread (or mtime-changed) file exactly
+like `patch`, while leaving **create** (absent file) and **append**
+(`append: true`) ungated — neither blind-clobbers unread content. Also refreshes
+the working-set mtime after a successful non-append write (so create→overwrite
+doesn't self-refuse). Two production files (`agent/tools.rs`, `agent/mod.rs`) +
+tests. **Pre-injected:** the current `patch`-only gate quoted verbatim; the
+behavior table (overwrite gated / create + append exempt); the working-set
+recording block and *why* it must also record non-append writes; and the exact
+fix for the one test that goes red (`self_revert_of_edited_file_is_refused` —
+prepend a `read_file` turn, bump the asserted call index 2→3) plus two tests to
+keep honest. Dispatch via `/rexymcp:dispatch phase-04`.
+
+M26 phases 01–03 all **done** (2026-07-07, all approved_first_try):
 [01](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md)
 contract docs & manifests,
 [02](milestones/M26-polish-and-hardening/phase-02-run-phase-telemetry-parity.md)
@@ -14,9 +28,8 @@ run-phase telemetry parity,
 silent-degradation warnings. The originally-planned roots-corroboration phase was
 **deferred** (rmcp 1.8.0 deprecated `list_roots` per MCP SEP-2577 — see the
 [milestone README](milestones/M26-polish-and-hardening/README.md) § "Roots
-corroboration deferred"). Remaining phases 04–08 are planned in the README but not
-yet drafted. Next: `/rexymcp:architect next` to draft phase-04 (`write_file`
-read-before-edit gate).
+corroboration deferred"). Remaining phases 05–08 are planned in the README but not
+yet drafted.
 
 **📌 M26 — Polish & Hardening kicked off (2026-07-07, with the user).** Seeded
 from the post-M25 whole-codebase review
