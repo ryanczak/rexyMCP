@@ -1,7 +1,7 @@
 # Phase 02: Loop-journal telemetry substrate (`ArchitectActivity` + `rexymcp journal` CLI)
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -570,3 +570,11 @@ test result: ok. 917 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
 - pending — will commit below
 
 **Notes for review:** None. Implementation follows the spec verbatim; no deviations.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none. All six spec tasks implemented exactly as pre-injected; `EscalationEvent` fully retired (zero grep hits), `ArchitectActivity` + store API + `ARCHITECT_ACTIVITIES` vocabulary + `rexymcp journal` CLI all present and wired per spec. `phase-02b` scope (dashboard/`TierTelemetry`) correctly left untouched.
+- **Calibration:** none. Independent re-run: `cargo fmt --all --check` clean, `cargo build` clean (0 warnings), `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo test` 917 passed / 0 failed / 2 ignored. End-to-end verified against the real CLI artifact (not just unit-test fakes): `rexymcp journal --activity assist --outcome complete` on a scratch temp-dir config appended a well-formed `architect_activity` record with `project_id` correctly defaulted from `[project].id`; a `--activity frobnicate` run recorded the activity anyway and printed the exact warning naming the known vocabulary. Spot-checked `read_architect_activities_excludes_review_by_discriminator` (mutation-resistant: an activity-shaped record with the wrong `record` tag is excluded only by the discriminator filter, per the M18 bug-01-1 lesson) and `unknown_activity_is_recorded_not_rejected` — both assert real, non-trivial outcomes. One cosmetic note (not a DoD item, not worth a bounce): the new doc comments on `ArchitectActivity` and its store fns were written as single long lines rather than wrapped across multiple `///` lines as shown in the phase doc's pre-injected snippets; `rustfmt` doesn't wrap comment prose so this doesn't affect the fmt gate and is purely a style nit.
