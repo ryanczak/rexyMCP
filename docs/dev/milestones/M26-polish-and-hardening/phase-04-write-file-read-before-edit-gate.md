@@ -1,7 +1,7 @@
 # Phase 04: `write_file` read-before-edit gate
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~270 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -387,3 +387,88 @@ refusal seam at `mod.rs:980-985`, or any other file.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-07-07
+
+**Refined re-dispatch after hard_fail.** All five spec tasks were completed and
+marked `done` (the gate extension, the working-set refresh, and all three test
+groups) — the production code in `tools.rs`/`mod.rs` is correct and the working
+tree already has these changes uncommitted; do not redo that work. The run then
+hard-failed on `IdenticalToolCallRepetition` (6× identical `read_file` on
+`executor/src/agent/tests.rs:1395-1410`) after spinning for ~140 unproductive
+turns.
+
+**The one real defect:** the new integration test
+`write_file_overwrite_of_unread_file_is_refused` (`tests.rs` around line 1568)
+asserts the refusal string appears in `client.calls()[0].messages` — but index
+`0` is the *initial* prompt sent before any tool call runs. The refused
+tool-result is fed back on the *next* model call, so the assertion must read
+`client.calls()[1].messages`, exactly like the neighboring pre-existing
+`patch_after_reading_is_allowed`/`patch_of_unread_file_is_refused` pair at
+`tests.rs:1395-1410` (`let second = &client.calls()[1].messages;`) — the same
+lines this run kept re-reading without ever applying the pattern. Confirmed via
+`cargo test --lib agent::tests::` at escalation time: **exactly this one test
+fails**, all 762 others (including the three phase-04-adjusted tests) pass.
+
+**Fix:** in the failing test, change `&client.calls()[0].messages` to
+`&client.calls()[1].messages` (one-line change, `tests.rs` ~line 1596). Do not
+touch any other test or production file — everything else is done and green.
+Then run the four gate commands and finish normally.
+
+### Update — 2026-07-07 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** first hard_fail, all substantive spec work already complete and
+verified correct; the sole failure is a one-line test-index bug the executor
+authored itself (not a spec gap), confirmed in isolation by an independent
+`cargo test` run — a targeted note is far cheaper than a takeover and keeps the
+scorecard data point.
+
+### Update — 2026-07-08 00:19 (complete)
+
+**Summary:** Fixed the one remaining defect from the prior escalation: the integration
+test `write_file_overwrite_of_unread_file_is_refused` asserted the refusal string at
+`client.calls()[0].messages` (the initial prompt) instead of
+`client.calls()[1].messages` (the next model call where the tool result is fed back).
+One-line change in `tests.rs`. All production code (gate extension in `tools.rs`,
+working-set refresh in `mod.rs`) was already correct from the prior run. All 883 tests
+pass.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(exited 0, no output)
+
+cargo build 2>&1 | tail -20
+(exited 0, no new warnings)
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+(exited 0, no warnings)
+
+cargo test 2>&1 | tail -30
+test result: ok. 883 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+`cargo test --lib agent::tests::write_file_overwrite_of_unread_file_is_refused` —
+exited 0, 1 passed. The integration test drives a real overwrite attempt through
+`execute_phase` and asserts the file on disk was not clobbered.
+
+**Grep proof:** `grep -rn "refusing to overwrite" executor/src/agent/tools.rs` —
+confirms the refusal literal landed in the gate helper.
+
+**Files changed:**
+- `executor/src/agent/tests.rs` — fixed call index from `[0]` to `[1]` in
+  `write_file_overwrite_of_unread_file_is_refused` (one-line fix).
+
+**New tests:** none (all tests were already present from prior run).
+
+**Commits:**
+- pending
+
+**Notes for review:** The production code in `tools.rs` and `mod.rs` was already
+correct from the prior escalation run; only the test assertion needed fixing.

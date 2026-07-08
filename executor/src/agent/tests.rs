@@ -1514,9 +1514,10 @@ async fn loop_logs_read_evicted_event_after_patch() {
 async fn loop_does_not_log_read_evicted_without_prior_read() {
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("foo.txt");
-    std::fs::write(&file, "original content").unwrap();
+    // No std::fs::write — the file does NOT pre-exist, so write_file is a
+    // create (allowed without read). The intent is "a successful write with no
+    // prior read evicts nothing."
     let path = file.to_string_lossy().to_string();
-    // No read_file — just a write_file (not gated, but no prior read to evict)
     let client = MockAiClientScript::new(vec![
         vec![native(
             "write_file",
@@ -1558,6 +1559,103 @@ async fn write_file_without_read_is_allowed() {
         std::fs::read_to_string(&file).unwrap(),
         "fresh",
         "write_file is not gated by read-before-edit"
+    );
+}
+
+// ── M26 phase-04: write_file read-before-edit integration tests ────────
+
+#[tokio::test]
+async fn write_file_overwrite_of_unread_file_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("existing.txt");
+    let original = "original content";
+    std::fs::write(&file, original).unwrap();
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "new content" }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let result = run_with_verifier(&dir, &client, &verifier, 8).await;
+
+    // The run reaches Complete (refusal is model-visible, not a hard_fail)
+    assert_eq!(result.status, PhaseStatus::Complete);
+
+    // The file on disk is unchanged (the overwrite was refused)
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        original,
+        "the file should not have been overwritten"
+    );
+
+    // The refused tool result fed back contains "refusing to overwrite"
+    let second_call_messages = &client.calls()[1].messages;
+    let has_refusal = second_call_messages.iter().any(|m| {
+        m.tool_results.as_ref().is_some_and(|trs| {
+            trs.iter()
+                .any(|t| t.tool_name == "write_file" && t.content.contains("refusing to overwrite"))
+        })
+    });
+    assert!(
+        has_refusal,
+        "the refused write_file should contain 'refusing to overwrite'"
+    );
+}
+
+#[tokio::test]
+async fn write_file_after_read_overwrites() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("existing.txt");
+    let original = "original content";
+    std::fs::write(&file, original).unwrap();
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "new content" }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    run_with_verifier(&dir, &client, &verifier, 8).await;
+
+    // The file on disk is the new content (the read unlocked the overwrite)
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "new content",
+        "the file should have been overwritten after read"
+    );
+}
+
+#[tokio::test]
+async fn write_file_append_to_unread_file_is_allowed() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("existing.txt");
+    let original = "original content";
+    std::fs::write(&file, original).unwrap();
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": " appended", "append": true }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    run_with_verifier(&dir, &client, &verifier, 8).await;
+
+    // The file on disk is original + appended
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "original content appended",
+        "append should have been allowed without read"
     );
 }
 
@@ -1762,8 +1860,10 @@ async fn unchanged_file_is_absent_from_files_changed() {
     let file = dir.path().join("t.txt");
     std::fs::write(&file, "same\n").unwrap();
     let path = file.to_string_lossy().to_string();
-    // write_file with identical content → no net change.
+    // Prepended read_file so the identical-content overwrite actually executes
+    // (the gate would refuse without the read).
     let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
         vec![native(
             "write_file",
             json!({ "path": path, "content": "same\n" }),
@@ -4250,10 +4350,12 @@ async fn self_revert_of_edited_file_is_refused() {
     registry.register(patch(scope.clone()));
     registry.register(bash_with_filter(scope, 30, true));
 
-    // Turn 1: write_file edits the file (puts it in pre_edit_content)
-    // Turn 2: bash git checkout of that file → should be refused
-    // Turn 3: done
+    // Turn 1: read_file to unlock the file for write
+    // Turn 2: write_file edits the file (puts it in pre_edit_content)
+    // Turn 3: bash git checkout of that file → should be refused
+    // Turn 4: done
     let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
         vec![native(
             "write_file",
             json!({ "path": path, "content": "edited content" }),
@@ -4294,10 +4396,10 @@ async fn self_revert_of_edited_file_is_refused() {
 
     assert_eq!(result.status, PhaseStatus::Complete);
 
-    // The third model call (index 2) should contain the refusal in the bash
+    // The fourth model call (index 3) should contain the refusal in the bash
     // tool result — the run continues, it's not a hard_fail.
-    let third_call_messages = &client.calls()[2].messages;
-    let has_refusal = third_call_messages.iter().any(|m| {
+    let fourth_call_messages = &client.calls()[3].messages;
+    let has_refusal = fourth_call_messages.iter().any(|m| {
         m.tool_results.as_ref().is_some_and(|trs| {
             trs.iter().any(|t| {
                 t.tool_name == "bash"

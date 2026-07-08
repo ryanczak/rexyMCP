@@ -40,23 +40,40 @@ pub(super) fn edit_target(tool_call: &ToolCall, project_root: &Path) -> Option<P
     resolve_path(tool_call, project_root)
 }
 
-/// The read-before-edit gate (07d). Refuse a `patch` on a file the model has not
-/// read this session, or one whose on-disk mtime no longer matches what was read.
-/// `None` = allowed. Pure over `working_set` so the mtime-mismatch case is
-/// unit-testable without mid-session filesystem hooks. `patch`-only — `write_file`
-/// (whole-file create/overwrite) is not gated.
+/// The read-before-edit gate (07d, extended M26 for `write_file`). Refuse an
+/// edit-class call on a file the model has not read this session, or one whose
+/// on-disk mtime no longer matches what was read. `None` = allowed.
+///
+/// `patch` is always gated. `write_file` is gated **only when it would
+/// overwrite an existing file**: a create (target absent on disk) and an
+/// append (`append: true`) are allowed unconditionally — neither blind-clobbers
+/// content the model never read. The on-disk `metadata`/`exists` stats mirror
+/// the mtime branch's existing filesystem touch, so every arm stays
+/// `TempDir`-testable.
 pub(super) fn read_before_edit_refusal(
     tool_call: &ToolCall,
     working_set: &HashMap<PathBuf, SystemTime>,
     project_root: &Path,
 ) -> Option<String> {
-    if tool_call.name != "patch" {
-        return None;
-    }
+    let verb = match tool_call.name.as_str() {
+        "patch" => "patch",
+        "write_file" => "overwrite",
+        _ => return None,
+    };
     let path = resolve_path(tool_call, project_root)?;
+    if tool_call.name == "write_file" {
+        let appending = tool_call
+            .arguments
+            .get("append")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if appending || !path.exists() {
+            return None;
+        }
+    }
     match working_set.get(&path) {
         None => Some(format!(
-            "refusing to patch {}: you have not read it this session. Use read_file on it first.",
+            "refusing to {verb} {}: you have not read it this session. Use read_file on it first.",
             path.display()
         )),
         Some(recorded) => {
@@ -66,7 +83,7 @@ pub(super) fn read_before_edit_refusal(
             match current {
                 Some(now) if now == *recorded => None,
                 _ => Some(format!(
-                    "refusing to patch {}: it changed on disk since you read it. Re-read it with read_file first.",
+                    "refusing to {verb} {}: it changed on disk since you read it. Re-read it with read_file first.",
                     path.display()
                 )),
             }
@@ -1076,6 +1093,140 @@ mod tests {
         assert!(
             result.is_some(),
             "compound command should find the restore segment"
+        );
+    }
+
+    // ── read_before_edit_refusal: write_file gate tests ───────────────────
+
+    fn make_write_file_call(path: &str, append: bool) -> ToolCall {
+        let mut args = serde_json::Map::new();
+        args.insert("path".into(), path.into());
+        if append {
+            args.insert("append".into(), serde_json::Value::Bool(true));
+        }
+        ToolCall {
+            name: "write_file".to_string(),
+            arguments: serde_json::Value::Object(args),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    fn make_patch_call_for_path(path: &str) -> ToolCall {
+        ToolCall {
+            name: "patch".to_string(),
+            arguments: json!({ "path": path, "old_str": "x", "new_str": "y" }),
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    #[test]
+    fn write_file_create_is_allowed_without_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("new.txt");
+        let path = file.to_string_lossy().to_string();
+        let call = make_write_file_call(&path, false);
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_none(),
+            "create of a new file should be allowed without read"
+        );
+    }
+
+    #[test]
+    fn write_file_append_is_allowed_without_read() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_write_file_call(&path, true);
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_none(),
+            "append to an existing file should be allowed without read"
+        );
+    }
+
+    #[test]
+    fn write_file_overwrite_of_unread_existing_file_is_refused() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_write_file_call(&path, false);
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_some(),
+            "overwrite of an unread existing file should be refused"
+        );
+        let msg = result.unwrap();
+        assert!(
+            msg.contains("overwrite"),
+            "refusal message should contain 'overwrite', got: {msg}"
+        );
+        assert!(
+            msg.contains(&*file.file_name().unwrap().to_string_lossy()),
+            "refusal message should contain the path"
+        );
+    }
+
+    #[test]
+    fn write_file_overwrite_after_read_is_allowed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_write_file_call(&path, false);
+        let mut working_set = HashMap::new();
+        record_mtime(&mut working_set, &file);
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_none(),
+            "overwrite after read (with matching mtime) should be allowed"
+        );
+    }
+
+    #[test]
+    fn write_file_overwrite_with_changed_mtime_is_refused() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_write_file_call(&path, false);
+        let mut working_set = HashMap::new();
+        // Deliberately wrong mtime (UNIX_EPOCH) so the file appears changed
+        working_set.insert(file.clone(), SystemTime::UNIX_EPOCH);
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_some(),
+            "overwrite with stale mtime should be refused"
+        );
+        let msg = result.unwrap();
+        assert!(
+            msg.contains("changed on disk"),
+            "refusal message should contain 'changed on disk', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn patch_of_unread_file_still_refused() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_patch_call_for_path(&path);
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_some(),
+            "patch of an unread file should still be refused"
+        );
+        let msg = result.unwrap();
+        assert!(
+            msg.contains("patch"),
+            "refusal message should contain 'patch', got: {msg}"
         );
     }
 }
