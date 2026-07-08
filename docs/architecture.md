@@ -165,16 +165,31 @@ Given the briefing, the architect picks one of three levers, situationally:
   (context rot), and a clean restart with a better spec discards the confusion.
 - **Session takeover** — Claude finishes the phase itself when it's beyond the
   local model's reach.
-- **Resume** *(candidate — not yet committed; decide later)* — a
-  `continue_phase(session_id, guidance)` tool would rehydrate the executor from
-  the session log and inject one targeted directive so the local model continues
-  from where it was, keeping the work it already did. The cheap middle lever for
-  "model was almost there, hit one specific wall." **Caveat:** resume preserves
-  the local model's accumulated context rot along with its progress, so it is a
-  situational lever, never the default. It carries a real cost — the M4 loop must
-  be able to serialize/rehydrate resumable state (message history, working set,
-  remaining turn budget) from the session log — so it is recorded here as a
-  design option, not a committed feature.
+- **Resume** *(committed at M27 kickoff, 2026-07-08)* — a
+  `continue_phase(phase, guidance)` tool that resumes a failed phase
+  **briefing-seeded**, not transcript-rehydrated: a *fresh* executor context
+  built from the phase doc + the returned briefing + one targeted architect
+  directive + the current working-tree diff, with `task_states` restored from
+  the session log. This keeps "don't redo the 90% that's done" while discarding
+  the accumulated context rot that full-transcript rehydration would preserve —
+  the rot is precisely what the re-dispatch lever exists to escape, so replaying
+  it would be self-defeating. The cheap middle lever for "model was almost
+  there, hit one specific wall"; situational, never the default.
+
+The three levers are exercised two ways. **Interactively**, the human invokes
+the escalate skill per failure (the mode described above). **Autonomously**
+(M27), an explicit opt-in `/rexymcp:auto` run drives the whole cycle — draft →
+dispatch → review → escalate → re-dispatch/resume — across a milestone with no
+per-phase human pause. The loop driver lives in the **plugin/skill layer**
+(agent-neutral, composing the existing skills), never in the executor or
+server: the executor stays a single-shot unit returning a structured briefing,
+and rexyMCP still never calls a cloud provider — Claude, already the architect,
+remains the escalation target. The loop is budgeted (`[escalation]
+max_assists` per phase), journaled (every architect activity is a telemetry
+record; token usage harvested from the client's own transcripts where
+available, absent — never estimated — elsewhere), and hard-gated: milestone
+boundaries, blockers, and budget exhaustion always stop for the human with a
+structured loop report.
 
 The briefing is a *fresh* brief, not a transcript replay — the shape Rexy already
 defines: **goal** (verbatim), **acceptance criteria**, **current code state**
@@ -1039,3 +1054,25 @@ The project plan. Each entry becomes a milestone with its own
     verifier's `tsc` via `node_modules/.bin` → `npx` → PATH so it stops
     silently `Skipped`-ing in real Node repos. No new features, no new
     dependencies; schema changes additive only.
+27. **M27 — Autonomous Escalation Loop** *(in progress — kicked off 2026-07-08)*.
+    Makes the architect↔executor cycle run hands-off across a whole milestone
+    and closes the two design conversations queued since M22. Three threads.
+    **Budget & journal substrate:** consolidate the escalation budget on
+    `[escalation] max_assists` (the per-phase autonomous assist budget; retire
+    the never-distinct `[budget] escalation_slots`), and give the architect's
+    own activities (draft/dispatch/review/assist/takeover) a telemetry journal
+    so `PhaseRun.escalation_count` becomes real. **Executor/server autonomy:**
+    server-authored bookkeeping (D8/D9 — on a `complete` run the *server*
+    writes the Status flip and a baseline Update Log entry from data it already
+    holds, so correct code stops dying in the bookkeeping tail; amends the
+    executor contract) and `continue_phase` briefing-seeded resume (fresh
+    context from phase doc + briefing + guidance + diff, `task_states` restored
+    from the session log — the committed third escalate lever). **Architect
+    loop & accounting:** a `/rexymcp:auto` plugin skill composing the existing
+    four skills into a full-milestone loop with full review rigor and no
+    per-phase pause, budgeted by `max_assists`, stopping for the human at
+    milestone boundaries / blockers / budget exhaustion with a structured loop
+    report; architect token/cost harvested from Claude Code's local session
+    transcripts and joined onto journal activities (absent — never estimated —
+    on clients without transcripts). Design fixed at kickoff with the user; see
+    the M27 README § Design.

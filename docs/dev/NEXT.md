@@ -4,11 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M26 — Polish & Hardening closed 2026-07-08 (9/9 phases
-done; see the
+**Active phase: none — M27 kicked off, phase-01 not yet drafted.** Run
+`/rexymcp:architect next` to draft phase-01 (consolidate escalation budget
+knobs).
+
+**📌 M27 — Autonomous Escalation Loop kicked off (2026-07-08, with the user).**
+The architect-side autonomous cycle queued at the M26 phase-06 talk-through.
+Design fixed at kickoff via a four-fork talk-through (full-milestone loop; full
+review rigor with no per-phase pause + per-activity token/cost accounting; all
+three threads in scope; budget consolidated on `[escalation] max_assists`,
+`escalation_slots` retired). Seven planned phases in three threads —
+**substrate** (01 knob consolidation, 02 loop-journal telemetry), **executor/
+server autonomy** (03 D8/D9 server-authored bookkeeping + executor-contract
+amendment, 04 `continue_phase` briefing-seeded resume), **architect loop &
+accounting** (05 Claude Code transcript usage harvester + dashboard wiring, 06
+`/rexymcp:auto` loop skill + loop report, 07 stretch: advisory model routing).
+Kickoff amendments landed: `architecture.md` § "Escalation = Claude Code
+itself" (resume candidate → committed, briefing-seeded; autonomous-loop
+paragraph) + § Status #27; `WORKFLOW.md` § "Phase progression & triggers"
+autonomous-loop paragraph expanded (plugin-template mirror deferred to
+phase-06). Milestone
+[README](milestones/M27-autonomous-escalation-loop/README.md) holds the full
+design record. Phases drafted on demand via `/rexymcp:architect next`.
+
+**M26 — Polish & Hardening closed 2026-07-08** (9/9 phases done; see the
 [milestone README retrospective](milestones/M26-polish-and-hardening/README.md#retrospective--2026-07-08)).
-This is a human-gated milestone boundary — next steps (kick off M27 — Autonomous
-Escalation Loop, or something else) are the user's call via `/rexymcp:architect`.
 
 **M26 phase-08 — done** (2026-07-08, **approved_first_try**; commits `7b52496`
 feat / `78895cd` approve). Verifier `tsc` resolution
