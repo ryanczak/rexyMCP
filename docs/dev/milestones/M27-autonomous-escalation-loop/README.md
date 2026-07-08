@@ -88,6 +88,40 @@ token/cost totals if harvested, why it stopped, what needs the human) so the
 human resumes from a briefing, not a scrollback dig. It is the milestone-level
 analogue of the executor's `briefing`.
 
+### Per-role model delegation (decided 2026-07-08, with the user)
+
+The user selects the **architect model** for the session via `/model`; rexyMCP
+never overrides it (skills are prompt expansions — there is no programmatic
+hook to switch the running session's model, and a config key pretending
+otherwise would be a silent no-op). Inside an `/rexymcp:auto` run, the loop
+**delegates** per-task work to subagents running the model configured for that
+role in `rexymcp.toml`:
+
+```toml
+[architect]
+model = "claude-opus-4-8"            # cost rates (already exists, M20)
+dispatch_model = "claude-sonnet-5"   # /auto delegates dispatch to this
+review_model   = "claude-sonnet-5"   # /auto delegates review to this
+```
+
+- **No config for a role → inherit the architect model** (the native subagent
+  default: omitted override = session model), so the default case needs no code.
+- **No `draft_model` key, by design.** Drafting is the most context-hungry
+  activity — it leans on the talk-through history and milestone thread in the
+  main conversation, which a fresh subagent doesn't have. Drafting always runs
+  in the main loop on the architect model; shipping a knob for it would be the
+  silent-no-op trap.
+- **Interactive mode is unchanged.** Outside `/auto`, skills run in the main
+  loop on the session model as today.
+- **Accounting implication (phase-05 input):** a delegated activity's cost uses
+  the *role model's* rates, not the architect's — the harvester schema must not
+  assume a single architect model per session. Subagent usage also lands in the
+  Claude Code transcripts differently than main-loop turns; the join logic must
+  handle both.
+- Config keys + delegation mechanics land in **phase-06** (the only consumer);
+  the accounting note lands in **phase-05**. This is the architect-side twin of
+  the phase-07 stretch row (executor-model advisory routing).
+
 ### Client-integration notes
 
 - Claude Code sends **no MCP progressToken** (long-standing), so a long
