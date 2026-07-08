@@ -1011,7 +1011,7 @@ The project plan. Each entry becomes a milestone with its own
     TLS backend from native-tls/openssl to rustls + aws-lc-rs (the rustls/aws-lc
     subtree appearing is an accepted automatic resolver consequence, decided with
     the user).
-26. **M26 — Polish & Hardening** *(in progress — kicked off 2026-07-07)*. A
+26. **M26 — Polish & Hardening — done** (9/9 phases, 2026-07-08). A
     consistency and hardening pass seeded by the post-M25 whole-codebase review
     (`docs/dev/codebase-review-2026-07-07.md`) rather than a dogfooding failure —
     the review surfaced seams that fail *silently*, so no e2e run trips them. Two

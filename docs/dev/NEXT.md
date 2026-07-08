@@ -4,11 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M26 phase-08 — drafted (todo).** Verifier `tsc` resolution
-(`node_modules/.bin` → `npx --no-install tsc` → PATH). Dispatch with
-`/rexymcp:dispatch phase-08`. **This is the last M26 phase — after approval, M26
-closes and the next `next` is a human-gated milestone boundary** (retrospective +
-fold review).
+**Active phase: none.** M26 — Polish & Hardening closed 2026-07-08 (9/9 phases
+done; see the
+[milestone README retrospective](milestones/M26-polish-and-hardening/README.md#retrospective--2026-07-08)).
+This is a human-gated milestone boundary — next steps (kick off M27 — Autonomous
+Escalation Loop, or something else) are the user's call via `/rexymcp:architect`.
+
+**M26 phase-08 — done** (2026-07-08, **approved_first_try**; commits `7b52496`
+feat / `78895cd` approve). Verifier `tsc` resolution
+(`node_modules/.bin` → `npx --no-install tsc` → PATH). Three pure resolver
+helpers (`find_local_tsc` — ancestor-walk for `node_modules/.bin/tsc`, catching
+monorepo hoisting; `binary_in_dirs` — a PATH-scan mirroring
+`doctor::resolve_binary`; `resolve_tsc_command(project_root, npx_on_path) ->
+TscCommand` — local → `npx --no-install tsc` → bare `tsc`) plus the one spawn
+rewired to use the resolved program + prefix args. Diff landed byte-identical
+to the phase doc's pre-injected code. 10 unit tests + 1 `#[cfg(unix)]` E2E test
+(plants an executable fake `node_modules/.bin/tsc`, confirms `Checked` with its
+emitted diagnostic — proves the local binary is actually spawned). Clean
+60-turn first-try; all four gates green on independent re-run (915 passed / 2
+ignored). No scope deviation, no calibration fold.
 
 **M26 phase-08 — drafted** (2026-07-08). `verify_typescript`
 (`executor/src/governor/verifier.rs:431`) spawns a **bare** `tsc`, so it

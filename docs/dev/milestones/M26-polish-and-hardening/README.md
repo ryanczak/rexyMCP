@@ -4,7 +4,7 @@
 codebase review — stale contract docs, dead code paths, silent degradations, and
 executor-loop blind spots — without adding new features or new dependencies.
 
-**Status:** in-progress (kicked off 2026-07-07; phase-01 drafted)
+**Status:** done (9/9 phases, 2026-07-08)
 
 **Depends on:** none
 
@@ -182,4 +182,43 @@ complete and tested) and the env-var (`CLAUDE_PROJECT_DIR` /
 half is parked. Recorded here rather than in `architecture.md`'s roadmap because
 it is a milestone-scoping decision, not a design change.
 
-<!-- retrospective appended at milestone close -->
+### Retrospective — 2026-07-08
+
+**9/9 phases done, all `approved_first_try` except one escalated takeover** (executor
+Qwen/Qwen3.6-27B-PrismaAURA throughout). Both threads closed clean against the exit
+criteria above: housekeeping (01–03) corrected the stale `REXYMCP.md` frontier and
+plugin-manifest divergence and made `run-phase` telemeter by default; loop hardening
+(04–08) closed the `write_file` read-before-edit gap, made the post-write format hook
+actually rewrite, wired `gate_retries` into the gate-retry loop, added two governor
+detectors (oscillation, windowed-output-flood) plus a wall-clock ceiling terminal, and
+resolved the TS verifier's `tsc` lookup. No new dependency landed across any phase; all
+`PhaseRun`/`SessionEvent`/config schema changes stayed additive
+(`#[serde(default)]`/opt-in flags). Two phases were split at draft time when the estimate
+crossed one session (07 → 07a/07b); one phase (the originally-planned roots-corroboration
+housekeeping item) was deferred outright — see "Roots corroboration deferred" above.
+
+**The one bounce was operational, not a spec or code defect:** phase-06's 2nd dispatch
+ran all production code byte-identical to the pre-injected spec but drifted to
+`budget_exceeded` at the turn cap because its two new tests under-scripted
+`MockAiClientScript` (1 turn scripted, but the loop needed more once the gate-retry
+counter path was exercised) — a test-harness/mock-exhaustion subtlety the executor
+never diagnosed across ~330 stalled turns. Session takeover fixed it with a
+production-code-identical 2-line test-script change. **This was pre-empted for the rest
+of the milestone**: phase-07a's phase doc explicitly pre-injected the "script enough
+`MockAiClientScript` turns" gotcha (§ Pre-flight), and no recurrence followed in 07a,
+07b, or 08. Treated as **data, not a fold** — a one-off mock-scripting miss, corrected
+in the next phase doc via pre-injection rather than a `WORKFLOW.md`/`STANDARDS.md`
+change (per the "one occurrence is data" calibration bar).
+
+**No calibration folds signed off this milestone.** Every other phase (01, 02, 03, 04,
+05, 07a, 07b, 08) landed `approved_first_try` with the phase doc's Update Log recording
+"no scope deviation, no calibration fold." The milestone's seeding mechanism itself
+(a whole-codebase review rather than a dogfooding e2e failure) worked as intended —
+every review-flagged seam got a verifiable exit condition and closed against it, with
+no new blind spot surfacing mid-milestone.
+
+**Carried forward:** M27 — Autonomous Escalation Loop (design talk-through first;
+absorbs the `escalation_slots`/`max_assists` knobs, the resume lever, and D8/D9
+server-authored bookkeeping — see "Escalation budgeting moved to M27" above). Not yet
+kicked off; a human-gated boundary.
+
