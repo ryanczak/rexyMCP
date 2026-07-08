@@ -154,6 +154,7 @@ fn deps<'a>(
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     }
 }
 
@@ -903,6 +904,7 @@ async fn injected_clock_sets_record_ts() {
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
 
     execute_phase(&input(), d).await.unwrap();
@@ -1025,6 +1027,7 @@ async fn run_with_verifier(
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     execute_phase(&input(), d).await.unwrap()
 }
@@ -1330,6 +1333,7 @@ async fn oscillation_across_alternating_reads_trips_hard_fail() {
         },
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     let result = execute_phase(&input(), d).await.unwrap();
 
@@ -1384,6 +1388,7 @@ async fn cumulative_output_flood_trips_hard_fail() {
         },
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     let result = execute_phase(&input(), d).await.unwrap();
 
@@ -1900,6 +1905,7 @@ async fn run_full_with_context_window(
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     execute_phase(&input(), d).await.unwrap()
 }
@@ -2663,6 +2669,7 @@ fn deps_with_progress_simple<'a>(
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     }
 }
 
@@ -2738,6 +2745,7 @@ impl<'a> DepsBuilder<'a> {
             governor: GovernorConfig::default(),
             task_tracking: true,
             gate_retries: u32::MAX,
+            wall_clock_secs: 0,
         }
     }
 }
@@ -2926,6 +2934,7 @@ async fn callback_panic_is_not_caught() {
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     execute_phase(&input(), d).await.unwrap();
 }
@@ -3732,6 +3741,7 @@ async fn loop_emits_output_filtered_event_for_filtered_bash() {
             governor: GovernorConfig::default(),
             task_tracking: true,
             gate_retries: u32::MAX,
+            wall_clock_secs: 0,
         },
     )
     .await
@@ -3929,6 +3939,7 @@ async fn loop_seeds_task_updates_from_spec() {
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -3994,6 +4005,7 @@ async fn loop_emits_no_task_updates_when_spec_absent() {
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -4139,6 +4151,7 @@ async fn loop_emits_task_update_when_model_flips_task() {
         governor: GovernorConfig::default(),
         task_tracking: true,
         gate_retries: u32::MAX,
+        wall_clock_secs: 0,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -4642,6 +4655,7 @@ async fn self_revert_of_edited_file_is_refused() {
             governor: GovernorConfig::default(),
             task_tracking: true,
             gate_retries: u32::MAX,
+            wall_clock_secs: 0,
         },
     )
     .await
@@ -4768,4 +4782,91 @@ async fn format_fix_hook_rewrites_file_on_disk() {
         on_disk, "formatted\n",
         "post-write hook's format_fix must rewrite the file on disk, got: {on_disk:?}"
     );
+}
+
+/// A deterministic clock that advances 10 seconds per call, so any nonzero
+/// `wall_clock_secs` ceiling is crossed after the first loop iteration.
+fn advancing_clock() -> impl Fn() -> u64 + Send + Sync {
+    let calls = std::sync::atomic::AtomicU64::new(0);
+    move || calls.fetch_add(10_000, std::sync::atomic::Ordering::Relaxed)
+}
+
+#[tokio::test]
+async fn wall_clock_ceiling_trips_budget_exceeded() {
+    let dir = tempfile::tempdir().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let verifier = MockFileVerifier::new(vec![]);
+    let clock = advancing_clock();
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 200,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 1,
+    };
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+    let briefing = result.briefing.unwrap();
+    assert!(matches!(briefing.current_blocker, Blocker::BudgetExceeded));
+    assert!(
+        briefing.budget_remaining.contains("wall-clock"),
+        "budget_remaining should mention wall-clock, got: {}",
+        briefing.budget_remaining
+    );
+}
+
+#[tokio::test]
+async fn wall_clock_disabled_when_zero_completes() {
+    let dir = tempfile::tempdir().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let registry = registry_over(scope);
+    let budget = Budget::new(1_000_000);
+    let verifier = MockFileVerifier::new(vec![]);
+    let clock = advancing_clock();
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 200,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+    };
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert!(result.briefing.is_none());
 }

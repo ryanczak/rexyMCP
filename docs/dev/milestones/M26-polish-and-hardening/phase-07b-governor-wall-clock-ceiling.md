@@ -1,7 +1,7 @@
 # Phase 07b: Governor wall-clock ceiling (`[budget] wall_clock_secs`)
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none (07a landed; this touches the same `LoopDeps`/loop but no 07a code)
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -423,3 +423,32 @@ field additions are within scope (they are the config surface this phase ships).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 13:38 (started)
+
+**Executor:** rexyMCP executor
+
+**Summary:** Implementing wall-clock ceiling (`[budget] wall_clock_secs`) as a clock-based budget terminal.
+
+### Update — 2026-07-08 13:45 (complete)
+
+**Verification commands:**
+- `cargo fmt --all --check`: passed
+- `cargo build`: passed, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: passed
+- `cargo test`: 905 passed, 0 failed, 2 ignored
+- `grep -n 'wall_clock_secs' /tmp/p07b/rexymcp.toml` → `25:wall_clock_secs = 0               # optional wall-clock ceiling in seconds (0 disables)`
+- `cargo run -p rexymcp -- health --config /tmp/p07b/rexymcp.toml` → `unreachable: http://localhost:1234/v1` (config parsed fine; model endpoint unreachable is expected, not a parse error)
+
+**Verification summary:** All four gates clean (fmt, build, clippy, test). End-to-end: `rexymcp init` writes `wall_clock_secs` to `[budget]` block, `health` loads the config without parse error.
+
+**Files changed:**
+- `executor/src/config.rs` — added `wall_clock_secs: u64` field to `BudgetConfig` with `#[serde(default)]`, default `0`; added `Default` impl entry; added 2 unit tests
+- `executor/src/agent/mod.rs` — added `wall_clock_secs: u64` to `LoopDeps`, captured `loop_started_ms`, added Step 2a wall-clock terminal block
+- `mcp/src/runner.rs` — wired `wall_clock_secs` from `inp.cfg.budget.wall_clock_secs`
+- `mcp/src/init.rs` — added `wall_clock_secs = 0` line to `[budget]` template
+- `executor/src/agent/tests.rs` — added `wall_clock_secs: 0` at all 14 existing test sites; added `advancing_clock()` helper; added 2 integration tests (`wall_clock_ceiling_trips_budget_exceeded`, `wall_clock_disabled_when_zero_completes`)
+- `docs/dev/milestones/M26-polish-and-hardening/phase-07b-governor-wall-clock-ceiling.md` — status `todo` → `review`, Update Log entries
+- `docs/dev/milestones/M26-polish-and-hardening/README.md` — phase table row `todo` → `review`
+
+**Notes for review:** None.

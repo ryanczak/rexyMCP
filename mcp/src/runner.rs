@@ -274,6 +274,7 @@ async fn run_phase_with(
         budget: &budget,
         max_turns: inp.cfg.budget.max_turns as usize,
         gate_retries: inp.cfg.budget.effective_gate_retries(inp.cfg.executor.tier),
+        wall_clock_secs: inp.cfg.budget.wall_clock_secs,
         project_root: inp.repo_path,
         model: inp.model,
         session_id: &session_id,

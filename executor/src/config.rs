@@ -383,6 +383,11 @@ pub struct BudgetConfig {
     /// `max_turns`). Set explicitly to override tier default.
     #[serde(default)]
     pub gate_retries: Option<u32>,
+    /// Optional wall-clock ceiling in seconds. When > 0, a run whose elapsed
+    /// wall-clock time reaches this value terminates as `budget_exceeded` at
+    /// the next turn boundary. `0` (the default) disables the ceiling.
+    #[serde(default)]
+    pub wall_clock_secs: u64,
 }
 
 impl Default for BudgetConfig {
@@ -393,6 +398,7 @@ impl Default for BudgetConfig {
             max_turns: 200,
             escalation_slots: 1,
             gate_retries: None,
+            wall_clock_secs: 0,
         }
     }
 }
@@ -1380,6 +1386,56 @@ task_tracking = false
             ..BudgetConfig::default()
         };
         assert_eq!(b.effective_gate_retries(None), u32::MAX);
+    }
+
+    #[test]
+    fn budget_default_wall_clock_secs_is_zero() {
+        assert_eq!(BudgetConfig::default().wall_clock_secs, 0);
+    }
+
+    #[test]
+    fn budget_parses_wall_clock_secs_from_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.toml");
+        std::fs::write(
+            &path,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 200
+escalation_slots = 1
+wall_clock_secs = 30
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.budget.wall_clock_secs, 30);
+
+        let path2 = dir.path().join("c2.toml");
+        std::fs::write(
+            &path2,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 200
+escalation_slots = 1
+"#,
+        )
+        .unwrap();
+        let cfg2 = Config::load(&path2).unwrap();
+        assert_eq!(cfg2.budget.wall_clock_secs, 0);
     }
 
     #[test]

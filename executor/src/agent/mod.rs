@@ -95,6 +95,11 @@ pub struct LoopDeps<'a> {
     /// before `budget_exceeded`. `u32::MAX` = unlimited (bounded by `max_turns`).
     /// Resolved from `[budget] gate_retries` / `[executor] tier` at the call site.
     pub gate_retries: u32,
+    /// Wall-clock ceiling in seconds. `0` disables it; when > 0 a run whose
+    /// elapsed time (measured off `clock`) reaches the ceiling terminates as
+    /// `budget_exceeded`. Resolved from `[budget] wall_clock_secs` at the call
+    /// site.
+    pub wall_clock_secs: u64,
     pub project_root: &'a Path,
     /// Model identifier, for the `SessionStart` record.
     pub model: &'a str,
@@ -187,6 +192,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
     // Telemetry accumulation (08): metrics folded into the PhaseRun at terminal.
     let mut metrics = RunMetrics::started_at((deps.clock)());
+    let loop_started_ms = (deps.clock)();
 
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
@@ -257,6 +263,39 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     }
 
     loop {
+        // Step 2a — wall-clock ceiling. A [budget] wall_clock_secs of 0 disables
+        // it; otherwise a run past the ceiling terminates as budget_exceeded — a
+        // clock-based budget terminal, distinct from the turn/context caps.
+        if deps.wall_clock_secs > 0 {
+            let elapsed_ms = (deps.clock)().saturating_sub(loop_started_ms);
+            if elapsed_ms >= deps.wall_clock_secs.saturating_mul(1000) {
+                log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
+                emit_phase_run(
+                    &deps,
+                    input,
+                    "budget_exceeded",
+                    Gates::default(),
+                    &metrics,
+                    &scorer,
+                    turns,
+                );
+                let artifacts = build_artifacts(
+                    &pre_edit_content,
+                    deps.project_root,
+                    log_path.clone(),
+                    "budget_exceeded",
+                    turns,
+                    CommandOutputs::default(),
+                );
+                return Ok(budget_exceeded_result(
+                    input,
+                    &recent_tool_calls,
+                    deps.project_root,
+                    format!("wall-clock ceiling of {}s exceeded", deps.wall_clock_secs),
+                    artifacts,
+                ));
+            }
+        }
         // Step 2 — budget: compact on overflow, give up if still over.
         if deps.budget.would_overflow(&system, &messages) {
             let report = compact(&mut messages, deps.budget, &system);
