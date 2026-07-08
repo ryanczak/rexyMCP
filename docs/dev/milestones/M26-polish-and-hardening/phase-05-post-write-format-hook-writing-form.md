@@ -1,7 +1,7 @@
 # Phase 05: Post-write format hook — writing form
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~280 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -399,3 +399,11 @@ All expected `format_fix` references present across config, hook, guard, doctor,
 `format_fix_hook_rewrites_file_on_disk` ran with `RealCommandRunner`, confirming a real `sh -c` subprocess (`printf 'formatted\n' > f.txt`) rewrites the file on disk from "unformatted\n" to "formatted\n". Test passed.
 
 **Notes for review:** None.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none
+- **Calibration:** none
