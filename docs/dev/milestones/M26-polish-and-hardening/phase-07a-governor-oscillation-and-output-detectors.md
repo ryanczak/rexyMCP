@@ -1,7 +1,7 @@
 # Phase 07a: Governor oscillation & windowed-output detectors
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~300 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -570,3 +570,11 @@ field additions are within scope (they are the config surface this phase ships).
 **Commit:** `feat: add governor oscillation and windowed-output flood detectors`
 
 **Notes for review:** None.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA (executor)
+- **Scope deviations:** none
+- **Calibration:** none
