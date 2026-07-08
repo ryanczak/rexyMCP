@@ -1,7 +1,7 @@
 # Phase 08: Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH)
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -406,3 +406,11 @@ $ grep -c "find_local_tsc\|resolve_tsc_command\|binary_in_dirs" executor/src/gov
 - `executor/src/governor/verifier_tests.rs` — added 10 unit tests + 1 E2E test
 
 **Notes for review:** None. All spec items implemented verbatim.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none
+- **Calibration:** none
