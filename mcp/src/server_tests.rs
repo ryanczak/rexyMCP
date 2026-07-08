@@ -16,7 +16,6 @@ base_url = "http://127.0.0.1:1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
     )
     .unwrap();
@@ -352,7 +351,6 @@ base_url = "http://127.0.0.1:1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [telemetry]
 dir = "{}"
@@ -454,7 +452,6 @@ base_url = "http://127.0.0.1:1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
     )
     .unwrap();
@@ -846,7 +843,6 @@ base_url = "http://127.0.0.1:1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
     )
     .unwrap();

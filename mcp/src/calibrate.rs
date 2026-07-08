@@ -42,18 +42,10 @@ pub fn run(args: &CalibrateArgs<'_>) -> anyhow::Result<()> {
         budget.remove("gate_retries");
     }
 
-    // [escalation] — write only for Small; remove for Medium/Large (absent = ignored).
-    match args.tier {
-        Tier::Small => {
-            if doc.get("escalation").is_none() {
-                let mut t = Table::new();
-                t["max_assists"] = value(3i64);
-                doc.insert("escalation", Item::Table(t));
-            }
-        }
-        _ => {
-            doc.remove("escalation");
-        }
+    // escalation_slots was retired in favor of [escalation] max_assists —
+    // strip the stale key from configs written before the consolidation.
+    if let Some(budget) = doc.get_mut("budget").and_then(|b| b.as_table_mut()) {
+        budget.remove("escalation_slots");
     }
 
     // [architect] — add skeleton when absent so the user sees the section.
@@ -68,15 +60,11 @@ pub fn run(args: &CalibrateArgs<'_>) -> anyhow::Result<()> {
     std::fs::write(args.config_path, doc.to_string())?;
 
     println!(
-        "Calibrated to {tier} — updated executor.tier={tier_s}, budget.max_turns={max_turns}{}{}",
+        "Calibrated to {tier} — updated executor.tier={tier_s}, budget.max_turns={max_turns}{}",
         if gate_retries != u32::MAX {
             format!(", budget.gate_retries={gate_retries}")
         } else {
             String::new()
-        },
-        match args.tier {
-            Tier::Small => ", escalation.max_assists=3",
-            _ => "",
         },
         tier = tier_label(args.tier),
         tier_s = tier_str(args.tier),
@@ -129,7 +117,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 131071
 max_context_pct = 80
 max_turns = 200
-escalation_slots = 1
 "#,
         );
         let doc: toml_edit::DocumentMut = result.parse().unwrap();
@@ -141,7 +128,7 @@ escalation_slots = 1
     }
 
     #[test]
-    fn calibrate_small_adds_escalation_section() {
+    fn calibrate_small_does_not_write_escalation_section() {
         let dir = TempDir::new().unwrap();
         let result = run_calibrate(
             &dir,
@@ -156,16 +143,39 @@ base_url = "http://localhost:1234/v1"
 context_length = 131071
 max_context_pct = 80
 max_turns = 200
-escalation_slots = 1
 "#,
         );
         let doc: toml_edit::DocumentMut = result.parse().unwrap();
-        assert_eq!(doc["executor"]["tier"].as_str(), Some("SMALL"));
+        assert!(doc.get("escalation").is_none());
+    }
+
+    #[test]
+    fn calibrate_preserves_user_escalation_section() {
+        let dir = TempDir::new().unwrap();
+        let result = run_calibrate(
+            &dir,
+            Tier::Medium,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 100
+
+[escalation]
+max_assists = 3
+"#,
+        );
+        let doc: toml_edit::DocumentMut = result.parse().unwrap();
         assert_eq!(doc["escalation"]["max_assists"].as_integer(), Some(3));
     }
 
     #[test]
-    fn calibrate_medium_removes_escalation_section() {
+    fn calibrate_strips_retired_escalation_slots() {
         let dir = TempDir::new().unwrap();
         let result = run_calibrate(
             &dir,
@@ -181,15 +191,14 @@ context_length = 32768
 max_context_pct = 70
 max_turns = 100
 escalation_slots = 1
-
-[escalation]
-max_assists = 3
 "#,
         );
         let doc: toml_edit::DocumentMut = result.parse().unwrap();
         assert!(
-            doc.get("escalation").is_none(),
-            "[escalation] must be removed for MEDIUM"
+            doc.get("budget")
+                .and_then(|b| b.get("escalation_slots"))
+                .is_none(),
+            "escalation_slots must be stripped from [budget]"
         );
     }
 
@@ -209,7 +218,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 131071
 max_context_pct = 80
 max_turns = 400
-escalation_slots = 1
 "#,
         );
         let doc: toml_edit::DocumentMut = result.parse().unwrap();
@@ -238,7 +246,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         );
         let doc: toml_edit::DocumentMut = result.parse().unwrap();
@@ -264,7 +271,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 131071
 max_context_pct = 80
 max_turns = 400
-escalation_slots = 1
 gate_retries = 2
 "#,
         );
@@ -293,7 +299,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [architect]
 model = "claude-opus-4-8"

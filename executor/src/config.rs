@@ -18,8 +18,8 @@ pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
 }
 
 /// Executor capability tier. Set via `rexymcp calibrate` and recorded in
-/// `[executor].tier`. Controls default `max_turns`, `gate_retries` (wired M26),
-/// and whether mid-phase Architect escalation is enabled (deferred to M27).
+/// `[executor].tier`. Controls default `max_turns` and `gate_retries`
+/// (wired M26).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Tier {
@@ -49,10 +49,11 @@ impl Tier {
     }
 }
 
-/// SMALL-tier escalation settings. When `tier = "SMALL"`, the executor fires
-/// up to `max_assists` autonomous Architect assists before hard-failing. Absent
-/// or ignored for MEDIUM and LARGE tiers; consumed by the architect-side `/loop`
-/// (M27), not the executor loop.
+/// Escalation budget for the architect-side autonomous loop
+/// (`/rexymcp:auto`, M27). `max_assists` is the number of autonomous
+/// assist round-trips (refine + re-dispatch, or resume) the loop may
+/// spend on one phase before stopping for the human. Tier-independent;
+/// consumed by the plugin skill layer, never by the executor loop.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EscalationConfig {
@@ -376,8 +377,6 @@ pub struct BudgetConfig {
     pub max_context_pct: u8,
     /// Hard cap on executor turns in one phase before budget_exceeded.
     pub max_turns: u32,
-    /// Escalation slots (briefings returned to the architect) per phase.
-    pub escalation_slots: u32,
     /// Max gate-retry loops at completion time before escalation. `None` = derive
     /// from `executor.tier`; if tier is also `None`, unlimited (bounded by
     /// `max_turns`). Set explicitly to override tier default.
@@ -396,7 +395,6 @@ impl Default for BudgetConfig {
             context_length: 32768,
             max_context_pct: 70,
             max_turns: 200,
-            escalation_slots: 1,
             gate_retries: None,
             wall_clock_secs: 0,
         }
@@ -576,7 +574,6 @@ base_url = "http://localhost:11434/v1"
 context_length = 128000
 max_context_pct = 80
 max_turns = 50
-escalation_slots = 2
 "#
         )
         .unwrap();
@@ -589,7 +586,6 @@ escalation_slots = 2
         assert_eq!(cfg.budget.context_length, 128000);
         assert_eq!(cfg.budget.max_context_pct, 80);
         assert_eq!(cfg.budget.max_turns, 50);
-        assert_eq!(cfg.budget.escalation_slots, 2);
     }
 
     #[test]
@@ -626,7 +622,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#
         )
         .unwrap();
@@ -667,7 +662,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -693,7 +687,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [telemetry]
 dir = "/var/lib/rexymcp"
@@ -721,7 +714,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [telemetry]
 dir = "~/.rexymcp/telemetry"
@@ -760,7 +752,6 @@ stream_idle_timeout_secs = 45
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -787,7 +778,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -823,7 +813,6 @@ seed = 42
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -850,7 +839,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -884,7 +872,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [dashboard]
 saved_input_per_mtok = 3.0
@@ -971,7 +958,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -999,7 +985,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [context]
 output_filter = false
@@ -1030,7 +1015,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 10
@@ -1062,7 +1046,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -1091,7 +1074,6 @@ task_tracking = false
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -1119,7 +1101,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [models."Qwen/Qwen3.6-27B-FP8"]
 temperature = 0.2
@@ -1155,7 +1136,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -1187,7 +1167,6 @@ seed = 1
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1231,7 +1210,6 @@ seed = 99
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1276,7 +1254,6 @@ temperature = 0.5
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1318,7 +1295,6 @@ task_tracking = true
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [models."qwen"]
 task_tracking = false
@@ -1409,7 +1385,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 200
-escalation_slots = 1
 wall_clock_secs = 30
 "#,
         )
@@ -1430,7 +1405,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 200
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -1475,7 +1449,6 @@ tier = "MEDIUM"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 "#,
         )
         .unwrap();
@@ -1505,7 +1478,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [escalation]
 max_assists = 5
@@ -1553,7 +1525,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1585,7 +1556,6 @@ max_tokens = 2048
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1617,7 +1587,6 @@ max_tokens = 8192
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1653,7 +1622,6 @@ max_tokens = 8192
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1694,7 +1662,6 @@ enable_thinking = true
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1725,7 +1692,6 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1757,7 +1723,6 @@ enable_thinking = false
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1793,7 +1758,6 @@ enable_thinking = true
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
-escalation_slots = 1
 
 [governor]
 identical_call_threshold = 6
@@ -1809,5 +1773,35 @@ temperature = 0.1
         let mut cfg = Config::load(&path).unwrap();
         cfg.resolve_for_model("m");
         assert!(cfg.executor.enable_thinking);
+    }
+
+    #[test]
+    fn load_ignores_retired_escalation_slots_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rexymcp.toml");
+        std::fs::write(
+            &path,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 100
+escalation_slots = 1
+
+[governor]
+identical_call_threshold = 6
+verifier_persistence_threshold = 6
+runaway_output_bytes = 102400
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.budget.max_turns, 100);
     }
 }

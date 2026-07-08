@@ -1,7 +1,7 @@
 # Phase 01: Consolidate escalation budget knobs (retire `escalation_slots`)
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~150 lines (mostly mechanical fixture-line deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -310,3 +310,76 @@ a temp directory and paste the outputs in the completion Update Log:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 16:43 (started)
+
+**Executor:** Claude (direct)
+
+Removing `escalation_slots` from `BudgetConfig`, stripping fixture lines, rewriting stale doc comments, updating `calibrate` and `init`, and adding back-compat test.
+
+### Update — 2026-07-08 16:43 (complete)
+
+**Summary:** Retired `escalation_slots` from `BudgetConfig` per the consolidation decision. Removed the field and its `Default` value, deleted all test-fixture TOML lines via `sed`, updated two assertion sites (compiler-guided), rewrote stale doc comments on `EscalationConfig` and `Tier`, removed `calibrate`'s `[escalation]` write/remove logic and its `println!` arm, added `escalation_slots` strip logic to `calibrate`, updated calibrate tests (renamed two, added one new strip test), updated the `init` template (removed `escalation_slots`, added commented `# [escalation]` block), and added the `load_ignores_retired_escalation_slots_key` back-compat test. Also cleaned `escalation_slots` fixture lines from `mcp/src/server_tests.rs` which were not mentioned in the spec but would cause test failures.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(passed — no output)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.9.1
+   Compiling rexymcp v0.9.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.00s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.9.1
+    Checking rexymcp v0.9.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.52s
+
+cargo test 2>&1 | tail -30
+test result: ok. 916 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+1. `rexymcp init` into temp dir:
+   - `grep -c "escalation_slots" <tmp>/rexymcp.toml` → `0`
+   - `grep -c "max_assists" <tmp>/rexymcp.toml` → `1` (the commented doc line)
+
+2. Config with `escalation_slots = 1` under `[budget]` + `[escalation] max_assists = 5`, run `rexymcp calibrate MEDIUM`:
+   - `escalation_slots` stripped from `[budget]`
+   - `max_assists = 5` preserved in `[escalation]`
+
+**Grep verification:**
+```
+grep -rn "escalation_slots" executor/src mcp/src
+executor/src/config.rs:1779:    fn load_ignores_retired_escalation_slots_key() {
+executor/src/config.rs:1794:escalation_slots = 1
+mcp/src/calibrate.rs:45:    // escalation_slots was retired in favor of [escalation] max_assists —
+mcp/src/calibrate.rs:48:        budget.remove("escalation_slots");
+mcp/src/calibrate.rs:178:    fn calibrate_strips_retired_escalation_slots() {
+mcp/src/calibrate.rs:193:escalation_slots = 1
+mcp/src/calibrate.rs:199:                .and_then(|b| b.get("escalation_slots"))
+mcp/src/calibrate.rs:201:            "escalation_slots must be stripped from [budget]"
+```
+All hits are in the authorized locations: (a) calibrate strip code + its test fixture, (b) the new back-compat test.
+
+**Files changed:**
+- `executor/src/config.rs` — removed `escalation_slots` field from `BudgetConfig` and `Default`, removed assertion from `load_parses_toml_executor_block`, rewrote `Tier` and `EscalationConfig` doc comments, added `load_ignores_retired_escalation_slots_key` test, deleted 33 fixture lines
+- `mcp/src/calibrate.rs` — removed `[escalation]` write/remove match block, removed `println!` escalation arm, added `escalation_slots` strip block, updated/added 3 tests, deleted 7 fixture lines
+- `mcp/src/init.rs` — removed `escalation_slots` template line, added commented `# [escalation]` block, replaced `escalation_slots` assertion with `max_assists` default assertion
+- `mcp/src/server_tests.rs` — deleted 4 fixture lines (not in spec but needed for clean build)
+- `docs/dev/milestones/M27-autonomous-escalation-loop/phase-01-consolidate-escalation-knobs.md` — status: todo → in-progress → review
+- `docs/dev/milestones/M27-autonomous-escalation-loop/README.md` — phase table: drafted (todo) → in-progress → review
+
+**New tests:**
+- `load_ignores_retired_escalation_slots_key` in `executor/src/config.rs`
+- `calibrate_strips_retired_escalation_slots` in `mcp/src/calibrate.rs`
+
+**Commits:**
+- (pending)
+
+**Notes for review:** Also cleaned `escalation_slots` fixture lines from `mcp/src/server_tests.rs` (4 lines) — these were not in the spec's grep output but would have caused test failures if left. The spec's `grep -rn "escalation_slots" executor/src mcp/src` at draft time likely ran before those fixtures were added, or they were added after the spec was written.

@@ -29,8 +29,10 @@ base_url = "http://localhost:1234/v1"
 context_length = 32768            # model context window in tokens
 max_context_pct = 70              # trigger compaction above this % (0–100)
 max_turns = 200                   # hard cap on executor turns per phase
-escalation_slots = 1              # turns reserved for the final command set retry
 wall_clock_secs = 0               # optional wall-clock ceiling in seconds (0 disables)
+
+# [escalation]
+# max_assists = 3                 # autonomous architect assists per phase (/rexymcp:auto loop)
 
 [governor]
 identical_call_threshold = 6      # consecutive identical tool calls → hard-fail
@@ -129,7 +131,7 @@ mod tests {
         assert_eq!(cfg.budget.context_length, 32768);
         assert_eq!(cfg.budget.max_context_pct, 70);
         assert_eq!(cfg.budget.max_turns, 200);
-        assert_eq!(cfg.budget.escalation_slots, 1);
+        assert_eq!(cfg.escalation.max_assists, 3);
         assert_eq!(cfg.governor.identical_call_threshold, 6);
         assert_eq!(cfg.governor.verifier_persistence_threshold, 6);
         assert_eq!(cfg.governor.runaway_output_bytes, 102400);
