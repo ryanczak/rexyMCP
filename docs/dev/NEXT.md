@@ -4,20 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M26 phase-04** — `write_file` read-before-edit gate
-([phase-04-write-file-read-before-edit-gate.md](milestones/M26-polish-and-hardening/phase-04-write-file-read-before-edit-gate.md),
-**drafted 2026-07-07, todo**). Extends `read_before_edit_refusal` to gate a
-`write_file` **overwrite** of an existing unread (or mtime-changed) file exactly
-like `patch`, while leaving **create** (absent file) and **append**
-(`append: true`) ungated — neither blind-clobbers unread content. Also refreshes
-the working-set mtime after a successful non-append write (so create→overwrite
-doesn't self-refuse). Two production files (`agent/tools.rs`, `agent/mod.rs`) +
-tests. **Pre-injected:** the current `patch`-only gate quoted verbatim; the
-behavior table (overwrite gated / create + append exempt); the working-set
-recording block and *why* it must also record non-append writes; and the exact
-fix for the one test that goes red (`self_revert_of_edited_file_is_refused` —
-prepend a `read_file` turn, bump the asserted call index 2→3) plus two tests to
-keep honest. Dispatch via `/rexymcp:dispatch phase-04`.
+**Active phase:** **M26 phase-05** — post-write format hook writing form
+([phase-05-post-write-format-hook-writing-form.md](milestones/M26-polish-and-hardening/phase-05-post-write-format-hook-writing-form.md),
+**drafted 2026-07-07, todo**). Closes the no-op post-write format hook: the hook
+runs the check-form `commands.format` (`cargo fmt --all --check`), which rewrites
+nothing, so the file the executor just wrote reaches the verifier misformatted
+(the M21 executor-vs-reviewer fmt divergence). Adds a writing `format_fix` field
+mirroring the existing `lint`/`lint_fix` split; the hook runs `format_fix`, the
+DoD fmt gate keeps running `format`. Files: `config.rs` (new field + test),
+`command.rs` (hook body), `mod.rs` (guard), `doctor.rs` (list row + E0063 sites),
+`init.rs` (template doc), `agent/tests.rs` (E0063 fixes + ~6 hook-test
+conversions + 2 new tests). **Pre-injected:** the hook body/guard/gate quoted
+verbatim; the no-fallback rule (unset `format_fix` = skip, per STANDARDS §2.2);
+the precise 21-site E0063 list separated from the ~6 behavior-conversion hook
+tests (3 that go red, with the exact `format:`→`format_fix:` fix and why each
+fails); a real-`RealCommandRunner` E2E that rewrites a file on disk; and the
+crux negative pin (hook uses the writing form, gate uses the check form).
+Dispatch via `/rexymcp:dispatch phase-05`.
+
+**M26 phase-04 — done** (2026-07-07, **approved_first_try**; commits `4cf24da`
+draft / `cdd8a98` fix / `bc3313f` approve). `write_file` now honors the
+read-before-edit gate: an **overwrite** of an existing unread (or mtime-changed)
+file is refused like `patch`, while **create** and **append** stay ungated, and
+the working set records mtime after a non-append write. (NEXT.md pointer was left
+stale by the approve commit — a recurring pattern — and re-advanced here at the
+next `/rexymcp:architect next`.)
 
 M26 phases 01–03 all **done** (2026-07-07, all approved_first_try):
 [01](milestones/M26-polish-and-hardening/phase-01-contract-docs-and-manifests.md)

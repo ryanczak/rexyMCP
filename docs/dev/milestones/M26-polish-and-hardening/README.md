@@ -77,7 +77,7 @@ Two threads, grouped by subsystem so each phase is one executor session:
 | 02 | `run-phase` telemetry parity (`--no-telemetry` opt-out) ([phase-02-run-phase-telemetry-parity.md](phase-02-run-phase-telemetry-parity.md)) | done |
 | 03 | Surface silent degradations as architect-visible warnings ([phase-03-silent-degradation-warnings.md](phase-03-silent-degradation-warnings.md)) | done |
 | 04 | `write_file` read-before-edit gate ([phase-04-write-file-read-before-edit-gate.md](phase-04-write-file-read-before-edit-gate.md)) | done |
-| 05 | Post-write format hook: writing form on touched files | todo (not drafted) |
+| 05 | Post-write format hook: writing form ([phase-05-post-write-format-hook-writing-form.md](phase-05-post-write-format-hook-writing-form.md)) | todo |
 | 06 | Wire or retire the dead budget/tier knobs | todo (not drafted) |
 | 07 | Governor blind-spot detectors (oscillation, windowed output, wall clock) | todo (not drafted) |
 | 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
