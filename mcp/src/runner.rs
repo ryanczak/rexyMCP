@@ -658,6 +658,10 @@ mod tests {
                 runaway_output_bytes: None,
                 empty_completion_threshold: None,
                 gate_feedback_repeat_threshold: None,
+                oscillation_window: None,
+                oscillation_distinct_max: None,
+                output_window: None,
+                output_window_bytes: None,
             },
         );
         let mock = MockAiClient::new(vec!["Done.".to_string()]);
@@ -777,6 +781,10 @@ mod tests {
                 runaway_output_bytes: None,
                 empty_completion_threshold: None,
                 gate_feedback_repeat_threshold: None,
+                oscillation_window: None,
+                oscillation_distinct_max: None,
+                output_window: None,
+                output_window_bytes: None,
             },
         );
 

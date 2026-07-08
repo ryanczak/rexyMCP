@@ -1285,6 +1285,115 @@ async fn runaway_output_trips_hard_fail() {
     ));
 }
 
+// ── M26 phase-07a: oscillation integration test ─────────────────────────
+
+#[tokio::test]
+async fn oscillation_across_alternating_reads_trips_hard_fail() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "aaa").unwrap();
+    std::fs::write(dir.path().join("b.txt"), "bbb").unwrap();
+    let path_a = dir.path().join("a.txt").to_string_lossy().to_string();
+    let path_b = dir.path().join("b.txt").to_string_lossy().to_string();
+    let read_a = || native("read_file", json!({ "path": path_a.clone() }));
+    let read_b = || native("read_file", json!({ "path": path_b.clone() }));
+    // Alternate A,B,A,B — 4 distinct-turn tool calls, then one trailing read as slack
+    let client = MockAiClientScript::new(vec![
+        vec![read_a()],
+        vec![read_b()],
+        vec![read_a()],
+        vec![read_b()],
+        vec![read_a()], // slack
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry_over(Scope::new(dir.path()).unwrap()),
+        tools: &[],
+        budget: &Budget::new(1_000_000),
+        max_turns: 10,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig {
+            oscillation_window: 4,
+            oscillation_distinct_max: 2,
+            ..GovernorConfig::default()
+        },
+        task_tracking: true,
+        gate_retries: u32::MAX,
+    };
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    assert!(matches!(
+        result.briefing.unwrap().current_blocker,
+        Blocker::HardFail(HardFailSignal::Oscillation { .. })
+    ));
+}
+
+// ── M26 phase-07a: cumulative-output-flood integration test ─────────────
+
+#[tokio::test]
+async fn cumulative_output_flood_trips_hard_fail() {
+    let dir = TempDir::new().unwrap();
+    // Three distinct files, each ~400 bytes (distinct args avoid oscillation)
+    let content = "x".repeat(400);
+    std::fs::write(dir.path().join("f1.txt"), &content).unwrap();
+    std::fs::write(dir.path().join("f2.txt"), &content).unwrap();
+    std::fs::write(dir.path().join("f3.txt"), &content).unwrap();
+    let p1 = dir.path().join("f1.txt").to_string_lossy().to_string();
+    let p2 = dir.path().join("f2.txt").to_string_lossy().to_string();
+    let p3 = dir.path().join("f3.txt").to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": p1 }))],
+        vec![native("read_file", json!({ "path": p2 }))],
+        vec![native("read_file", json!({ "path": p3 }))],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry_over(Scope::new(dir.path()).unwrap()),
+        tools: &[],
+        budget: &Budget::new(1_000_000),
+        max_turns: 10,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig {
+            output_window: 3,
+            output_window_bytes: 1000,
+            ..GovernorConfig::default()
+        },
+        task_tracking: true,
+        gate_retries: u32::MAX,
+    };
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    assert!(matches!(
+        result.briefing.unwrap().current_blocker,
+        Blocker::HardFail(HardFailSignal::CumulativeOutputFlood { .. })
+    ));
+}
+
 #[tokio::test]
 async fn hard_fail_logs_hardfail_then_session_end() {
     let dir = TempDir::new().unwrap();

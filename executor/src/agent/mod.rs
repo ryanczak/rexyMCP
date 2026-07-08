@@ -159,6 +159,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut messages: Vec<Message> = Vec::new();
     let mut scorer = Scorer::new();
     let mut recent_tool_calls: VecDeque<ToolCallSnapshot> = VecDeque::new();
+    let mut recent_output_bytes: VecDeque<usize> = VecDeque::new();
     let mut turns: usize = 0;
 
     // Governor feedback state (07c).
@@ -1057,6 +1058,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             arguments: tool_call.arguments.clone(),
             succeeded,
         });
+        recent_output_bytes.push_back(content.len());
         append_tool_exchange(&mut messages, &tool_call, &content, turns);
 
         // Per-lever reclaim event (M10 Arc A): record how much the boundary
@@ -1232,13 +1234,29 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         }
 
         // Step 7 — hard-fail detection (repetition / persistent verifier failure /
-        // runaway output). Checked before the turn cap so the specific cause wins.
-        if let Some(signal) = evaluate(
+        // runaway output / oscillation / cumulative-output flood). Checked before the
+        // turn cap so the specific cause wins.
+        let hard_fail_signal = evaluate(
             &recent_tool_calls,
             &recent_verifier_error_counts,
             Some((&tool_call.name, content.len())),
             &deps.governor,
-        ) {
+        )
+        .or_else(|| {
+            crate::governor::hard_fail::check_oscillation(
+                &recent_tool_calls,
+                deps.governor.oscillation_window,
+                deps.governor.oscillation_distinct_max,
+            )
+        })
+        .or_else(|| {
+            crate::governor::hard_fail::check_windowed_output(
+                &recent_output_bytes,
+                deps.governor.output_window,
+                deps.governor.output_window_bytes,
+            )
+        });
+        if let Some(signal) = hard_fail_signal {
             log_event(
                 &log_handle,
                 &redactor,

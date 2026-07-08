@@ -35,6 +35,10 @@ escalation_slots = 1              # turns reserved for the final command set ret
 identical_call_threshold = 6      # consecutive identical tool calls → hard-fail
 verifier_persistence_threshold = 6 # consecutive turns with verifier errors → hard-fail
 runaway_output_bytes = 102400     # single tool output bytes → hard-fail (100 KB)
+oscillation_window = 8            # sliding window scanned for A,B,A,B oscillation (0 disables)
+oscillation_distinct_max = 2      # ≤ this many distinct calls in the window → hard-fail
+output_window = 6                 # sliding window of tool outputs summed for flood check (0 disables)
+output_window_bytes = 262144      # total bytes across the output window → hard-fail (256 KB)
 
 # [models."<model-id>"]              # per-model knob overrides; key is the exact
 #                                    # active model id (no prefix/substring match).
@@ -47,6 +51,10 @@ runaway_output_bytes = 102400     # single tool output bytes → hard-fail (100 
 # identical_call_threshold = 8       # override [governor] identical_call_threshold
 # verifier_persistence_threshold = 8 # override [governor] verifier_persistence_threshold
 # runaway_output_bytes = 204800      # override [governor] runaway_output_bytes
+# oscillation_window = 10            # override [governor] oscillation_window
+# oscillation_distinct_max = 2       # override [governor] oscillation_distinct_max
+# output_window = 8                  # override [governor] output_window
+# output_window_bytes = 524288       # override [governor] output_window_bytes
 
 [commands]
 # format = "cargo fmt --all"

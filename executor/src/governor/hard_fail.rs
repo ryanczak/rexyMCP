@@ -33,6 +33,14 @@ pub enum HardFailSignal {
     BackendError {
         message: String,
     },
+    Oscillation {
+        distinct_calls: usize,
+        window: usize,
+    },
+    CumulativeOutputFlood {
+        window: usize,
+        bytes: usize,
+    },
 }
 
 impl HardFailSignal {
@@ -62,6 +70,19 @@ impl HardFailSignal {
             }
             Self::BackendError { message } => {
                 format!("backend error: {message}")
+            }
+            Self::Oscillation {
+                distinct_calls,
+                window,
+            } => {
+                format!(
+                    "only {distinct_calls} distinct tool calls across the last {window} turns (oscillation)"
+                )
+            }
+            Self::CumulativeOutputFlood { window, bytes } => {
+                format!(
+                    "tool output flooded {bytes} bytes across the last {window} calls (over threshold)"
+                )
             }
         }
     }
@@ -172,6 +193,57 @@ pub fn check_repeated_gate_feedback(
         Some(HardFailSignal::StuckGateFeedback {
             consecutive_count: threshold as u32,
         })
+    } else {
+        None
+    }
+}
+
+/// Oscillation stall: the last `window` tool calls collapse to only a small set
+/// of distinct `(tool, arguments)` pairs (e.g. an A,B,A,B read↔patch cycle) that
+/// `IdenticalToolCallRepetition` misses because the calls are not *consecutively*
+/// identical. Fires when the distinct count is in `2..=distinct_max`. A distinct
+/// count of 1 is left to `check_identical_repetition`; `window == 0` disables.
+pub fn check_oscillation(
+    recent: &VecDeque<ToolCallSnapshot>,
+    window: usize,
+    distinct_max: usize,
+) -> Option<HardFailSignal> {
+    if window == 0 || recent.len() < window {
+        return None;
+    }
+    let mut distinct: Vec<(&str, &serde_json::Value)> = Vec::new();
+    for call in recent.iter().rev().take(window) {
+        let key = (call.tool.as_str(), &call.arguments);
+        if !distinct.iter().any(|(t, a)| *t == key.0 && *a == key.1) {
+            distinct.push(key);
+        }
+    }
+    let n = distinct.len();
+    if n >= 2 && n <= distinct_max {
+        Some(HardFailSignal::Oscillation {
+            distinct_calls: n,
+            window,
+        })
+    } else {
+        None
+    }
+}
+
+/// Cumulative-output flood: the sum of the last `window` tool outputs exceeds
+/// `limit` bytes, catching a multi-call flood of sub-`runaway_output_bytes`
+/// outputs that `check_runaway_output` (single-call only) misses. Requires a full
+/// window; `window == 0` disables.
+pub fn check_windowed_output(
+    recent_output_bytes: &VecDeque<usize>,
+    window: usize,
+    limit: usize,
+) -> Option<HardFailSignal> {
+    if window == 0 || recent_output_bytes.len() < window {
+        return None;
+    }
+    let bytes: usize = recent_output_bytes.iter().rev().take(window).sum();
+    if bytes > limit {
+        Some(HardFailSignal::CumulativeOutputFlood { window, bytes })
     } else {
         None
     }
@@ -419,5 +491,173 @@ mod tests {
         let desc = signal.describe();
         assert!(desc.contains("re-injected"));
         assert!(desc.contains("7"));
+    }
+
+    // --- M26 phase-07a: oscillation stall tests ---
+
+    #[test]
+    fn oscillation_fires_on_two_call_cycle() {
+        let mut recent = VecDeque::new();
+        let a = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let b = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "b.txt"}),
+            succeeded: true,
+        };
+        // A, B, A, B — 4 calls, 2 distinct
+        for _ in 0..2 {
+            recent.push_back(a.clone());
+            recent.push_back(b.clone());
+        }
+        let signal = check_oscillation(&recent, 4, 2).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::Oscillation {
+                distinct_calls: 2,
+                window: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn oscillation_silent_when_window_not_full() {
+        let mut recent = VecDeque::new();
+        let a = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let b = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "b.txt"}),
+            succeeded: true,
+        };
+        recent.push_back(a.clone());
+        recent.push_back(b.clone());
+        recent.push_back(a);
+        // Only 3 calls, window=4
+        assert!(check_oscillation(&recent, 4, 2).is_none());
+    }
+
+    #[test]
+    fn oscillation_silent_when_all_identical() {
+        let mut recent = VecDeque::new();
+        let snap = ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "x.rs"}),
+            succeeded: true,
+        };
+        for _ in 0..4 {
+            recent.push_back(snap.clone());
+        }
+        // distinct=1, should be left to check_identical_repetition
+        assert!(check_oscillation(&recent, 4, 2).is_none());
+    }
+
+    #[test]
+    fn oscillation_silent_when_too_many_distinct() {
+        let mut recent = VecDeque::new();
+        for i in 0..4 {
+            recent.push_back(ToolCallSnapshot {
+                tool: "read_file".to_string(),
+                arguments: serde_json::json!({"path": format!("file_{i}.txt")}),
+                succeeded: true,
+            });
+        }
+        assert!(check_oscillation(&recent, 4, 2).is_none());
+    }
+
+    #[test]
+    fn oscillation_disabled_when_window_zero() {
+        let mut recent = VecDeque::new();
+        let a = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let b = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "b.txt"}),
+            succeeded: true,
+        };
+        for _ in 0..4 {
+            recent.push_back(a.clone());
+            recent.push_back(b.clone());
+        }
+        assert!(check_oscillation(&recent, 0, 2).is_none());
+    }
+
+    // --- M26 phase-07a: windowed output tests ---
+
+    #[test]
+    fn windowed_output_fires_when_sum_exceeds_limit() {
+        let mut recent_output_bytes: VecDeque<usize> = VecDeque::new();
+        recent_output_bytes.push_back(400);
+        recent_output_bytes.push_back(400);
+        recent_output_bytes.push_back(400);
+        let signal = check_windowed_output(&recent_output_bytes, 3, 1000).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::CumulativeOutputFlood {
+                window: 3,
+                bytes: 1200
+            }
+        ));
+    }
+
+    #[test]
+    fn windowed_output_silent_at_or_below_limit() {
+        let mut recent_output_bytes: VecDeque<usize> = VecDeque::new();
+        recent_output_bytes.push_back(333);
+        recent_output_bytes.push_back(333);
+        recent_output_bytes.push_back(334);
+        // Sum = 1000, exactly at limit — strict > means no fire
+        assert!(check_windowed_output(&recent_output_bytes, 3, 1000).is_none());
+    }
+
+    #[test]
+    fn windowed_output_silent_when_window_not_full() {
+        let mut recent_output_bytes: VecDeque<usize> = VecDeque::new();
+        recent_output_bytes.push_back(400);
+        recent_output_bytes.push_back(400);
+        // Only 2 outputs, window=3
+        assert!(check_windowed_output(&recent_output_bytes, 3, 1000).is_none());
+    }
+
+    #[test]
+    fn windowed_output_disabled_when_window_zero() {
+        let mut recent_output_bytes: VecDeque<usize> = VecDeque::new();
+        recent_output_bytes.push_back(400);
+        recent_output_bytes.push_back(400);
+        recent_output_bytes.push_back(400);
+        assert!(check_windowed_output(&recent_output_bytes, 0, 1000).is_none());
+    }
+
+    #[test]
+    fn describe_oscillation() {
+        let signal = HardFailSignal::Oscillation {
+            distinct_calls: 2,
+            window: 4,
+        };
+        let desc = signal.describe();
+        assert!(desc.contains("oscillation"));
+        assert!(desc.contains("2"));
+        assert!(desc.contains("4"));
+    }
+
+    #[test]
+    fn describe_cumulative_output_flood() {
+        let signal = HardFailSignal::CumulativeOutputFlood {
+            window: 3,
+            bytes: 1200,
+        };
+        let desc = signal.describe();
+        assert!(desc.contains("flooded"));
+        assert!(desc.contains("1200"));
+        assert!(desc.contains("3"));
     }
 }

@@ -1,7 +1,7 @@
 # Phase 07a: Governor oscillation & windowed-output detectors
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~300 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -532,3 +532,41 @@ field additions are within scope (they are the config surface this phase ships).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 12:29 (started)
+
+**Executor:** Claude (executor)
+
+**Summary:** Implementing two additive governor detectors: `check_oscillation` (sliding-window distinct-call-set) and `check_windowed_output` (cumulative-output flood). Both are standalone pure functions chained via `.or_else` at the Step-7 seam, following the same pattern as `check_empty_completion_stall` / `check_repeated_gate_feedback`.
+
+### Update — 2026-07-08 12:30 (complete)
+
+**Executor:** Claude (executor)
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed
+- `cargo build` — passed, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo test` — 901 passed, 0 failed, 2 ignored
+
+**End-to-end verification:**
+- `cargo run -p rexymcp -- init --dir /tmp/p07a_test --force` — wrote `rexymcp.toml`
+- `grep -E 'oscillation_window|oscillation_distinct_max|output_window|output_window_bytes' /tmp/p07a_test/rexymcp.toml` — all four knobs present in `[governor]` block and in `[models]` override comments
+- `cargo run -p rexymcp -- health --config /tmp/p07a_test/rexymcp.toml` — no parse errors (exit 1 only from unreachable model endpoint, not config parse)
+
+**Grep for pinned literals:**
+- `grep -rn 'oscillation_window' executor/src/config.rs mcp/src/init.rs` — 8 matches confirming the literal landed in both config and template
+
+**Files changed:**
+- `executor/src/config.rs` — added 4 `GovernorConfig` fields + defaults, 4 `ModelOverride` fields, 4 override blocks in `resolve_for_model`
+- `executor/src/governor/hard_fail.rs` — added `Oscillation`/`CumulativeOutputFlood` variants + `describe` arms, `check_oscillation`/`check_windowed_output` functions, 11 unit tests
+- `executor/src/agent/mod.rs` — declared `recent_output_bytes` VecDeque, push at tool-call site, chained two detectors into Step-7 seam
+- `executor/src/agent/tests.rs` — 2 integration tests (`oscillation_across_alternating_reads_trips_hard_fail`, `cumulative_output_flood_trips_hard_fail`)
+- `mcp/src/init.rs` — documented 4 new `[governor]` knobs + 4 override comment lines
+- `mcp/src/runner.rs` — added 4 `None` fields to two `ModelOverride` test initializers
+- `docs/dev/milestones/M26-polish-and-hardening/phase-07a-governor-oscillation-and-output-detectors.md` — status flip + Update Log
+- `docs/dev/milestones/M26-polish-and-hardening/README.md` — phase table row updated to `review`
+
+**Commit:** `feat: add governor oscillation and windowed-output flood detectors`
+
+**Notes for review:** None.
