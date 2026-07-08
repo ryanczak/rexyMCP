@@ -177,7 +177,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 |----|-------|--------|
 | 01 | Consolidate escalation budget knobs ([phase-01-consolidate-escalation-knobs.md](phase-01-consolidate-escalation-knobs.md)) | done |
 | 02  | Loop-journal substrate: `ArchitectActivity` record + `rexymcp journal` CLI (retire `EscalationEvent`) ([phase-02-loop-journal-substrate.md](phase-02-loop-journal-substrate.md)) | done |
-| 02b | `escalation_count` wiring: retire orphaned `tier_telemetry.escalation_count`, derive the dashboard Assists counter from `assist` journal records ([phase-02b-escalation-count-wiring.md](phase-02b-escalation-count-wiring.md)) | in-progress |
+| 02b | `escalation_count` wiring: retire orphaned `tier_telemetry.escalation_count`, derive the dashboard Assists counter from `assist` journal records ([phase-02b-escalation-count-wiring.md](phase-02b-escalation-count-wiring.md)) | done |
 | 03 | Server-authored bookkeeping (Status flip + baseline Update Log; executor-contract amendment) | planned |
 | 04 | `continue_phase` briefing-seeded resume (MCP tool + escalate-skill lever) | planned |
 | 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |

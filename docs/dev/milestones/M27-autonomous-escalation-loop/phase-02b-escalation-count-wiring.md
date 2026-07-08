@@ -1,7 +1,7 @@
 # Phase 02b: `escalation_count` wiring — retire the orphaned field, count assists from journal records
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (done)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=refactor, size=s
@@ -402,3 +402,25 @@ confirming the pre-verified CLI syntax removes the trigger.
 **Notes for review:** No changes made in this run — all 6 spec tasks were already correctly implemented by the prior executor. This run verified all gates, ran end-to-end verification, and flipped status to `review`.
 
 **Commit:** (none needed — no file changes this run)
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_after_1 (1 hard_fail bounce, resolved by refined re-dispatch; the bounce was a governor `IdenticalToolCallRepetition` loop during exploratory/verification work, not an implementation defect — all 6 spec tasks landed correctly on the first attempt that produced a diff)
+- **Bounces:** 1 (hard_fail → refined re-dispatch, see escalation entry above)
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (completing run); Qwen/Qwen3.6-27B-PrismaAURA (prior hard_fail runs that landed the actual diff)
+- **Scope deviations:** none — `panels.rs`/`render.rs` confirmed unchanged via `git diff`; no new dependency; no `architecture.md`/`STANDARDS.md`/`WORKFLOW.md` edits.
+- **Calibration:** none new. Both hard_fails were the same failure class already covered by existing telemetry (`IdenticalToolCallRepetition`) — no new pattern to fold.
+
+**Independent re-verification (principal engineer, 2026-07-08):**
+- `cargo fmt --all --check`, `cargo build`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test` all re-run independently — all pass (918 passed, 0 failed, 2 ignored), matching the executor's report.
+- `git diff c77f5dd..HEAD -- executor/src/store/telemetry.rs mcp/src/dashboard/mod.rs` confirms all 6 spec tasks implemented exactly as specified; `git diff c77f5dd..HEAD -- mcp/src/dashboard/panels.rs mcp/src/dashboard/render.rs` is empty (untouched, per spec).
+- `grep -rn "escalation_count" executor/src mcp/src` hits only the Task-3 back-compat fixture literal and the (intentionally retained) `project_escalation_count` binding/field name — no live struct field, no dashboard read of the retired field.
+- No `TODO`/`FIXME`/`dbg!`/`println!` in the changed files; all `unwrap()`/`expect()` in the diff are in `#[cfg(test)]` code (exempt per STANDARDS.md §2.1).
+- Spot-checked `load_data_counts_assist_journal_records_as_escalations` (dashboard/mod.rs) and `phase_run_ignores_retired_escalation_count_key` (telemetry.rs) — both real: the dashboard test pins two negatives (non-assist kind, other project) that would fail if the `activity == "assist"` filter or `project_id` filter were dropped; ran both individually, both pass.
+- **End-to-end verification independently reproduced** (the Update Log's own account summarized the result but didn't quote raw output, a minor STANDARDS.md §1 gap — not worth a bounce since the behavior is confirmed correct): ran `rexymcp init` into a scratch tmpdir, then `rexymcp journal --config <tmp>/rexymcp.toml --phase-id p1 --activity assist --telemetry-path <tmp>/phase_runs.jsonl` twice and once with `--activity draft`. Resulting `phase_runs.jsonl`:
+  ```
+  {"record":"architect_activity","ts":1783550064801,...,"phase_id":"p1","project_id":"9a5b6494-9542-492d-a905-575b3bca56aa",...,"activity":"assist",...}
+  {"record":"architect_activity","ts":1783550064803,...,"phase_id":"p1","project_id":"9a5b6494-9542-492d-a905-575b3bca56aa",...,"activity":"assist",...}
+  {"record":"architect_activity","ts":1783550064804,...,"phase_id":"p1","project_id":"9a5b6494-9542-492d-a905-575b3bca56aa",...,"activity":"draft",...}
+  ```
+  `grep -c '"activity":"assist"'` → `2`, confirming the real producer→store path matches the dashboard's counting logic end-to-end.
