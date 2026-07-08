@@ -4,23 +4,38 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M26 phase-05** — post-write format hook writing form
-([phase-05-post-write-format-hook-writing-form.md](milestones/M26-polish-and-hardening/phase-05-post-write-format-hook-writing-form.md),
-**drafted 2026-07-07, todo**). Closes the no-op post-write format hook: the hook
-runs the check-form `commands.format` (`cargo fmt --all --check`), which rewrites
-nothing, so the file the executor just wrote reaches the verifier misformatted
-(the M21 executor-vs-reviewer fmt divergence). Adds a writing `format_fix` field
-mirroring the existing `lint`/`lint_fix` split; the hook runs `format_fix`, the
-DoD fmt gate keeps running `format`. Files: `config.rs` (new field + test),
-`command.rs` (hook body), `mod.rs` (guard), `doctor.rs` (list row + E0063 sites),
-`init.rs` (template doc), `agent/tests.rs` (E0063 fixes + ~6 hook-test
-conversions + 2 new tests). **Pre-injected:** the hook body/guard/gate quoted
-verbatim; the no-fallback rule (unset `format_fix` = skip, per STANDARDS §2.2);
-the precise 21-site E0063 list separated from the ~6 behavior-conversion hook
-tests (3 that go red, with the exact `format:`→`format_fix:` fix and why each
-fails); a real-`RealCommandRunner` E2E that rewrites a file on disk; and the
-crux negative pin (hook uses the writing form, gate uses the check form).
-Dispatch via `/rexymcp:dispatch phase-05`.
+**Active phase:** **M26 phase-06** — wire `gate_retries` into the gate-retry loop
+([phase-06-wire-gate-retries.md](milestones/M26-polish-and-hardening/phase-06-wire-gate-retries.md),
+**drafted 2026-07-07, todo**). `calibrate` writes `[budget] gate_retries` (tier-
+derived) and `BudgetConfig::effective_gate_retries` resolves it, but nothing in the
+loop reads it — the M19 gate-retry loop retries a red gate only to the turn cap
+(review §1.1). This phase adds a resolved `gate_retries: u32` field to `LoopDeps`
+(mirroring the already-resolved `max_turns`), a `gate_retry_count` in the
+`gate_failure_feedback` block, and terminates as `budget_exceeded` (with a
+"gate-retry budget exhausted" reason) when the retry budget is spent. `LARGE`/no-tier
+= `u32::MAX` = current behavior byte-identical. Files: `mod.rs` (field + counter +
+check), `runner.rs` (1-line resolve), `tests.rs` (~9-site E0063 fix with
+`gate_retries: u32::MAX` + 2 new integration tests), `config.rs` (doc-comment fix
+only). **Pre-injected:** the gate-retry block + `LoopDeps`/`runner.rs` sites quoted
+verbatim; the `max_turns`-resolution precedent; the backward-compat pin (`u32::MAX`
+→ existing gate tests pass unmodified); the crux positive pin (`gate_retries=2`
+terminates before the turn cap, asserted via `calls().len()`). **Escalation knobs
+(`escalation_slots`, `max_assists`) explicitly out of scope → deferred to M27.**
+Dispatch via `/rexymcp:dispatch phase-06`.
+
+**M26 phase-05 — done** (2026-07-07, **approved_first_try**; commits `d5acc0c`
+draft / `cb9c1f1` fix / `ecdd970` approve). The post-write format hook no longer
+no-ops: a new writing `format_fix` field (mirroring `lint`/`lint_fix`) lets the
+hook rewrite a just-written misformatted file while the DoD fmt gate keeps running
+the check-form `format`. Closes the M21 executor-vs-reviewer fmt divergence.
+**Wire-or-retire fork for phase-06 resolved with the user (2026-07-07):** wire
+`gate_retries` (phase-06, drafted above); **defer** the escalation knobs
+(`escalation_slots`/`max_assists`) to a new **M27 — Autonomous Escalation Loop**
+milestone (architect-side `/loop`, starts with a design talk-through + an
+`architecture.md`/executor-contract/`WORKFLOW.md` amendment; absorbs the resume
+lever + D8/D9 server-authored bookkeeping). M27 is a human-gated boundary, not yet
+kicked off. See the [M26 README](milestones/M26-polish-and-hardening/README.md)
+§ "Escalation budgeting moved to M27".
 
 **M26 phase-04 — done** (2026-07-07, **approved_first_try**; commits `4cf24da`
 draft / `cdd8a98` fix / `bc3313f` approve). `write_file` now honors the

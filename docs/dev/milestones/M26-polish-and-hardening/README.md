@@ -53,9 +53,13 @@ Two threads, grouped by subsystem so each phase is one executor session:
   `patch`.
 - The post-write format hook actually rewrites a deliberately misformatted
   touched file (today it runs the verify-only `--check` form — a no-op).
-- The `[budget] gate_retries` / `escalation_slots`, `[executor] tier`, and
-  `[escalation] max_assists` knobs are either consumed by the loop or removed
-  from config + `calibrate`; no knob `calibrate` writes is a silent no-op.
+- `[budget] gate_retries` (tier-derived) is consumed by the M19 gate-retry loop:
+  a persistently-red gate terminates as `budget_exceeded` after the resolved
+  retry budget, not only at the turn cap. `[executor] tier` is thereby live for
+  loop control as well as telemetry. **`[budget] escalation_slots` and
+  `[escalation] max_assists` are deferred to M27** (the architect-side autonomous
+  `/loop` owns escalation budgeting — decided with the user 2026-07-07; see
+  Notes § "Escalation budgeting moved to M27").
 - The governor halts an A,B,A,B two-call oscillation and a windowed
   cumulative-output flood; an optional wall-clock ceiling terminates a run when
   configured.
@@ -78,7 +82,7 @@ Two threads, grouped by subsystem so each phase is one executor session:
 | 03 | Surface silent degradations as architect-visible warnings ([phase-03-silent-degradation-warnings.md](phase-03-silent-degradation-warnings.md)) | done |
 | 04 | `write_file` read-before-edit gate ([phase-04-write-file-read-before-edit-gate.md](phase-04-write-file-read-before-edit-gate.md)) | done |
 | 05 | Post-write format hook: writing form ([phase-05-post-write-format-hook-writing-form.md](phase-05-post-write-format-hook-writing-form.md)) | done |
-| 06 | Wire or retire the dead budget/tier knobs | todo (not drafted) |
+| 06 | Wire `gate_retries` into the gate-retry loop ([phase-06-wire-gate-retries.md](phase-06-wire-gate-retries.md)) | todo (drafted) |
 | 07 | Governor blind-spot detectors (oscillation, windowed output, wall clock) | todo (not drafted) |
 | 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
 | —  | ~~Wire `roots/list` corroboration~~ | **deferred** (rmcp 1.8.0 / SEP-2577) |
@@ -102,11 +106,17 @@ renumbered down by one when the roots phase (originally 03) was deferred
   so renaming the manifest to `rexymcp` is safe and the install-path examples
   change with it. If review of phase-01 shows Antigravity binds to the manifest
   `name`, bounce the phase and revisit.
-- **Phase-06 (was 07) is wire-*or*-retire, decided at draft time with the user.**
-  Wiring honors `calibrate`'s intent (tier-derived `effective_max_turns` /
-  `gate_retries` bounding the loop); retiring shrinks config surface but guts
-  `calibrate`. The choice touches `[escalation]`/`[architect]` semantics from
-  M20, so it gets a talk-through before the phase doc is written.
+- **Phase-06 (was 07) — resolved at draft time with the user (2026-07-07).** The
+  talk-through concluded **wire, split, and defer**: (1) `gate_retries` is wired
+  into the M19 gate-retry loop this phase (real loop effect, honors `calibrate`'s
+  intent, executor-internal and safe); (2) the escalation knobs (`escalation_slots`,
+  `max_assists`/`EscalationConfig`) are **not** executor-internal at all — their
+  natural consumer is the *architect-side* autonomous `/loop`, so they move to M27
+  (see below). Retiring them now would be churn before M27 re-introduces them at the
+  right layer; wiring them into the executor loop now would contradict the
+  architecture non-goal *"rexyMCP never links a cloud provider"* and violate WORKFLOW
+  § "Derive intentionally." Phase-06 corrects their stale "wired in M21" doc comments
+  and otherwise leaves them untouched.
 - **Phase-03 (was 04) shape:** an additive `warnings: Vec<String>` field on
   `PhaseResult` with `#[serde(default)]` (WORKFLOW § "Prefer additive change
   shapes"); no existing field changes meaning. Implemented at draft time by
@@ -115,6 +125,37 @@ renumbered down by one when the roots phase (originally 03) was deferred
   11-site change to `PhaseInput` constructors.
 - **Phase-07 (was 08) may re-split** (07a detectors / 07b wall-clock ceiling) at
   draft time if the combined diff estimate exceeds one session.
+
+### Escalation budgeting moved to M27 (2026-07-07, with the user)
+
+The phase-06 wire-or-retire talk-through opened a larger design thread. The user's
+goal is an **autonomous Architect↔Executor virtuous cycle** — a fully autonomous
+`/loop` where the executor escalates well and Claude (the architect) responds
+without a human in the inner loop. That reframes what `[escalation] max_assists`
+and `[budget] escalation_slots` are *for*: not executor-internal knobs, but the
+budget for the **architect-side** autonomous loop that reads a returned briefing,
+applies an escalate lever (re-dispatch / resume), and stops for the human after
+`max_assists` round-trips.
+
+Two decisions fixed this direction (both with the user):
+- **Split.** Phase-06 lands the mechanical, executor-internal win (`gate_retries`)
+  now. The autonomous escalation cycle becomes its own milestone, **M27 — Autonomous
+  Escalation Loop**, which *starts with a design talk-through* and amends
+  `docs/architecture.md`, the executor contract
+  (`executor/templates/executor_contract.md`), and `WORKFLOW.md` before any executor
+  phase is drafted.
+- **Architect-side owner.** The executor stays a single-shot unit that returns a
+  structured briefing (as it already does); the assist counter and the `/loop`
+  driver live in the plugin/skill layer. This is consistent with the existing design
+  (`architecture.md` § "Escalation = Claude Code itself", the escalate skill's three
+  levers) and with the non-goal — rexyMCP never calls a cloud provider; Claude Code,
+  already the architect, is the escalation target. M27 also naturally absorbs the
+  queued **resume lever** (review §3.1) and **D8/D9 server-authored bookkeeping**
+  (review §3.2), both of which were already flagged as needing a talk-through.
+
+M27 is **not** kicked off yet — it is a human-gated milestone boundary. Recorded
+here (not in `architecture.md`) because it is a milestone-scoping decision; the
+`architecture.md` amendment happens at M27 kickoff.
 
 ### Roots corroboration deferred (2026-07-07, with the user)
 
