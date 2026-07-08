@@ -4,13 +4,42 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-02b — drafted (todo).** `escalation_count` wiring:
-retire the orphaned `PhaseRun.tier_telemetry.escalation_count` field (nothing ever
-wrote it) and rewire the dashboard "Assists" counter to count `assist`
-`ArchitectActivity` journal records for the project. `panels.rs`/`render.rs`
-untouched (the count flows in as a plain `u32`); back-compat pinned (old records
-carrying `escalation_count` still parse — serde ignores unknown keys). ~120 lines,
-size=s. Dispatch with `/rexymcp:dispatch phase-02b`.
+**Active phase: M27 phase-03a — drafted (todo).** Server-authored finalize
+(D8/D9, half 1 of 2). On a `complete` `execute_phase`, the server writes the
+phase doc's Status flip (`in-progress` → `review`), appends a baseline
+completion Update Log entry (mechanical skeleton: gates/files/commit sha +
+spliced executor Summary/Notes via a new `PhaseResult.completion_summary`
+channel), flips the milestone README row, and makes a **separate** `docs:`
+commit (the executor still commits its own code — two commits per phase).
+**Additive and dormant-safe:** finalize no-ops while the phase doc is already
+`review` (today's executor-authored state), so it changes nothing observable
+until phase-03b retires the executor's `bookkeeping_feedback` gate. ~420 lines,
+size=m, two crates (`executor` result-type field; new `mcp/src/finalize.rs` +
+runner wiring). Dispatch with `/rexymcp:dispatch phase-03a`.
+
+**M27 phase-03a — drafted** (2026-07-08). Design forks resolved with the user:
+commit ownership = executor commits code / server commits bookkeeping
+separately; qualitative parts = server writes the mechanical entry and splices
+an executor Summary+Notes carried through the `completion_summary` field.
+Pre-injected verbatim: the `PhaseResult`/`Artifacts` field additions + the
+complete-path capture site (`strip_think_blocks(&completion)`), the full
+`finalize_complete` skeleton + helper contracts (with pinned negatives for the
+status-line match, README-row flip, and `git add -- <paths>` never `-A`), the
+baseline-entry format (raw epoch-ms — no date crate, no new dep), and the
+`run_phase_with` wiring (finalize error → `warnings`, never `Err`). Split from
+the original single phase-03; 03b (gate retirement + contract amendment) stays
+planned.
+
+**M27 phase-02b — done** (2026-07-08, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8 on the completing run; Qwen/Qwen3.6-27B-PrismaAURA landed
+the diff on the prior hard_fail runs; commits `5209738` approve). One bounce: a
+governor `IdenticalToolCallRepetition` hard_fail during exploratory
+verification, not an implementation defect — all 6 spec tasks and four gates
+were clean once a diff was produced. Refined re-dispatch (spec note confirming
+the pre-verified `rexymcp journal` CLI syntax) then completed. Independent gate
+re-run (918 passed / 2 ignored) + end-to-end `rexymcp journal` round-trip
+reproduced. Retired the orphaned `tier_telemetry.escalation_count`; rewired the
+dashboard Assists counter to count `assist` `ArchitectActivity` records.
 
 **M27 phase-02b — drafted** (2026-07-08). Two files
 (`executor/src/store/telemetry.rs` field retirement + doc-comment/test fix +

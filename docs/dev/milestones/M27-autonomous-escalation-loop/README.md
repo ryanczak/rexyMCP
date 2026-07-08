@@ -178,7 +178,8 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 01 | Consolidate escalation budget knobs ([phase-01-consolidate-escalation-knobs.md](phase-01-consolidate-escalation-knobs.md)) | done |
 | 02  | Loop-journal substrate: `ArchitectActivity` record + `rexymcp journal` CLI (retire `EscalationEvent`) ([phase-02-loop-journal-substrate.md](phase-02-loop-journal-substrate.md)) | done |
 | 02b | `escalation_count` wiring: retire orphaned `tier_telemetry.escalation_count`, derive the dashboard Assists counter from `assist` journal records ([phase-02b-escalation-count-wiring.md](phase-02b-escalation-count-wiring.md)) | done |
-| 03 | Server-authored bookkeeping (Status flip + baseline Update Log; executor-contract amendment) | planned |
+| 03a | Server-authored finalize: on `complete`, the server writes the Status flip + baseline Update Log + README row + separate `docs:` commit (additive, dormant-safe) ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | todo |
+| 03b | Retire the executor bookkeeping gate + amend the executor contract (flips authorship, activating 03a's finalize) | planned |
 | 04 | `continue_phase` briefing-seeded resume (MCP tool + escalate-skill lever) | planned |
 | 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
@@ -195,6 +196,21 @@ kinds; (2) **rewire the Assists counter in phase-02(b)** — the dashboard count
 derives from `assist` journal records and the never-written
 `tier_telemetry.escalation_count` field is retired (the same consolidation
 phase-01 applied to `escalation_slots`).
+
+Phase 03 was **split at draft time** (2026-07-08) into 03a (the additive,
+dormant-safe server-side author: on a `complete` run the server writes the
+Status flip + baseline Update Log entry + README row and makes a separate
+`docs:` commit) and 03b (the authorship flip: retire the executor's
+pre-completion `bookkeeping_feedback` gate and amend the executor contract so
+the executor stops authoring the completion tail — which activates 03a's
+finalize). The design forks were resolved with the user at draft time:
+(1) **commit ownership** — the executor still commits its *code*; the server
+commits the *bookkeeping* as a separate `docs:` commit (two commits per
+phase); (2) **qualitative splice** — the server authors the mechanical entry
+skeleton (gates, files changed, commit sha) and splices in a Summary +
+Notes-for-review the executor returns via the `PhaseResult.completion_summary`
+channel. 03a lands first because it is inert (no-ops on an already-`review`
+doc) until 03b removes the executor gate.
 
 Phases are drafted **on demand** via `/rexymcp:architect next`; rows above are
 the plan, not final specs. Ordering: substrate first (01–02), then the two
