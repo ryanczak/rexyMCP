@@ -521,7 +521,7 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
   (`format`/`build`/`lint`/`test`), plus an optional `lint_fix` autofixing
   command run by the post-write hook (step 5a above) — not advertised to the
   executor model, not a gate command,
-- budget knobs (context %, max turns, escalation slots),
+- budget knobs (context %, max turns, gate retries, optional wall-clock ceiling),
 - **`[executor] max_tokens`** (M23) — per-response output-token ceiling sent on
   every chat request (default 8192; per-model overridable in `[models."<id>"]`).
   Carved out of the remaining context window; the prior hardcoded 4096 truncated
@@ -530,8 +530,15 @@ rexyMCP config (designed in M1) carries, per invocation or per target project:
   **false**; per-model overridable in `[models."<id>"]`). When false it is emitted
   on the wire as `chat_template_kwargs.enable_thinking = false`, so reasoning
   models default to thinking off unless a model's override turns it on,
-- **`[escalation]`** (M20) — tier (`LARGE`/`MEDIUM`/`SMALL`) and tier-derived
-  defaults for `max_turns`, `escalation_slots`, `doc_level`,
+- **`[executor] tier`** (M20) — executor capability tier
+  (`LARGE`/`MEDIUM`/`SMALL`), set by `rexymcp calibrate`; derives default
+  `max_turns` and `gate_retries` (wired M26),
+- **`[escalation] max_assists`** (M20, consolidated M27) — the per-phase
+  autonomous assist budget for the architect-side `/rexymcp:auto` loop:
+  autonomous escalation round-trips on one phase before the loop stops for the
+  human. Flat and tier-independent (default 3); consumed by the plugin skill
+  layer, never the executor loop. (The overlapping `[budget] escalation_slots`
+  was retired at M27; `calibrate` strips the stale key from old configs.)
 - **`[architect]`** (M20) — Claude model id and cost rates
   (`input_per_mtok`, `output_per_mtok`) for the dashboard Architect cost column;
   a `known_model_rates` registry auto-fills rates for recognized Claude model IDs.

@@ -141,7 +141,7 @@ analogue of the executor's `briefing`.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Consolidate escalation budget knobs (retire `escalation_slots`, redefine `max_assists`) | planned |
+| 01 | Consolidate escalation budget knobs ([phase-01-consolidate-escalation-knobs.md](phase-01-consolidate-escalation-knobs.md)) | drafted (todo) |
 | 02 | Loop-journal telemetry substrate (`ArchitectActivity` producer CLI, `escalation_count` wiring) | planned |
 | 03 | Server-authored bookkeeping (Status flip + baseline Update Log; executor-contract amendment) | planned |
 | 04 | `continue_phase` briefing-seeded resume (MCP tool + escalate-skill lever) | planned |

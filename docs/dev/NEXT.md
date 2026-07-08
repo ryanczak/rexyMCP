@@ -4,9 +4,24 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none — M27 kicked off, phase-01 not yet drafted.** Run
-`/rexymcp:architect next` to draft phase-01 (consolidate escalation budget
-knobs).
+**Active phase: M27 phase-01 — drafted (todo).** Consolidate the escalation
+budget knobs: retire `[budget] escalation_slots` (field + 40 fixture lines +
+init template), redefine `[escalation] max_assists` as the flat,
+tier-independent per-phase assist budget for the `/rexymcp:auto` loop —
+`calibrate` stops managing the section (user settings survive re-calibrate)
+and strips the retired key from old configs. Dispatch with
+`/rexymcp:dispatch phase-01`.
+
+**M27 phase-01 — drafted** (2026-07-08). Mechanical multi-site churn is the
+dominant risk (the 4-occurrence stall class): the spec pre-injects the
+compiler-guided ordering (remove field → build → fix the 2 flagged assertions)
+and sanctions `sed` for the ~40 fixture-line deletions. Semantics change folded
+in with rationale: `max_assists` stops being SMALL-tier-derived, so
+`calibrate` neither writes nor removes `[escalation]` on any tier (pinned
+negative: a user's explicit section must survive re-calibrate). Back-compat
+pinned: `Config::load` must ignore a stale `escalation_slots` key.
+`architecture.md` § Configuration amended at draft time (architect-side).
+~150 lines, size=m.
 
 **📌 M27 — Autonomous Escalation Loop kicked off (2026-07-08, with the user).**
 The architect-side autonomous cycle queued at the M26 phase-06 talk-through.
