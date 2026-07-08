@@ -153,6 +153,7 @@ fn deps<'a>(
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     }
 }
 
@@ -901,6 +902,7 @@ async fn injected_clock_sets_record_ts() {
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
 
     execute_phase(&input(), d).await.unwrap();
@@ -1022,6 +1024,7 @@ async fn run_with_verifier(
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
     execute_phase(&input(), d).await.unwrap()
 }
@@ -1787,6 +1790,7 @@ async fn run_full_with_context_window(
         context_window,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
     execute_phase(&input(), d).await.unwrap()
 }
@@ -2549,6 +2553,7 @@ fn deps_with_progress_simple<'a>(
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     }
 }
 
@@ -2623,6 +2628,7 @@ impl<'a> DepsBuilder<'a> {
             context_window: None,
             governor: GovernorConfig::default(),
             task_tracking: true,
+            gate_retries: u32::MAX,
         }
     }
 }
@@ -2810,6 +2816,7 @@ async fn callback_panic_is_not_caught() {
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
     execute_phase(&input(), d).await.unwrap();
 }
@@ -3615,6 +3622,7 @@ async fn loop_emits_output_filtered_event_for_filtered_bash() {
             context_window: None,
             governor: GovernorConfig::default(),
             task_tracking: true,
+            gate_retries: u32::MAX,
         },
     )
     .await
@@ -3811,6 +3819,7 @@ async fn loop_seeds_task_updates_from_spec() {
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -3875,6 +3884,7 @@ async fn loop_emits_no_task_updates_when_spec_absent() {
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -4019,6 +4029,7 @@ async fn loop_emits_task_update_when_model_flips_task() {
         context_window: None,
         governor: GovernorConfig::default(),
         task_tracking: true,
+        gate_retries: u32::MAX,
     };
     let input = PhaseInput {
         phase_doc: phase_doc.to_string(),
@@ -4212,6 +4223,87 @@ async fn gate_failure_at_turn_cap_is_budget_exceeded() {
     let result = execute_phase(&input(), d).await.unwrap();
 
     assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+}
+
+#[tokio::test]
+async fn gate_retry_budget_exhaustion_returns_budget_exceeded_before_turn_cap() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Model always returns a completion (no tool calls), triggering gate check each turn.
+    // Scripted for 4 productive turns — enough to cover initial + 2 retries; an
+    // exhausted script would fall through to the (unrelated) empty-completion
+    // recovery path instead of re-running the gate check.
+    let client = MockAiClientScript::new(vec![
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")],
+    ]);
+    let budget = Budget::new(1_000_000);
+    let commands = all_commands_configured();
+    // All gates always fail: 4 commands × enough turns for initial + 2 retries.
+    let runner = ScriptedCommandRunner::new(vec![
+        false, false, false, false, // turn 1
+        false, false, false, false, // retry 1
+        false, false, false, false, // retry 2 (budget exhausted)
+    ]);
+    let mut d = deps(&client, &registry, &budget, 50, dir.path()); // max_turns = 50
+    d.commands = &commands;
+    d.runner = &runner;
+    d.gate_retries = 2;
+    d.governor.gate_feedback_repeat_threshold = usize::MAX; // disable A3 hard-fail
+    d.governor.empty_completion_threshold = usize::MAX; // disable empty-completion hard-fail
+
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+    // With gate_retries=2 and max_turns=50, termination should happen at the
+    // retry budget (3 model calls: initial completion + 2 retries), not at the
+    // turn cap (50 calls).
+    assert!(
+        client.calls().len() <= 5,
+        "expected ~3 calls but got {}",
+        client.calls().len()
+    );
+}
+
+#[tokio::test]
+async fn unlimited_gate_retries_retries_to_turn_cap() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    // Model always returns a completion (no tool calls), triggering gate check each turn.
+    // Scripted for 3 productive turns to match max_turns — an exhausted script
+    // would fall through to the empty-completion recovery path instead.
+    let client = MockAiClientScript::new(vec![
+        vec![token("All done.")],
+        vec![token("All done.")],
+        vec![token("All done.")],
+    ]);
+    let budget = Budget::new(1_000_000);
+    let commands = all_commands_configured();
+    // All gates always fail: 4 commands × enough turns.
+    let runner = ScriptedCommandRunner::new(vec![
+        false, false, false, false, // turn 1
+        false, false, false, false, // turn 2
+        false, false, false, false, // turn 3
+    ]);
+    let mut d = deps(&client, &registry, &budget, 3, dir.path()); // max_turns = 3
+    d.commands = &commands;
+    d.runner = &runner;
+    d.gate_retries = u32::MAX; // unlimited
+
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+    // With unlimited gate_retries and max_turns=3, the loop should reach the
+    // turn cap (3 model calls), not short-circuit on the retry budget.
+    assert!(
+        client.calls().len() >= 3,
+        "expected >=3 calls but got {}",
+        client.calls().len()
+    );
 }
 
 #[tokio::test]
@@ -4440,6 +4532,7 @@ async fn self_revert_of_edited_file_is_refused() {
             context_window: None,
             governor: GovernorConfig::default(),
             task_tracking: true,
+            gate_retries: u32::MAX,
         },
     )
     .await

@@ -82,7 +82,7 @@ Two threads, grouped by subsystem so each phase is one executor session:
 | 03 | Surface silent degradations as architect-visible warnings ([phase-03-silent-degradation-warnings.md](phase-03-silent-degradation-warnings.md)) | done |
 | 04 | `write_file` read-before-edit gate ([phase-04-write-file-read-before-edit-gate.md](phase-04-write-file-read-before-edit-gate.md)) | done |
 | 05 | Post-write format hook: writing form ([phase-05-post-write-format-hook-writing-form.md](phase-05-post-write-format-hook-writing-form.md)) | done |
-| 06 | Wire `gate_retries` into the gate-retry loop ([phase-06-wire-gate-retries.md](phase-06-wire-gate-retries.md)) | todo (drafted) |
+| 06 | Wire `gate_retries` into the gate-retry loop ([phase-06-wire-gate-retries.md](phase-06-wire-gate-retries.md)) | done |
 | 07 | Governor blind-spot detectors (oscillation, windowed output, wall clock) | todo (not drafted) |
 | 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
 | —  | ~~Wire `roots/list` corroboration~~ | **deferred** (rmcp 1.8.0 / SEP-2577) |

@@ -91,6 +91,10 @@ pub struct LoopDeps<'a> {
     pub tools: &'a [ToolSchema],
     pub budget: &'a Budget,
     pub max_turns: usize,
+    /// Resolved gate-retry budget: max gate-retry rounds at completion time
+    /// before `budget_exceeded`. `u32::MAX` = unlimited (bounded by `max_turns`).
+    /// Resolved from `[budget] gate_retries` / `[executor] tier` at the call site.
+    pub gate_retries: u32,
     pub project_root: &'a Path,
     /// Model identifier, for the `SessionStart` record.
     pub model: &'a str,
@@ -169,6 +173,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Stuck gate-feedback stall counters (M22 phase-02).
     let mut last_gate_feedback: Option<String> = None;
     let mut consecutive_gate_repeats: usize = 0;
+
+    // M19 gate-retry rounds consumed (M26 phase-06: bounded by deps.gate_retries).
+    let mut gate_retry_count: u32 = 0;
 
     // Read-before-edit working set (07d): resolved path → mtime at last read/edit.
     let mut working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
@@ -744,7 +751,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                             },
                         );
                         messages.push(user_text(&feedback, turns));
-                        if turns >= deps.max_turns {
+                        gate_retry_count += 1;
+                        let gate_budget_exhausted = gate_retry_count >= deps.gate_retries;
+                        if gate_budget_exhausted || turns >= deps.max_turns {
                             log_session_end(
                                 &log_handle,
                                 &redactor,
@@ -769,11 +778,18 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                                 turns,
                                 CommandOutputs::default(),
                             );
+                            let reason = if gate_budget_exhausted {
+                                format!(
+                                    "gate-retry budget exhausted after {gate_retry_count} retries"
+                                )
+                            } else {
+                                turns_line(deps.max_turns)
+                            };
                             return Ok(budget_exceeded_result(
                                 input,
                                 &recent_tool_calls,
                                 deps.project_root,
-                                turns_line(deps.max_turns),
+                                reason,
                                 artifacts,
                             ));
                         }

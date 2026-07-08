@@ -1,7 +1,7 @@
 # Phase 06: Wire `gate_retries` into the gate-retry loop
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~150 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -327,3 +327,112 @@ None. (No new dependency; no `Cargo.toml`/`architecture.md`/`STANDARDS.md`/
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 (escalation)
+
+**Chosen lever:** refined re-dispatch (no spec change — plain retry)
+**Rationale:** hard_fail at turn 3 was a backend infrastructure blip, not a spec
+gap: the model called `read_file` with `arguments: null` (a normal recoverable
+tool-result error, handled gracefully), but the *next* request to the backend
+(`http://brain:8000/v1`) 400'd with `"Can only get item pairs from a mapping"` —
+a chat-template error rendering the prior null-argument tool call back into the
+prompt, not a spec ambiguity the executor couldn't resolve. No files were
+touched; `Status:` never left `todo`. Re-dispatch as-is via
+`/rexymcp:dispatch phase-06`. If this backend-400-on-null-args pattern recurs,
+it's worth a future investigation into how the executor serializes a
+failed-tool-call turn for the next request — not a phase-doc fix.
+
+### Update — 2026-07-08 (escalation, 2nd dispatch)
+
+**Chosen lever:** session takeover
+**Rationale:** the 2nd dispatch (session `6a4dba4a`) ran to `budget_exceeded`
+at 400/400 turns, but landed the entire production Spec correctly and
+byte-identical to the pre-injected fragments (`LoopDeps.gate_retries`,
+the counter + `gate_budget_exhausted` check, the `runner.rs` resolve call,
+and both `config.rs` doc-comment corrections — grep-confirmed "wired M26" /
+"deferred to M27" landed). Tasks 1–5 were marked done via `update_task`; task
+6 (doc comments) was never marked done but its edit is present in the diff.
+The blocker was the two new tests: `MockAiClientScript::new(vec![vec![token("All
+done.")]])` scripts only **one** model turn — once exhausted, `chat()` sends
+zero events, and an empty completion routes to the *unrelated*
+empty-completion recovery branch (`mod.rs:531`) instead of re-running
+`gate_failure_feedback`, so the loop drifted to the turn cap instead of the
+gate-retry budget. The executor spent turns 70–400 oscillating (re-reading
+the same ~15-line window of `tests.rs` without re-running `cargo test` after
+turn ~125) and never diagnosed the mock's turn-exhaustion behavior — a
+genuine capability gap, not a spec gap a re-dispatch refinement would fix
+quickly. Took over directly: scripted 4 (resp. 3) `"All done."` turns in the
+two new tests; no production code changed. See completion entry below.
+
+### Update — 2026-07-08 (complete, architect takeover)
+
+**Executor:** Claude (direct)
+**Verdict:** escalated (session takeover after 2nd dispatch budget_exceeded)
+
+All six Spec tasks landed via the 2nd dispatch (session `6a4dba4a`) with
+production code matching the phase doc's pre-injected fragments verbatim.
+The only defect was in the two new tests' `MockAiClientScript` setup (see
+escalation entry above) — fixed by scripting enough `"All done."` turns to
+cover the full expected model-call count in each test, matching the
+existing-test precedent's implicit assumption that the mock's turn queue is
+never exhausted mid-test.
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — `LoopDeps.gate_retries: u32` field;
+  `gate_retry_count` counter; `gate_budget_exhausted` check in the
+  gate-retry block; computed `reason` string for the briefing.
+- `executor/src/agent/tests.rs` — `gate_retries: u32::MAX` at all 12
+  `LoopDeps` construction sites (E0063 fallout); two new integration tests
+  (`gate_retry_budget_exhaustion_returns_budget_exceeded_before_turn_cap`,
+  `unlimited_gate_retries_retries_to_turn_cap`), fixed at takeover to script
+  4/3 `MockAiClientScript` turns respectively instead of 1.
+- `executor/src/config.rs` — doc-comment only: `Tier` and `EscalationConfig`
+  comments corrected to say `gate_retries` is wired M26 and escalation
+  budgeting is deferred to M27.
+- `mcp/src/runner.rs` — resolves `gate_retries` via
+  `inp.cfg.budget.effective_gate_retries(inp.cfg.executor.tier)` at the
+  `LoopDeps` construction site.
+
+**Grep proving the pinned literals landed:**
+```
+$ grep -n "gate_retries (wired M26)\|deferred to M27" executor/src/config.rs
+21:/// `[executor].tier`. Controls default `max_turns`, `gate_retries` (wired M26),
+22:/// and whether mid-phase Architect escalation is enabled (deferred to M27).
+```
+
+**Verification (all four gates green, run independently at takeover):**
+```
+$ cargo fmt --all --check
+(no output, exit 0)
+
+$ cargo build
+   Compiling rexymcp-executor v0.9.1
+   Compiling rexymcp v0.9.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.89s
+
+$ cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.51s
+
+$ cargo test
+test result: ok. 439 passed; 0 failed; 0 ignored (mcp)
+test result: ok. 888 passed; 0 failed; 2 ignored (executor)
+```
+
+Both new tests pass individually and as part of the full suite; the existing
+`gate_failure_loops_until_gates_pass` / `gate_failure_at_turn_cap_is_budget_exceeded`
+tests pass unmodified (only the additive `gate_retries: u32::MAX` field, per
+the backward-compat pin).
+
+**End-to-end verification:** N/A per the phase doc — no new CLI/MCP/config
+surface; behavior is exercised hermetically by the two `MockAiClient`
+integration tests.
+
+**Notes for review:** No scope deviation — `escalation_slots`/`max_assists`
+untouched beyond their doc comments, as authorized. No new dependency, no
+`Cargo.toml`/`architecture.md`/`STANDARDS.md`/`WORKFLOW.md` edit.
+**Calibration note:** 2nd occurrence of an executor stalling on a
+mock-harness subtlety (test-authoring capability gap) rather than a
+production-code gap — the model can follow a precisely-specified production
+change but struggles to reason about a test double's internal state
+(queue exhaustion) when a failure doesn't match its mental model. Flagged
+for the user; not yet a fold.

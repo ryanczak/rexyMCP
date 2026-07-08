@@ -4,24 +4,32 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** **M26 phase-06** — wire `gate_retries` into the gate-retry loop
-([phase-06-wire-gate-retries.md](milestones/M26-polish-and-hardening/phase-06-wire-gate-retries.md),
-**drafted 2026-07-07, todo**). `calibrate` writes `[budget] gate_retries` (tier-
-derived) and `BudgetConfig::effective_gate_retries` resolves it, but nothing in the
-loop reads it — the M19 gate-retry loop retries a red gate only to the turn cap
-(review §1.1). This phase adds a resolved `gate_retries: u32` field to `LoopDeps`
-(mirroring the already-resolved `max_turns`), a `gate_retry_count` in the
-`gate_failure_feedback` block, and terminates as `budget_exceeded` (with a
-"gate-retry budget exhausted" reason) when the retry budget is spent. `LARGE`/no-tier
-= `u32::MAX` = current behavior byte-identical. Files: `mod.rs` (field + counter +
-check), `runner.rs` (1-line resolve), `tests.rs` (~9-site E0063 fix with
-`gate_retries: u32::MAX` + 2 new integration tests), `config.rs` (doc-comment fix
-only). **Pre-injected:** the gate-retry block + `LoopDeps`/`runner.rs` sites quoted
-verbatim; the `max_turns`-resolution precedent; the backward-compat pin (`u32::MAX`
-→ existing gate tests pass unmodified); the crux positive pin (`gate_retries=2`
-terminates before the turn cap, asserted via `calls().len()`). **Escalation knobs
-(`escalation_slots`, `max_assists`) explicitly out of scope → deferred to M27.**
-Dispatch via `/rexymcp:dispatch phase-06`.
+**Active phase: none.** M26 phase-06 is done (below); phases 07–08 are
+planned in the [milestone README](milestones/M26-polish-and-hardening/README.md)
+but not yet drafted. Run `/rexymcp:architect next` to draft phase-07.
+
+**M26 phase-06 — done** (2026-07-08, **escalated** — session takeover after
+2nd dispatch `budget_exceeded`; commit pending). Wires `effective_gate_retries(tier)`
+into the M19 gate-retry loop: a resolved `gate_retries: u32` field on `LoopDeps`,
+a `gate_retry_count` counter, and a `gate_budget_exhausted` check that terminates
+as `budget_exceeded` (reason: "gate-retry budget exhausted after N retries") before
+the turn cap. `LARGE`/no-tier still resolve to `u32::MAX` (byte-identical to prior
+behavior); `mcp/src/runner.rs` resolves the field via
+`inp.cfg.budget.effective_gate_retries(inp.cfg.executor.tier)`. Two `config.rs`
+doc comments corrected (`gate_retries` wired M26, escalation deferred to M27).
+**1st dispatch** hard-failed at turn 3 on a backend infra blip (400 from
+`brain:8000` rendering a null-`arguments` tool call back into the next request) —
+plain re-dispatch, no spec change. **2nd dispatch** landed all production code
+byte-identical to the phase doc's pre-injected fragments (grep-confirmed) but ran
+to `budget_exceeded` at 400/400 turns: the two new tests' `MockAiClientScript`
+scripted only one model turn, so once exhausted `chat()` sent zero events and the
+loop fell into the unrelated empty-completion recovery path instead of re-running
+the gate check, drifting to the turn cap. The executor never diagnosed the mock's
+turn-exhaustion behavior across ~330 stalled turns. **Session takeover:** scripted
+4/3 `"All done."` turns in the two tests (no production-code change); all four
+gates green (439 mcp + 888 executor tests, 2 ignored). **Calibration (2nd
+occurrence, no fold):** executor stalls on a test-harness/mock subtlety it can't
+diagnose, distinct from a production-code gap — flagged for the user.
 
 **M26 phase-05 — done** (2026-07-07, **approved_first_try**; commits `d5acc0c`
 draft / `cb9c1f1` fix / `ecdd970` approve). The post-write format hook no longer

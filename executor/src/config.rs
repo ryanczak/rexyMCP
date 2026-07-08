@@ -18,8 +18,8 @@ pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
 }
 
 /// Executor capability tier. Set via `rexymcp calibrate` and recorded in
-/// `[executor].tier`. Controls default `max_turns`, `gate_retries`, and
-/// whether mid-phase Architect escalation is enabled (SMALL only, wired in M21).
+/// `[executor].tier`. Controls default `max_turns`, `gate_retries` (wired M26),
+/// and whether mid-phase Architect escalation is enabled (deferred to M27).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Tier {
@@ -51,7 +51,8 @@ impl Tier {
 
 /// SMALL-tier escalation settings. When `tier = "SMALL"`, the executor fires
 /// up to `max_assists` autonomous Architect assists before hard-failing. Absent
-/// or ignored for MEDIUM and LARGE tiers (wired in M21).
+/// or ignored for MEDIUM and LARGE tiers; consumed by the architect-side `/loop`
+/// (M27), not the executor loop.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EscalationConfig {
