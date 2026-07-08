@@ -4,10 +4,33 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M26 phase-07b — drafted (todo).** Governor wall-clock ceiling
-(`[budget] wall_clock_secs`). Dispatch with `/rexymcp:dispatch phase-07b`.
+**Active phase: M26 phase-08 — drafted (todo).** Verifier `tsc` resolution
+(`node_modules/.bin` → `npx --no-install tsc` → PATH). Dispatch with
+`/rexymcp:dispatch phase-08`. **This is the last M26 phase — after approval, M26
+closes and the next `next` is a human-gated milestone boundary** (retrospective +
+fold review).
 
-**M26 phase-07b — drafted** (2026-07-08). A clock-based **budget terminal** (not a
+**M26 phase-08 — drafted** (2026-07-08). `verify_typescript`
+(`executor/src/governor/verifier.rs:431`) spawns a **bare** `tsc`, so it
+`Skipped`s (NotFound) in real Node repos where `tsc` lives in `node_modules/.bin`.
+The phase adds three pure resolver helpers (`find_local_tsc` — ancestor-walk for
+`node_modules/.bin/tsc`, catching monorepo hoisting; `binary_in_dirs` — a
+PATH-scan mirroring `doctor::resolve_binary` since the `mcp` crate that owns it
+depends on `executor`, not the reverse; `resolve_tsc_command(project_root,
+npx_on_path) -> TscCommand` — local → `npx --no-install tsc` → bare `tsc`) and
+rewires the one spawn to use the resolved program + prefix args. Resolution runs
+**after** the `find_typescript_project_root` None check, so the "no tsconfig.json"
+`Failed` path is byte-identical; `spawn_failure`→`Skipped` unchanged (just a
+local-install hint). Pre-injected: the full verify_typescript block to replace,
+the `doctor.rs` resolve_binary shape to mirror, verbatim helper bodies, the
+`.is_file()` directory-negative pin, and a `#[cfg(unix)]` **fake-local-binary
+E2E** (plant an executable `node_modules/.bin/tsc` shell script → assert `Checked`
+with its emitted diagnostic — proves the local binary is actually spawned, no
+host `tsc` needed). No new dep, no `Cargo.toml`/`architecture.md` edit. ~160
+lines, size=m.
+
+**M26 phase-07b — done** (2026-07-08, approved_first_try; commits `82b7830`
+draft / `ccaf130` feat / `55e69b7` approve). A clock-based **budget terminal** (not a
 governor detector): a new `#[serde(default)] wall_clock_secs: u64` on `BudgetConfig`
 (default 0 = disabled) and a sibling `wall_clock_secs: u64` on `LoopDeps`, threaded
 to all 15 construction sites via the phase-06 `gate_retries` precedent (mechanical
