@@ -83,7 +83,8 @@ Two threads, grouped by subsystem so each phase is one executor session:
 | 04 | `write_file` read-before-edit gate ([phase-04-write-file-read-before-edit-gate.md](phase-04-write-file-read-before-edit-gate.md)) | done |
 | 05 | Post-write format hook: writing form ([phase-05-post-write-format-hook-writing-form.md](phase-05-post-write-format-hook-writing-form.md)) | done |
 | 06 | Wire `gate_retries` into the gate-retry loop ([phase-06-wire-gate-retries.md](phase-06-wire-gate-retries.md)) | done |
-| 07 | Governor blind-spot detectors (oscillation, windowed output, wall clock) | todo (not drafted) |
+| 07a | Governor oscillation & windowed-output detectors ([phase-07a-governor-oscillation-and-output-detectors.md](phase-07a-governor-oscillation-and-output-detectors.md)) | todo |
+| 07b | Governor wall-clock ceiling (`[budget] wall_clock_secs`) | todo (not drafted) |
 | 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
 | —  | ~~Wire `roots/list` corroboration~~ | **deferred** (rmcp 1.8.0 / SEP-2577) |
 
@@ -123,8 +124,13 @@ renumbered down by one when the roots phase (originally 03) was deferred
   stamping the warnings onto the returned `PhaseResult` in `runner::run_phase_with`
   (the single choke point both the MCP and CLI paths route through), avoiding an
   11-site change to `PhaseInput` constructors.
-- **Phase-07 (was 08) may re-split** (07a detectors / 07b wall-clock ceiling) at
-  draft time if the combined diff estimate exceeds one session.
+- **Phase-07 (was 08) re-split at draft time (2026-07-08)** into **07a**
+  (oscillation + windowed-output detectors — both governor tool-call-history pure
+  detectors folded into the Step-7 hard-fail seam) and **07b** (the wall-clock
+  ceiling — a clock-based `[budget]` terminal, a distinct mechanism). The combined
+  estimate (~570 lines) exceeded one session; the two halves are different
+  subsystems (governor detector vs. budget terminal). 07a is drafted; 07b is drafted
+  on demand after 07a lands.
 
 ### Escalation budgeting moved to M27 (2026-07-07, with the user)
 

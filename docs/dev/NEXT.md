@@ -4,9 +4,32 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M26 phase-06 is done (below); phases 07–08 are
-planned in the [milestone README](milestones/M26-polish-and-hardening/README.md)
-but not yet drafted. Run `/rexymcp:architect next` to draft phase-07.
+**Active phase: M26 phase-07a — drafted (todo).** Governor oscillation &
+windowed-output detectors. Dispatch with `/rexymcp:dispatch phase-07a`.
+
+**M26 phase-07a — drafted** (2026-07-08). Two additive, standalone pure detectors
+in `executor/src/governor/hard_fail.rs`, chained after `evaluate` in the Step-7
+hard-fail seam (mirroring M22's `check_empty_completion_stall` pattern — **not**
+folded into `evaluate`, so its ~10 test call sites are untouched):
+- **`check_oscillation`** — sliding-window distinct-`(tool, arguments)`-set
+  detector; fires `Oscillation` when the last `oscillation_window` (default 8) calls
+  collapse to `2..=oscillation_distinct_max` (default 2) distinct calls, catching the
+  A,B,A,B read↔patch cycle that `IdenticalToolCallRepetition` (consecutive-identical
+  only) misses. Distinct-count 1 is left to identical-repetition; `serde_json::Value`
+  isn't `Hash`/`Ord` so distinctness is a linear `Vec` scan.
+- **`check_windowed_output`** — sums the last `output_window` (default 6) tool
+  outputs (new lockstep `recent_output_bytes: VecDeque<usize>`); fires
+  `CumulativeOutputFlood` above `output_window_bytes` (default 256 KB), catching a
+  multi-call flood of sub-`runaway_output_bytes` outputs the single-call
+  `check_runaway_output` misses.
+Four `GovernorConfig` fields + `ModelOverride` counterparts + `resolve_for_model`
+application + `rexymcp init` template docs; `window = 0` disables each. Pre-injected:
+the standalone-vs-`evaluate` pattern choice, the `.or_else` chain at the Step-7 seam,
+the linear distinct-set scan, tuned-`GovernorConfig` integration tests (small windows,
+compaction-immune), the `n >= 2` load-bearing negative pin, and the **phase-06
+mock-exhaustion gotcha** (script enough `MockAiClientScript` turns or the loop drifts
+to the turn cap via the empty-completion branch). **The wall-clock ceiling split out
+to phase-07b** (drafted on demand after 07a). ~300 lines, size=m.
 
 **M26 phase-06 — done** (2026-07-08, **escalated** — session takeover after
 2nd dispatch `budget_exceeded`; commit pending). Wires `effective_gate_retries(tier)`
