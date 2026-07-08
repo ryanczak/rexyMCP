@@ -85,7 +85,7 @@ Two threads, grouped by subsystem so each phase is one executor session:
 | 06 | Wire `gate_retries` into the gate-retry loop ([phase-06-wire-gate-retries.md](phase-06-wire-gate-retries.md)) | done |
 | 07a | Governor oscillation & windowed-output detectors ([phase-07a-governor-oscillation-and-output-detectors.md](phase-07a-governor-oscillation-and-output-detectors.md)) | done |
 | 07b | Governor wall-clock ceiling (`[budget] wall_clock_secs`) ([phase-07b-governor-wall-clock-ceiling.md](phase-07b-governor-wall-clock-ceiling.md)) | done |
-| 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) ([phase-08-verifier-tsc-resolution.md](phase-08-verifier-tsc-resolution.md)) | drafted (todo) |
+| 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) ([phase-08-verifier-tsc-resolution.md](phase-08-verifier-tsc-resolution.md)) | review |
 | —  | ~~Wire `roots/list` corroboration~~ | **deferred** (rmcp 1.8.0 / SEP-2577) |
 
 Phases are drafted **on demand** via `/rexymcp:architect next`; the rows above

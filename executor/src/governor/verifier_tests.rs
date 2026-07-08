@@ -780,3 +780,137 @@ fn spawn_failure_other_error_stays_failed() {
         other => panic!("expected Failed, got {:?}", other),
     }
 }
+
+// --- tsc resolution tests ---
+
+#[test]
+fn find_local_tsc_finds_at_project_root() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    let bin_dir = root.join("node_modules").join(".bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let tsc = bin_dir.join("tsc");
+    fs::write(&tsc, "").unwrap();
+
+    let result = find_local_tsc(root);
+    assert_eq!(result, Some(tsc));
+}
+
+#[test]
+fn find_local_tsc_walks_up_to_hoisted_node_modules() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    let pkg = root.join("pkg");
+    fs::create_dir_all(&pkg).unwrap();
+    let bin_dir = root.join("node_modules").join(".bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let tsc = bin_dir.join("tsc");
+    fs::write(&tsc, "").unwrap();
+
+    let result = find_local_tsc(&pkg);
+    assert_eq!(result, Some(tsc));
+}
+
+#[test]
+fn find_local_tsc_none_when_absent() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    assert!(find_local_tsc(root).is_none());
+}
+
+#[test]
+fn find_local_tsc_ignores_directory_named_tsc() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    let bin_dir = root.join("node_modules").join(".bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let tsc = bin_dir.join("tsc");
+    fs::create_dir(&tsc).unwrap();
+
+    assert!(find_local_tsc(root).is_none());
+}
+
+#[test]
+fn resolve_tsc_command_prefers_local_over_npx() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    let bin_dir = root.join("node_modules").join(".bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let tsc = bin_dir.join("tsc");
+    fs::write(&tsc, "").unwrap();
+
+    let cmd = resolve_tsc_command(root, true);
+    assert_eq!(cmd.program, tsc);
+    assert!(cmd.prefix_args.is_empty());
+}
+
+#[test]
+fn resolve_tsc_command_uses_npx_when_no_local() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+
+    let cmd = resolve_tsc_command(root, true);
+    assert_eq!(cmd.program, PathBuf::from("npx"));
+    assert_eq!(cmd.prefix_args, ["--no-install", "tsc"]);
+}
+
+#[test]
+fn resolve_tsc_command_falls_back_to_path_tsc() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+
+    let cmd = resolve_tsc_command(root, false);
+    assert_eq!(cmd.program, PathBuf::from("tsc"));
+    assert!(cmd.prefix_args.is_empty());
+}
+
+#[test]
+fn binary_in_dirs_finds_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("npx"), "#!/bin/sh\n").unwrap();
+
+    let result = binary_in_dirs("npx", &[root.to_path_buf()]);
+    assert!(result);
+}
+
+#[test]
+fn binary_in_dirs_false_when_absent() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+
+    let result = binary_in_dirs("npx", &[root.to_path_buf()]);
+    assert!(!result);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn verify_typescript_spawns_resolved_local_binary() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("tsconfig.json"), "{}").unwrap();
+    let bin_dir = root.join("node_modules").join(".bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let fake = bin_dir.join("tsc");
+    fs::write(
+        &fake,
+        "#!/bin/sh\necho \"src/main.ts(3,7): error TS9999: fake diagnostic\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    let src = root.join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("main.ts"), "").unwrap();
+
+    let result = verify_typescript(&src.join("main.ts")).await;
+    match result {
+        VerifierResult::Checked { diagnostics } => {
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].code, Some("TS9999".to_string()));
+            assert_eq!(diagnostics[0].line, 3);
+        }
+        other => panic!("expected Checked from local fake tsc, got {:?}", other),
+    }
+}

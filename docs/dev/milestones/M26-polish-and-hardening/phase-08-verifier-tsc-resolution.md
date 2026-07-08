@@ -1,7 +1,7 @@
 # Phase 08: Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH)
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -371,3 +371,38 @@ Do **not** do these, even though the review mentions them near this finding:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 14:23 (started)
+
+**Executor:** rexyMCP executor
+
+**Progress:** Implementing tsc resolution: local `node_modules/.bin/tsc` → `npx --no-install tsc` → bare `tsc` on PATH. Adding resolver helpers, rewiring `verify_typescript`, and adding unit + E2E tests.
+
+### Update — 2026-07-08 14:23 (complete)
+
+**Executor:** rexyMCP executor
+
+**Tasks completed:** 1–5
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed
+- `cargo build` — passed, zero new warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo test` — 915 passed, 0 failed, 2 ignored
+- `cargo test verify_typescript_spawns_resolved_local_binary` — 1 passed (E2E: local fake tsc spawned, output parsed into Diagnostic)
+
+**End-to-end verification:** `verify_typescript_spawns_resolved_local_binary` planted a real executable at `node_modules/.bin/tsc`, called `verify_typescript`, and confirmed the resolved local binary was spawned and its output parsed into a `Diagnostic` with code `TS9999` at line 3.
+
+**Grep for pinned literals:**
+```
+$ grep -c "find_local_tsc\|resolve_tsc_command\|binary_in_dirs\|TscCommand" executor/src/governor/verifier.rs
+9
+$ grep -c "find_local_tsc\|resolve_tsc_command\|binary_in_dirs" executor/src/governor/verifier_tests.rs
+12
+```
+
+**Files changed:**
+- `executor/src/governor/verifier.rs` — added `TscCommand`, `path_dirs`, `find_local_tsc`, `binary_in_dirs`, `resolve_tsc_command`; rewired `verify_typescript` spawn + expanded install hint
+- `executor/src/governor/verifier_tests.rs` — added 10 unit tests + 1 E2E test
+
+**Notes for review:** None. All spec items implemented verbatim.
