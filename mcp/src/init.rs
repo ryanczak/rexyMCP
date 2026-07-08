@@ -54,6 +54,7 @@ runaway_output_bytes = 102400     # single tool output bytes → hard-fail (100 
 # lint = "cargo clippy --all-targets --all-features -- -D warnings"
 # test = "cargo test"
 # lint_fix = "cargo clippy --fix --allow-dirty"
+# format_fix = "cargo fmt --all"    # writing form; run by the post-write hook
 
 [context]
 output_filter = true              # filter/truncate bash output to conserve context

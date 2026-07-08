@@ -341,6 +341,7 @@ pub struct CommandConfig {
     pub lint: Option<String>,
     pub test: Option<String>,
     pub lint_fix: Option<String>,
+    pub format_fix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -877,6 +878,32 @@ format = "cargo fmt"
         assert_eq!(
             cfg.commands.lint_fix, None,
             "lint_fix must default to None when absent from [commands]"
+        );
+        assert_eq!(cfg.commands.format.as_deref(), Some("cargo fmt"));
+    }
+
+    #[test]
+    fn format_fix_field_defaults_to_none_when_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("rexymcp.toml");
+        std::fs::write(
+            &path,
+            r#"
+[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+format = "cargo fmt"
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(
+            cfg.commands.format_fix, None,
+            "format_fix must default to None when absent from [commands]"
         );
         assert_eq!(cfg.commands.format.as_deref(), Some("cargo fmt"));
     }

@@ -57,13 +57,14 @@ impl DoctorReport {
 pub fn build_report(commands: &CommandConfig, search_paths: &[PathBuf]) -> DoctorReport {
     let mut tier0: Vec<ToolStatus> = Vec::new();
 
-    // Walk the five configured commands in fixed order, deduping by binary name.
+    // Walk the six configured commands in fixed order, deduping by binary name.
     let tier0_commands = [
         ("format", commands.format.as_deref()),
         ("build", commands.build.as_deref()),
         ("lint", commands.lint.as_deref()),
         ("test", commands.test.as_deref()),
         ("lint_fix", commands.lint_fix.as_deref()),
+        ("format_fix", commands.format_fix.as_deref()),
     ];
 
     for (role, cmd) in tier0_commands {
@@ -235,6 +236,7 @@ mod tests {
             lint: Some("cargo clippy".into()),
             test: Some("cargo test".into()),
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);
@@ -255,6 +257,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);
@@ -285,6 +288,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);
@@ -305,6 +309,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);
@@ -323,6 +328,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);
@@ -345,6 +351,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &[]);
@@ -364,6 +371,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);
@@ -383,6 +391,7 @@ mod tests {
             lint: Some("cargo clippy".into()),
             test: Some("cargo test".into()),
             lint_fix: None,
+            format_fix: None,
         };
 
         let report = build_report(&commands, &paths);

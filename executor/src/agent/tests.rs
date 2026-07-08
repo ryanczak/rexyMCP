@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent::command::{CommandResult, MAX_COMMAND_TAIL_CHARS};
+use crate::agent::command::{CommandResult, MAX_COMMAND_TAIL_CHARS, RealCommandRunner};
 use crate::ai::testing::{MockAiClientScript, MockCall};
 use crate::ai::types::TokenBreakdown;
 use crate::phase::{Blocker, PhaseStatus};
@@ -75,6 +75,7 @@ const EMPTY_COMMANDS: CommandConfig = CommandConfig {
     lint: None,
     test: None,
     lint_fix: None,
+    format_fix: None,
 };
 
 /// A command runner with a scripted sequence of outcomes. Each `run` call pops
@@ -119,6 +120,7 @@ fn all_commands_configured() -> CommandConfig {
         lint: Some("true".to_string()),
         test: Some("true".to_string()),
         lint_fix: None,
+        format_fix: None,
     }
 }
 
@@ -1902,6 +1904,7 @@ async fn clean_completion_runs_configured_commands() {
         lint: None,
         test: Some("cargo test".to_string()),
         lint_fix: None,
+        format_fix: None,
     };
 
     let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
@@ -1931,6 +1934,7 @@ async fn command_output_is_tail_capped() {
         lint: None,
         test: None,
         lint_fix: None,
+        format_fix: None,
     };
 
     let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
@@ -1967,6 +1971,7 @@ async fn hard_fail_does_not_run_command_set() {
         lint: None,
         test: None,
         lint_fix: None,
+        format_fix: None,
     };
 
     let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 10).await;
@@ -2141,6 +2146,7 @@ async fn gates_populated_on_complete_from_exit_status() {
         lint: None,
         test: Some("cargo test".to_string()),
         lint_fix: None,
+        format_fix: None,
     };
 
     run_full(
@@ -2184,6 +2190,7 @@ async fn gates_none_on_hard_fail() {
         lint: None,
         test: None,
         lint_fix: None,
+        format_fix: None,
     };
 
     run_full(
@@ -2736,6 +2743,7 @@ async fn progress_emits_commands_on_clean_completion() {
         lint: None,
         test: Some("cargo test".to_string()),
         lint_fix: None,
+        format_fix: None,
     };
     let budget = Budget::new(1_000_000);
 
@@ -3187,7 +3195,7 @@ async fn format_hook_runs_after_successful_edit() {
     let verifier = MockFileVerifier::new(vec![]);
     let runner = MockCommandRunner::new("ok");
     let commands = CommandConfig {
-        format: Some("echo fmt".into()),
+        format_fix: Some("echo fmt".into()),
         ..EMPTY_COMMANDS
     };
 
@@ -3219,7 +3227,7 @@ async fn format_hook_runs_before_verify() {
     }]);
     let runner = MockCommandRunner::new("ok");
     let commands = CommandConfig {
-        format: Some("echo fmt".into()),
+        format_fix: Some("echo fmt".into()),
         ..EMPTY_COMMANDS
     };
     let capture = CaptureCallback::new();
@@ -3364,7 +3372,7 @@ async fn format_hook_failure_does_not_halt_turn() {
     // Second call (completion gate) passes — allows completion.
     let runner = ScriptedCommandRunner::new(vec![false, true]);
     let commands = CommandConfig {
-        format: Some("fmt".into()),
+        format_fix: Some("fmt".into()),
         ..EMPTY_COMMANDS
     };
 
@@ -3398,7 +3406,7 @@ async fn format_hook_runs_on_every_edit_turn() {
     let verifier = MockFileVerifier::new(vec![]);
     let runner = MockCommandRunner::new("ok");
     let commands = CommandConfig {
-        format: Some("echo fmt".into()),
+        format_fix: Some("echo fmt".into()),
         ..EMPTY_COMMANDS
     };
 
@@ -3408,15 +3416,15 @@ async fn format_hook_runs_on_every_edit_turn() {
     let count = runner.ran().iter().filter(|c| *c == "echo fmt").count();
     assert_eq!(
         count,
-        3,
-        "expected 3 format runs (2 hooks + 1 final command set), got {}: {:?}",
+        2,
+        "expected 2 format_fix hook runs (the completion command set runs format, which is unset), got {}: {:?}",
         count,
         runner.ran()
     );
 }
 
 #[tokio::test]
-async fn hook_runs_lint_fix_before_format() {
+async fn hook_runs_lint_fix_before_format_fix() {
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("t.txt");
     let path = file.to_string_lossy().to_string();
@@ -3431,7 +3439,7 @@ async fn hook_runs_lint_fix_before_format() {
     let runner = MockCommandRunner::new("ok");
     let commands = CommandConfig {
         lint_fix: Some("echo fix".into()),
-        format: Some("echo fmt".into()),
+        format_fix: Some("echo fmt".into()),
         ..EMPTY_COMMANDS
     };
 
@@ -3439,7 +3447,7 @@ async fn hook_runs_lint_fix_before_format() {
 
     assert_eq!(result.status, PhaseStatus::Complete);
     let ran = runner.ran();
-    // Hook fires lint_fix then format; final command set fires format again.
+    // Hook fires lint_fix then format_fix.
     // Assert the first two invocations are in order: fix before fmt.
     assert!(
         ran.len() >= 2,
@@ -3448,7 +3456,7 @@ async fn hook_runs_lint_fix_before_format() {
     );
     assert_eq!(
         ran[0], "echo fix",
-        "lint_fix must run before format, got: {:?}",
+        "lint_fix must run before format_fix, got: {:?}",
         ran
     );
     assert_eq!(
@@ -3474,7 +3482,7 @@ async fn hook_skips_lint_fix_when_unconfigured() {
     let runner = MockCommandRunner::new("ok");
     let commands = CommandConfig {
         lint_fix: None,
-        format: Some("echo fmt".into()),
+        format_fix: Some("echo fmt".into()),
         ..EMPTY_COMMANDS
     };
 
@@ -3489,8 +3497,51 @@ async fn hook_skips_lint_fix_when_unconfigured() {
     );
     assert!(
         ran.iter().any(|c| c == "echo fmt"),
-        "format must still run when lint_fix is None, got: {:?}",
+        "format_fix must still run when lint_fix is None, got: {:?}",
         ran
+    );
+}
+
+/// Crux test: the hook runs `format_fix` (writing form), not `format` (check form).
+#[tokio::test]
+async fn hook_runs_format_fix_not_the_check_form() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("t.txt");
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "hello\n" }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+    let runner = MockCommandRunner::new("ok");
+    let commands = CommandConfig {
+        format: Some("echo CHECK".into()),
+        format_fix: Some("echo FIX".into()),
+        ..EMPTY_COMMANDS
+    };
+
+    let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let ran = runner.ran();
+
+    // The hook must run format_fix ("echo FIX"), not the check form ("echo CHECK").
+    let fix_pos = ran
+        .iter()
+        .position(|c| c == "echo FIX")
+        .expect("hook should have run format_fix (echo FIX)");
+    let check_pos = ran
+        .iter()
+        .position(|c| c == "echo CHECK")
+        .expect("completion gate should have run format (echo CHECK)");
+    assert!(
+        fix_pos < check_pos,
+        "format_fix (hook, pos {}) must run before format (gate, pos {})",
+        fix_pos,
+        check_pos
     );
 }
 
@@ -4484,4 +4535,35 @@ async fn repeated_truncation_reaches_turn_cap_not_completion() {
 
     // Bounded by the turn cap, not a completion.
     assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+}
+
+/// End-to-end: the post-write hook's `format_fix` actually rewrites the file on disk
+/// via a real subprocess (not a mock).
+#[tokio::test]
+async fn format_fix_hook_rewrites_file_on_disk() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("f.txt");
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "unformatted\n" }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+    let runner = RealCommandRunner;
+    let commands = CommandConfig {
+        format_fix: Some("printf 'formatted\\n' > f.txt".into()),
+        ..EMPTY_COMMANDS
+    };
+
+    let result = run_full(&dir, &client, &verifier, &runner, &commands, None, 8).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let on_disk = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(
+        on_disk, "formatted\n",
+        "post-write hook's format_fix must rewrite the file on disk, got: {on_disk:?}"
+    );
 }

@@ -1151,7 +1151,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // so the on-disk file is always formatted when verify reads it.
         if succeeded
             && edit_path.is_some()
-            && (deps.commands.format.is_some() || deps.commands.lint_fix.is_some())
+            && (deps.commands.format_fix.is_some() || deps.commands.lint_fix.is_some())
         {
             {
                 let emit = EmitCtx {

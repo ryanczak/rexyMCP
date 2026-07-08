@@ -154,6 +154,7 @@ mod tests {
             lint: Some("cargo clippy".to_string()),
             test: Some("cargo test".to_string()),
             lint_fix: None,
+            format_fix: None,
         };
         let prompt = assemble_system_prompt(&commands, "STANDARDS_BODY", "PHASE_BODY");
 
@@ -179,6 +180,7 @@ mod tests {
             lint: Some("npm run lint".to_string()),
             test: Some("npm test".to_string()),
             lint_fix: None,
+            format_fix: None,
         };
         let prompt = assemble_system_prompt(&commands, "MY_STANDARDS", "MY_PHASE");
 

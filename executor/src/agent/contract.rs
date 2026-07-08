@@ -49,6 +49,7 @@ mod tests {
             lint: Some("cargo clippy".to_string()),
             test: Some("cargo test".to_string()),
             lint_fix: None,
+            format_fix: None,
         };
         let output = assemble_executor_contract(&commands);
 
@@ -71,6 +72,7 @@ mod tests {
             lint: None,
             test: None,
             lint_fix: None,
+            format_fix: None,
         };
         let output = assemble_executor_contract(&commands);
 
@@ -147,6 +149,7 @@ mod tests {
             lint: Some("cargo clippy".to_string()),
             test: Some("cargo test".to_string()),
             lint_fix: Some("cargo clippy --fix".to_string()),
+            format_fix: None,
         };
         let output = assemble_executor_contract(&commands);
         assert!(

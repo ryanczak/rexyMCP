@@ -240,7 +240,7 @@ pub(super) async fn run_post_write_hooks(
     if let Some(cmd) = commands.lint_fix.as_deref() {
         let _ = runner.run(cmd, cwd).await;
     }
-    if let Some(cmd) = commands.format.as_deref() {
+    if let Some(cmd) = commands.format_fix.as_deref() {
         let _ = runner.run(cmd, cwd).await;
     }
 }

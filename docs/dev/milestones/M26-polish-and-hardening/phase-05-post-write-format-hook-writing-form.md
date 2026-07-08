@@ -1,7 +1,7 @@
 # Phase 05: Post-write format hook — writing form
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** todo
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~280 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -361,3 +361,41 @@ None. (No new dependency; no `Cargo.toml`, `architecture.md`, `STANDARDS.md`, or
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 00:45 (started)
+
+**Executor:** rexyMCP executor
+
+### Update — 2026-07-08 00:45 (complete)
+
+**Summary:** Added `format_fix: Option<String>` field to `CommandConfig`, updated the post-write hook to run `format_fix` instead of `format`, updated the hook guard, doctor, init template, and all E0063 cascade sites. Converted 6 behavior-affected hook tests. Added 3 new tests.
+
+**Files changed:**
+- `executor/src/config.rs` — added `format_fix` field + `format_fix_field_defaults_to_none_when_absent` test
+- `executor/src/agent/command.rs` — `run_post_write_hooks` now runs `format_fix` instead of `format`
+- `executor/src/agent/mod.rs` — hook guard checks `format_fix.is_some()` instead of `format.is_some()`
+- `executor/src/agent/tests.rs` — E0063 fixes, converted 6 hook tests, added `hook_runs_format_fix_not_the_check_form` and `format_fix_hook_rewrites_file_on_disk`
+- `executor/src/agent/contract.rs` — E0063 fixes
+- `executor/src/agent/prompt.rs` — E0063 fixes
+- `mcp/src/doctor.rs` — added `format_fix` to tier-0 commands, E0063 fixes in tests
+- `mcp/src/init.rs` — documented `format_fix` in commented `[commands]` block
+
+**Verification commands:**
+```
+cargo fmt --all --check: PASS
+cargo build: PASS (0 warnings)
+cargo clippy --all-targets --all-features -- -D warnings: PASS
+cargo test: 886 passed, 0 failed, 2 ignored
+cargo test format_fix: 4 passed (format_fix_field_defaults_to_none_when_absent, hook_runs_format_fix_not_the_check_form, hook_runs_lint_fix_before_format_fix, format_fix_hook_rewrites_file_on_disk)
+```
+
+**Grep verification:**
+```
+grep -rn 'format_fix' executor/src/config.rs executor/src/agent/command.rs executor/src/agent/mod.rs mcp/src/doctor.rs mcp/src/init.rs
+```
+All expected `format_fix` references present across config, hook, guard, doctor, and init template.
+
+**End-to-end verification:**
+`format_fix_hook_rewrites_file_on_disk` ran with `RealCommandRunner`, confirming a real `sh -c` subprocess (`printf 'formatted\n' > f.txt`) rewrites the file on disk from "unformatted\n" to "formatted\n". Test passed.
+
+**Notes for review:** None.
