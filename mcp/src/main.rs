@@ -8,6 +8,7 @@ mod cap;
 mod dashboard;
 mod doctor;
 mod init;
+mod journal;
 mod log_query;
 mod profile;
 mod profile_cli;
@@ -263,6 +264,45 @@ enum Commands {
         /// Warnings noted during review
         #[arg(long)]
         warnings: Option<u32>,
+
+        /// Override the telemetry phase_runs.jsonl path
+        #[arg(long)]
+        telemetry_path: Option<PathBuf>,
+    },
+
+    /// Record an architect loop activity as an ArchitectActivity journal record
+    Journal {
+        /// Path to the rexymcp config file
+        #[arg(long)]
+        config: PathBuf,
+
+        /// Path to the phase doc (for phase_doc_path in the record)
+        #[arg(long)]
+        phase_doc: Option<PathBuf>,
+
+        /// Phase identifier (e.g. "phase-02")
+        #[arg(long)]
+        phase_id: String,
+
+        /// Project ID override (defaults to [project].id from config)
+        #[arg(long)]
+        project_id: Option<String>,
+
+        /// Milestone directory slug (e.g. "M27-autonomous-escalation-loop")
+        #[arg(long)]
+        milestone_id: Option<String>,
+
+        /// The activity kind (e.g. "draft", "dispatch", "review", "assist", "takeover", "boundary")
+        #[arg(long)]
+        activity: String,
+
+        /// Free-text outcome (e.g. "complete", "hard_fail", "bounced")
+        #[arg(long)]
+        outcome: Option<String>,
+
+        /// Architect model that performed the activity
+        #[arg(long)]
+        model: Option<String>,
 
         /// Override the telemetry phase_runs.jsonl path
         #[arg(long)]
@@ -598,6 +638,53 @@ async fn main() -> anyhow::Result<()> {
                 Ok(())
             } else {
                 std::process::exit(1);
+            }
+        }
+        Commands::Journal {
+            config,
+            phase_doc,
+            phase_id,
+            project_id,
+            milestone_id,
+            activity,
+            outcome,
+            model,
+            telemetry_path,
+        } => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let args = journal::JournalArgs {
+                phase_doc: phase_doc.as_deref(),
+                phase_id: &phase_id,
+                project_id: project_id.as_deref(),
+                milestone_id: milestone_id.as_deref(),
+                activity: &activity,
+                outcome: outcome.as_deref(),
+                model: model.as_deref(),
+            };
+            match journal::record_activity(&config, telemetry_path.as_deref(), now_ms, &args) {
+                Ok(outcome) => {
+                    if let Some(ref unknown) = outcome.unknown_activity {
+                        eprintln!(
+                            "warning: unknown activity kind {:?} (recorded anyway); known activities: {:?}",
+                            unknown,
+                            rexymcp_executor::store::telemetry::ARCHITECT_ACTIVITIES
+                        );
+                    }
+                    println!(
+                        "recorded {} activity for {} -> {}",
+                        activity,
+                        phase_id,
+                        outcome.path.display()
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
             }
         }
     }

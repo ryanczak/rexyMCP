@@ -392,54 +392,66 @@ pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
         .collect())
 }
 
-/// An append-only record of a single mid-phase Architect assist, appended to
-/// `phase_runs.jsonl` alongside `PhaseRun` and `PhaseReview`. The `record`
-/// discriminator (`"escalation"`) keeps the three readers from confusing the
-/// line types. **No code writes one in M20** — the producer is wired in M21 when
-/// the SMALL-tier escalation loop fires; this phase defines the schema and the
-/// store API only (the `PhaseReview` substrate precedent from M18 phase-01).
+/// An append-only record of one architect activity in a `/rexymcp:auto` loop run — the portable loop journal. Appended to `phase_runs.jsonl` alongside `PhaseRun` and `PhaseReview`; the `record` discriminator (`"architect_activity"`) keeps the readers from confusing the line types. Written by the `rexymcp journal` CLI (the loop skill invokes it); the executor never writes one. The two `architect_*_tokens` fields default to `0` and are filled by the phase-05 usage harvester on Claude Code; on other clients they stay `0` (counts-and-durations, never fabricated).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EscalationEvent {
-    /// Literal discriminator. Always `"escalation"`. `#[serde(default)]` so a
-    /// `PhaseRun` line (no `record` field) deserializes to `""` here and is
-    /// filtered out by `read_escalations`.
+pub struct ArchitectActivity {
+    /// Literal discriminator. Always `"architect_activity"`. `#[serde(default)]` so a `PhaseRun` line (no `record` field) deserializes to `""` here and is filtered out by `read_architect_activities`.
     #[serde(default)]
     pub record: String,
     pub ts: u64,
-    /// Identity of the phase that escalated. Prefer `phase_doc_path`; `phase_id`
-    /// + `project_id` are the fallback key (mirrors `PhaseReview`).
+    /// Identity of the phase this activity concerns. Prefer `phase_doc_path`; `phase_id` + `project_id` are the fallback key (mirrors `PhaseReview`).
     #[serde(default)]
     pub phase_doc_path: Option<String>,
     pub phase_id: String,
     #[serde(default)]
     pub project_id: Option<String>,
-    /// 1-based index of this assist within the phase (1st assist = 1).
-    pub assist_index: u32,
-    /// Architect model that produced the assist (e.g. `"claude-opus-4-8"`).
+    /// Milestone directory slug (e.g. `"M27-autonomous-escalation-loop"`) for milestone-scoped queries. `None` when the loop did not supply one.
+    #[serde(default)]
+    pub milestone_id: Option<String>,
+    /// The activity kind — one of `ARCHITECT_ACTIVITIES`.
+    pub activity: String,
+    /// Free-text outcome of the activity (e.g. `"complete"`, `"hard_fail"`, `"approved_first_try"`, `"bounced"`). `None` when not applicable.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// Architect model that performed the activity (e.g. `"claude-opus-4-8"`).
     #[serde(default)]
     pub model: Option<String>,
-    /// Architect input tokens spent on this single assist.
+    /// Architect input tokens for this activity. `0` until the phase-05 harvester fills it.
+    #[serde(default)]
     pub architect_input_tokens: u64,
-    /// Architect output tokens spent on this single assist.
+    /// Architect output tokens for this activity. `0` until the phase-05 harvester fills it.
+    #[serde(default)]
     pub architect_output_tokens: u64,
 }
 
-/// The literal value of `EscalationEvent.record`. Use everywhere instead of a
-/// bare string so the discriminator is single-sourced.
-pub const ESCALATION_RECORD_TAG: &str = "escalation";
+/// The literal value of `ArchitectActivity.record`. Use everywhere instead of a bare string so the discriminator is single-sourced.
+pub const ARCHITECT_ACTIVITY_RECORD_TAG: &str = "architect_activity";
 
-/// Append one `EscalationEvent` as a JSON line to
-/// `<telemetry_dir>/phase_runs.jsonl` (the same store as `PhaseRun`). Returns
-/// the file path.
-pub fn append_escalation(
+/// Canonical architect-activity vocabulary for `ArchitectActivity.activity`. Intentionally open (new kinds fold in as the loop grows) — a *documented* vocabulary, not a closed enum, matching `FAILURE_CLASSES`.
+pub const ARCHITECT_ACTIVITIES: &[&str] = &[
+    "draft",    // authored or refined a phase doc
+    "dispatch", // dispatched a phase to the executor
+    "review",   // reviewed a completed phase against the DoD
+    "assist",   // refined + re-dispatched after hard_fail/budget_exceeded
+    "takeover", // took the phase over directly (session takeover)
+    "boundary", // reached a milestone boundary or a loop stop condition
+];
+
+/// True if `activity` is in the canonical `ARCHITECT_ACTIVITIES` vocabulary.
+pub fn is_known_activity(activity: &str) -> bool {
+    ARCHITECT_ACTIVITIES.contains(&activity)
+}
+
+/// Append one `ArchitectActivity` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`. Returns the file path.
+pub fn append_architect_activity(
     telemetry_dir: &Path,
-    event: &EscalationEvent,
+    activity: &ArchitectActivity,
 ) -> std::io::Result<PathBuf> {
     use std::io::Write;
 
     std::fs::create_dir_all(telemetry_dir)?;
     let path = telemetry_dir.join("phase_runs.jsonl");
-    let line = serde_json::to_string(event).map_err(std::io::Error::other)?;
+    let line = serde_json::to_string(activity).map_err(std::io::Error::other)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -449,10 +461,8 @@ pub fn append_escalation(
     Ok(path)
 }
 
-/// Read all `EscalationEvent` records from a store file. Lines that are
-/// `PhaseRun` or `PhaseReview` records (or anything without
-/// `record == "escalation"`) are skipped.
-pub fn read_escalations(path: &Path) -> std::io::Result<Vec<EscalationEvent>> {
+/// Read all `ArchitectActivity` records from a store file. Lines that are `PhaseRun` or `PhaseReview` records (or anything without `record == "architect_activity"`) are skipped.
+pub fn read_architect_activities(path: &Path) -> std::io::Result<Vec<ArchitectActivity>> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -461,8 +471,8 @@ pub fn read_escalations(path: &Path) -> std::io::Result<Vec<EscalationEvent>> {
     Ok(content
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<EscalationEvent>(l).ok())
-        .filter(|e| e.record == ESCALATION_RECORD_TAG)
+        .filter_map(|l| serde_json::from_str::<ArchitectActivity>(l).ok())
+        .filter(|a| a.record == ARCHITECT_ACTIVITY_RECORD_TAG)
         .collect())
 }
 
@@ -1010,110 +1020,130 @@ mod tests {
     }
 
     #[test]
-    fn escalation_event_round_trips() {
+    fn architect_activity_round_trips() {
         let dir = TempDir::new().unwrap();
-        let event = EscalationEvent {
-            record: ESCALATION_RECORD_TAG.to_string(),
+        let activity = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
             ts: 1_000,
             phase_doc_path: Some("/docs/phase-02.md".to_string()),
             phase_id: "phase-02".to_string(),
             project_id: Some("proj-a".to_string()),
-            assist_index: 1,
+            milestone_id: Some("M27-autonomous-escalation-loop".to_string()),
+            activity: "assist".to_string(),
+            outcome: Some("complete".to_string()),
             model: Some("claude-opus-4-8".to_string()),
             architect_input_tokens: 1500,
             architect_output_tokens: 300,
         };
-        append_escalation(dir.path(), &event).unwrap();
+        append_architect_activity(dir.path(), &activity).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
-        let events = read_escalations(&path).unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0], event);
+        let activities = read_architect_activities(&path).unwrap();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0], activity);
     }
 
     #[test]
-    fn read_escalations_excludes_run_lines() {
-        // A PhaseRun line must not be read as an EscalationEvent.
+    fn read_architect_activities_excludes_run_lines() {
+        // A PhaseRun line must not be read as an ArchitectActivity.
         let dir = TempDir::new().unwrap();
         append(dir.path(), &sample()).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
-        let events = read_escalations(&path).unwrap();
+        let activities = read_architect_activities(&path).unwrap();
         assert!(
-            events.is_empty(),
-            "PhaseRun lines must not be read as escalations"
+            activities.is_empty(),
+            "PhaseRun lines must not be read as architect activities"
         );
     }
 
     #[test]
-    fn read_escalations_excludes_review_by_discriminator() {
-        // An escalation-SHAPED line (all required EscalationEvent fields present)
-        // with a non-"escalation" record tag must be excluded by the `record`
+    fn read_architect_activities_excludes_review_by_discriminator() {
+        // An activity-SHAPED line (all required ArchitectActivity fields present)
+        // with a non-"architect_activity" record tag must be excluded by the `record`
         // filter — not by structural mismatch. Deleting the
-        // `.filter(|e| e.record == ESCALATION_RECORD_TAG)` line in
-        // read_escalations MUST fail this test (M18 bug-01-1 lesson: pin the
+        // `.filter(|a| a.record == ARCHITECT_ACTIVITY_RECORD_TAG)` line in
+        // read_architect_activities MUST fail this test (M18 bug-01-1 lesson: pin the
         // discriminator as load-bearing).
         let dir = TempDir::new().unwrap();
-        let mistagged = EscalationEvent {
-            record: REVIEW_RECORD_TAG.to_string(), // wrong tag, escalation shape
+        let mistagged = ArchitectActivity {
+            record: REVIEW_RECORD_TAG.to_string(), // wrong tag, activity shape
             ts: 2_000,
             phase_doc_path: Some("/docs/phase-02.md".to_string()),
             phase_id: "phase-02".to_string(),
             project_id: None,
-            assist_index: 1,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
             model: None,
             architect_input_tokens: 1,
             architect_output_tokens: 1,
         };
-        append_escalation(dir.path(), &mistagged).unwrap();
+        append_architect_activity(dir.path(), &mistagged).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
-        let events = read_escalations(&path).unwrap();
+        let activities = read_architect_activities(&path).unwrap();
         assert!(
-            events.is_empty(),
-            "a non-\"escalation\" record tag must be excluded by the discriminator"
+            activities.is_empty(),
+            "a non-\"architect_activity\" record tag must be excluded by the discriminator"
         );
     }
 
     #[test]
-    fn read_skips_escalation_lines() {
-        // The existing PhaseRun reader must not pick up escalation lines.
+    fn read_skips_architect_activity_lines() {
+        // The existing PhaseRun reader must not pick up architect activity lines.
         let dir = TempDir::new().unwrap();
         append(dir.path(), &sample()).unwrap();
-        let event = EscalationEvent {
-            record: ESCALATION_RECORD_TAG.to_string(),
+        let activity = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
             ts: 1,
             phase_doc_path: None,
             phase_id: "p".to_string(),
             project_id: None,
-            assist_index: 1,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
             model: None,
             architect_input_tokens: 1,
             architect_output_tokens: 1,
         };
-        append_escalation(dir.path(), &event).unwrap();
+        append_architect_activity(dir.path(), &activity).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
         let runs = read(&path).unwrap();
-        assert_eq!(runs.len(), 1, "read() must skip the escalation line");
+        assert_eq!(
+            runs.len(),
+            1,
+            "read() must skip the architect activity line"
+        );
     }
 
     #[test]
-    fn read_reviews_skips_escalation_lines() {
+    fn read_reviews_skips_architect_activity_lines() {
         let dir = TempDir::new().unwrap();
-        let event = EscalationEvent {
-            record: ESCALATION_RECORD_TAG.to_string(),
+        let activity = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
             ts: 1,
             phase_doc_path: None,
             phase_id: "p".to_string(),
             project_id: None,
-            assist_index: 1,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
             model: None,
             architect_input_tokens: 1,
             architect_output_tokens: 1,
         };
-        append_escalation(dir.path(), &event).unwrap();
+        append_architect_activity(dir.path(), &activity).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
         let reviews = read_reviews(&path).unwrap();
         assert!(
             reviews.is_empty(),
-            "read_reviews() must skip the escalation line"
+            "read_reviews() must skip the architect activity line"
         );
+    }
+
+    #[test]
+    fn is_known_activity_validates_vocabulary() {
+        assert!(is_known_activity("draft"));
+        assert!(is_known_activity("assist"));
+        assert!(is_known_activity("boundary"));
+        assert!(!is_known_activity("made_up"));
     }
 }

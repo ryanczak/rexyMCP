@@ -1,7 +1,7 @@
 # Phase 02: Loop-journal telemetry substrate (`ArchitectActivity` + `rexymcp journal` CLI)
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** review
 **Depends on:** phase-01 (done)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -506,3 +506,67 @@ Update Log:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 17:30 (started)
+
+**Executor:** rexyMCP executor LLM
+
+Starting phase-02: implementing `ArchitectActivity` record, retiring `EscalationEvent`, adding `rexymcp journal` CLI subcommand.
+
+### Update — 2026-07-08 17:32 (complete)
+
+**Summary:** Retired the dead `EscalationEvent` type/tag/store fns from `executor/src/store/telemetry.rs`, replaced with `ArchitectActivity` struct, `ARCHITECT_ACTIVITY_RECORD_TAG`, `ARCHITECT_ACTIVITIES` vocabulary, `is_known_activity`, `append_architect_activity`, and `read_architect_activities`. Created `mcp/src/journal.rs` as the CLI producer (mirroring `review.rs` exactly for config/telemetry-dir resolution and `project_id` defaulting). Wired the `Journal` clap subcommand in `mcp/src/main.rs` with dispatch arm. Converted all escalation-specific tests to `ArchitectActivity` equivalents plus added `is_known_activity_validates_vocabulary`. All 917 tests pass.
+
+**Acceptance criteria:** all ticked above.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+(check passed, zero diff)
+
+cargo build 2>&1 | tail -20
+   Compiling rexymcp-executor v0.9.1
+   Compiling rexymcp v0.9.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.05s
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+    Checking rexymcp-executor v0.9.1
+    Checking rexymcp v0.9.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.85s
+
+cargo test 2>&1 | tail -30
+test result: ok. 917 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
+```
+
+**End-to-end verification:**
+
+1. `rexymcp init --dir <tmp>` → `wrote rexymcp.toml (project id: 551f3568-...)`
+2. `rexymcp journal --config <tmp>/rexymcp.toml --phase-id phase-02 --activity assist --outcome complete --telemetry-path <tmp>/phase_runs.jsonl` → `recorded assist activity for phase-02 -> <tmp>/phase_runs.jsonl`
+3. `grep architect_activity <tmp>/phase_runs.jsonl` → `{"record":"architect_activity","ts":1783532756768,"phase_doc_path":null,"phase_id":"phase-02","project_id":"551f3568-...","milestone_id":null,"activity":"assist","outcome":"complete","model":null,"architect_input_tokens":0,"architect_output_tokens":0}`
+4. `--activity frobnicate` → stderr: `warning: unknown activity kind "frobnicate" (recorded anyway); known activities: ["draft", "dispatch", "review", "assist", "takeover", "boundary"]` (record still written)
+
+**Files changed:**
+- `executor/src/store/telemetry.rs` — retired `EscalationEvent`, added `ArchitectActivity` record/tag/vocabulary/store API + converted tests
+- `mcp/src/journal.rs` — new file: `rexymcp journal` CLI producer
+- `mcp/src/main.rs` — added `mod journal`, `Journal` clap variant, dispatch arm
+- `docs/dev/milestones/M27-autonomous-escalation-loop/phase-02-loop-journal-substrate.md` — status `todo` → `review` + Update Log
+- `docs/dev/milestones/M27-autonomous-escalation-loop/README.md` — phase table row `drafted (todo)` → `in-progress` → `review`
+
+**New tests:**
+- `architect_activity_round_trips` in `executor/src/store/telemetry.rs`
+- `read_architect_activities_excludes_run_lines` in `executor/src/store/telemetry.rs`
+- `read_architect_activities_excludes_review_by_discriminator` in `executor/src/store/telemetry.rs`
+- `read_skips_architect_activity_lines` in `executor/src/store/telemetry.rs`
+- `read_reviews_skips_architect_activity_lines` in `executor/src/store/telemetry.rs`
+- `is_known_activity_validates_vocabulary` in `executor/src/store/telemetry.rs`
+- `records_and_reads_back_activity` in `mcp/src/journal.rs`
+- `unknown_activity_is_recorded_not_rejected` in `mcp/src/journal.rs`
+- `project_id_defaults_from_config` in `mcp/src/journal.rs`
+
+**Grep verification:** `grep -rn "EscalationEvent\|ESCALATION_RECORD_TAG\|append_escalation\|read_escalations" executor/src mcp/src` → exit 1 (no matches, fully retired). `grep -rn "architect_activity" executor/src mcp/src` → matches in telemetry.rs, journal.rs, main.rs.
+
+**Commits:**
+- pending — will commit below
+
+**Notes for review:** None. Implementation follows the spec verbatim; no deviations.
