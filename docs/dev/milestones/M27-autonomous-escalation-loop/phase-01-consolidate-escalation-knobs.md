@@ -1,7 +1,7 @@
 # Phase 01: Consolidate escalation budget knobs (retire `escalation_slots`)
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~150 lines (mostly mechanical fixture-line deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -383,3 +383,15 @@ All hits are in the authorized locations: (a) calibrate strip code + its test fi
 - (pending)
 
 **Notes for review:** Also cleaned `escalation_slots` fixture lines from `mcp/src/server_tests.rs` (4 lines) — these were not in the spec's grep output but would have caused test failures if left. The spec's `grep -rn "escalation_slots" executor/src mcp/src` at draft time likely ran before those fixtures were added, or they were added after the spec was written.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** the `mcp/src/server_tests.rs` fixture-line cleanup (4 lines) was outside the spec's explicit file list but mechanically required for a clean build; reviewed and accepted — same class of churn the phase's `sed` sanction covers.
+- **Calibration:** none. All 8 spec tasks implemented verbatim; both doc comments match Task 3 text exactly; the `println!` format-string/argument edit in Task 4 is correct (no dangling placeholder). Independent re-run: `cargo fmt --all --check` clean, `cargo build` clean (0 warnings), `cargo clippy --all-targets --all-features -- -D warnings` clean, `cargo test` 916 passed / 0 failed / 2 ignored. End-to-end verified against real CLI artifacts (not just unit-test fakes):
+  - `rexymcp init` into a scratch temp dir: `grep -c escalation_slots` → `0`, `grep -c max_assists` → `1`, and the `# [escalation]` / `# max_assists = 3` block present verbatim.
+  - `rexymcp calibrate MEDIUM` on a scratch config with `escalation_slots = 1` + explicit `[escalation] max_assists = 5`: `escalation_slots` stripped from `[budget]`, `max_assists = 5` preserved untouched.
+  - `grep -rn escalation_slots executor/src mcp/src` hits only the calibrate strip code + its test fixture and the new back-compat test, matching the acceptance criterion exactly.
+  - Spot-checked `calibrate_preserves_user_escalation_section` and `load_ignores_retired_escalation_slots_key`: both assert real, non-trivial outcomes that would fail if the corresponding production code were reverted.
