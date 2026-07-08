@@ -4,10 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M26 phase-07a — drafted (todo).** Governor oscillation &
-windowed-output detectors. Dispatch with `/rexymcp:dispatch phase-07a`.
+**Active phase: M26 phase-07b — drafted (todo).** Governor wall-clock ceiling
+(`[budget] wall_clock_secs`). Dispatch with `/rexymcp:dispatch phase-07b`.
 
-**M26 phase-07a — drafted** (2026-07-08). Two additive, standalone pure detectors
+**M26 phase-07b — drafted** (2026-07-08). A clock-based **budget terminal** (not a
+governor detector): a new `#[serde(default)] wall_clock_secs: u64` on `BudgetConfig`
+(default 0 = disabled) and a sibling `wall_clock_secs: u64` on `LoopDeps`, threaded
+to all 15 construction sites via the phase-06 `gate_retries` precedent (mechanical
+"add a line after each `gate_retries:`" rule, grep-verified). The loop captures a
+`loop_started_ms` baseline off the injected `deps.clock` (no real `SystemTime` in
+`executor/`) and adds a "Step 2a" terminal at the top of the loop: when
+`wall_clock_secs > 0` and elapsed ≥ ceiling, return `budget_exceeded` (mirroring the
+Step-2 context-overflow block). Unlike `gate_retries` it is **flat opt-in** — no tier
+derivation, no `ModelOverride`, no `effective_*` helper — and **is** written to the
+`rexymcp init` `[budget]` template. Pre-injected: the 15-site `LoopDeps` table + grep
+rule, the Step-2 worked example to copy, the `AtomicU64` advancing-clock test helper
+(clock is `Fn` not `FnMut`), and the enabled/disabled integration-test pair (ceiling
+fires before Step 3, so no mock-exhaustion risk). ~180 lines, size=m.
+
+**M26 phase-07a — done** (2026-07-08, approved_first_try). Two additive, standalone pure detectors
 in `executor/src/governor/hard_fail.rs`, chained after `evaluate` in the Step-7
 hard-fail seam (mirroring M22's `check_empty_completion_stall` pattern — **not**
 folded into `evaluate`, so its ~10 test call sites are untouched):
