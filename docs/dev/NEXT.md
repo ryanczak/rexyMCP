@@ -4,14 +4,34 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-02 — drafted (todo).** Loop-journal telemetry
-substrate: add an `ArchitectActivity` append-only record (six kinds —
-draft/dispatch/review/assist/takeover/boundary) + its store API + a
-`rexymcp journal` CLI producer (mirrors `rexymcp review`), and **retire the dead
-M20 `EscalationEvent`** (generalize, not sibling — zero producers/readers). The
-dashboard Assists-counter rewire + orphaned `tier_telemetry.escalation_count`
-retirement split out to **phase-02b**. Dispatch with
-`/rexymcp:dispatch phase-02`.
+**Active phase: M27 phase-02b — drafted (todo).** `escalation_count` wiring:
+retire the orphaned `PhaseRun.tier_telemetry.escalation_count` field (nothing ever
+wrote it) and rewire the dashboard "Assists" counter to count `assist`
+`ArchitectActivity` journal records for the project. `panels.rs`/`render.rs`
+untouched (the count flows in as a plain `u32`); back-compat pinned (old records
+carrying `escalation_count` still parse — serde ignores unknown keys). ~120 lines,
+size=s. Dispatch with `/rexymcp:dispatch phase-02b`.
+
+**M27 phase-02b — drafted** (2026-07-08). Two files
+(`executor/src/store/telemetry.rs` field retirement + doc-comment/test fix +
+back-compat test; `mcp/src/dashboard/mod.rs` `load_data` rewire + test rewrite +
+fixture cleanup). Pre-injected verbatim: the `TierTelemetry` before/after, the
+full `load_data` tuple-fold→split replacement (costs fold + separate
+`read_architect_activities` assist count), the rewritten count test with two
+pinned negatives (non-assist kind, other project), and the back-compat fixture.
+Completes the "escalation_count wiring" half of the phase-02 split.
+
+**M27 phase-02 — done** (2026-07-08, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-PrismaAURA; commits `d47947e` feat / `c77f5dd` approve).
+Loop-journal substrate: added the `ArchitectActivity` append-only record (six
+kinds) + store API (`append_architect_activity`/`read_architect_activities`) +
+`ARCHITECT_ACTIVITIES` advisory vocabulary + the `rexymcp journal` CLI producer
+(mirrors `rexymcp review`); retired the dead M20 `EscalationEvent` (generalize,
+not sibling — zero producers/readers). Clean first-try; all four gates green on
+independent re-run (917 passed / 2 ignored). End-to-end verified via the real
+`rexymcp journal` CLI. No scope deviation, no calibration fold. One cosmetic nit
+(doc comments written as single long lines vs multi-`///`-line — no fmt-gate
+effect).
 
 **M27 phase-02 — drafted** (2026-07-08). ~430 lines, size=l, three files
 (`executor/src/store/telemetry.rs`, new `mcp/src/journal.rs`, `mcp/src/main.rs`).
