@@ -1,7 +1,7 @@
 # Phase 02b: `escalation_count` wiring — retire the orphaned field, count assists from journal records
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** review
 **Depends on:** phase-02 (done)
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=refactor, size=s
@@ -310,6 +310,15 @@ paste the output in the completion Update Log:
 2. `grep -c '"activity":"assist"' <tmp>/phase_runs.jsonl` → `2` — the exact
    records `project_escalation_count` counts (the `draft` line is excluded).
 
+**The `rexymcp journal` command above is pre-verified against
+`Commands::Journal` in `mcp/src/main.rs` (`--config`, `--phase-doc`,
+`--phase-id`, `--project-id`, `--milestone-id`, `--activity`, `--outcome`,
+`--model`, `--telemetry-path` are the exact flags, `phase_id`/`activity`
+required, the rest optional) — run it as-is. Do not grep or read
+`main.rs`/`journal.rs` to re-derive or double-check the flag syntax; that
+detour is out of scope for this phase and does not change the acceptance
+criteria.
+
 ## Authorizations
 
 None. No new dependency, no `Cargo.toml`/`architecture.md`/`STANDARDS.md`/
@@ -349,4 +358,47 @@ None. No new dependency, no `Cargo.toml`/`architecture.md`/`STANDARDS.md`/
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
+### Notes for executor — 2026-07-08
+
+The prior run (hard_fail, `IdenticalToolCallRepetition`, 6× identical
+`grep -rn "Commands::Journal" mcp/src/main.rs`) completed all 6 numbered
+spec tasks and all four gate commands cleanly, then got stuck re-verifying
+the `rexymcp journal` CLI flag syntax before running the End-to-end
+verification steps. That syntax is already correct and pre-verified — see
+the note added directly under "End-to-end verification" above. Trust the
+given command, run it, and paste the output; do not re-derive the flags
+from source.
+
+### Update — 2026-07-08 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** all spec tasks and gates already passed cleanly first try; the
+hard_fail was an unplanned exploratory loop during the optional end-to-end
+verification step, not a defect in the implementation — a tighter spec note
+confirming the pre-verified CLI syntax removes the trigger.
+
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 22:24 (complete)
+
+**Executor:** rexyMCP executor
+
+**Summary:** All 6 spec tasks were already implemented from the prior run. Verified all gates and end-to-end verification.
+
+**Files changed:** (no source changes this run — all 6 spec tasks were already implemented by the prior executor run)
+
+**Verification commands:**
+- `cargo fmt --all --check` — passed
+- `cargo build` — passed, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` — passed
+- `cargo test` — 918 passed; 0 failed; 2 ignored
+
+**Grep for spec-pinned literal:** `grep -rn "escalation_count" executor/src mcp/src` — hits only the back-compat test fixture in `telemetry.rs` (task 3) and `project_escalation_count` binding/field names in `dashboard/mod.rs`, `panels.rs`, `render.rs` (unchanged render surface). No struct field or dashboard read of the retired field.
+
+**End-to-end verification:**
+- `load_data_counts_assist_journal_records_as_escalations` test: writes real `phase_runs.jsonl` with 4 lines (2 matching assists, 1 non-assist same project, 1 assist different project), asserts `project_escalation_count == 2`.
+- Live CLI: `rexymcp journal` ×2 with `--activity assist` + ×1 with `--activity draft` → `grep -c '"activity":"assist"'` returned `2`, confirming the real producer→store path matches the dashboard counting logic.
+
+**Notes for review:** No changes made in this run — all 6 spec tasks were already correctly implemented by the prior executor. This run verified all gates, ran end-to-end verification, and flipped status to `review`.
+
+**Commit:** (none needed — no file changes this run)

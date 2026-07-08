@@ -98,24 +98,25 @@ pub fn aggregate_context_efficiency(records: &[SessionRecord]) -> ContextEfficie
 
 /// Per-run M20 tier/cost instrumentation. Nested in `PhaseRun` as a single
 /// `#[serde(default)]` field so legacy records and every struct literal need
-/// only `Default` (the `ContextEfficiency` precedent). Only `tier` is populated
-/// in M20 phase-02 — the configured executor tier, available from `[executor]
-/// tier`. `doc_level` is wired in M22 (phase-doc detail level L1/L2/L3 → 1/2/3);
-/// `escalation_count` and the two `architect_*_tokens` are wired in M21 when the
-/// mid-phase Architect-assist loop fires. Default (tier `None`, levels `None`,
-/// counts `0`) for legacy records and every run that did not escalate.
+/// only `Default` (the `ContextEfficiency` precedent). Only `tier` is
+/// populated by the executor — the configured executor tier from
+/// `[executor] tier`. `doc_level` and the two `architect_*_tokens` default to
+/// `None`/`0`; `architect_*_tokens` are filled by the M27 phase-05 usage
+/// harvester on Claude Code (assist cost is journaled architect-side, not
+/// executor-side). Assist *counts* are derived from `assist`
+/// `ArchitectActivity` journal records, not stored here.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TierTelemetry {
-    /// Configured executor capability tier (`[executor] tier`); `None` when the
-    /// project has not run `rexymcp calibrate`.
+    /// Configured executor capability tier (`[executor] tier`); `None` when
+    /// the project has not run `rexymcp calibrate`.
     pub tier: Option<Tier>,
-    /// Phase-doc detail level (1/2/3). `None` until M22 wires doc levels.
+    /// Phase-doc detail level (1/2/3). `None` until doc levels are wired.
     pub doc_level: Option<u8>,
-    /// Number of mid-phase Architect assists that fired this run. `0` until M21.
-    pub escalation_count: u32,
-    /// Architect input tokens spent on assists this run. `0` until M21.
+    /// Architect input tokens attributed to this run's assists. `0` until the
+    /// M27 phase-05 harvester fills it.
     pub architect_input_tokens: u64,
-    /// Architect output tokens spent on assists this run. `0` until M21.
+    /// Architect output tokens attributed to this run's assists. `0` until the
+    /// M27 phase-05 harvester fills it.
     pub architect_output_tokens: u64,
 }
 
@@ -990,7 +991,6 @@ mod tests {
         run.tier_telemetry = TierTelemetry {
             tier: Some(Tier::Medium),
             doc_level: Some(2),
-            escalation_count: 1,
             architect_input_tokens: 1000,
             architect_output_tokens: 200,
         };
@@ -1006,6 +1006,14 @@ mod tests {
         let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
         assert_eq!(run.tier_telemetry, TierTelemetry::default());
         assert_eq!(run.tier_telemetry.tier, None);
+    }
+
+    #[test]
+    fn phase_run_ignores_retired_escalation_count_key() {
+        let json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{},"tier_telemetry":{"tier":"MEDIUM","doc_level":2,"escalation_count":3,"architect_input_tokens":1000,"architect_output_tokens":200}}"#;
+        let run: PhaseRun = serde_json::from_str(json).unwrap();
+        assert_eq!(run.tier_telemetry.architect_input_tokens, 1000);
+        assert_eq!(run.tier_telemetry.tier, Some(Tier::Medium));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use rexymcp_executor::store::sessions::event::SessionRecord;
-use rexymcp_executor::store::telemetry::PhaseRun;
+use rexymcp_executor::store::telemetry::{self, PhaseRun};
 
 use crate::status::{self, StatusSummary};
 
@@ -32,7 +32,7 @@ pub struct DashboardData {
     /// Cumulative executor + architect token costs from ALL project `PhaseRun`
     /// records. `ScopeCosts::default()` when telemetry is not configured.
     pub project_costs: ScopeCosts,
-    /// Sum of `PhaseRun.tier_telemetry.escalation_count` across all project runs.
+    /// Count of assist ArchitectActivity journal records for the project.
     pub project_escalation_count: u32,
 }
 
@@ -48,31 +48,40 @@ pub fn load_data(
     // Phase runs are independent of session records — read them before the match
     // so project_costs is always computed even when session loading fails.
     let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
-    // project_costs: executor tokens + architect tokens + escalation count
-    let (project_costs, project_escalation_count) = match project_id {
+    // project_costs: executor tokens + architect tokens across all project runs.
+    let project_costs = match project_id {
         Some(pid) => phase_runs
             .iter()
             .filter(|r| r.project_id.as_deref() == Some(pid))
-            .fold(
-                (ScopeCosts::default(), 0u32),
-                |(mut costs, mut assists), r| {
-                    costs.executor_in = costs
-                        .executor_in
-                        .saturating_add(r.tokens.input_tokens as u64);
-                    costs.executor_out = costs
-                        .executor_out
-                        .saturating_add(r.tokens.output_tokens as u64);
-                    costs.architect_in = costs
-                        .architect_in
-                        .saturating_add(r.tier_telemetry.architect_input_tokens);
-                    costs.architect_out = costs
-                        .architect_out
-                        .saturating_add(r.tier_telemetry.architect_output_tokens);
-                    assists = assists.saturating_add(r.tier_telemetry.escalation_count);
-                    (costs, assists)
-                },
-            ),
-        None => (ScopeCosts::default(), 0u32),
+            .fold(ScopeCosts::default(), |mut costs, r| {
+                costs.executor_in = costs
+                    .executor_in
+                    .saturating_add(r.tokens.input_tokens as u64);
+                costs.executor_out = costs
+                    .executor_out
+                    .saturating_add(r.tokens.output_tokens as u64);
+                costs.architect_in = costs
+                    .architect_in
+                    .saturating_add(r.tier_telemetry.architect_input_tokens);
+                costs.architect_out = costs
+                    .architect_out
+                    .saturating_add(r.tier_telemetry.architect_output_tokens);
+                costs
+            }),
+        None => ScopeCosts::default(),
+    };
+    // Assists: count `assist` architect-activity journal records for this
+    // project (retired tier_telemetry.escalation_count — the executor never
+    // wrote it; assists are journaled architect-side by `rexymcp journal`).
+    let project_escalation_count = match (project_id, telemetry_dir) {
+        (Some(pid), Some(dir)) => {
+            telemetry::read_architect_activities(&dir.join("phase_runs.jsonl"))
+                .unwrap_or_default()
+                .iter()
+                .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
+                .count() as u32
+        }
+        _ => 0,
     };
 
     match status::load_records(repo, session) {
@@ -457,7 +466,7 @@ mod tests {
         let pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
         // A run with architect_input_tokens=1500, architect_output_tokens=300 in tier_telemetry.
         let run = format!(
-            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":1000,"output_tokens":500}},"tier_telemetry":{{"tier":null,"doc_level":null,"escalation_count":0,"architect_input_tokens":1500,"architect_output_tokens":300}}}}"#
+            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":1000,"output_tokens":500}},"tier_telemetry":{{"tier":null,"doc_level":null,"architect_input_tokens":1500,"architect_output_tokens":300}}}}"#
         );
         let telemetry_dir = dir.path().join("telemetry");
         std::fs::create_dir_all(&telemetry_dir).unwrap();
@@ -475,29 +484,31 @@ mod tests {
     }
 
     #[test]
-    fn load_data_reads_project_escalation_count() {
+    fn load_data_counts_assist_journal_records_as_escalations() {
         let dir = TempDir::new().unwrap();
         let sessions = sessions_dir(dir.path());
         std::fs::create_dir_all(&sessions).unwrap();
         let pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-        let run1 = format!(
-            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":0,"output_tokens":0}},"tier_telemetry":{{"tier":null,"doc_level":null,"escalation_count":2,"architect_input_tokens":0,"architect_output_tokens":0}}}}"#
-        );
-        let run2 = format!(
-            r#"{{"ts":2,"model":"t","generation_params":{{}},"phase_id":"p2","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":0,"output_tokens":0}},"tier_telemetry":{{"tier":null,"doc_level":null,"escalation_count":1,"architect_input_tokens":0,"architect_output_tokens":0}}}}"#
-        );
         let telemetry_dir = dir.path().join("telemetry");
         std::fs::create_dir_all(&telemetry_dir).unwrap();
-        std::fs::write(
-            telemetry_dir.join("phase_runs.jsonl"),
-            format!("{run1}\n{run2}\n"),
-        )
-        .unwrap();
+        // 2 matching assists + 1 non-assist (same project) + 1 assist (other
+        // project). Only the 2 matching assists count.
+        let lines = concat!(
+            r#"{"record":"architect_activity","ts":1,"phase_id":"p1","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"assist"}"#,
+            "\n",
+            r#"{"record":"architect_activity","ts":2,"phase_id":"p1","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"assist"}"#,
+            "\n",
+            r#"{"record":"architect_activity","ts":3,"phase_id":"p2","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"draft"}"#,
+            "\n",
+            r#"{"record":"architect_activity","ts":4,"phase_id":"p1","project_id":"ffffffff-0000-0000-0000-000000000000","activity":"assist"}"#,
+            "\n",
+        );
+        std::fs::write(telemetry_dir.join("phase_runs.jsonl"), lines).unwrap();
 
         let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
         assert_eq!(
-            data.project_escalation_count, 3,
-            "escalation_count must sum across all project runs"
+            data.project_escalation_count, 2,
+            "only assist activities for this project count"
         );
     }
 
