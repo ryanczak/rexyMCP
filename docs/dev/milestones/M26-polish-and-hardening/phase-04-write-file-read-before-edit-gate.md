@@ -1,7 +1,7 @@
 # Phase 04: `write_file` read-before-edit gate
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~270 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -472,3 +472,39 @@ confirms the refusal literal landed in the gate helper.
 
 **Notes for review:** The production code in `tools.rs` and `mod.rs` was already
 correct from the prior escalation run; only the test assertion needed fixing.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none (the earlier `IdenticalToolCallRepetition` hard_fail was
+  resolved by escalation/refined re-dispatch, not a review bounce — no bug
+  report was filed; precedent: M18 phase-03's "handled by refined re-dispatch
+  ... not a review bounce")
+- **Executor:** Qwen/Qwen3.6-27B-PrismaAURA
+- **Scope deviations:** none — all five spec tasks implemented exactly as
+  authorized; only `tools.rs`, `mod.rs`, `tests.rs` touched
+- **Calibration:** 1st occurrence, data only, no fold. After completing all
+  substantive work correctly, the executor entered an ~140-turn unproductive
+  loop re-reading an unrelated, already-correct code block
+  (`patch_after_reading_is_allowed` at `tests.rs:1395-1410`) that held the
+  exact fix pattern it needed (`client.calls()[1]`) for a self-authored
+  off-by-one test-index bug, without ever applying it — a "sees the answer
+  nearby but doesn't act" fixation distinct from prior
+  `IdenticalToolCallRepetition` causes (M18's oversized-write null-args,
+  M22's task-remark fixation). Independent re-run confirmed the diagnosis:
+  `cargo test --lib agent::tests::` showed exactly one failing test, fixed by
+  a one-line index correction. Would fold if a third instance of this
+  "adjacent correct pattern, not applied" class recurs.
+
+**Independent verification (architect re-run, 2026-07-08):** `cargo fmt --all
+--check` clean; `cargo build` clean; `cargo clippy --all-targets
+--all-features -- -D warnings` clean; `cargo test` — 883 passed / 0 failed / 2
+ignored. Grepped `tools.rs`/`mod.rs` production sections (before `mod tests` at
+`tools.rs:447`): no `unwrap`/`expect`/`panic!`/`unsafe`/`#[allow]`/`TODO`.
+Mutation-tested the `mod.rs` working-set refresh (reverted `write_file` from
+`refreshes_working_set`): `persistent_verifier_failure_trips_hard_fail` goes
+red, confirming the refresh logic is genuinely exercised by the suite (via
+repeated same-file `write_file` calls across turns), not merely present.
+Spot-checked `write_file_overwrite_of_unread_file_is_refused`: asserts both
+on-disk content unchanged and the refusal string fed back — a reverted gate
+would fail both assertions, so this is a real test, not a vacuous one.
