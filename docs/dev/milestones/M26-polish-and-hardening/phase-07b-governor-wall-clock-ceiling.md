@@ -1,7 +1,7 @@
 # Phase 07b: Governor wall-clock ceiling (`[budget] wall_clock_secs`)
 
 **Milestone:** M26 — Polish & Hardening
-**Status:** review
+**Status:** done
 **Depends on:** none (07a landed; this touches the same `LoopDeps`/loop but no 07a code)
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -452,3 +452,11 @@ field additions are within scope (they are the config surface this phase ships).
 - `docs/dev/milestones/M26-polish-and-hardening/README.md` — phase table row `todo` → `review`
 
 **Notes for review:** None.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** rexyMCP executor (Qwen/Qwen3.6-27B-PrismaAURA)
+- **Scope deviations:** none
+- **Calibration:** none

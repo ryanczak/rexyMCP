@@ -84,7 +84,7 @@ Two threads, grouped by subsystem so each phase is one executor session:
 | 05 | Post-write format hook: writing form ([phase-05-post-write-format-hook-writing-form.md](phase-05-post-write-format-hook-writing-form.md)) | done |
 | 06 | Wire `gate_retries` into the gate-retry loop ([phase-06-wire-gate-retries.md](phase-06-wire-gate-retries.md)) | done |
 | 07a | Governor oscillation & windowed-output detectors ([phase-07a-governor-oscillation-and-output-detectors.md](phase-07a-governor-oscillation-and-output-detectors.md)) | done |
-| 07b | Governor wall-clock ceiling (`[budget] wall_clock_secs`) ([phase-07b-governor-wall-clock-ceiling.md](phase-07b-governor-wall-clock-ceiling.md)) | review |
+| 07b | Governor wall-clock ceiling (`[budget] wall_clock_secs`) ([phase-07b-governor-wall-clock-ceiling.md](phase-07b-governor-wall-clock-ceiling.md)) | done |
 | 08 | Verifier `tsc` resolution (`node_modules/.bin` → `npx` → PATH) | todo (not drafted) |
 | —  | ~~Wire `roots/list` corroboration~~ | **deferred** (rmcp 1.8.0 / SEP-2577) |
 
