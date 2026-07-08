@@ -176,12 +176,25 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Consolidate escalation budget knobs ([phase-01-consolidate-escalation-knobs.md](phase-01-consolidate-escalation-knobs.md)) | done |
-| 02 | Loop-journal telemetry substrate (`ArchitectActivity` producer CLI, `escalation_count` wiring) | planned |
+| 02  | Loop-journal substrate: `ArchitectActivity` record + `rexymcp journal` CLI (retire `EscalationEvent`) ([phase-02-loop-journal-substrate.md](phase-02-loop-journal-substrate.md)) | drafted (todo) |
+| 02b | `escalation_count` wiring: retire orphaned `tier_telemetry.escalation_count`, derive the dashboard Assists counter from `assist` journal records | planned |
 | 03 | Server-authored bookkeeping (Status flip + baseline Update Log; executor-contract amendment) | planned |
 | 04 | `continue_phase` briefing-seeded resume (MCP tool + escalate-skill lever) | planned |
 | 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |
+
+Phase 02 was **split at draft time** (2026-07-08) into 02 (the write-side
+substrate: the record type + producer CLI) and 02b (the read-side wiring: the
+dashboard counter + orphaned-field retirement), following the M26 07a/07b
+precedent — each half is one bounded executor session. Two forks the kickoff
+left open were resolved with the user at draft time: (1) **generalize, not
+sibling** — the dead M20 `EscalationEvent` (zero producers, zero readers) is
+retired and its `assist` concern folds into `ArchitectActivity` as one of six
+kinds; (2) **rewire the Assists counter in phase-02(b)** — the dashboard counter
+derives from `assist` journal records and the never-written
+`tier_telemetry.escalation_count` field is retired (the same consolidation
+phase-01 applied to `escalation_slots`).
 
 Phases are drafted **on demand** via `/rexymcp:architect next`; rows above are
 the plan, not final specs. Ordering: substrate first (01–02), then the two

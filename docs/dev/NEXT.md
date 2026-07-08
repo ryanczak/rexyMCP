@@ -4,13 +4,44 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-01 — drafted (todo).** Consolidate the escalation
-budget knobs: retire `[budget] escalation_slots` (field + 40 fixture lines +
-init template), redefine `[escalation] max_assists` as the flat,
-tier-independent per-phase assist budget for the `/rexymcp:auto` loop —
-`calibrate` stops managing the section (user settings survive re-calibrate)
-and strips the retired key from old configs. Dispatch with
-`/rexymcp:dispatch phase-01`.
+**Active phase: M27 phase-02 — drafted (todo).** Loop-journal telemetry
+substrate: add an `ArchitectActivity` append-only record (six kinds —
+draft/dispatch/review/assist/takeover/boundary) + its store API + a
+`rexymcp journal` CLI producer (mirrors `rexymcp review`), and **retire the dead
+M20 `EscalationEvent`** (generalize, not sibling — zero producers/readers). The
+dashboard Assists-counter rewire + orphaned `tier_telemetry.escalation_count`
+retirement split out to **phase-02b**. Dispatch with
+`/rexymcp:dispatch phase-02`.
+
+**M27 phase-02 — drafted** (2026-07-08). ~430 lines, size=l, three files
+(`executor/src/store/telemetry.rs`, new `mcp/src/journal.rs`, `mcp/src/main.rs`).
+Pre-injected verbatim: the `EscalationEvent`/`append_escalation`/`read_escalations`
+shape to mirror for the new store API, the `FAILURE_CLASSES`/`is_known_failure_class`
+advisory-vocabulary pattern, the full `ArchitectActivity` struct + `journal.rs`
+`record_activity` body + `main.rs` clap-variant/dispatch-arm (each a 1:1 copy of
+the `review.rs`/`Review` analogue). Two cross-discriminator exclusion tests
+**converted** (not deleted) from escalation → architect_activity so the
+load-bearing `record`-filter pin (M18 bug-01-1) carries forward. Write-side only;
+no dashboard/`TierTelemetry` touch, `architect_*_tokens` stay 0 (phase-05
+harvester fills them). **Two draft-time forks resolved with the user:** generalize
+`EscalationEvent`→`ArchitectActivity`; rewire the Assists counter in phase-02(b).
+Also recorded the M27 **per-role model delegation** decision in the README (commit
+`a56cf4d`): `/model` picks the architect model, `/rexymcp:auto` delegates
+dispatch/review to subagents on `[architect] dispatch_model`/`review_model`
+(inherit-by-default, no `draft_model` — drafting stays in the main loop);
+accounting implication routed to phase-05.
+
+**M27 phase-01 — done** (2026-07-08, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-PrismaAURA; commits `108a2f1` refactor / `fcec7c1` approve).
+Retired `[budget] escalation_slots` from `BudgetConfig` (field + `Default` +
+~40 fixture lines via `sed`) and redefined `[escalation] max_assists` as the
+flat, tier-independent per-phase assist budget (default 3); `calibrate` stops
+managing `[escalation]` (user settings survive re-calibrate) and strips the
+retired key from old configs; `init` template updated; back-compat pin added
+(`Config::load` ignores a stale `escalation_slots` key). Clean first-try; all
+four gates green on independent re-run (916 passed / 2 ignored). One accepted
+scope deviation (4 `escalation_slots` fixture lines in `mcp/src/server_tests.rs`,
+mechanically required for a clean build). No calibration fold.
 
 **M27 phase-01 — drafted** (2026-07-08). Mechanical multi-site churn is the
 dominant risk (the 4-occurrence stall class): the spec pre-injects the
