@@ -1,7 +1,7 @@
 # Phase 03a: Server-authored finalize — write the Status flip + baseline Update Log on `complete`
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-02b (done)
 **Estimated diff:** ~420 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -553,3 +553,11 @@ Started implementing phase-03a: server-authored finalize.
 - The executor's `bookkeeping_feedback` gate in `command.rs` is intentionally left unchanged (phase-03b retires it).
 - `flip_status_to_review` preserves trailing newlines byte-identically (important for the `append_entry` contract).
 - Gate status maps `Some(_) => "run"`, `None => "skipped"` as specified — no pass/fail booleans are carried in `PhaseResult`.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (Anthropic)
+- **Scope deviations:** none
+- **Calibration:** none
