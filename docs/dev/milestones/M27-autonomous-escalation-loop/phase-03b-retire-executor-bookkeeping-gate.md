@@ -1,7 +1,7 @@
 # Phase 03b: Retire the executor bookkeeping gate + amend the executor contract
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-03a (done)
 **Estimated diff:** ~230 lines (mostly deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -535,3 +535,11 @@ and correct — this phase only activates it by removing the executor gate).
 **Commits:** `5d35df2` refactor: retire executor bookkeeping gate and amend the contract
 
 **Notes for review:** The contract sentinel count test (`unset_command_renders_as_unconfigured_sentinel`) required updating from 5 to 8 sentinels because the amended contract section uses `{FORMAT_COMMAND}` 4× (vs 3×), `{LINT_COMMAND}` 2× (vs 1×), and `{TEST_COMMAND}` 2× (vs 1×) — these are the new explicit command references in the amended lifecycle steps.
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none — `docs/dev/NEXT.md` was already dirty pre-dispatch (architect's prior drafting session had advanced the pointer to 03b) and was swept into the commit by the contract's "stage everything" guidance, not an out-of-scope edit by the executor.
+- **Calibration:** none. Independent re-run confirms all four gates green (executor crate 915 passed / 2 ignored, mcp crate 459 passed / 0 ignored). Verified byte-for-byte that the `executor_contract.md` § "Phase lifecycle" replacement matches the phase doc's pre-injected block exactly (programmatic diff, zero output). Confirmed the true-completion tail in `mod.rs` is untouched (including the 03a `completion_summary` line), the peek chain has exactly two arms, and both new tests fail-fast in isolation (ran each individually). Test-count arithmetic reconciles: 920 (phase-03a) − 6 deleted bookkeeping tests + 1 new executor-loop test = 915.
