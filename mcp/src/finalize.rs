@@ -14,17 +14,17 @@ pub struct FinalizeInput<'a> {
 
 /// Server-authored bookkeeping for a completed phase. No-op (returns
 /// `Ok(false)`) unless the result is `Complete` and the phase doc's
-/// `**Status:**` line still reads `in-progress` — so this is inert while the
-/// executor still authors its own bookkeeping (see phase-03b). On the active
-/// path: flip Status to `review`, append a baseline completion entry, flip the
-/// sibling milestone README's phase-table row, commit the doc changes as a
-/// separate `docs:` commit, and return `Ok(true)`.
+/// `**Status:**` line is a pre-review status (`todo` or `in-progress`).
+/// On the active path: flip Status to `review`, append a baseline
+/// completion entry, flip the sibling milestone README's phase-table
+/// row, commit the doc changes as a separate `docs:` commit, and return
+/// `Ok(true)`.
 pub async fn finalize_complete(inp: &FinalizeInput<'_>) -> std::io::Result<bool> {
     if inp.result.status != PhaseStatus::Complete {
         return Ok(false);
     }
     let doc = std::fs::read_to_string(inp.phase_doc_path)?;
-    if !status_is_in_progress(&doc) {
+    if !status_is_pre_review(&doc) {
         return Ok(false);
     }
 
@@ -48,24 +48,26 @@ pub async fn finalize_complete(inp: &FinalizeInput<'_>) -> std::io::Result<bool>
     Ok(true)
 }
 
-/// True iff `trimmed` is an in-progress status line, with or without a trailing
-/// note (the review skill appends `(bounced — …)` on a bounce). The space before
-/// the note is the delimiter, so `**Status:** in-progressish` does NOT match.
-fn is_in_progress_status(trimmed: &str) -> bool {
-    trimmed == "**Status:** in-progress" || trimmed.starts_with("**Status:** in-progress ")
+/// True iff `trimmed` is a pre-review status line (`todo` or `in-progress`),
+/// with or without a trailing note. The space before the note is the delimiter,
+/// so `**Status:** todoish` and `**Status:** in-progressish` do NOT match.
+fn is_pre_review_status(trimmed: &str) -> bool {
+    matches!(trimmed, "**Status:** todo" | "**Status:** in-progress")
+        || (trimmed.starts_with("**Status:** todo ")
+            || trimmed.starts_with("**Status:** in-progress "))
 }
 
-/// True iff some line, trimmed, is an in-progress status line (exact or with a
-/// trailing bounce note).
-fn status_is_in_progress(doc: &str) -> bool {
-    doc.lines().any(|line| is_in_progress_status(line.trim()))
+/// True iff some line, trimmed, is a pre-review status line (exact or with a
+/// trailing note).
+fn status_is_pre_review(doc: &str) -> bool {
+    doc.lines().any(|line| is_pre_review_status(line.trim()))
 }
 
-/// Replace the single frontmatter line `**Status:** in-progress` with
-/// `**Status:** review`, leaving everything else byte-identical.
-/// If the status line carries a bounce note `(bounced — …)`, the note is
-/// dropped — the canonical review line has no note.
-/// Replaces only the first such line.
+/// Replace the single frontmatter line `**Status:** todo` or
+/// `**Status:** in-progress` with `**Status:** review`, leaving everything
+/// else byte-identical. If the status line carries a bounce note
+/// `(bounced — …)`, the note is dropped — the canonical review line has no
+/// note. Replaces only the first such line.
 fn flip_status_to_review(doc: &str) -> String {
     let mut replaced = false;
     let mut result = String::with_capacity(doc.len());
@@ -75,7 +77,7 @@ fn flip_status_to_review(doc: &str) -> String {
             result.push('\n');
         }
         first = false;
-        if !replaced && is_in_progress_status(line.trim()) {
+        if !replaced && is_pre_review_status(line.trim()) {
             replaced = true;
             let leading = line.len() - line.trim_start().len();
             result.push_str(&" ".repeat(leading));
@@ -170,9 +172,9 @@ fn append_entry(doc: &str, entry: &str) -> String {
 }
 
 /// Find the one table row that contains `phase_doc_filename` whose last table
-/// cell (text between the final two `|`, trimmed) starts with `in-progress`.
-/// Replace that last cell with ` review ` (dropping any bounce note).
-/// Return `None` if no such row.
+/// cell (text between the final two `|`, trimmed) starts with `todo` or
+/// `in-progress`. Replace that last cell with ` review ` (dropping any bounce
+/// note). Return `None` if no such row.
 pub fn flip_readme_row(readme_doc: &str, phase_doc_filename: &str) -> Option<String> {
     let mut found = false;
     let lines: Vec<String> = readme_doc
@@ -184,10 +186,14 @@ pub fn flip_readme_row(readme_doc: &str, phase_doc_filename: &str) -> Option<Str
                     let before_last = &line[..last_pipe];
                     if let Some(second_last_pipe) = before_last.rfind('|') {
                         let last_cell = before_last[second_last_pipe + 1..].trim();
-                        if last_cell.starts_with("in-progress") {
+                        if last_cell.starts_with("todo") || last_cell.starts_with("in-progress") {
                             found = true;
-                            // Replace the last cell content with " review "
-                            format!("{}| review |{}", &line[..last_pipe], &line[last_pipe + 1..])
+                            // Replace the cell content between the last two `|` delimiters
+                            format!(
+                                "{} review |{}",
+                                &line[..second_last_pipe + 1],
+                                &line[last_pipe..]
+                            )
                         } else {
                             line.to_string()
                         }
@@ -275,47 +281,66 @@ mod tests {
         }
     }
 
-    // --- status_is_in_progress ---
+    // --- pre-review status ---
 
     #[test]
-    fn status_is_in_progress_matches_exact_line() {
-        assert!(status_is_in_progress("**Status:** in-progress"));
+    fn pre_review_predicate_accepts_todo() {
+        assert!(is_pre_review_status("**Status:** todo"));
+        assert!(is_pre_review_status("**Status:** todo with a note"));
     }
 
     #[test]
-    fn status_is_in_progress_rejects_review() {
-        assert!(!status_is_in_progress("**Status:** review"));
-    }
-
-    #[test]
-    fn status_is_in_progress_rejects_todo() {
-        assert!(!status_is_in_progress("**Status:** todo"));
-    }
-
-    #[test]
-    fn status_is_in_progress_rejects_done() {
-        assert!(!status_is_in_progress("**Status:** done"));
-    }
-
-    #[test]
-    fn status_is_in_progress_matches_bounced_line() {
-        assert!(status_is_in_progress(
+    fn pre_review_predicate_accepts_in_progress() {
+        assert!(is_pre_review_status("**Status:** in-progress"));
+        assert!(is_pre_review_status(
             "**Status:** in-progress (bounced — see bugs/bug-04-1.md)"
         ));
     }
 
     #[test]
-    fn status_is_in_progress_rejects_in_progressish() {
-        assert!(!status_is_in_progress("**Status:** in-progressish"));
+    fn pre_review_predicate_rejects_review_and_done() {
+        assert!(!is_pre_review_status("**Status:** review"));
+        assert!(!is_pre_review_status("**Status:** done"));
+        assert!(!is_pre_review_status("**Status:** review (bounced — …)"));
+        assert!(!is_pre_review_status("**Status:** done (bounced — …)"));
     }
 
     #[test]
-    fn status_is_in_progress_ignores_prose_containing_in_progress() {
+    fn pre_review_predicate_rejects_lookalikes() {
+        assert!(!is_pre_review_status("**Status:** todoish"));
+        assert!(!is_pre_review_status("**Status:** in-progressish"));
+        assert!(!is_pre_review_status("**Status:** todo-"));
+        assert!(!is_pre_review_status("**Status:** in-progress-"));
+    }
+
+    #[test]
+    fn pre_review_predicate_ignores_prose() {
         let doc = "This work is in-progress as of today.\n\n**Status:** review\n";
-        assert!(!status_is_in_progress(doc));
+        assert!(!status_is_pre_review(doc));
+    }
+
+    #[test]
+    fn pre_review_predicate_matches_todo_in_doc() {
+        let doc = "# Phase 01\n\n**Status:** todo\n\n## Goal\n\nDo it.\n";
+        assert!(status_is_pre_review(doc));
+    }
+
+    #[test]
+    fn pre_review_predicate_matches_in_progress_in_doc() {
+        let doc = "# Phase 01\n\n**Status:** in-progress\n\n## Goal\n\nDo it.\n";
+        assert!(status_is_pre_review(doc));
     }
 
     // --- flip_status_to_review ---
+
+    #[test]
+    fn flip_status_to_review_flips_todo() {
+        let doc = "# Phase 01\n\n**Status:** todo\n\n## Goal\n\nDo it.\n";
+        let result = flip_status_to_review(doc);
+        assert!(result.contains("**Status:** review"));
+        assert!(!result.contains("**Status:** todo"));
+        assert!(result.contains("## Goal"));
+    }
 
     #[test]
     fn flip_status_to_review_changes_only_status_line() {
@@ -357,6 +382,16 @@ mod tests {
             lines[1].contains("| in-progress |"),
             "03b row should still be in-progress"
         );
+    }
+
+    #[test]
+    fn flip_readme_row_flips_todo_cell() {
+        let readme = "| 01 | Phase ([phase-01.md](phase-01.md)) | todo |\n";
+        let result = flip_readme_row(readme, "phase-01.md");
+        assert!(result.is_some());
+        let new = result.unwrap();
+        assert!(new.contains("| review |"));
+        assert!(!new.contains("| todo |"));
     }
 
     #[test]

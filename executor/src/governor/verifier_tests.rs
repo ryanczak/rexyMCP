@@ -884,33 +884,39 @@ fn binary_in_dirs_false_when_absent() {
 }
 
 #[cfg(unix)]
-#[tokio::test]
-async fn verify_typescript_spawns_resolved_local_binary() {
-    use std::os::unix::fs::PermissionsExt;
-
+#[test]
+fn resolve_tsc_command_prefers_local_binary() {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path();
-    fs::write(root.join("tsconfig.json"), "{}").unwrap();
+    std::fs::write(root.join("tsconfig.json"), "{}").unwrap();
     let bin_dir = root.join("node_modules").join(".bin");
-    fs::create_dir_all(&bin_dir).unwrap();
+    std::fs::create_dir_all(&bin_dir).unwrap();
     let fake = bin_dir.join("tsc");
-    fs::write(
-        &fake,
-        "#!/bin/sh\necho \"src/main.ts(3,7): error TS9999: fake diagnostic\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
-    let src = root.join("src");
-    fs::create_dir_all(&src).unwrap();
-    fs::write(src.join("main.ts"), "").unwrap();
+    std::fs::write(&fake, "#!/bin/sh\necho ok\n").unwrap();
 
-    let result = verify_typescript(&src.join("main.ts")).await;
-    match result {
-        VerifierResult::Checked { diagnostics } => {
-            assert_eq!(diagnostics.len(), 1);
-            assert_eq!(diagnostics[0].code, Some("TS9999".to_string()));
-            assert_eq!(diagnostics[0].line, 3);
-        }
-        other => panic!("expected Checked from local fake tsc, got {:?}", other),
-    }
+    let cmd = resolve_tsc_command(root, false);
+    assert_eq!(cmd.program, fake);
+    assert!(cmd.prefix_args.is_empty());
+}
+
+#[test]
+fn resolve_tsc_command_falls_back_to_npx_when_on_path() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("tsconfig.json"), "{}").unwrap();
+
+    let cmd = resolve_tsc_command(root, true);
+    assert_eq!(cmd.program, PathBuf::from("npx"));
+    assert_eq!(cmd.prefix_args, &["--no-install", "tsc"]);
+}
+
+#[test]
+fn resolve_tsc_command_falls_back_to_bare_tsc_when_no_npx() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("tsconfig.json"), "{}").unwrap();
+
+    let cmd = resolve_tsc_command(root, false);
+    assert_eq!(cmd.program, PathBuf::from("tsc"));
+    assert!(cmd.prefix_args.is_empty());
 }
