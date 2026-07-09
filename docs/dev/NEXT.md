@@ -4,28 +4,35 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-05b — drafted (todo).** Architect usage harvester — a
-`size=l`, `kind=feature` phase, second of the 05a/05b split. Adds a `rexymcp
-harvest` CLI (new `mcp/src/harvest.rs` + `main.rs` clap variant/dispatch arm
-mirroring `journal`) that reads Claude Code session transcripts
-(`~/.claude/projects/<slug>/*.jsonl`, located via an **explicit `--transcript-dir`**
-arg — no slug reconstruction, mirroring phase-04's explicit `prior_log_path`),
-sums per-message `usage` by class into 05a's `ArchitectTokens`, and attributes each
-message to the `ArchitectActivity` whose journal time-window contains it
-(**next-boundary rule**: smallest activity `ts ≥ message ts`). It appends an
-**enriched copy** per activity (same `(phase_id, activity, ts)`, tokens filled)
-that 05a's `fold_activities` overlays at read — the fold *is* the idempotency; no
-dedup guard. Two load-bearing transcript gotchas pre-injected verbatim from a real
-`~/.claude` sample: **(1)** streaming emits multiple assistant JSONL lines sharing
-one `message.id` with byte-identical `usage` — the sample showed **24 lines → 6
-distinct ids, one id ×5** — so dedup by `message.id` (first wins) or overcount 4-5×;
-**(2)** cache tokens dominate uncached input (sample: input 6369 vs cache_read
-18456 vs cache_creation 16136), which is why 05a's per-class cost exists. Also
-pre-injected verbatim: the tolerant `parse_iso_to_epoch_ms` + hand-rolled
-`days_from_civil` (no date crate; `1970-01-01T00:00:00.000Z → 0`,
-`2026-07-09T16:00:56.539Z → 1783612856539`), the `Value`-based dedup reader, the
-next-boundary `attribute`, and the full `harvest` fn. No new dependency (`serde_json`
-only). Executor `TokenBreakdown` untouched. Dispatch with `/rexymcp:dispatch phase-05b`.
+**Active phase: M27 phase-06a — drafted (todo).** Per-role model delegation config
+substrate — a `size=s`, `kind=feature` phase, first of the 06a/06b split. Adds two
+`[architect]` keys to `ArchitectConfig` (`executor/src/config.rs:75-101`):
+`dispatch_model` / `review_model`, both `Option<String>` defaulting to `None`, plus
+their commented lines in the `rexymcp init` `[architect]` template
+(`mcp/src/init.rs:81-88`). Additive and **inert** — nothing consumes them until 06b's
+`/rexymcp:auto` skill reads the toml to delegate dispatch/review to subagents on the
+role model. Load-bearing semantics pinned: **`None` = inherit** (omit the subagent
+override → native default resolves to the session model), and unset does **NOT** fall
+back to `[architect] model` (the cost-rate model) — the no-fallback negative is a
+required test. No resolver method (the `Option`s *are* the resolution; a helper would
+be premature abstraction with no Rust caller). No `draft_model` key by design. E2E via
+`rexymcp doctor --config <toml>` load (new-keys + back-compat). No new dependency, no
+`calibrate`/`TokenBreakdown`/architecture.md touch. Dispatch with
+`/rexymcp:dispatch phase-06a`.
+
+**M27 phase-05b — done** (2026-07-09, **approved_first_try**; commits `8ff703a`
+draft / `eb0ccd7` feat / `b20dc1d` bookkeeping / `ac04678` approve). Architect usage
+harvester — the `rexymcp harvest` CLI (`mcp/src/harvest.rs` + `main.rs` clap variant/
+dispatch arm mirroring `journal`) reads Claude Code session transcripts (located via
+an explicit `--transcript-dir` arg), sums per-message `usage` by class into 05a's
+`ArchitectTokens`, dedups streaming lines by `message.id` (first wins), attributes
+each message to the `ArchitectActivity` whose journal time-window contains it
+(next-boundary: smallest activity `ts ≥ message ts`), and appends enriched activity
+copies that 05a's `fold_activities` overlays at read (the fold *is* the idempotency).
+Hand-rolled `parse_iso_to_epoch_ms` + `days_from_civil` (no date crate). Filled 05a's
+dormant architect token/cost path end-to-end. (The approve commit `ac04678` left
+NEXT.md's pointer stale — the recurring approve-time pattern — re-advanced to 06a here
+at the next `/rexymcp:architect next`.)
 
 **M27 phase-05a — done** (2026-07-09, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commits `be8ad9b` draft / `2334084` refactor / `11fca95`

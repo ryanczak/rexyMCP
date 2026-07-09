@@ -86,6 +86,8 @@ output_filter = true              # filter/truncate bash output to conserve cont
 # output_per_mtok = 25.0           # $/MTok output tokens
 # cache_read_per_mtok = 0.5        # $/MTok cache-read input tokens
 # cache_creation_per_mtok = 6.25   # $/MTok cache-creation input tokens
+# dispatch_model = "claude-sonnet-5"   # /rexymcp:auto delegates dispatch to this model (default: inherit)
+# review_model = "claude-sonnet-5"     # /rexymcp:auto delegates review to this model (default: inherit)
 
 [telemetry]
 # dir = "/path/to/shared/telemetry"  # cross-project PhaseRun telemetry store

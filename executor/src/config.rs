@@ -86,6 +86,12 @@ pub struct ArchitectConfig {
     /// USD per million cache-**creation** input tokens (overridden by `model`
     /// when recognised: 1.25× the input rate).
     pub cache_creation_per_mtok: f64,
+    /// Model ID for dispatch subagent delegation. `None` means inherit the
+    /// session/architect model (not `[architect] model`).
+    pub dispatch_model: Option<String>,
+    /// Model ID for review subagent delegation. `None` means inherit the
+    /// session/architect model (not `[architect] model`).
+    pub review_model: Option<String>,
 }
 
 impl Default for ArchitectConfig {
@@ -96,6 +102,8 @@ impl Default for ArchitectConfig {
             output_per_mtok: 0.0,
             cache_read_per_mtok: 0.0,
             cache_creation_per_mtok: 0.0,
+            dispatch_model: None,
+            review_model: None,
         }
     }
 }
@@ -1454,6 +1462,8 @@ max_turns = 200
             output_per_mtok: 0.0,
             cache_read_per_mtok: 0.0,
             cache_creation_per_mtok: 0.0,
+            dispatch_model: None,
+            review_model: None,
         };
         assert_eq!(a.effective_rates(), (5.0, 25.0));
     }
@@ -1466,6 +1476,8 @@ max_turns = 200
             output_per_mtok: 12.5,
             cache_read_per_mtok: 0.0,
             cache_creation_per_mtok: 0.0,
+            dispatch_model: None,
+            review_model: None,
         };
         assert_eq!(a.effective_rates(), (2.5, 12.5));
     }
@@ -1851,6 +1863,8 @@ runaway_output_bytes = 102400
             output_per_mtok: 0.0,
             cache_read_per_mtok: 0.0,
             cache_creation_per_mtok: 0.0,
+            dispatch_model: None,
+            review_model: None,
         };
         let rates = cfg.effective_architect_rates();
         assert_eq!(rates.input_per_mtok, 5.0);
@@ -1867,11 +1881,79 @@ runaway_output_bytes = 102400
             output_per_mtok: 40.0,
             cache_read_per_mtok: 2.0,
             cache_creation_per_mtok: 9.0,
+            dispatch_model: None,
+            review_model: None,
         };
         let rates = cfg.effective_architect_rates();
         assert_eq!(rates.input_per_mtok, 8.0);
         assert_eq!(rates.output_per_mtok, 40.0);
         assert_eq!(rates.cache_read_per_mtok, 2.0);
         assert_eq!(rates.cache_creation_per_mtok, 9.0);
+    }
+
+    #[test]
+    fn load_parses_architect_role_models() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+
+[architect]
+model = "claude-opus-4-8"
+dispatch_model = "claude-sonnet-5"
+review_model = "claude-haiku-4-5-20251001"
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.architect.model, Some("claude-opus-4-8".into()));
+        assert_eq!(cfg.architect.dispatch_model, Some("claude-sonnet-5".into()));
+        assert_eq!(
+            cfg.architect.review_model,
+            Some("claude-haiku-4-5-20251001".into())
+        );
+    }
+
+    #[test]
+    fn architect_role_models_default_to_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+
+[architect]
+model = "claude-opus-4-8"
+"#,
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.architect.model, Some("claude-opus-4-8".into()));
+        // Unset role models are None — they do NOT fall back to [architect] model
+        assert!(cfg.architect.dispatch_model.is_none());
+        assert!(cfg.architect.review_model.is_none());
     }
 }

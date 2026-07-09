@@ -184,7 +184,8 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 04b | Finalize tolerates a bounced status line — fixes the 03a server-authored-finalize no-op surfaced in phase-04 review ([phase-04b-finalize-bounced-status-match.md](phase-04b-finalize-bounced-status-match.md)) | done |
 | 05a | Architect token substrate: `ArchitectTokens`/`ArchitectRates` cache-aware types, retire `TierTelemetry.architect_*`, dormant cache-aware dashboard cost path ([phase-05a-architect-token-substrate.md](phase-05a-architect-token-substrate.md)) | done |
 | 05b | Architect usage harvester: Claude Code transcript reader + `message.id` dedup + ISO→epoch parse + per-phase time-window join + `rexymcp harvest` CLI (fills 05a's tokens) ([phase-05b-architect-usage-harvester.md](phase-05b-architect-usage-harvester.md)) | done |
-| 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
+| 06a | Per-role model delegation config substrate: `[architect]` `dispatch_model`/`review_model` keys + init template (additive, inert) ([phase-06a-delegation-config-substrate.md](phase-06a-delegation-config-substrate.md)) | in-progress |
+| 06b | `/rexymcp:auto` loop skill + loop report (session + telemetry record) + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |
 
 Phase 02 was **split at draft time** (2026-07-08) into 02 (the write-side
@@ -237,6 +238,20 @@ resume last-write-wins idiom): 05b's harvester appends enriched activity copies
 and a new `fold_activities` overlays the latest at read time. 05a is additive and
 **dormant** — every architect token count is 0 until 05b's harvester runs, so the
 dashboard is unchanged after 05a.
+
+Phase 06 was **split at draft time** (2026-07-09) into 06a (the dispatchable Rust
+substrate: the `[architect] dispatch_model`/`review_model` keys + init template,
+additive and inert) and 06b (the direct-execution work: the `/rexymcp:auto` skill,
+the loop report, and the WORKFLOW plugin-template mirror). The seam is the
+dispatch/direct boundary — 06a is Rust the local-LLM executor can implement; 06b's
+SKILL.md is prose that orchestrates Claude Code subagents and can only be authored
+directly. Three shape decisions resolved with the user before drafting: (1) **split
+06a Rust / 06b skill** (not a single direct-execution phase); (2) **loop report =
+session output + telemetry record** (print for the human, persist as an append-only
+telemetry record like the journal/briefing substrate — no committed report files);
+(3) **delegation via subagents with a model override** (the loop spawns dispatch/
+review in subagents on the role model; drafting stays in the main loop, matching the
+native "omitted override = session model" default).
 
 Phases are drafted **on demand** via `/rexymcp:architect next`; rows above are
 the plan, not final specs. Ordering: substrate first (01–02), then the two
