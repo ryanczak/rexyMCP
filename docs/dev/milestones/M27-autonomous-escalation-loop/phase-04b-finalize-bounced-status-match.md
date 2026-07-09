@@ -1,7 +1,7 @@
 # Phase 04b: Finalize tolerates a bounced status line
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-03a (server-authored finalize), phase-04 (surfaced this defect)
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -263,4 +263,12 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** a12119e2f4b6491e5be02803755206d856af2f28
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (Sonnet 4.5)
+- **Scope deviations:** none
+- **Calibration:** none
 
