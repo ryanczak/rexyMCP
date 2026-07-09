@@ -2,7 +2,7 @@
 name: escalate
 description: >
   Decide what to do with a hard_fail briefing from execute_phase: refined
-  re-dispatch (default), session takeover, or resume (future).
+  re-dispatch (default), session takeover, or resume.
 model: opus
 argument-hint: "<phase>"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(*), WebFetch, WebSearch
@@ -13,8 +13,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(*), WebFetch, WebSearch
 This skill handles **escalation decisions** when the executor returns a
 `hard_fail` or `budget_exceeded` result. Given the briefing, you choose a
 lever: refined re-dispatch (default for weak models), session takeover (last
-resort), or resume (not yet implemented). The decision is judgment-heavy —
-wrong defaults burn the architect-executor split.
+resort), or resume. The decision is judgment-heavy — wrong defaults burn the
+architect-executor split.
 
 ## Read these first
 
@@ -119,15 +119,34 @@ convenient. If you find yourself jumping to takeover on the first failure,
 would a tighter spec change?", try the refinement once. The data is what
 makes the model scorecard real over time.
 
-### Resume — not yet implemented
+### Resume — resume from a fresh briefing-seeded context
 
-A `continue_phase` MCP tool that resumes a failed phase from a checkpoint is
-a possible future addition (the M4 session log makes the prerequisites
-available), but does not exist today. If a hard_fail reads like "we were 90%
-done and just ran out of turns," refined re-dispatch with a tightened spec
-(smaller scope, more pre-injection) is still the right call. Note the resume
-question in calibration if it recurs; fold a new milestone if the pattern
-hardens.
+Call `continue_phase` to resume a phase when the failure reads as "we were
+most of the way done and hit one specific wall" — a late `budget_exceeded`, or
+a single diagnostic the executor couldn't clear — where the completed work is
+worth preserving. The resumed run gets a fresh context seeded with the phase
+doc, architect guidance, the current on-disk diff, and restored task states
+from the prior session log.
+
+**Choose resume over re-dispatch** when the *spec* was fine but the executor
+just didn't finish (budget, a transient error, one stubborn lint). Re-dispatch
+is better when the *spec* was the problem — the resumed context would carry the
+same gap forward.
+
+**Choose resume over takeover** when the executor can reach the work but just
+needs more turns or a hint about what to fix.
+
+**Execution steps:**
+
+1. Call `continue_phase` with:
+   - `phase_doc_path`: the phase doc path (same as the failed run).
+   - `repo_path`: the target repository path.
+   - `guidance`: a distilled string from the briefing — what to fix, what is
+     already done, what to avoid re-doing.
+   - `prior_log_path`: the failed `PhaseResult.log_path`, used to restore task
+     states.
+2. Treat the returned `PhaseResult` like any dispatch result: review on
+   `complete`, escalate again on failure.
 
 ### Decision summary
 
@@ -136,6 +155,7 @@ hardens.
 | Spec gap (missing example, unclear acceptance, missed authorization) | Refined re-dispatch |
 | External API drift (architect's sketch was stale) | Refined re-dispatch with verified docs |
 | Boundary / negative case the spec didn't pin | Refined re-dispatch with pinned negative |
+| Most of the phase done, hit one wall | Resume |
 | Repeated same-class failure after one refinement | Session takeover |
 | Context-budget exhaustion on a phase that's already minimal | Session takeover (or re-split into two phases) |
 | Anything that feels special | Refined re-dispatch — feeling-special is not a lever |
@@ -167,8 +187,8 @@ Follow the steps in §2 under "Session takeover — last resort."
 
 ### Resume
 
-Tell the user: "The resume lever (continue_phase) is not yet implemented.
-Pick refined re-dispatch or session takeover instead."
+Follow the steps in §2 under "Resume — resume from a fresh briefing-seeded
+context."
 
 ## 4. Write the escalation outcome
 

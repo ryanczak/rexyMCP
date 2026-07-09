@@ -110,6 +110,7 @@ struct AssemblyInput<'a> {
     progress: Option<&'a dyn ProgressCallback>,
     context_window: Option<usize>,
     project_id: Option<String>,
+    resume: Option<&'a crate::resume::ResumeContext>,
 }
 
 /// Resolve the telemetry directory for a CLI-driven `run-phase` invocation:
@@ -252,6 +253,16 @@ async fn run_phase_with(
     let input_warnings =
         collect_input_warnings(inp.standards, &fields.goal, &fields.acceptance_criteria);
 
+    // Apply resume context: append preamble to phase_doc and set restored task states.
+    let (phase_doc, resumed_task_states) = if let Some(resume) = inp.resume {
+        (
+            format!("{}\n\n{}", phase_doc, resume.preamble),
+            Some(resume.task_states.clone()),
+        )
+    } else {
+        (phase_doc, None)
+    };
+
     let input = PhaseInput {
         standards: inp.standards.to_string(),
         phase_doc,
@@ -263,6 +274,7 @@ async fn run_phase_with(
         project_id: inp.project_id.clone(),
         milestone_id: milestone_id_from_path(inp.phase_doc_path),
         tier: cfg.executor.tier,
+        resumed_task_states,
     };
 
     let session_id = generate_session_id();
@@ -323,6 +335,8 @@ pub struct RunPhaseConfig<'a> {
     pub project_id: Option<String>,
     /// Inject a test client. `None` → production `OpenAiClient`.
     pub test_client: Option<&'a dyn AiClient>,
+    /// Resume context for `continue_phase`. `None` on a normal `execute_phase`.
+    pub resume: Option<crate::resume::ResumeContext>,
 }
 
 /// Production wrapper — builds real seams + system clock, delegates.
@@ -388,6 +402,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
             None
         },
         project_id: inp.project_id.clone(),
+        resume: inp.resume.as_ref(),
     };
 
     run_phase_with(&assembly, &seams).await
@@ -588,6 +603,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -643,6 +659,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -698,6 +715,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
         let result = run_phase_with(&inp, &seams).await;
 
@@ -761,6 +779,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -814,6 +833,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -885,6 +905,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -1011,6 +1032,7 @@ mod tests {
             progress: None,
             context_window: None,
             project_id: None,
+            resume: None,
         };
 
         let result = run_phase_with(&inp, &seams).await;

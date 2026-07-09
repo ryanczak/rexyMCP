@@ -1,7 +1,7 @@
 # Phase 04: `continue_phase` — briefing-seeded resume
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** review
 **Depends on:** phase-03b (server-authored finalize is live; a failed run leaves the doc at `in-progress`)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -337,3 +337,53 @@ No new crate dependencies. No `Cargo.toml` / `architecture.md` / `STANDARDS.md` 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 01:19 (started)
+
+**Executor:** Claude (Sonnet)
+
+Started implementing `continue_phase` — briefing-seeded resume. Tasks:
+additive `PhaseInput` field, resume-assembly module, runner threading,
+server tool wiring, executor contract amendment, escalate skill un-stub.
+
+### Update — 2026-07-09 01:19 (complete)
+
+**Executor:** Claude (Sonnet)
+
+**Tasks completed:**
+1. Added `resumed_task_states` field to `PhaseInput` and applied restored states at the seed site in `executor/src/agent/mod.rs`.
+2. Threaded `resume: Option<ResumeContext>` through `RunPhaseConfig` and `AssemblyInput`; in `run_phase_with` the preamble is appended to the phase doc and restored task states are set on `PhaseInput`.
+3. Created `mcp/src/resume.rs` with `restore_task_states`, `current_diff`, `render_preamble`, `build_resume_context`, and 6 unit tests.
+4. Wired `continue_phase` as a special-case MCP tool in `server.rs` (params, inner logic, call_tool branch, list_tools, get_tool).
+5. Added "Resuming a phase" block to `executor/templates/executor_contract.md` (verbatim from spec).
+6. Un-stubbed the escalate skill's resume lever in `plugin/skills/escalate/SKILL.md`.
+
+**Verification:**
+- `cargo fmt --all --check`: clean
+- `cargo build`: zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: clean
+- `cargo test`: 915 passed, 0 failed, 2 ignored
+
+**Files changed:**
+- `executor/src/agent/mod.rs` — `resumed_task_states` field + seed-site restore
+- `executor/src/agent/tests.rs` — `resumed_task_states: None` in `input()` helper
+- `executor/templates/executor_contract.md` — "Resuming a phase" block
+- `mcp/src/main.rs` — `mod resume;` + `resume: None` in run-phase CLI
+- `mcp/src/resume.rs` — new module (120+ lines + 6 tests)
+- `mcp/src/runner.rs` — `resume` field on `RunPhaseConfig`/`AssemblyInput`, preamble/task_states threading, `resume: None` on all test sites
+- `mcp/src/server.rs` — `ContinuePhaseParams`, `continue_phase_inner`, call_tool branch, list_tools, get_tool
+- `plugin/skills/escalate/SKILL.md` — resume lever un-stubbed
+
+**Notes for review:**
+- The `AssemblyInput.resume` field is `Option<&'a ResumeContext>` (borrow) to avoid cloning the diff string twice.
+- The `RunPhaseConfig.resume` field is `Option<ResumeContext>` (owned) since the server owns the context and moves it into the runner.
+- `current_diff` uses `git --no-pager diff HEAD` to capture uncommitted work; committed partial work is visible in the repo itself to the resumed executor.
+- The preamble is seed-safe: `seed_from_spec` returns zero tasks from it (verified by test).
+
+**End-to-end verification:** N/A — the `continue_phase` path requires a live MCP server + real model. Unit tests cover `restore_task_states`, `render_preamble` seed-safety, and `current_diff` logic. The integration path flows through existing `run_phase` → `execute_phase` → `finalize_complete` unchanged.
+
+**Grep verification:**
+- `grep "Resuming a phase" executor/templates/executor_contract.md` → 1 match
+- `grep "continue_phase" mcp/src/server.rs` → 8 matches
+- `grep "resume: None" mcp/src/runner.rs` → 7 matches (all test sites)
+- `grep "not yet implemented" plugin/skills/escalate/SKILL.md` → 0 matches

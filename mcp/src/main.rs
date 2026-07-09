@@ -13,6 +13,7 @@ mod journal;
 mod log_query;
 mod profile;
 mod profile_cli;
+mod resume;
 mod review;
 mod roots;
 mod runner;
@@ -378,6 +379,7 @@ async fn main() -> anyhow::Result<()> {
                 telemetry_dir: runner::resolve_telemetry_dir(&cfg, no_telemetry),
                 progress: None,
                 project_id,
+                resume: None,
                 test_client: None,
             })
             .await?;

@@ -37,6 +37,7 @@ fn input() -> PhaseInput {
         project_id: None,
         milestone_id: None,
         tier: None,
+        resumed_task_states: None,
     }
 }
 

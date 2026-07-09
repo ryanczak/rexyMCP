@@ -17,6 +17,7 @@ use rexymcp_executor::config::Config;
 use crate::cap;
 use crate::log_query;
 use crate::profile;
+use crate::resume;
 use crate::roots;
 use crate::runner;
 use crate::scorecard;
@@ -28,6 +29,15 @@ use crate::scorecard;
 pub struct ExecutePhaseParams {
     pub phase_doc_path: String,
     pub repo_path: String,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ContinuePhaseParams {
+    pub phase_doc_path: String,
+    pub repo_path: String,
+    pub guidance: String,
+    pub prior_log_path: Option<String>,
     pub model: Option<String>,
 }
 
@@ -113,6 +123,60 @@ pub(crate) async fn execute_phase_inner_with_client(
         progress,
         project_id,
         test_client,
+        resume: None,
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let capped = cap::cap_phase_result(result);
+
+    let json = serde_json::to_value(&capped)
+        .map_err(|e| format!("failed to serialize PhaseResult: {}", e))?;
+
+    Ok(ExecutePhaseOutput { result: json })
+}
+
+/// Inner logic for `continue_phase` — resumes a failed phase from a fresh
+/// briefing-seeded context.
+pub(crate) async fn continue_phase_inner(
+    config_path: &Path,
+    params: &ContinuePhaseParams,
+    progress: Option<&dyn ProgressCallback>,
+) -> Result<ExecutePhaseOutput, String> {
+    let cfg = rexymcp_executor::config::Config::load_with_env(config_path)
+        .map_err(|e| format!("failed to load config: {}", e))?;
+
+    let phase_doc_path = PathBuf::from(&params.phase_doc_path);
+    let repo_path = PathBuf::from(&params.repo_path);
+
+    let standards_path = repo_path.join("docs/dev/STANDARDS.md");
+    let standards = std::fs::read_to_string(&standards_path).unwrap_or_default();
+
+    let telemetry_dir = cfg.telemetry.dir.as_deref();
+
+    let project_id = rexymcp_executor::config::Config::load(&repo_path.join("rexymcp.toml"))
+        .ok()
+        .and_then(|c| c.project.id);
+
+    let ctx = resume::build_resume_context(
+        &params.guidance,
+        params.prior_log_path.as_deref().map(Path::new),
+        &repo_path,
+        &rexymcp_executor::agent::command::RealCommandRunner,
+    )
+    .await;
+
+    let result = runner::run_phase(&runner::RunPhaseConfig {
+        cfg: &cfg,
+        phase_doc_path: &phase_doc_path,
+        repo_path: &repo_path,
+        standards: &standards,
+        model_override: params.model.as_deref(),
+        telemetry_dir,
+        progress,
+        project_id,
+        test_client: None,
+        resume: Some(ctx),
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -533,6 +597,62 @@ impl ServerHandler for RexyMcpServer {
                     RawContent::text(json_str),
                     None,
                 )]))
+            } else if request.name == "continue_phase" {
+                let params: ContinuePhaseParams = serde_json::from_value(
+                    serde_json::Value::Object(request.arguments.unwrap_or_default()),
+                )
+                .map_err(|e| {
+                    rmcp::ErrorData::invalid_params(
+                        format!("invalid continue_phase parameters: {}", e),
+                        None,
+                    )
+                })?;
+
+                let repo_path = PathBuf::from(&params.repo_path);
+
+                let roots_list: Vec<String> = Vec::new();
+
+                let project_dir = std::env::var_os("CLAUDE_PROJECT_DIR")
+                    .or_else(|| std::env::var_os("ANTIGRAVITY_PROJECT_DIR"))
+                    .map(PathBuf::from)
+                    .filter(|p| !p.as_os_str().is_empty());
+
+                match roots::corroborate(&repo_path, &roots_list, project_dir.as_deref()) {
+                    roots::Corroboration::Matched(_) | roots::Corroboration::NoSources => {}
+                    roots::Corroboration::Mismatch { .. } => {
+                        return Err(rmcp::ErrorData::invalid_params(
+                            roots::format_mismatch_error(
+                                &repo_path,
+                                &roots_list,
+                                project_dir.as_deref(),
+                            ),
+                            None,
+                        ));
+                    }
+                }
+
+                let progress_token = request.meta.as_ref().and_then(|m| m.get_progress_token());
+                let progress_callback: Option<Box<dyn ProgressCallback>> =
+                    progress_token.map(|token| {
+                        Box::new(McpProgressNotifier {
+                            peer: context.peer.clone(),
+                            progress_token: token,
+                        }) as Box<dyn ProgressCallback>
+                    });
+
+                let output =
+                    continue_phase_inner(&config_path, &params, progress_callback.as_deref())
+                        .await
+                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+
+                let json_str = serde_json::to_string(&output.result).map_err(|e| {
+                    rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
+                })?;
+
+                Ok(CallToolResult::success(vec![Content::new(
+                    RawContent::text(json_str),
+                    None,
+                )]))
             } else {
                 let ctx = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
                 router.call(ctx).await
@@ -551,6 +671,11 @@ impl ServerHandler for RexyMcpServer {
             "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
             rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
         ));
+        tools.insert(1, rmcp::model::Tool::new(
+            "continue_phase",
+            "Resume a non-complete phase from a fresh briefing-seeded context. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+            rmcp::handler::server::tool::schema_for_type::<Parameters<ContinuePhaseParams>>(),
+        ));
         tools.sort_by(|a, b| a.name.cmp(&b.name));
         let next_cursor = request.and_then(|r| r.cursor);
         Ok(rmcp::model::ListToolsResult {
@@ -566,6 +691,12 @@ impl ServerHandler for RexyMcpServer {
                 "execute_phase",
                 "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
                 rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
+            ))
+        } else if name == "continue_phase" {
+            Some(rmcp::model::Tool::new(
+                "continue_phase",
+                "Resume a non-complete phase from a fresh briefing-seeded context. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+                rmcp::handler::server::tool::schema_for_type::<Parameters<ContinuePhaseParams>>(),
             ))
         } else {
             Self::tool_router().get(name).cloned()

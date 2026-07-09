@@ -81,6 +81,12 @@ pub struct PhaseInput {
     /// Configured executor capability tier (`[executor] tier`), recorded in the
     /// `PhaseRun`'s `tier_telemetry`. `None` when no tier is configured.
     pub tier: Option<crate::config::Tier>,
+    /// Task states restored from a prior run's session log, for a resumed phase
+    /// (`continue_phase`). `None` on a normal run → seed all `Pending`. When
+    /// `Some`, each seeded task whose id is present takes the restored state, so
+    /// the task-coverage gate does not re-demand work already done.
+    pub resumed_task_states:
+        Option<std::collections::HashMap<String, crate::store::sessions::event::TaskState>>,
 }
 
 /// The injected dependencies the loop drives — explicit, no globals. The `clock`
@@ -138,11 +144,20 @@ pub struct LoopDeps<'a> {
 /// surface as `Err`; model-visible outcomes (parse failures, unknown/failed
 /// tools) are fed back into the conversation and never error.
 pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<PhaseResult> {
-    let seeded: Vec<crate::agent::tasks::Task> = if deps.task_tracking {
+    let mut seeded: Vec<crate::agent::tasks::Task> = if deps.task_tracking {
         tasks::seed_from_spec(&input.phase_doc)
     } else {
         Vec::new()
     };
+
+    // Apply restored task states from a prior run (resume path).
+    if let Some(restored) = &input.resumed_task_states {
+        for task in &mut seeded {
+            if let Some(state) = restored.get(&task.id) {
+                task.state = *state;
+            }
+        }
+    }
 
     // Task-coverage shadow: tracks live state as update_task calls land.
     // All Pending at start; updated in the tool-result block below.

@@ -105,6 +105,18 @@ multi-field completion tail; the server does that part so you don't stall on it.
 
 The Update Log is **append-only**. Never edit prior entries.
 
+### Resuming a phase
+
+If the phase prompt contains a **`# Resume context`** block, you are **resuming**
+a prior run that did not finish — not starting fresh. The block carries the
+architect's guidance, the work already on disk (a diff), and the prior task
+progress. Build on that work: read the current state of the files the diff
+touched before editing them, keep tasks already marked `done`, and pick up where
+the prior run stopped. The Update Log's prior entries stay as they are — append a
+new started entry naming yourself, then continue. Everything else in this
+lifecycle is unchanged: you still own the code and the start-of-phase status, and
+the server still authors the completion tail.
+
 **Completion checklist** (run through it before reporting complete):
 
 ```
