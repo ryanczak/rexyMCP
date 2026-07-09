@@ -1,13 +1,16 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M23 are fully implemented and closed (M18's
+> **Status:** Living design doc. M1–M29 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
-> committed scope); M24 (edit-loop recovery) is done (committed scope — single
-> phase). M25 (polish & config pass) is done (9/9 phases). This document is the source
-> of truth for the *intended* design; the
-> code under `executor/` and `mcp/` is the source of truth for what actually
-> runs. Milestones are listed in the **Status** section at the bottom — that list
-> is the project plan.
+> committed scope; M27's stretch phase-07 advisory routing was not taken). The
+> most recent arcs: **M26** (polish & hardening — loop-gate/hook/governor
+> hardening), **M27** (the autonomous escalation loop — `/rexymcp:auto`,
+> `continue_phase` resume, server-authored bookkeeping, per-role subagent
+> delegation, and the architect loop journal / usage harvester), **M28**
+> (edit-tool arg recovery), and **M29** (cleanup). This document is the source
+> of truth for the *intended* design; the code under `executor/` and `mcp/` is
+> the source of truth for what actually runs. Milestones are listed in the
+> **Status** section at the bottom — that list is the project plan.
 
 ## What rexyMCP is
 
@@ -57,10 +60,10 @@ local planner, the cloud-escalation transport) are deliberately left behind.
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Claude Code (harness)                                         │
-│   architect skill · review-phase skill · escalate skill       │
-│   /rexymcp:architect · /rexymcp:dispatch · /rexymcp:review commands                   │
+│   architect · dispatch · review · escalate · auto skills      │
+│   /rexymcp:architect · :dispatch · :review · :escalate · :auto │
 └───────────────┬───────────────────────────────────────────────┘
-                │ MCP (stdio): execute_phase, executor_health
+                │ MCP (stdio): execute_phase · continue_phase · executor_health · …
 ┌───────────────▼───────────────────────────────────────────────┐
 │ mcp crate (binary) — rmcp stdio server                         │
 │   tool schemas · progress notifications · output capping       │
@@ -376,6 +379,12 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
 - **`execute_phase`** — args: `phase_doc_path` (string), `repo_path` (string,
   the target-repo root), optional `model` / `profile` override. Calls the
   `executor` library in-process and returns `PhaseResult`.
+- **`continue_phase`** (M27) — args: `phase_doc_path`, `repo_path`, `guidance`
+  (the architect's targeted directive), optional `model`. The **resume** lever:
+  re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh
+  executor context from the phase doc + returned briefing + guidance + current
+  working-tree diff, with `task_states` restored from the session log. Returns a
+  `PhaseResult` like `execute_phase`.
 - **`executor_health`** — args: optional endpoint override. Pings the configured
   OpenAI-compatible endpoint and lists available models. Lets the architect
   confirm the executor is reachable before dispatching.
@@ -386,6 +395,11 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
   Aggregates the `PhaseRun` telemetry into the `model × tag` competency matrix
   with per-cell sample sizes. Lets the architect see which model + settings to
   dispatch a phase with. (MCP tool — Claude-facing.)
+- **`model_profile`** (M18) — same filters; aggregates telemetry into a
+  per-`(model, tag)` **capability profile**: strengths (gate-pass and
+  approved-first-try rates, reliability means) plus ranked failure classes, with
+  non-attributable classes (`spec_bug`, `infra_blip`) separated from the model's
+  real weaknesses.
 
 The `mcp` binary also exposes out-of-band **CLI commands** for human-facing use:
 
@@ -422,12 +436,16 @@ Practical concerns this layer owns:
 - **Context hygiene.** Returned output is capped (`MAX_MCP_OUTPUT_TOKENS`) so a
   phase's inner transcript can never flood Claude's context. Claude gets the
   `PhaseResult` summary + diff + (on failure) briefing — nothing more.
-- **Roots.** The server queries Claude Code's `roots/list` (and reads
-  `CLAUDE_PROJECT_DIR`) to **corroborate the target-repo root** — a second source
-  for the scope boundary alongside `execute_phase`'s `repo_path` argument, so a
-  mismatch can be caught rather than silently trusted. (Sampling and elicitation
-  are deliberately *not* used: Claude Code doesn't support server-initiated
-  sampling, and we don't pull the human into the loop mid-phase.)
+- **Roots.** The server **corroborates the target-repo root** — a second source
+  for the scope boundary alongside `execute_phase`/`continue_phase`'s `repo_path`
+  argument, so a mismatch is refused rather than silently trusted. The active
+  source is the project-dir env var (`CLAUDE_PROJECT_DIR` /
+  `ANTIGRAVITY_PROJECT_DIR`); the MCP `roots/list` half is **deferred** (M26,
+  2026-07-07): rmcp 1.8.0 deprecated `Peer::list_roots` per MCP SEP-2577, so the
+  server currently passes an empty roots list and the `roots.rs` corroboration
+  logic waits for a roots replacement. (Sampling and elicitation are deliberately
+  *not* used: Claude Code doesn't support server-initiated sampling, and we don't
+  pull the human into the loop mid-phase.)
 
 ### Layer 3 — Plugin package
 
@@ -446,12 +464,25 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
     (Claude has web fetch/search at the architect level; the executor does not).
     This is the primary, offline, per-phase-free way Claude's capability reaches
     the local model.
+  - `dispatch` — thin glue around `execute_phase`: pre-flight `executor_health`,
+    dispatch the phase, surface the summary (→ review) or the briefing (→
+    escalate).
   - `review-phase` — check executor output against the Definition of Done in
     `STANDARDS.md`, rerun the project's commands, then approve or file a bug.
   - `escalate` — given a returned briefing, pick a lever: re-dispatch with a
     refined spec (default for weak models — see "Escalation"), session takeover,
-    or resume (candidate, if `continue_phase` is built).
-- **Commands:** `/rexymcp:architect`, `/rexymcp:dispatch <phase>`, `/rexymcp:review <phase>`.
+    or **resume** (briefing-seeded `continue_phase`, shipped M27).
+  - `auto` (M27) — the opt-in **autonomous milestone loop**. Composes the four
+    skills above — draft → dispatch → review → escalate/re-dispatch — hands-off
+    across a whole milestone with full review rigor and no per-phase pause,
+    delegating dispatch/review to subagents on the `[architect] dispatch_model`
+    / `review_model` role models, budgeted by `[escalation] max_assists`,
+    journaling every activity, and stopping at a milestone boundary / blocker /
+    budget exhaustion / runaway backstop with a structured loop report. It
+    *composes, never forks* the other skills — an autonomous run of a step is the
+    same procedure as an interactive one.
+- **Commands:** `/rexymcp:architect`, `/rexymcp:dispatch <phase>`,
+  `/rexymcp:review <phase>`, `/rexymcp:escalate <phase>`, `/rexymcp:auto [max-phases]`.
 - **Embedded templates:** generalized copies of `STANDARDS.md` / `WORKFLOW.md`
   **and the executor contract** (`executor_contract.md` — the portable subset of
   this repo's `AGENTS.md`: hard rules, phase lifecycle, blocker/completion

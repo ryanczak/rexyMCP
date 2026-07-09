@@ -19,33 +19,54 @@ Your *Architect* runs in either **Claude Code** or **Google Antigravity** —
 rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
 whichever you drive.
 
-Two things make rexyMCP stand out:
+Three things make rexyMCP stand out:
 
-1. **It is purpose-built for small local models.** A 7B–27B model *will* make
+1. **It runs an entire milestone autonomously.** One command — `/rexymcp:auto` —
+   drives the whole architect↔executor cycle hands-off: it drafts the next phase,
+   dispatches it to the local model, reviews the result with *full* rigor (the
+   real gate re-runs and Definition-of-Done walk, no shortcuts), and on failure
+   picks an escalation lever — refine-and-re-dispatch, briefing-seeded
+   [`continue_phase`](#mcp-tools) resume, or session takeover — cycling
+   phase after phase until the milestone closes. And it does this **cheaply**: the
+   two mechanical steps, dispatch and review, are delegated to **Claude subagents
+   running whatever model you name** in `rexymcp.toml`
+   (`dispatch_model` / `review_model` — point them at Sonnet or Haiku while
+   drafting and judgment stay on Opus). The loop is budgeted (`max_assists` per
+   phase), fully journaled (every architect activity is a telemetry record with
+   real token/cost accounting), and hard-gated: milestone boundaries, blockers,
+   and budget exhaustion always stop for you with a structured **loop report**.
+   The result is an **autonomous virtuous cycle** — rexyMCP executes a whole
+   milestone, and improves its own workflow contract as it goes.
+
+2. **It is purpose-built for small local models.** A 7B–27B model *will* make
    mistakes a frontier model never would. So every layer of the loop has a
    specific answer: a forgiving tool-call parser that *repairs* malformed output
    instead of aborting the turn, a post-edit verifier that feeds compiler
    diagnostics back for an immediate retry, a governor that catches repetition
    and runaway output, security-scoped tools that can't escape the target repo,
-   and a read-before-edit rule that stops blind overwrites. Models that would be
-   too unreliable to use unguarded become productive executors for bounded,
-   spec-driven work — because the plumbing corrects their failure modes
-   automatically.
+   recovery-oriented tool errors that hand the model a next step instead of a
+   dead end, and a read-before-edit rule that stops blind overwrites. The server
+   even authors the phase's bookkeeping tail itself, so correct code never dies
+   filling in an Update Log. Models that would be too unreliable to use unguarded
+   become productive executors for bounded, spec-driven work — because the
+   plumbing corrects their failure modes automatically.
 
-2. **It runs a virtuous cycle of continuous improvement.** Every dispatch is a
+3. **It runs a virtuous cycle of continuous improvement.** Every dispatch is a
    labeled data point — gates, parse-failure rate, length-truncation rate,
    turns, peak context, the Architect's verdict — written to a shared telemetry
    store. `rexymcp runs`, `rexymcp scorecard`, and `rexymcp profile` turn that
    passive exhaust into evidence: *which model, at which settings, on which kind
    of work, actually earns its keep on your codebase.* And recurring failure
-   patterns fold back into the workflow contract that governs all future phases.
-   The tool gets measurably better the more you use it.
+   patterns fold back into the workflow contract that governs all future phases —
+   whether you drive the loop by hand or let `/rexymcp:auto` run it. The tool gets
+   measurably better the more you use it.
 
 ---
 
 ## Table of contents
 
 - [How it works (the herd loop)](#how-it-works-the-herd-loop)
+- [Run a whole milestone autonomously — `/rexymcp:auto`](#run-a-whole-milestone-autonomously--rexymcpauto)
 - [Watch it work — the live dashboard](#watch-it-work--the-live-dashboard)
 - [Install & quick start](#install--quick-start)
 - [The plugin (Claude Code & Antigravity)](#the-plugin-claude-code--antigravity)
@@ -100,6 +121,7 @@ Two things make rexyMCP stand out:
    /rexymcp:escalate <phase>                                            │
         │                                                               │
         ├─ refine spec → re-dispatch ─────────────────────────────────▶┤
+        ├─ resume (continue_phase: fresh context, keep the done work) ─▶┤
         └─ session takeover (Claude finishes it) ─────────────────────▶┤
                                                                         │
          ┌──────────────────────────────────────────────────────────────┘
@@ -122,6 +144,86 @@ Claude rather than calling out to any cloud LLM itself.
 rexymcp dashboard --repo /path/to/your/repo   # full-screen TUI — stays open, auto-follows sessions
 rexymcp status    --repo /path/to/your/repo   # one-shot summary; scriptable with --json
 ```
+
+The loop above is the **interactive** mode — you drive each `/rexymcp:` step and
+inspect between them. When you'd rather hand rexyMCP the wheel for a whole
+milestone, run it autonomously.
+
+---
+
+## Run a whole milestone autonomously — `/rexymcp:auto`
+
+`/rexymcp:auto` runs the *entire* herd loop above — draft → dispatch → review →
+escalate/re-dispatch — **hands-off across a full milestone**, with no per-phase
+pause. You opt in per run; it stops for you only at a milestone boundary, a
+genuine blocker, budget exhaustion, or a runaway backstop.
+
+```
+/rexymcp:auto            # run until the current milestone closes (or a stop condition fires)
+/rexymcp:auto 3          # cap the run at 3 phases (the runaway backstop; default 8)
+```
+
+It is **not a shortcut that skips rigor** — the review skill runs verbatim inside
+the loop: independent gate re-runs (format/build/lint/test), the full
+STANDARDS Definition-of-Done walk, the telemetry verdict, the commit. The only
+thing removed is the human pause between steps; every quality gate stays.
+
+**One invariant: the loop composes the existing skills, it never forks them.**
+Each step *is* the corresponding interactive skill (`architect` to draft,
+`dispatch`, `review`, `escalate`) run unchanged — so an autonomous run of a step
+is byte-for-byte the same procedure as an interactive one.
+
+### Cheaper models where they pay off — subagent delegation
+
+The headline efficiency win: `/rexymcp:auto` **delegates the two mechanical,
+procedure-driven steps to Claude subagents running a model you choose**, while
+the two context-hungry judgment steps stay in the main session on your architect
+model.
+
+| Loop step | Runs in | On which model |
+|---|---|---|
+| **draft** the next phase | main session | your architect model (needs the milestone talk-through history) |
+| **dispatch** | **subagent** | `[architect] dispatch_model` — else inherits the session model |
+| **review** | **subagent** | `[architect] review_model` — else inherits |
+| **escalate decision** | main session | your architect model (needs the briefing + design intent) |
+| **refined re-dispatch** | **subagent** | `dispatch_model` |
+| **session takeover** | main session | your architect model |
+
+```toml
+[architect]
+model          = "claude-opus-4-8"   # drafting + escalation judgment (and cost rates)
+dispatch_model = "claude-sonnet-5"   # /auto delegates dispatch here
+review_model   = "claude-sonnet-5"   # /auto delegates review here  (try haiku!)
+```
+
+Dispatch is thin glue around an MCP call; review is a mechanical gate-and-checklist
+walk — both run fine on a cheaper, faster model, so a long autonomous run spends
+Opus tokens only where design judgment actually lives. Leave a role model unset
+and that step simply inherits your session model (no behavior change). If a client
+can't switch a subagent's model, the loop runs it on the session model and *says
+so* in the loop report — it never claims a switch that didn't happen.
+
+### Budgeted, journaled, and hard-gated
+
+- **Budget.** `[escalation] max_assists` (default 3) caps the escalation
+  round-trips the loop may spend on any one phase before it stops for you.
+- **Journal.** Every architect activity — `draft`, `dispatch`, `review`,
+  `assist`, `takeover`, `boundary` — is written as a structured telemetry record
+  (`rexymcp journal`), so `PhaseRun.escalation_count` and the dashboard's Assists
+  counter reflect *real* autonomous work. On Claude Code, `rexymcp harvest` reads
+  the local session transcripts and joins **real per-class token/cost** onto each
+  activity (cache-read / cache-creation / input / output billed at their true
+  rates) — architect cost is *harvested, never estimated*.
+- **Hard gates.** Milestone boundaries, any blocker the skills reserve for a
+  human (contract-doc changes, dependency requests, spec-vs-architecture
+  conflicts), per-phase budget exhaustion, and the max-phases backstop all stop
+  the loop and emit a structured **loop report** — the milestone-level analogue
+  of the executor's failure briefing: what ran, every verdict, assists spent, the
+  token/cost totals, why it stopped, and what needs you.
+
+Because `execute_phase` blocks and Claude Code sends no progress token, the live
+window into an autonomous run is the same one an interactive run uses — keep
+`rexymcp dashboard --repo .` open in a tmux split and watch every phase go by.
 
 ---
 
@@ -256,8 +358,8 @@ you through the first design session. Everything is idempotent — safe to re-ru
 
 ## The plugin (Claude Code & Antigravity)
 
-The plugin (`plugin/`, manifest version **0.1.1**) bundles the MCP server with
-the architect/executor workflow as **four skills** and **seven MCP tools**. Its
+The plugin (`plugin/`, manifest version **0.1.3**) bundles the MCP server with
+the architect/executor workflow as **five skills** and **eight MCP tools**. Its
 `.mcp.json` launches `rexymcp serve --config ./rexymcp.toml`, so the binary must
 be on `$PATH`. The same package drives both **Claude Code** and **Google
 Antigravity** — they consume the identical skills and MCP tools, so the workflow
@@ -312,15 +414,17 @@ writes one pointing at `REXYMCP.md`), and the architect skill uses Antigravity's
 | **`/rexymcp:architect`** | opus | `[next]` | Bootstrap a project (idempotent), explore & design it (`architecture.md`, milestone README, `NEXT.md`), and author phase docs. `next` drafts the next phase. Pre-injects worked examples, codebase idioms, and fetched API docs into each phase doc — the executor has no web access and can't ask questions mid-run. Never executes a phase or crosses a milestone boundary without human sign-off. |
 | **`/rexymcp:dispatch`** | sonnet | `<phase>` | Thin glue around `execute_phase`: reads `NEXT.md` + the phase doc + `rexymcp.toml`, runs an `executor_health` pre-flight, then dispatches. On `complete` it surfaces the summary and suggests `/rexymcp:review`; on `hard_fail`/`budget_exceeded` it surfaces the briefing and suggests `/rexymcp:escalate`. |
 | **`/rexymcp:review`** | opus | `<phase>` | Reviews a phase whose status is `review`: reruns the `[commands]` set (format/build/lint/test as separate invocations), walks the STANDARDS Definition of Done and the phase's acceptance criteria, spot-checks that tests are real. Pass → records the verdict via `rexymcp review`, flips status to `done`, advances `NEXT.md`, commits (and writes the milestone retrospective if it's the last phase). Fail → files a bug, bounces status to `in-progress`. |
-| **`/rexymcp:escalate`** | opus | `<phase>` | Decides what to do with a `hard_fail` briefing: **refined re-dispatch** (default — tighten the spec, add a Notes-for-executor block, keep status `in-progress`), **session takeover** (last resort — the Architect implements it directly and records an `escalated` verdict), or **resume** (reserved). |
+| **`/rexymcp:escalate`** | opus | `<phase>` | Decides what to do with a `hard_fail` briefing: **refined re-dispatch** (default — tighten the spec, add a Notes-for-executor block, keep status `in-progress`), **session takeover** (last resort — the Architect implements it directly and records an `escalated` verdict), or **resume** — a briefing-seeded `continue_phase` that rebuilds a *fresh* executor context from the phase doc + briefing + one targeted directive + the current diff (task states restored from the session log), so "the 90% that's done" isn't redone while the context rot that stalled the model is discarded. |
+| **`/rexymcp:auto`** | opus | `[max-phases]` | The opt-in **autonomous milestone loop** ([above](#run-a-whole-milestone-autonomously--rexymcpauto)). Composes the other four skills — draft → dispatch → review → escalate/re-dispatch — hands-off across a whole milestone with full review rigor and no per-phase pause. Delegates dispatch/review to subagents on `dispatch_model` / `review_model`; budgeted by `max_assists`; journals every activity; stops at a milestone boundary, blocker, budget exhaustion, or the `max-phases` backstop (default 8) with a structured loop report. |
 
 ### MCP tools
 
-The `rmcp` stdio server (`rexymcp serve`) exposes **seven** tools to Claude Code:
+The `rmcp` stdio server (`rexymcp serve`) exposes **eight** tools to Claude Code:
 
 | Tool | What it does |
 |---|---|
-| `execute_phase` | Run the executor against a phase doc + target repo; returns a `PhaseResult`. The `repo_path` is corroborated against the MCP client's `roots/list` and the project-dir env var (`CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`) — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
+| `execute_phase` | Run the executor against a phase doc + target repo; returns a `PhaseResult`. The `repo_path` is corroborated against the project-dir env var (`CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`) — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
+| `continue_phase` | The **resume** escalation lever: re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh executor context built from the phase doc + the returned briefing + one architect `guidance` directive + the current working-tree diff, with `task_states` restored from the session log. Keeps the completed work without replaying the context rot that stalled the run. Params: `phase_doc_path`, `repo_path`, `guidance`, optional `model`. |
 | `executor_health` | Check connectivity to the configured LLM endpoint and list models. Optional `base_url` override. |
 | `executor_log_search` | Search a session JSONL log by `event_type` (exact), `tool_name` (substring, on tool events), and/or `query_text` (substring) — all AND-ed. Capped per-record, limit default 20 / max 50. |
 | `executor_log_tail` | Return the last *N* records of a session log (default 10, max 50), each capped per field. |
@@ -389,7 +493,7 @@ close.
 
 ## The CLI
 
-`rexymcp` is one binary with twelve subcommands. Flags are all long-form; there
+`rexymcp` is one binary with fourteen subcommands. Flags are all long-form; there
 are no short aliases.
 
 ### Command reference
@@ -408,6 +512,8 @@ are no short aliases.
 | `rexymcp scorecard` | Aggregate runs into a **model × settings** competency matrix — compare e.g. `temp=0.2` vs `temp=0.7` for your model on your work. | `--config` (required), `--model`, `--tag` (repeatable), `--min-runs <n>`, `--telemetry-path`, `--json` |
 | `rexymcp profile` | Aggregate runs into a **per-(model, tag) capability profile** — strengths and ranked failure classes. | same flags as `scorecard` |
 | `rexymcp review` | Record an Architect review verdict as a `PhaseReview` annotation (folds into the run's telemetry). Usually invoked by `/rexymcp:review`. | `--config`, `--phase-id`, `--verdict` (required); `--phase-doc`, `--project-id`, `--failure-class` (repeatable), `--bounces`, `--bugs-filed`, `--warnings`, `--telemetry-path` |
+| `rexymcp journal` | Append an `ArchitectActivity` record (`draft`/`dispatch`/`review`/`assist`/`takeover`/`boundary`) to the telemetry store — the substrate the `/rexymcp:auto` loop uses to meter its own work. Usually invoked by the loop skill. | `--config`, `--phase-id` (required); `--phase-doc`, `--project-id`, `--milestone`, `--activity`, `--outcome`, `--model` |
+| `rexymcp harvest` | Read Claude Code's local session transcripts and join **real** per-class token/cost onto journal activities by time window (fills the architect-cost rows; **harvested, never estimated**). Claude Code only; other clients keep counts + durations. | `--config` (required) |
 
 **Calibration tiers** set how much hand-holding the Architect provides and how
 many retries the Executor gets before escalation fires:
@@ -536,7 +642,9 @@ answer to that constraint:
 | Challenge | rexyMCP's answer |
 |---|---|
 | Small models emit malformed tool calls — trailing commas, fenced JSON, near-miss key names | **Forgiving parser** recognizes six output formats (Hermes, fenced/loose JSON, YAML, XML-variant, plain text) and applies repair transforms (fuzzy name match, param aliasing, type coercion, default-fill, JSON repair, string-escape) before giving up — and when it must give up, it feeds *model-visible* feedback instead of silently aborting the turn |
-| The model loops, retrying the same broken edit | **Governor loop detector** trips on N identical consecutive tool calls (default 6) and converts it to a `hard_fail` briefing before it burns the turn budget |
+| The model loops, retrying the same broken edit | **Governor loop detector** trips on N identical consecutive tool calls (default 6) — plus an A,B,A,B oscillation detector and a windowed cumulative-output flood detector (M26) — and converts it to a `hard_fail` briefing before it burns the turn budget. An optional wall-clock ceiling terminates a wedged run |
+| A truncated tool call drops a required arg and the raw serde error is a dead end | **Recovery-oriented tool errors**: instead of surfacing `missing field \`path\``, the tool names the missing field, echoes what *was* supplied, and hands back an example call shape + next step (M28); a no-op `patch` returns the file's current text, location, and occurrence count (M24) — the model gets something to act on rather than a wall |
+| Correct code dies in the bookkeeping tail — the model can't reliably fill in the Update Log / Status flip | **Server-authored bookkeeping** (M27): on a clean `complete`, the *server* writes the phase's Status flip and a baseline Update Log entry from data it already holds (splicing in the summary the model returned) and makes a separate `docs:` commit. The executor's job ends at green code |
 | The model stalls in the tail — emits an empty or mid-`<think>`-truncated completion, or re-submits a no-op edit, instead of finishing | **Stall recovery** (M22–M24): an empty completion or a `finish_reason="length"` truncation is routed to a cause-specific recovery nudge rather than mis-read as "done" (consecutive empties escalate to a no-reasoning directive); a no-op `patch` (identical `old_str`/`new_str`) returns the file's current text + location and an occurrence count instead of a dead-end error; dedicated governor stalls (empty-completion, stuck-gate-feedback) cap the loop as the backstop |
 | The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit and injects the diagnostics back into the turn (with language-appropriate detail — e.g. compiler suggested-fixes and structured test digests for Rust, TypeScript, and Python today) so the model fixes it without a wasted round-trip |
 | Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: a `patch` is refused on any file the model hasn't `read_file`'d this session (or whose mtime changed since), preventing blind overwrites; a working-set-aware refusal likewise blocks a `git checkout`/`restore` that would discard the model's own edits this session |
@@ -574,6 +682,13 @@ the process docs that govern all future work.
    or `STANDARDS.md` (the DoD), with sign-off, so every future phase starts with
    that knowledge pre-applied. The `WORKFLOW.md` embedded in the plugin is the
    canonical copy — folds propagate to every project that bootstraps from it.
+
+This cycle runs whether you drive the loop by hand *or* let `/rexymcp:auto` run
+it — the autonomous loop journals every architect activity (`rexymcp journal`),
+harvests its real token/cost (`rexymcp harvest`), and folds recurring failure
+classes into the contract exactly as an interactive run would. That is what makes
+it a *self-improving* autonomous loop, not just an unattended one: it executes a
+milestone and sharpens the process that governs the next one in the same pass.
 
 **A concrete example from building rexyMCP itself:** during M10, the executor
 (Qwen3.6-27B) stalled five times on phases that required editing the same
@@ -637,8 +752,8 @@ test     = "npm test"                     # Rust: cargo test · Python: pytest �
 context_length   = 32768                  # the model's context window in tokens  (default 32768)
 max_context_pct  = 70                     # % of the window to fill before compacting (default 70)
 max_turns        = 200                    # hard turn cap before budget_exceeded   (default 200)
-escalation_slots = 1                      # briefings returned to the architect per phase (default 1)
-# gate_retries   = 2                      # gate-retry loops before escalation; omitted → derive from tier
+# gate_retries   = 2                      # gate-retry loops before budget_exceeded; omitted → derive from tier (M26)
+# wall_clock_secs = 1800                  # optional wall-clock ceiling; omitted → no time limit (M26)
 
 # ── Cross-project telemetry store (enables the scorecard) ─────────
 [telemetry]
@@ -650,9 +765,11 @@ saved_input_per_mtok  = 3.0               # USD / Mtok cloud input   (0.0 → "�
 saved_output_per_mtok = 15.0              # USD / Mtok cloud output
 # saved_model = "claude-opus-4-8"         # known Claude id → auto-fills the two rates above
 
-# ── Architect-escalation cost (a real cost center) ────────────────
+# ── Architect model, per-role delegation & escalation cost ────────
 [architect]
-# model = "claude-opus-4-8"               # known Claude id → auto-fills the rates below
+# model = "claude-opus-4-8"               # known Claude id → auto-fills the rates below (cost model, not the session model)
+# dispatch_model = "claude-sonnet-5"      # /rexymcp:auto delegates dispatch to a subagent on this model (M27; unset → inherit session model)
+# review_model   = "claude-sonnet-5"      # /rexymcp:auto delegates review to a subagent on this model   (M27; unset → inherit)
 input_per_mtok  = 5.0                      # USD / Mtok architect input
 output_per_mtok = 25.0                     # USD / Mtok architect output
 
@@ -666,9 +783,9 @@ identical_call_threshold        = 6       # consecutive identical tool calls →
 verifier_persistence_threshold  = 6       # consecutive verifier-failing turns → hard-fail (default 6)
 runaway_output_bytes            = 102400  # single tool-output byte cap → hard-fail (default 100 KiB)
 
-# ── SMALL-tier mid-phase architect assists ────────────────────────
+# ── /rexymcp:auto per-phase escalation budget ─────────────────────
 [escalation]
-max_assists = 3                           # autonomous architect assists before hard_fail (default 3)
+max_assists = 3                           # autonomous escalation round-trips the /auto loop may spend on one phase before stopping for the human (default 3; flat, tier-independent since M27)
 
 # ── Per-model overrides (exact model-id match) ────────────────────
 [models."Qwen/Qwen3.6-27B-FP8"]
@@ -689,13 +806,13 @@ temperature                    = 0.2      # any of these override the global val
 | `[project]` | `id` — per-project UUID (from `rexymcp init`) that scopes telemetry to this project regardless of path. |
 | `[executor]` | The local model + connection: `provider`, `model`, `base_url`, `api_key`, the two streaming timeouts, sampling (`temperature`, `seed`, `max_tokens`), `enable_thinking`, `task_tracking`, and `tier`. |
 | `[commands]` | The `format` / `build` / `lint` / `test` (+ optional `lint_fix`) commands run as the final gate. |
-| `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `escalation_slots`, `gate_retries`. |
+| `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `gate_retries`, and the optional `wall_clock_secs` ceiling (M26). |
 | `[telemetry]` | `dir` — the cross-project store. Omit to disable; `~` is expanded. |
 | `[dashboard]` | Cloud-baseline `$/Mtok` rates for the Budget panel's Savings block (or a `saved_model` to auto-fill them). |
-| `[architect]` | `$/Mtok` rates for the **real** cost of architect-escalation assists (or a Claude `model` to auto-fill). |
+| `[architect]` | `$/Mtok` rates for the **real** cost of architect work (or a Claude `model` to auto-fill), plus the per-role `dispatch_model` / `review_model` keys the `/rexymcp:auto` loop delegates those steps to (M27). |
 | `[context]` | `output_filter` kill-switch for the M10 boundary filter. |
 | `[governor]` | The three hard-fail thresholds (identical-call, verifier-persistence, runaway-output). |
-| `[escalation]` | `max_assists` for SMALL-tier autonomous architect assists. |
+| `[escalation]` | `max_assists` — the flat, tier-independent per-phase escalation budget for the `/rexymcp:auto` loop (M27). |
 | `[models."<id>"]` | Per-model overrides (exact-id match) for sampling (`temperature`/`seed`/`max_tokens`/`enable_thinking`), task-tracking, and the governor thresholds. |
 
 **Known-model rate table** (recognized by `[architect] model` and `[dashboard]
@@ -755,7 +872,10 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
 - **`PhaseResult`** (`phase/result.rs`) — the single value that crosses the MCP
   boundary: `status` (`complete` / `hard_fail` / `budget_exceeded`), files
   changed, the diff, per-command outputs, an Update Log entry, an optional
-  `briefing`, and the session-log path.
+  `briefing`, a `warnings` list surfacing silent degradations (M26 — empty
+  `STANDARDS.md`, phase-doc heading drift), and the session-log path. On a clean
+  `complete` the server also authors the phase's bookkeeping tail — the Status
+  flip and a baseline Update Log entry — as a separate `docs:` commit (M27).
 - **Per-run telemetry** (`store/telemetry.rs`) — every dispatch appends a
   `PhaseRun` record: model, sampling params, served-model id, status, gates,
   turns, wall-clock, token breakdown, context window, `length_finish_rate`,
@@ -785,7 +905,8 @@ plugin/     plugin package (Claude Code & Google Antigravity)
   │     ├── architect/SKILL.md    /rexymcp:architect
   │     ├── dispatch/SKILL.md     /rexymcp:dispatch
   │     ├── review/SKILL.md       /rexymcp:review
-  │     └── escalate/SKILL.md     /rexymcp:escalate
+  │     ├── escalate/SKILL.md     /rexymcp:escalate
+  │     └── auto/SKILL.md         /rexymcp:auto  (autonomous milestone loop)
   └── templates/
         ├── STANDARDS.md          generalized DoD template (placeholders resolved per project)
         └── WORKFLOW.md           generalized workflow template
