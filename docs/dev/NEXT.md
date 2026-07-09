@@ -23,20 +23,35 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M27 phase-06b — todo (drafted 2026-07-09, direct-execution).**
-The `/rexymcp:auto` loop skill + loop report + WORKFLOW plugin-template mirror.
-[Phase doc](milestones/M27-autonomous-escalation-loop/phase-06b-auto-loop-skill.md)
-pins the composition contract (invoke the four existing skills unchanged), the
-delegation role map (draft/escalate/takeover in the main loop; dispatch/review in
-subagents on 06a's `dispatch_model`/`review_model`, inherit-by-default), the loop
-algorithm + four stop conditions (boundary/budget/blocker/runaway), the exact
-`rexymcp journal`/`harvest` command forms + six canonical activity kinds, and the
-loop report (printed session output + a `boundary` journal record — no committed
-report file). Because it is a **prose skill orchestrating Claude Code subagents,
-not Rust for the local-LLM executor**, it is authored **directly by the architect
-(Claude)**, not dispatched — Pre-flight step 5 verifies the live Claude Code
-subagent/model-override mechanism first (external-API-verify discipline). The doc
-still passes through the normal review gate (`Executor: Claude Code (direct)`).
+**Active phase: none — M27 at a milestone-boundary decision (human gate).**
+All **committed** M27 phases (01–06b) are `done`. The only remaining row is
+**phase-07 — advisory model routing in dispatch**, an explicit *stretch* the
+README marks "drafted only if appetite remains after 06." So this is a human
+gate: either **close M27** (run `/rexymcp:architect` to write the retrospective,
+fold any calibration lessons, set this pointer to "none") **or** draft the
+stretch phase-07 (`/rexymcp:architect next`). Not auto-advancing — milestone
+close and stretch scope are both the human's call.
+
+**M27 phase-06b — done** (2026-07-09, **approved_first_try**, executor **Claude
+Code (direct)**; commits `eae27ed` draft + the 06b implementation commit). The
+`/rexymcp:auto` loop skill (`plugin/skills/auto/SKILL.md`) + WORKFLOW
+plugin-template mirror. Direct-execution (a prose skill orchestrating Claude Code
+subagents, not Rust for the local-LLM executor), so authored + reviewed by the
+architect. Composes the four existing skills unchanged; delegation role map
+(draft/escalate/takeover in the main loop; dispatch/review/refined-re-dispatch in
+`Agent` subagents on 06a's `dispatch_model`/`review_model`, inherit-by-default);
+loop algorithm + four stop conditions (boundary/budget/blocker/runaway); exact
+`rexymcp journal`/`harvest` command forms + the six canonical activity kinds; loop
+report = printed session output + a `boundary` journal record (no committed report
+file). **One external-API adaptation (data, not a fold):** Pre-flight step 5
+corrected the draft's `Task` subagent-tool assumption to **`Agent`** with a
+verified per-call `model` override, resolved cleanly from the live Claude Code
+subagent docs — the verify-external-APIs discipline working as intended. E2E:
+the six-kind `rexymcp journal` round-trip appends 6 `architect_activity` records
+with no `unknown activity` warning; frontmatter valid + shape-matches the other
+four skills; the template mirror carries all four stop conditions in ASCII-arrow
+house style. All four gates green on independent re-run (483 mcp + 928 executor,
+2 ignored); no Rust changed.
 
 **M27 phase-05b — done** (2026-07-09, **approved_first_try**; commits `8ff703a`
 draft / `eb0ccd7` feat / `b20dc1d` bookkeeping / `ac04678` approve). Architect usage

@@ -1,7 +1,7 @@
 # Phase 06b: `/rexymcp:auto` loop skill + loop report + WORKFLOW mirror
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** done
 **Depends on:** phase-06a (done — the `[architect] dispatch_model`/`review_model` config keys this skill reads)
 **Estimated diff:** ~360 lines (one new SKILL.md + a ~17-line WORKFLOW template paragraph swap)
 **Tags:** language=prose, kind=feature, size=l
@@ -432,3 +432,111 @@ completion entry; the composed pieces are each individually verified above.
 (Filled in by the executor — here, the architect authoring directly.)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 (complete, Claude Code direct)
+
+**Executor:** Claude Code (direct) — direct-execution phase per the doc header.
+
+**Summary:** Created `plugin/skills/auto/SKILL.md` (the `/rexymcp:auto` loop
+skill) and mirrored the amended autonomous-loop paragraph into
+`plugin/templates/WORKFLOW.md`. The skill body covers all seven sub-blocks:
+the compose-never-fork invariant, the delegation role map (draft/escalate/
+takeover in the main loop; dispatch/review/refined-re-dispatch in `Agent`
+subagents on `dispatch_model`/`review_model`, inherit-by-default), the loop
+algorithm, the four stop conditions (boundary/budget/blocker/runaway), the
+exact `rexymcp journal` command + six canonical activity kinds, the
+harvest-at-stop with graceful degrade, and the loop report (printed session
+output + a `boundary` journal record — no committed report file). No Rust
+changed; no dependency added; `docs/architecture.md` and `docs/dev/WORKFLOW.md`
+untouched.
+
+**Pre-flight step 5 finding (external-API verify) — divergence recorded:** the
+draft sketch assumed the subagent-spawning tool was `Task` with a statically-
+pinned model. The live Claude Code subagent docs
+(`code.claude.com/docs/en/subagents.md`) confirm: (1) the tool is **`Agent`**
+(`Task` is a deprecated backwards-compat alias) — the skill's `allowed-tools`
+uses `Agent`; (2) **per-invocation dynamic model override IS supported** — the
+orchestrator passes a `model` parameter on each `Agent` call, read from
+`rexymcp.toml` at runtime (resolution order: `CLAUDE_CODE_SUBAGENT_MODEL` env >
+per-call `model` param > subagent frontmatter > session model), so the
+role-model delegation works as designed with no static-pin fallback needed;
+(3) a subagent is told to run a composed skill by giving it the `Skill` tool
+and instructing it in the prompt. The degrade rule (run on the session model +
+say so in the loop report) is retained for clients/versions without per-call
+override. This adaptation was resolvable from the live docs, so it was adapted
+cleanly (not blocked) and is recorded here per the declare-deviations
+discipline.
+
+**Acceptance criteria:** all met (verified in the E2E block below).
+
+**Commands (independent re-run — no Rust changed, gates confirm no regression):**
+
+```
+cargo fmt --all --check     → clean (no diff)
+cargo build                 → Finished, zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test                  → 928 executor + 483 mcp passed, 2 ignored
+```
+
+**End-to-end verification:**
+
+1. **Journal round-trip, all six activity kinds** (throwaway `--telemetry-path
+   /tmp/rexymcp-auto-e2e/phase_runs.jsonl`, hermetic — real telemetry untouched):
+
+   ```
+   recorded draft activity for phase-06b -> /tmp/rexymcp-auto-e2e/phase_runs.jsonl
+   recorded dispatch activity for phase-06b -> …
+   recorded review activity for phase-06b -> …
+   recorded assist activity for phase-06b -> …
+   recorded takeover activity for phase-06b -> …
+   recorded boundary activity for phase-06b -> …
+   ```
+
+   File holds 6 `architect_activity` records (one per kind); **no `unknown
+   activity` warning** on any — confirms the skill's six pinned strings match the
+   `ARCHITECT_ACTIVITIES` vocabulary against the real binary.
+
+2. **Frontmatter validity:** `plugin/skills/auto/SKILL.md` parses as valid YAML
+   with the same key set as the other four skills (`allowed-tools`,
+   `argument-hint`, `description`, `model`, `name`); `name: auto`, `model: opus`,
+   `allowed-tools: Read, Write, Edit, Glob, Grep, Bash(*), Agent`.
+
+3. **Template mirror:** `grep -n "/rexymcp:auto" plugin/templates/WORKFLOW.md`
+   returns the mirrored paragraph; it names the four stop conditions
+   ("milestone boundary (always)", "What Executors Never Decide", "assist
+   budget", "runaway backstop"), states **composes** (not forks), and describes
+   the **loop report** — all in the template's ASCII-arrow (`->`) house style.
+
+   A full live `/rexymcp:auto` run over a milestone is **not** hermetic and is
+   deliberately out of this phase's E2E — it is exercised on the next real
+   milestone the user runs autonomously; the composed pieces are each verified
+   above.
+
+**Files changed:**
+- `plugin/skills/auto/SKILL.md` — new; the `/rexymcp:auto` loop skill.
+- `plugin/templates/WORKFLOW.md` — autonomous-loop paragraph mirrored from the
+  repo's amended `docs/dev/WORKFLOW.md`.
+
+**New tests:** none — prose artifacts (a skill + a template paragraph); STANDARDS
+§3.2 exempts docs from unit tests. Verified by the E2E block + inspection.
+
+**Notes for review:** the `Task`→`Agent` divergence above is the one adaptation
+from the draft sketch; everything else landed as specified. The skill reuses the
+exact `rexymcp journal`/`harvest` flag names and the six activity strings pinned
+in the phase doc's § Current state.
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude Code (direct) — planned direct-execution (prose skill
+  orchestrating Claude Code subagents; not dispatchable to the local-LLM executor)
+- **Scope deviations:** none — both tasks (the `auto` skill; the WORKFLOW template
+  mirror) landed in full; nothing cut or deferred.
+- **Calibration:** none folded. One external-API adaptation (data, not a fold):
+  the draft sketch's `Task` subagent-tool assumption was corrected to `Agent`
+  with a verified per-call `model` override, resolved cleanly from the live
+  Claude Code subagent docs via the phase's Pre-flight step 5 — the
+  external-API-verify discipline working as intended (WORKFLOW § "Verify external
+  APIs against live docs"). All four gates green on independent re-run (483 mcp +
+  928 executor, 2 ignored); no Rust changed, so no regression surface.
