@@ -4,21 +4,30 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-06a — drafted (todo).** Per-role model delegation config
-substrate — a `size=s`, `kind=feature` phase, first of the 06a/06b split. Adds two
-`[architect]` keys to `ArchitectConfig` (`executor/src/config.rs:75-101`):
-`dispatch_model` / `review_model`, both `Option<String>` defaulting to `None`, plus
-their commented lines in the `rexymcp init` `[architect]` template
-(`mcp/src/init.rs:81-88`). Additive and **inert** — nothing consumes them until 06b's
-`/rexymcp:auto` skill reads the toml to delegate dispatch/review to subagents on the
-role model. Load-bearing semantics pinned: **`None` = inherit** (omit the subagent
-override → native default resolves to the session model), and unset does **NOT** fall
-back to `[architect] model` (the cost-rate model) — the no-fallback negative is a
-required test. No resolver method (the `Option`s *are* the resolution; a helper would
-be premature abstraction with no Rust caller). No `draft_model` key by design. E2E via
-`rexymcp doctor --config <toml>` load (new-keys + back-compat). No new dependency, no
-`calibrate`/`TokenBreakdown`/architecture.md touch. Dispatch with
-`/rexymcp:dispatch phase-06a`.
+**M27 phase-06a — done** (2026-07-09, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commit `e805862` feat). Per-role model delegation config
+substrate: two `[architect]` keys on `ArchitectConfig` (`executor/src/config.rs`),
+`dispatch_model` / `review_model`, both `Option<String>` defaulting to `None`
+(inherit the session model; does **not** fall back to `[architect] model`), plus
+their commented lines in the `rexymcp init` `[architect]` template. Additive and
+inert — nothing consumes them until 06b's `/rexymcp:auto` skill. Clean first-try;
+all four gates green on independent re-run (483 mcp + 928 executor, 2 ignored).
+**Two calibration notes (no fold):** (1) the server-authored `completion_summary`
+paraphrased E2E outcomes instead of quoting raw command output (STANDARDS §1);
+architect re-ran both `doctor` invocations during review to confirm the real
+artifact — 2nd occurrence, not yet a pattern. (2) Filed
+[bug-03a-1](milestones/M27-autonomous-escalation-loop/bugs/bug-03a-1.md) (minor):
+`flip_readme_row` duplicates the status cell instead of replacing it — now seen
+twice in production (05a, 06a); manually corrected the malformed row here per the
+05a precedent. See the
+[phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
+for the full review verdict.
+
+**Active phase: none drafted.** M27 phase-06b (the `/rexymcp:auto` loop skill +
+loop report + WORKFLOW plugin-template mirror) is planned but not yet drafted —
+it is a **direct-execution** phase (a prose skill orchestrating Claude Code
+subagents, not Rust for the local-LLM executor) and will be authored directly
+rather than dispatched. Run `/rexymcp:architect next` to draft it.
 
 **M27 phase-05b — done** (2026-07-09, **approved_first_try**; commits `8ff703a`
 draft / `eb0ccd7` feat / `b20dc1d` bookkeeping / `ac04678` approve). Architect usage

@@ -1,7 +1,7 @@
 # Phase 06a: Per-role model delegation config substrate
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-05b (done)
 **Estimated diff:** ~70 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -232,4 +232,21 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** e805862f243a20fb1da4a090c2db69e1ebe2a0b5
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** (1) 2nd occurrence — the server-authored `completion_summary`
+  splice paraphrases E2E outcomes ("exited 0") instead of pasting raw command
+  output, which STANDARDS §1 requires quoted; architect independently re-ran
+  both `doctor` invocations during review and confirmed the real artifact.
+  No fold yet (a wording/prompt nuance in the executor contract's completion
+  channel, not yet a 3rd-occurrence pattern). (2) Filed
+  [bug-03a-1](bugs/bug-03a-1.md) (minor) — `flip_readme_row` duplicates the
+  status cell instead of replacing it, now observed twice in production
+  (05a, 06a); fixed the malformed row manually here per the 05a precedent.
+  Two occurrences — worth a real code fix in a future phase, not a doc fold.
 
