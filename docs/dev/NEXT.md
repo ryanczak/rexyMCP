@@ -4,25 +4,40 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-04 — drafted (todo).** `continue_phase` — the third
-escalation lever: briefing-seeded resume. A new `continue_phase` MCP tool resumes
-a `hard_fail`/`budget_exceeded` phase from a **fresh** context (phase doc +
-architect `guidance` + the current uncommitted diff), with task states **restored
-from the prior session log** so the resumed run does not redo done tasks — not
-transcript rehydration (that would carry the rot re-dispatch escapes). Single
-phase (user chose not to split): additive `PhaseInput.resumed_task_states`
-(consumed at the seed site; every literal gains `None`), a `resume:
-Option<ResumeContext>` threaded through `RunPhaseConfig`/`AssemblyInput`, a new
-`mcp/src/resume.rs` (`restore_task_states` last-write-wins fold + `git diff HEAD`
-via the runner + a **seed-safe** `# Resume context` preamble), the `continue_phase`
-tool wired as a second special-case `call_tool` branch (roots corroboration like
-`execute_phase`), the escalate-skill resume lever un-stubbed, and a verbatim
-"Resuming a phase" **executor-contract amendment**. ~430 lines, size=l,
-kind=feature. Dispatch with `/rexymcp:dispatch phase-04`. **Note for the user:**
-the contract block (Task 5) is a load-bearing contract-doc change — review it in
-the drafted phase doc before dispatching; it is yours to shape. Executor is
-Qwen3.6-27B-FP8 (LARGE tier), so pre-injection is deliberately lighter — behavior
-pinned + seams cited by `file:line` rather than full bodies.
+**Active phase: M27 phase-04b — drafted (todo).** Finalize tolerates a bounced
+status line — a `size=s`, `kind=bugfix` follow-up surfaced by the phase-04 review.
+The 03a server-authored finalize (`mcp/src/finalize.rs`) matches the phase-doc
+status line + README row **exactly** against `in-progress`, so the review skill's
+bounce convention (`**Status:** in-progress (bounced — see bug…)`) makes
+`finalize_complete` silently no-op on every bounced-then-completed phase. Fix all
+three match sites to a **prefix-tolerant** rule (`is_in_progress_status` shared
+predicate — the space before the note is the delimiter, so `in-progressish`
+stays out), and make the review-flip **drop** the stale bounce note (result is
+exactly `**Status:** review`). Pure `finalize.rs` change + tests, ~80 lines, no
+authorizations. **Must land before phase-06** — the autonomous loop bounces +
+re-dispatches as normal operation. Dispatch with `/rexymcp:dispatch phase-04b`.
+Option A from the phase-04 verdict (fix the server side; keep the human-readable
+bounce note on the status line). See [[finalize-noops-on-bounced-phase]].
+
+**M27 phase-04 — done** (2026-07-08, **approved_after_1**, executor
+Qwen/Qwen3.6-27B-FP8; commits `3deb187` feat / `3e075ea` test / `76b38bd`
+approve). `continue_phase` briefing-seeded resume: the MCP tool + `mcp/src/resume.rs`
+(last-write-wins task-state restore + `git diff HEAD` + seed-safe `# Resume
+context` preamble) + additive `PhaseInput.resumed_task_states` + `resume` threaded
+through `RunPhaseConfig`/`AssemblyInput` + the "Resuming a phase" contract block +
+the un-stubbed escalate resume lever. **Bounced once** (bug-04-1, major,
+false_completion): the first dispatch shipped the feature's core behavior
+**untested** — nothing set `resumed_task_states: Some(...)`, so the seed-override
+path had zero integration coverage, and three test-plan tests were skipped.
+Re-dispatch (test-only) added `restored_states_override_seeded_pending`
+(architect **mutation-verified** — neutralizing the override loop fails it), the
+`continue_phase` server tests, the contract assertion, and a strengthened
+seed-safety test. All four gates green on independent re-run (917 executor + 467
+mcp). **Two review findings:** (1) the first dispatch hit a **pre-03b stale
+`rexymcp serve`** binary (old contract → executor authored its own completion tail
++ review flip); resolved by a mid-review server restart. (2) **Server-authored
+finalize no-ops on a bounced phase** — the defect phase-04b (above) fixes; the
+phase-04 status flip + completion entry were architect-recorded as a result.
 
 **Design forks resolved with the user at draft time (2026-07-08):** (1) **single
 phase** (not split 04a/04b); (2) **programmatic task-state restore** from the
