@@ -1,7 +1,7 @@
 # Phase 05b: Architect usage harvester — Claude Code transcript reader → `ArchitectTokens`
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-05a (`ArchitectTokens`/`ArchitectRates`/`fold_activities` substrate), phase-02 (`ArchitectActivity` journal record + `append_architect_activity`/`read_architect_activities`)
 **Estimated diff:** ~420 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -639,3 +639,9 @@ None.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 16:22 (started)
+
+**Executor:** Claude (Sonnet)
+
+Started phase 05b: architect usage harvester.

@@ -8,6 +8,7 @@ mod cap;
 mod dashboard;
 mod doctor;
 mod finalize;
+mod harvest;
 mod init;
 mod journal;
 mod log_query;
@@ -305,6 +306,25 @@ enum Commands {
         /// Architect model that performed the activity
         #[arg(long)]
         model: Option<String>,
+
+        /// Override the telemetry phase_runs.jsonl path
+        #[arg(long)]
+        telemetry_path: Option<PathBuf>,
+    },
+
+    /// Harvest Claude Code transcript token usage onto journal activities
+    Harvest {
+        /// Path to the rexymcp config file
+        #[arg(long)]
+        config: PathBuf,
+
+        /// Directory of Claude Code *.jsonl session transcripts
+        #[arg(long)]
+        transcript_dir: PathBuf,
+
+        /// Project ID override (defaults to [project].id from config)
+        #[arg(long)]
+        project_id: Option<String>,
 
         /// Override the telemetry phase_runs.jsonl path
         #[arg(long)]
@@ -679,6 +699,33 @@ async fn main() -> anyhow::Result<()> {
                         activity,
                         phase_id,
                         outcome.path.display()
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::Harvest {
+            config,
+            transcript_dir,
+            project_id,
+            telemetry_path,
+        } => {
+            let args = harvest::HarvestArgs {
+                transcript_dir: &transcript_dir,
+                project_id: project_id.as_deref(),
+            };
+            match harvest::harvest(&config, telemetry_path.as_deref(), &args) {
+                Ok(o) => {
+                    println!(
+                        "harvested {} messages, enriched {} activities ({} unattributed) -> {}",
+                        o.messages,
+                        o.enriched,
+                        o.unattributed,
+                        o.path.display()
                     );
                     Ok(())
                 }
