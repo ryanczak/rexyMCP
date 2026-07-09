@@ -180,7 +180,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 02b | `escalation_count` wiring: retire orphaned `tier_telemetry.escalation_count`, derive the dashboard Assists counter from `assist` journal records ([phase-02b-escalation-count-wiring.md](phase-02b-escalation-count-wiring.md)) | done |
 | 03a | Server-authored finalize: on `complete`, the server writes the Status flip + baseline Update Log + README row + separate `docs:` commit (additive, dormant-safe) ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | done |
 | 03b | Retire the executor bookkeeping gate + amend the executor contract (flips authorship, activating 03a's finalize) ([phase-03b-retire-executor-bookkeeping-gate.md](phase-03b-retire-executor-bookkeeping-gate.md)) | done |
-| 04 | `continue_phase` briefing-seeded resume ([phase-04-continue-phase-resume.md](phase-04-continue-phase-resume.md)) | in-progress (bounced, bug-04-1) |
+| 04 | `continue_phase` briefing-seeded resume ([phase-04-continue-phase-resume.md](phase-04-continue-phase-resume.md)) | done |
 | 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |

@@ -1,7 +1,7 @@
 # Phase 04: `continue_phase` — briefing-seeded resume
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** in-progress (bounced — see bugs/bug-04-1.md)
+**Status:** done
 **Depends on:** phase-03b (server-authored finalize is live; a failed run leaves the doc at `in-progress`)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -387,3 +387,30 @@ server tool wiring, executor contract amendment, escalate skill un-stub.
 - `grep "continue_phase" mcp/src/server.rs` → 8 matches
 - `grep "resume: None" mcp/src/runner.rs` → 7 matches (all test sites)
 - `grep "not yet implemented" plugin/skills/escalate/SKILL.md` → 0 matches
+
+### Update — 2026-07-08 (re-dispatch complete, architect-recorded)
+
+Bug-04-1 fixed on re-dispatch (executor Qwen/Qwen3.6-27B-FP8, commit `3e075ea`,
+test-only): added `restored_states_override_seeded_pending` (the load-bearing
+integration test — architect mutation-verified: neutralizing the seed-override
+loop makes it fail), a `continue_phase` server test pair, the
+`contract_contains_resuming_a_phase` assertion, and strengthened
+`resume_preamble_seeds_no_tasks` to test the preamble appended to a real
+`## Spec` doc. All four gates green on independent re-run (917 executor + 467
+mcp, 2 ignored). The prior run's earlier `(complete)` entry above is a
+stale-`serve` artifact (see verdict Calibration).
+
+**Server-authored finalize did not run** for this completion: the doc's status
+line carried a bounce parenthetical (`**Status:** in-progress (bounced …)`), and
+`finalize_complete`'s `status_is_in_progress` matches `**Status:** in-progress`
+exactly, so it no-op'd. This completion entry + the status flip below are
+therefore architect-recorded. See the verdict Calibration note — this is a real
+03a defect, not a phase-04 fault.
+
+### Review verdict — 2026-07-08
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-04-1 — major, false_completion: core resume behavior shipped untested)
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none (re-dispatch was test-only; production code unchanged from commit `3deb187`)
+- **Calibration:** Two findings, both flagged for the user. (1) **Server-authored finalize (03a) silently no-ops on any bounced phase** — `finalize_complete::status_is_in_progress` exact-matches `**Status:** in-progress`, but the review skill's bounce convention appends `(bounced — …)` to that line. First occurrence; a hard defect (not a style trend) that will hit every bounce+re-dispatch in the M27 autonomous loop — needs a fix (tolerate a trailing note in the status match, or move the bounce note off the status line). (2) The first-dispatch run authored its own old-format `(complete)` entry + review flip because the live `rexymcp serve` was a **pre-03b stale binary** (memory: stale-rexymcp-serve-after-rebuild); resolved by the mid-review server restart, after which the current contract + `completion_summary` splice worked.
