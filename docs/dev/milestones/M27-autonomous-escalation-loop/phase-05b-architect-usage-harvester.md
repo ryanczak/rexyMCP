@@ -1,7 +1,7 @@
 # Phase 05b: Architect usage harvester — Claude Code transcript reader → `ArchitectTokens`
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-05a (`ArchitectTokens`/`ArchitectRates`/`fold_activities` substrate), phase-02 (`ArchitectActivity` journal record + `append_architect_activity`/`read_architect_activities`)
 **Estimated diff:** ~420 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -746,4 +746,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** eb0ccd7c89917c8236086f01d5c49a5ac9c95f66
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (Sonnet)
+- **Scope deviations:** none (the `parse_iso_to_epoch_ms` month/day range guard is required by the test plan's `parse_iso_rejects_malformed` negative pin, not a widening)
+- **Calibration:** none
+
+Independent re-run: format/build/lint/test all clean (926 executor + 483 mcp tests, 11/11 harvest-specific tests present). Grepped `harvest.rs` for `unwrap`/`expect`/`panic!`/`#[allow]` — all hits are in `#[cfg(test)]` code, none in production paths. `pub fn harvest` and its helpers are byte-identical to the phase doc's pinned §1e/1d/1c/1b code. `mod harvest;` + `Harvest` clap variant + dispatch arm wired exactly per spec; `--help` output matches the acceptance criterion's four flags.
+
+End-to-end verification (independent re-run of the phase doc's exact script, adjusted with `--repo` for `dashboard --help`'s actual signature): `journal` → `harvest` → raw store file confirms the fold pair — original `tokens: {input:0,cache_creation:0,cache_read:0,output:0}` record plus an appended enriched copy with the transcript's real values (`input:6369, cache_creation:16136, cache_read:18456, output:304`), same `(phase_id, activity, ts)` identity, matching the fixture and the executor's own quoted run. `rexymcp dashboard` itself is a `ratatui` TUI that requires a real tty (panics with "failed to initialize terminal" under the sandboxed non-interactive shell) — this is an environment limitation of the review sandbox, not a phase defect; 05a's `load_data`/fold-based cost path (already shipped and approved) is what the dashboard reads, and the raw store file confirms the data it would render is correct.
 
