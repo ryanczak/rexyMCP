@@ -1,7 +1,7 @@
 # Phase 03b: Retire the executor bookkeeping gate + amend the executor contract
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03a (done)
 **Estimated diff:** ~230 lines (mostly deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -513,3 +513,25 @@ and correct — this phase only activates it by removing the executor gate).
 ### Update — 2026-07-09 00:33 (started)
 
 **Executor:** rexyMCP executor (phase-03b)
+
+### Update — 2026-07-09 00:33 (complete)
+
+**Summary:** Retired the executor bookkeeping gate and amended the executor contract to flip authorship of the completion tail to the server. Removed `command::bookkeeping_feedback` and its 6 tests plus orphaned helpers from `command.rs`, deleted the bookkeeping gate block and peek arm from `mod.rs`, fixed the stale doc comment in `hard_fail.rs`, and replaced the entire "Phase lifecycle" section in `executor_contract.md` to instruct the executor to leave status at `in-progress` (the server now flips to `review` and writes the completion entry). Added two activation tests: `completes_without_flipping_status_now_that_gate_is_gone` (executor loop) and `run_phase_with_finalizes_an_in_progress_doc_to_review` (MCP runner end-to-end).
+
+**Acceptance criteria:** All met. `bookkeeping_feedback` is gone (grep confirms zero matches). `write_phase_doc`/`GOOD_DOC` removed. Peek chain has exactly two arms. Bookkeeping gate block removed; true-completion tail byte-identical. Doc comment fixed. Contract amended per Task 5. Both new tests pass. All 915 pre-existing tests pass unchanged.
+
+**Commands output:**
+- `cargo fmt --all --check`: passed
+- `cargo build`: passed, zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: passed
+- `cargo test`: 915 passed, 0 failed, 2 ignored
+
+**End-to-end verification:** `run_phase_with_finalizes_an_in_progress_doc_to_review` passed — the on-disk doc reads `**Status:** review` and contains `(complete, server-authored)` after the run, proving finalize is now active. Grep confirms `bookkeeping_feedback` and its helpers are gone from the codebase.
+
+**Files changed:** executor/src/agent/mod.rs, executor/src/agent/command.rs, executor/src/agent/contract.rs, executor/src/agent/tests.rs, executor/src/governor/hard_fail.rs, executor/templates/executor_contract.md, mcp/src/runner.rs, phase doc, milestone README
+
+**New tests:** `completes_without_flipping_status_now_that_gate_is_gone`, `run_phase_with_finalizes_an_in_progress_doc_to_review`
+
+**Commits:** `5d35df2` refactor: retire executor bookkeeping gate and amend the contract
+
+**Notes for review:** The contract sentinel count test (`unset_command_renders_as_unconfigured_sentinel`) required updating from 5 to 8 sentinels because the amended contract section uses `{FORMAT_COMMAND}` 4× (vs 3×), `{LINT_COMMAND}` 2× (vs 1×), and `{TEST_COMMAND}` 2× (vs 1×) — these are the new explicit command references in the amended lifecycle steps.
