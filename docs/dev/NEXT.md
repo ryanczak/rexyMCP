@@ -4,25 +4,45 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-05a — drafted (todo).** Architect token substrate — a
-`size=l`, `kind=refactor` phase, first of a 05a/05b split. Introduces one
-coherent `ArchitectTokens { input, cache_creation, cache_read, output }` type
-(+ `ArchitectRates` + a `cost(&rates)` method) in `executor/src/store/telemetry.rs`,
-migrates `ArchitectActivity` from its two flat `architect_*_tokens` fields to a
-nested `tokens: ArchitectTokens`, **retires** the dead
-`TierTelemetry.architect_*_tokens` (the only writer, `journal.rs`, hardcodes 0 —
-no real data to migrate), adds cache rates + `effective_architect_rates()` to
-`[architect]` config (cache-read 0.1× / cache-creation 1.25× the input rate when
-the model is known), adds a `fold_activities` last-write-wins overlay
-(by `(phase_id, activity, ts)`, mirroring `fold_reviews`), and rewires the
-dashboard cost path (`ScopeCosts.architect: ArchitectTokens`,
-`BudgetRates.architect: ArchitectRates`, `load_data` sums architect tokens from
-**folded activities** not `tier_telemetry`). All additive and **dormant** — every
-architect token count is 0 until 05b's harvester runs, so the dashboard renders
-unchanged. Pre-injected verbatim: the two new types + `cost`, `fold_activities`,
-`effective_architect_rates`, the rewritten `architect_val`/`net_val` closures, and
-the `[architect]` init block; edit sites cited by file:line. Executor
-`TokenBreakdown` explicitly untouched. Dispatch with `/rexymcp:dispatch phase-05a`.
+**Active phase: M27 phase-05b — drafted (todo).** Architect usage harvester — a
+`size=l`, `kind=feature` phase, second of the 05a/05b split. Adds a `rexymcp
+harvest` CLI (new `mcp/src/harvest.rs` + `main.rs` clap variant/dispatch arm
+mirroring `journal`) that reads Claude Code session transcripts
+(`~/.claude/projects/<slug>/*.jsonl`, located via an **explicit `--transcript-dir`**
+arg — no slug reconstruction, mirroring phase-04's explicit `prior_log_path`),
+sums per-message `usage` by class into 05a's `ArchitectTokens`, and attributes each
+message to the `ArchitectActivity` whose journal time-window contains it
+(**next-boundary rule**: smallest activity `ts ≥ message ts`). It appends an
+**enriched copy** per activity (same `(phase_id, activity, ts)`, tokens filled)
+that 05a's `fold_activities` overlays at read — the fold *is* the idempotency; no
+dedup guard. Two load-bearing transcript gotchas pre-injected verbatim from a real
+`~/.claude` sample: **(1)** streaming emits multiple assistant JSONL lines sharing
+one `message.id` with byte-identical `usage` — the sample showed **24 lines → 6
+distinct ids, one id ×5** — so dedup by `message.id` (first wins) or overcount 4-5×;
+**(2)** cache tokens dominate uncached input (sample: input 6369 vs cache_read
+18456 vs cache_creation 16136), which is why 05a's per-class cost exists. Also
+pre-injected verbatim: the tolerant `parse_iso_to_epoch_ms` + hand-rolled
+`days_from_civil` (no date crate; `1970-01-01T00:00:00.000Z → 0`,
+`2026-07-09T16:00:56.539Z → 1783612856539`), the `Value`-based dedup reader, the
+next-boundary `attribute`, and the full `harvest` fn. No new dependency (`serde_json`
+only). Executor `TokenBreakdown` untouched. Dispatch with `/rexymcp:dispatch phase-05b`.
+
+**M27 phase-05a — done** (2026-07-09, **approved_first_try**, executor
+Qwen/Qwen3.6-27B-FP8; commits `be8ad9b` draft / `2334084` refactor / `11fca95`
+bookkeeping / `553c107` approve). Architect token substrate: one coherent
+`ArchitectTokens { input, cache_creation, cache_read, output }` (+ `ArchitectRates`
++ `cost(&rates)`) in `telemetry.rs`, migrated `ArchitectActivity` to a nested
+`tokens` field, retired the dead `TierTelemetry.architect_*_tokens`, added cache
+rates + `effective_architect_rates()` to `[architect]` config (cache-read 0.1× /
+cache-creation 1.25× the input rate when the model is known), a `fold_activities`
+last-write-wins overlay (by `(phase_id, activity, ts)`), and the cache-aware
+dashboard cost path (`ScopeCosts.architect: ArchitectTokens`, `load_data` sums from
+**folded activities**). Additive + dormant — every architect token count stays 0
+until this phase-05b harvester runs. Diff landed verbatim across all 9 tasks; 926
+executor + 472 mcp tests pass. No scope deviation, no fold. (The approve commit
+left NEXT.md's pointer stale and the README 05a row malformed `| done | review |`
+— both the recurring approve-time pattern, fixed here at the next
+`/rexymcp:architect next`.)
 
 **Three design forks resolved with the user at draft time (2026-07-09):**
 (1) **per-phase attribution via journal time-windows** (roll up phase → milestone
