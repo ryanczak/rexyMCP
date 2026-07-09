@@ -703,16 +703,11 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     // A3 (M22): stuck-gate-feedback stall. Peek at the gate feedback that will fire
                     // this turn (same precedence as the blocks below); if it is byte-identical to the
                     // last one and has repeated past the threshold, the loop is stuck — hard_fail
-                    // instead of re-injecting forever. The three blocks below re-evaluate these pure
+                    // instead of re-injecting forever. The two blocks below re-evaluate these pure
                     // fns and inject as before.
                     let pending_gate_feedback =
                         command::gate_failure_feedback(&gates, &command_outputs)
-                            .or_else(|| command::task_coverage_feedback(&seeded, &task_states))
-                            .or_else(|| {
-                                command::bookkeeping_feedback(std::path::Path::new(
-                                    &input.phase_doc_path,
-                                ))
-                            });
+                            .or_else(|| command::task_coverage_feedback(&seeded, &task_states));
                     match &pending_gate_feedback {
                         Some(fb) => {
                             if last_gate_feedback.as_deref() == Some(fb.as_str()) {
@@ -846,59 +841,6 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                             SessionEvent::Progress {
                                 turn: turns,
                                 stage: "task_coverage_retry".to_string(),
-                                files_changed: vec![],
-                                message: feedback.clone(),
-                            },
-                        );
-                        messages.push(user_text(&feedback, turns));
-                        if turns >= deps.max_turns {
-                            log_session_end(
-                                &log_handle,
-                                &redactor,
-                                deps.clock,
-                                "budget_exceeded",
-                                turns,
-                            );
-                            emit_phase_run(
-                                &deps,
-                                input,
-                                "budget_exceeded",
-                                Gates::default(),
-                                &metrics,
-                                &scorer,
-                                turns,
-                            );
-                            let artifacts = build_artifacts(
-                                &pre_edit_content,
-                                deps.project_root,
-                                log_path.clone(),
-                                "budget_exceeded",
-                                turns,
-                                CommandOutputs::default(),
-                            );
-                            return Ok(budget_exceeded_result(
-                                input,
-                                &recent_tool_calls,
-                                deps.project_root,
-                                turns_line(deps.max_turns),
-                                artifacts,
-                            ));
-                        }
-                        continue;
-                    }
-                    // Bookkeeping gate: phase doc status must be updated and
-                    // Update Log must have at least one entry.
-                    if let Some(feedback) =
-                        command::bookkeeping_feedback(std::path::Path::new(&input.phase_doc_path))
-                    {
-                        log_event(
-                            &log_handle,
-                            &redactor,
-                            deps.clock,
-                            turns,
-                            SessionEvent::Progress {
-                                turn: turns,
-                                stage: "bookkeeping_retry".to_string(),
                                 files_changed: vec![],
                                 message: feedback.clone(),
                             },

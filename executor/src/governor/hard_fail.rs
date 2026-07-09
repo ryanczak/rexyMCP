@@ -183,7 +183,7 @@ pub fn check_empty_completion_stall(
 }
 
 /// Stuck gate-feedback stall: the loop re-injected byte-identical gate feedback
-/// (gate-retry / task-coverage / bookkeeping) `consecutive_repeats` times in a row
+/// (gate-retry / task-coverage) `consecutive_repeats` times in a row
 /// with no intervening state change.
 pub fn check_repeated_gate_feedback(
     consecutive_repeats: usize,

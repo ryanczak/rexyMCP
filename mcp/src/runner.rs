@@ -604,6 +604,70 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn run_phase_with_finalizes_an_in_progress_doc_to_review() {
+        let dir = TempDir::new().unwrap();
+        let repo_dir = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        let phase_doc_path = dir.path().join("phase-01-test.md");
+        std::fs::write(
+            &phase_doc_path,
+            "# Phase 01: Test\n\n**Status:** in-progress\n\n**Tags:** language=rust, kind=test, size=s\
+             \n\n## Goal\n\nTest goal.\n\n## Acceptance criteria\n\n- [ ] It runs.\
+             \n\n## Update Log\n\n<!-- entries appended below this line -->\
+             \n\n### Update — 2026-01-01 00:00 (started)\n",
+        )
+        .unwrap();
+
+        let cfg = Config::default();
+
+        let mock = MockAiClient::new(vec!["Done.".to_string()]);
+
+        let clock = || 1234567890u64;
+
+        let seams = Seams {
+            client: &mock,
+            verifier: &NoopVerifier,
+            runner: &NoopRunner,
+            clock: &clock,
+        };
+
+        let inp = AssemblyInput {
+            cfg: &cfg,
+            phase_doc_path: &phase_doc_path,
+            repo_path: &repo_dir,
+            standards: "standards",
+            model: "test-model",
+            telemetry_dir: None,
+            progress: None,
+            context_window: None,
+            project_id: None,
+        };
+
+        let result = run_phase_with(&inp, &seams).await;
+
+        assert!(
+            result.is_ok(),
+            "run_phase_with should succeed: {:?}",
+            result
+        );
+        let phase_result = result.unwrap();
+        assert_eq!(
+            phase_result.status,
+            rexymcp_executor::phase::PhaseStatus::Complete
+        );
+        let doc_after = std::fs::read_to_string(&phase_doc_path).unwrap();
+        assert!(
+            doc_after.contains("**Status:** review"),
+            "finalize must flip the completed in-progress doc to review: {doc_after}"
+        );
+        assert!(
+            doc_after.contains("(complete, server-authored)"),
+            "finalize must append the server-authored completion entry: {doc_after}"
+        );
+    }
+
     // --- negative: non-existent root ---
 
     #[tokio::test]

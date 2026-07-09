@@ -4,18 +4,35 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-03a — drafted (todo).** Server-authored finalize
-(D8/D9, half 1 of 2). On a `complete` `execute_phase`, the server writes the
-phase doc's Status flip (`in-progress` → `review`), appends a baseline
-completion Update Log entry (mechanical skeleton: gates/files/commit sha +
-spliced executor Summary/Notes via a new `PhaseResult.completion_summary`
-channel), flips the milestone README row, and makes a **separate** `docs:`
-commit (the executor still commits its own code — two commits per phase).
-**Additive and dormant-safe:** finalize no-ops while the phase doc is already
-`review` (today's executor-authored state), so it changes nothing observable
-until phase-03b retires the executor's `bookkeeping_feedback` gate. ~420 lines,
-size=m, two crates (`executor` result-type field; new `mcp/src/finalize.rs` +
-runner wiring). Dispatch with `/rexymcp:dispatch phase-03a`.
+**Active phase: M27 phase-03b — drafted (todo).** Server-authored finalize
+(D8/D9, half 2 of 2) — the authorship flip that **activates** 03a's dormant
+finalize. Retires the executor's pre-completion bookkeeping gate
+(`command::bookkeeping_feedback` + its loop block + the M22 peek arm + its unit
+tests) and amends the embedded executor contract (`executor_contract.md` §
+"Phase lifecycle") so the executor **stops authoring the completion tail**: it
+keeps the start flip (`todo → in-progress`) but no longer flips to `review` or
+hand-writes the `(complete)` Update Log entry — instead its final message
+carries the Summary/Notes the server splices in. With the gate gone a completed
+run reaches finalize at `in-progress`, and finalize writes the bookkeeping. Two
+activation tests (executor-loop: real `in-progress` doc → `Complete` in one
+turn; mcp end-to-end: `run_phase_with` flips the on-disk doc to `review`).
+Mostly deletions, ~230 lines, size=m, kind=refactor. Authorizes the
+`executor_contract.md` edit. Dispatch with `/rexymcp:dispatch phase-03b`. **Note
+for the user:** the contract wording (Task 5) is a load-bearing contract-doc
+change — review it in the drafted phase doc before dispatching; it is yours to
+shape.
+
+**M27 phase-03a — done** (2026-07-08, **approved_first_try**, executor Claude
+(Anthropic); commits `9fbc33d` feat / `34f8f93` approve). Added the
+`completion_summary` channel to `PhaseResult`/`Artifacts` (populated post-think
+on the complete path only), the new `mcp/src/finalize.rs` (`finalize_complete`:
+Status flip + baseline Update Log entry + README-row flip + separate `docs:`
+commit, staging only doc paths via `git add -- <paths>`, git failures swallowed),
+and wired it into `run_phase_with` (finalize error → `warnings`, never `Err`).
+Dormant-safe: no-ops on an already-`review` doc, so nothing observable changes
+until phase-03b (below) retires the executor gate. Clean first-try; 920 passed /
+2 ignored. (NEXT.md pointer was left stale by the approve commit — the recurring
+pattern — and re-advanced to 03b here at the next `/rexymcp:architect next`.)
 
 **M27 phase-03a — drafted** (2026-07-08). Design forks resolved with the user:
 commit ownership = executor commits code / server commits bookkeeping

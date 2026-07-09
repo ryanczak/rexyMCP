@@ -56,44 +56,64 @@ can update their model of the API — but keep going; don't stop for it.
 
 ---
 
-## Phase lifecycle — you own this
+## Phase lifecycle — what you own, what the server writes
 
-You keep phase status accurate. The reviewer evaluates based on what status says.
+You own the **start** of the phase and all of the **code**. The rexyMCP server
+authors the **completion bookkeeping** itself — the `in-progress → review` status
+flip and the completion Update Log entry — from data it already holds, and
+commits it as a separate `docs:` commit after your run returns. This split exists
+because a headless model reliably writes correct code but is unreliable at the
+multi-field completion tail; the server does that part so you don't stall on it.
 
 1. **Start:** flip the phase's `Status:` from `todo` (or `review` with bugs) to
-   `in-progress`. Update the milestone README's phase table to match.
-2. **Started entry:** append a progress entry to the phase's Update Log. Name
-   yourself.
-3. **Work:** implement the Spec tasks in order. Add progress entries when
-   something surprising happens or you finish a chunk.
+   `in-progress`, and update the milestone README's phase-table row to match.
+   **Leave the status at `in-progress`. Do NOT flip it to `review` yourself, and
+   do NOT write a `(complete)` Update Log entry.** The server flips the status to
+   `review` and writes the completion entry when it finalizes your run. If you
+   flip it to `review` early, the server sees an already-finalized doc, writes
+   nothing, and you are back to owning the bookkeeping tail this split removes.
+2. **Started entry:** append **one** progress entry to the phase's Update Log
+   naming yourself. This is your attribution in the doc and the only Update Log
+   entry you write.
+3. **Work:** implement the Spec tasks in order. Add a progress entry only when
+   something surprising happens.
 4. **Blocker:** if you cannot proceed, append a blocker entry and **stop**. Leave
    status `in-progress`.
-5. **Verify:** every acceptance criterion ticked. Run the required verification
-   commands.
-6. **Complete:** append the completion entry with command output, files changed,
-   commits, notes for review.
-7. **Flip status:** `in-progress` → `review`. Update the README phase table.
-8. **Run `{FORMAT_COMMAND}` before staging.** Your write tool does not guarantee
-   formatted output. Running the formatter now prevents a lint/format gate failure
+5. **Verify:** confirm every acceptance criterion is met, and run the required
+   verification commands (`{FORMAT_COMMAND}`, `{BUILD_COMMAND}`, `{LINT_COMMAND}`,
+   `{TEST_COMMAND}`) and confirm they pass. The loop re-runs them as the final
+   gate set; a failing gate sends the feedback back to you to fix.
+6. **Run `{FORMAT_COMMAND}` before staging.** Your write tool does not guarantee
+   formatted output; running the formatter now prevents a format-gate failure
    that would otherwise require a re-dispatch just to fix whitespace or import order.
-9. **`git commit` everything.** Stage all changes — source, tests, the phase
-   doc's status flip + Update Log additions, the README status flip — and commit
-   with a conventional-commit message. **Then run `git status` and confirm the
-   working tree is clean.** A dirty tree at "completion" is not complete.
-10. **Stop.** Do not start the next phase. Do not "while you're at it" anything.
+7. **`git commit` your code.** Stage and commit your source, tests, and the
+   start-of-phase status flip from step 1 (a plain "stage everything" is fine —
+   the only doc change present at this point is that start flip and your started
+   entry). Use a conventional-commit message. Do **not** flip the status to
+   `review` and do **not** write a `(complete)` entry — the server authors and
+   commits both, separately, after your run. Then run `git status` and confirm
+   the working tree is clean.
+8. **Signal completion with a Summary.** Your final message — the turn with no
+   tool call that signals you are done — must be a concise **Summary + Notes for
+   review** (2–6 sentences): what you built, any deviation from the spec and why,
+   the result of the phase's end-to-end verification, and anything the reviewer
+   should know. The server captures this message verbatim and splices it into the
+   completion entry it writes, as the **Summary**. This is how your qualitative
+   account reaches the reviewer now that you no longer hand-write the entry — so
+   make it substantive; do not make it a bare "done."
+9. **Stop.** Do not start the next phase. Do not "while you're at it" anything.
 
 The Update Log is **append-only**. Never edit prior entries.
 
 **Completion checklist** (run through it before reporting complete):
 
 ```
-[ ] Phase doc's Status: line says `review`.
-[ ] Milestone README's phase table row says `review`.
-[ ] Update Log has a "(complete)" entry with all required fields filled in.
+[ ] Phase doc's Status: line still says `in-progress` (you flipped it there at start; the server flips it to `review`).
+[ ] Milestone README's phase-table row still says `in-progress`.
+[ ] You did NOT hand-write a `(complete)` Update Log entry — the server writes it from your final message.
 [ ] `{FORMAT_COMMAND}` was run immediately before `git add` (not just checked — actually run).
-[ ] All verification commands ran clean; output pasted in the Update Log.
-[ ] Complete entry includes a one-line verification summary naming each gate.
-[ ] End-to-end verification section filled in (per phase doc) OR declared N/A with reason.
+[ ] All verification commands ran clean.
+[ ] Your final message is a substantive Summary + Notes for review (what you built, deviations, E2E result).
 [ ] `git status --short` shows nothing — every change is committed.
 [ ] `git log -1 --stat` shows the commit includes every file you touched.
 ```

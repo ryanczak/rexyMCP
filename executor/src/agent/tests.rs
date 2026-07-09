@@ -269,6 +269,36 @@ async fn tool_call_then_no_tool_call_completes() {
 }
 
 #[tokio::test]
+async fn completes_without_flipping_status_now_that_gate_is_gone() {
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let phase_doc = dir.path().join("phase-01-test.md");
+    std::fs::write(
+        &phase_doc,
+        "# Phase 01: Test\n\n**Status:** in-progress\n\n## Update Log\n\n### Update — 2026-01-01 (started)\n",
+    )
+    .unwrap();
+    let inp = PhaseInput {
+        phase_doc_path: phase_doc.to_string_lossy().into_owned(),
+        ..input()
+    };
+    let client = MockAiClientScript::new(vec![vec![token("all done")]]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&inp, deps(&client, &registry, &budget, 8, dir.path()))
+        .await
+        .unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert_eq!(
+        client.calls().len(),
+        1,
+        "an in-progress doc must not trigger a bookkeeping re-loop"
+    );
+}
+
+#[tokio::test]
 async fn native_tool_call_event_dispatches_as_origin_native() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
