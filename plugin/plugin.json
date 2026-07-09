@@ -1,6 +1,6 @@
 {
   "name": "rexymcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Architect/executor workflow over MCP — Claude Code or Google Antigravity drives a local LLM executor through structured phases, review gates, and telemetry.",
   "author": {
     "name": "Matt Ryanczak"

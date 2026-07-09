@@ -99,6 +99,13 @@ happen.
 
 - Resolve `<repo>`. Confirm `rexymcp.toml` has `[executor]` + `[commands]`; if
   not, point the user at `/rexymcp:architect` to bootstrap and **stop**.
+- **Run from the target repo's own session.** `execute_phase` enforces a
+  root-corroboration check: it refuses any `repo_path` that does not match the
+  MCP client's advertised roots or `CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`.
+  So `<repo>` must be **this session's** project root — you cannot drive a loop
+  for repo B from a session rooted in repo A (the dispatch fails with MCP error
+  `-32602` before reaching the executor). If `<repo>` is not the session root,
+  **stop** and tell the user to launch Claude Code in the target repo and re-run.
 - Call the `executor_health` MCP tool. If the endpoint is unreachable, surface
   the error and **stop** — do not enter the loop against a dead executor.
 - Read `max_assists` and the two role models.
@@ -107,10 +114,15 @@ happen.
 
 **Loop — repeat until a stop condition fires:**
 
-1. **DRAFT** (main loop). Run the `architect` skill's §3 phase-authoring
-   procedure to draft the next phase doc. If it reports the **milestone
-   boundary** (the milestone's in-scope phases are all `done`, or `NEXT.md` would
-   go to "none") → **STOP(boundary)** (§3). Otherwise journal `draft` (§4).
+1. **DRAFT-or-adopt** (main loop). First check `NEXT.md`: if it **already** points
+   at an active `todo` or `in-progress` phase (e.g. one drafted in a prior
+   interactive session, or left `in-progress` by an earlier bounce), **adopt that
+   phase** — skip drafting and go straight to dispatch (do not journal `draft`; no
+   drafting happened). Only when there is **no** active phase do you run the
+   `architect` skill's §3 phase-authoring procedure to draft the next one and
+   journal `draft` (§4). Either way, if drafting reports the **milestone boundary**
+   (the milestone's in-scope phases are all `done`, or `NEXT.md` would go to
+   "none") → **STOP(boundary)** (§3).
 2. Set `assists_this_phase = 0`.
 3. **DISPATCH** (subagent, `dispatch_model`). Run the `dispatch` skill for the
    phase. Journal `dispatch` with `--outcome` = the returned status.

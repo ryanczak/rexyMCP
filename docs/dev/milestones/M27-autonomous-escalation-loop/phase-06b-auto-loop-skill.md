@@ -540,3 +540,32 @@ in the phase doc's § Current state.
   external-API-verify discipline working as intended (WORKFLOW § "Verify external
   APIs against live docs"). All four gates green on independent re-run (483 mcp +
   928 executor, 2 ignored); no Rust changed, so no regression surface.
+
+### Update — 2026-07-09 (post-approval refinement — test-driven, user-approved)
+
+A partial live dry-run of `/rexymcp:auto` (orchestrating a dispatch against the
+brainyscript e2e subject) surfaced two skill gaps, folded into
+`plugin/skills/auto/SKILL.md` with the user's approval. Neither re-opens the
+phase — both are additive prose refinements to the shipped skill:
+
+1. **Entry with an already-active phase.** The loop's step 1 assumed it always
+   drafts first; entering when `NEXT.md` already points at a `todo`/`in-progress`
+   phase (a prior interactive draft, or a bounce left `in-progress`) would have it
+   draft the *wrong* next phase. Reworked step 1 to **DRAFT-or-adopt**: adopt an
+   existing active phase and dispatch it (no `draft` journal) before ever drafting
+   a new one.
+2. **`execute_phase` root corroboration undocumented.** The live dispatch failed
+   with MCP `-32602` — the server refuses a `repo_path` that does not corroborate
+   against the session's MCP roots / `CLAUDE_PROJECT_DIR`, so the loop **must run
+   from the target repo's own Claude Code session**. Added a Pre-flight bullet
+   asserting this and instructing the skill to stop-and-redirect when `<repo>` is
+   not the session root. (This is why the dry-run from the rexyMCP-rooted session
+   could not dispatch to brainyscript — expected, correct server behavior, not a
+   loop bug.)
+
+Also validated during testing: the `Agent`-subagent per-call model override and
+MCP-tool access from delegated subagents both work in practice (proven by a live
+subagent on `claude-sonnet-5` calling `executor_health`); the six-kind `rexymcp
+journal` round-trip; and the server's root-corroboration guard returning a clean
+actionable error rather than crashing. A full live loop (real gemma dispatch →
+review) remains to be run from a brainyscript-rooted session.
