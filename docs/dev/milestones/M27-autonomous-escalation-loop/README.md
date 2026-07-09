@@ -183,7 +183,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 04 | `continue_phase` briefing-seeded resume ([phase-04-continue-phase-resume.md](phase-04-continue-phase-resume.md)) | done |
 | 04b | Finalize tolerates a bounced status line — fixes the 03a server-authored-finalize no-op surfaced in phase-04 review ([phase-04b-finalize-bounced-status-match.md](phase-04b-finalize-bounced-status-match.md)) | done |
 | 05a | Architect token substrate: `ArchitectTokens`/`ArchitectRates` cache-aware types, retire `TierTelemetry.architect_*`, dormant cache-aware dashboard cost path ([phase-05a-architect-token-substrate.md](phase-05a-architect-token-substrate.md)) | done |
-| 05b | Architect usage harvester: Claude Code transcript reader + `message.id` dedup + ISO→epoch parse + per-phase time-window join + `rexymcp harvest` CLI (fills 05a's tokens) ([phase-05b-architect-usage-harvester.md](phase-05b-architect-usage-harvester.md)) | in-progress |
+| 05b | Architect usage harvester: Claude Code transcript reader + `message.id` dedup + ISO→epoch parse + per-phase time-window join + `rexymcp harvest` CLI (fills 05a's tokens) ([phase-05b-architect-usage-harvester.md](phase-05b-architect-usage-harvester.md)) | in-progress | review |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |
 
