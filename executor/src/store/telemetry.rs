@@ -100,10 +100,9 @@ pub fn aggregate_context_efficiency(records: &[SessionRecord]) -> ContextEfficie
 /// `#[serde(default)]` field so legacy records and every struct literal need
 /// only `Default` (the `ContextEfficiency` precedent). Only `tier` is
 /// populated by the executor — the configured executor tier from
-/// `[executor] tier`. `doc_level` and the two `architect_*_tokens` default to
-/// `None`/`0`; `architect_*_tokens` are filled by the M27 phase-05 usage
-/// harvester on Claude Code (assist cost is journaled architect-side, not
-/// executor-side). Assist *counts* are derived from `assist`
+/// `[executor] tier`. `doc_level` defaults to `None`. Architect token
+/// accounting has moved to `ArchitectActivity.tokens`; this struct no longer
+/// carries architect fields. Assist *counts* are derived from `assist`
 /// `ArchitectActivity` journal records, not stored here.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TierTelemetry {
@@ -112,12 +111,6 @@ pub struct TierTelemetry {
     pub tier: Option<Tier>,
     /// Phase-doc detail level (1/2/3). `None` until doc levels are wired.
     pub doc_level: Option<u8>,
-    /// Architect input tokens attributed to this run's assists. `0` until the
-    /// M27 phase-05 harvester fills it.
-    pub architect_input_tokens: u64,
-    /// Architect output tokens attributed to this run's assists. `0` until the
-    /// M27 phase-05 harvester fills it.
-    pub architect_output_tokens: u64,
 }
 
 /// One per-phase metrics row. Objective fields are filled by the executor; the
@@ -393,7 +386,51 @@ pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
         .collect())
 }
 
-/// An append-only record of one architect activity in a `/rexymcp:auto` loop run — the portable loop journal. Appended to `phase_runs.jsonl` alongside `PhaseRun` and `PhaseReview`; the `record` discriminator (`"architect_activity"`) keeps the readers from confusing the line types. Written by the `rexymcp journal` CLI (the loop skill invokes it); the executor never writes one. The two `architect_*_tokens` fields default to `0` and are filled by the phase-05 usage harvester on Claude Code; on other clients they stay `0` (counts-and-durations, never fabricated).
+/// Anthropic prompt-cache rate multipliers relative to the base input rate:
+/// a 5-minute cache **write** costs 1.25× input; a cache **read** costs 0.1×
+/// input. (1-hour cache writes cost 2× input — approximated here as the 1.25×
+/// standard; a dedicated 1h rate can be added additively later.)
+pub const CACHE_CREATION_RATE_MULTIPLIER: f64 = 1.25;
+pub const CACHE_READ_RATE_MULTIPLIER: f64 = 0.1;
+
+/// The four token classes an architect (Claude Code) request bills separately.
+/// One coherent type threaded everywhere the architect touches tokens, replacing
+/// the flat `architect_*_tokens` pairs. `#[serde(default)]` so a legacy
+/// `ArchitectActivity` line (flat fields, or none) deserializes to all-zero.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchitectTokens {
+    /// Uncached input tokens (`usage.input_tokens`).
+    pub input: u64,
+    /// Cache-creation input tokens (`usage.cache_creation_input_tokens`).
+    pub cache_creation: u64,
+    /// Cache-read input tokens (`usage.cache_read_input_tokens`).
+    pub cache_read: u64,
+    /// Output tokens (`usage.output_tokens`).
+    pub output: u64,
+}
+
+/// Per-Mtok USD rates for each `ArchitectTokens` class.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ArchitectRates {
+    pub input_per_mtok: f64,
+    pub cache_creation_per_mtok: f64,
+    pub cache_read_per_mtok: f64,
+    pub output_per_mtok: f64,
+}
+
+impl ArchitectTokens {
+    /// Total USD cost of these tokens at the given per-class rates.
+    pub fn cost(&self, rates: &ArchitectRates) -> f64 {
+        let per_m = |toks: u64, rate: f64| (toks as f64 / 1_000_000.0) * rate;
+        per_m(self.input, rates.input_per_mtok)
+            + per_m(self.cache_creation, rates.cache_creation_per_mtok)
+            + per_m(self.cache_read, rates.cache_read_per_mtok)
+            + per_m(self.output, rates.output_per_mtok)
+    }
+}
+
+/// An append-only record of one architect activity in a `/rexymcp:auto` loop run — the portable loop journal. Appended to `phase_runs.jsonl` alongside `PhaseRun` and `PhaseReview`; the `record` discriminator (`"architect_activity"`) keeps the readers from confusing the line types. Written by the `rexymcp journal` CLI (the loop skill invokes it); the executor never writes one. The `tokens` field defaults to all-zero and is filled by the phase-05b usage harvester on Claude Code; on other clients they stay zero (counts-and-durations, never fabricated).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArchitectActivity {
     /// Literal discriminator. Always `"architect_activity"`. `#[serde(default)]` so a `PhaseRun` line (no `record` field) deserializes to `""` here and is filtered out by `read_architect_activities`.
@@ -417,12 +454,11 @@ pub struct ArchitectActivity {
     /// Architect model that performed the activity (e.g. `"claude-opus-4-8"`).
     #[serde(default)]
     pub model: Option<String>,
-    /// Architect input tokens for this activity. `0` until the phase-05 harvester fills it.
+    /// Token usage for this activity, by class. All zero until the phase-05b
+    /// harvester fills it; on non-Claude-Code clients they stay zero
+    /// (counts-and-durations, never fabricated).
     #[serde(default)]
-    pub architect_input_tokens: u64,
-    /// Architect output tokens for this activity. `0` until the phase-05 harvester fills it.
-    #[serde(default)]
-    pub architect_output_tokens: u64,
+    pub tokens: ArchitectTokens,
 }
 
 /// The literal value of `ArchitectActivity.record`. Use everywhere instead of a bare string so the discriminator is single-sourced.
@@ -441,6 +477,28 @@ pub const ARCHITECT_ACTIVITIES: &[&str] = &[
 /// True if `activity` is in the canonical `ARCHITECT_ACTIVITIES` vocabulary.
 pub fn is_known_activity(activity: &str) -> bool {
     ARCHITECT_ACTIVITIES.contains(&activity)
+}
+
+/// Collapse `ArchitectActivity` records to one per activity identity, keeping the
+/// **last** occurrence in input order. The phase-05b harvester appends an enriched
+/// copy (same `phase_id`/`activity`/`ts`, tokens filled) after the original
+/// zero-token record; since `read_architect_activities` preserves file (append)
+/// order, the later enriched copy wins. Identity key: `(phase_id, activity, ts)`.
+pub fn fold_activities(activities: Vec<ArchitectActivity>) -> Vec<ArchitectActivity> {
+    use std::collections::HashMap;
+    // Index of the winning (latest) record per key, into a preserved-order Vec.
+    let mut latest: HashMap<(String, String, u64), usize> = HashMap::new();
+    let mut out: Vec<ArchitectActivity> = Vec::new();
+    for act in activities {
+        let key = (act.phase_id.clone(), act.activity.clone(), act.ts);
+        if let Some(&idx) = latest.get(&key) {
+            out[idx] = act;
+        } else {
+            latest.insert(key, out.len());
+            out.push(act);
+        }
+    }
+    out
 }
 
 /// Append one `ArchitectActivity` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`. Returns the file path.
@@ -991,8 +1049,6 @@ mod tests {
         run.tier_telemetry = TierTelemetry {
             tier: Some(Tier::Medium),
             doc_level: Some(2),
-            architect_input_tokens: 1000,
-            architect_output_tokens: 200,
         };
         let json = serde_json::to_string(&run).unwrap();
         let back: PhaseRun = serde_json::from_str(&json).unwrap();
@@ -1010,9 +1066,10 @@ mod tests {
 
     #[test]
     fn phase_run_ignores_retired_escalation_count_key() {
+        // Legacy tier_telemetry keys (escalation_count, architect_*_tokens) are
+        // silently ignored — serde drops unknown fields.
         let json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{},"tier_telemetry":{"tier":"MEDIUM","doc_level":2,"escalation_count":3,"architect_input_tokens":1000,"architect_output_tokens":200}}"#;
         let run: PhaseRun = serde_json::from_str(json).unwrap();
-        assert_eq!(run.tier_telemetry.architect_input_tokens, 1000);
         assert_eq!(run.tier_telemetry.tier, Some(Tier::Medium));
     }
 
@@ -1040,8 +1097,12 @@ mod tests {
             activity: "assist".to_string(),
             outcome: Some("complete".to_string()),
             model: Some("claude-opus-4-8".to_string()),
-            architect_input_tokens: 1500,
-            architect_output_tokens: 300,
+            tokens: ArchitectTokens {
+                input: 1500,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 300,
+            },
         };
         append_architect_activity(dir.path(), &activity).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
@@ -1082,8 +1143,7 @@ mod tests {
             activity: "assist".to_string(),
             outcome: None,
             model: None,
-            architect_input_tokens: 1,
-            architect_output_tokens: 1,
+            tokens: ArchitectTokens::default(),
         };
         append_architect_activity(dir.path(), &mistagged).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
@@ -1109,8 +1169,7 @@ mod tests {
             activity: "assist".to_string(),
             outcome: None,
             model: None,
-            architect_input_tokens: 1,
-            architect_output_tokens: 1,
+            tokens: ArchitectTokens::default(),
         };
         append_architect_activity(dir.path(), &activity).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
@@ -1135,8 +1194,7 @@ mod tests {
             activity: "assist".to_string(),
             outcome: None,
             model: None,
-            architect_input_tokens: 1,
-            architect_output_tokens: 1,
+            tokens: ArchitectTokens::default(),
         };
         append_architect_activity(dir.path(), &activity).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
@@ -1153,5 +1211,176 @@ mod tests {
         assert!(is_known_activity("assist"));
         assert!(is_known_activity("boundary"));
         assert!(!is_known_activity("made_up"));
+    }
+
+    #[test]
+    fn architect_tokens_cost_bills_each_class_at_its_own_rate() {
+        let tokens = ArchitectTokens {
+            input: 1_000_000,
+            cache_creation: 1_000_000,
+            cache_read: 1_000_000,
+            output: 1_000_000,
+        };
+        let rates = ArchitectRates {
+            input_per_mtok: 5.0,
+            cache_creation_per_mtok: 6.25,
+            cache_read_per_mtok: 0.5,
+            output_per_mtok: 25.0,
+        };
+        let cost = tokens.cost(&rates);
+        assert!((cost - 36.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn architect_tokens_default_is_zero_cost() {
+        let tokens = ArchitectTokens::default();
+        let rates = ArchitectRates {
+            input_per_mtok: 5.0,
+            cache_creation_per_mtok: 6.25,
+            cache_read_per_mtok: 0.5,
+            output_per_mtok: 25.0,
+        };
+        assert_eq!(tokens.cost(&rates), 0.0);
+    }
+
+    #[test]
+    fn fold_activities_enriched_copy_wins() {
+        let zero = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens::default(),
+        };
+        let enriched = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens {
+                input: 500,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
+        };
+        // Enriched second → wins
+        let out = fold_activities(vec![zero.clone(), enriched.clone()]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].tokens.input, 500);
+        // Reversed: zero second → wins (proves order-based, not max)
+        let out2 = fold_activities(vec![enriched, zero]);
+        assert_eq!(out2.len(), 1);
+        assert_eq!(out2[0].tokens.input, 0);
+    }
+
+    #[test]
+    fn fold_activities_distinct_ts_keeps_both() {
+        let a = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens::default(),
+        };
+        let b = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 2_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            milestone_id: None,
+            activity: "assist".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens::default(),
+        };
+        let out = fold_activities(vec![a, b]);
+        assert_eq!(out.len(), 2, "different ts → distinct identity");
+    }
+
+    #[test]
+    fn fold_activities_distinct_activity_keeps_both() {
+        let a = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            milestone_id: None,
+            activity: "draft".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens::default(),
+        };
+        let b = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: None,
+            milestone_id: None,
+            activity: "review".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens::default(),
+        };
+        let out = fold_activities(vec![a, b]);
+        assert_eq!(out.len(), 2, "different activity → distinct identity");
+    }
+
+    #[test]
+    fn architect_activity_roundtrips_nested_tokens() {
+        let dir = TempDir::new().unwrap();
+        let activity = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_000,
+            phase_doc_path: Some("/docs/phase-02.md".to_string()),
+            phase_id: "phase-02".to_string(),
+            project_id: Some("proj-a".to_string()),
+            milestone_id: Some("M27-autonomous-escalation-loop".to_string()),
+            activity: "assist".to_string(),
+            outcome: Some("complete".to_string()),
+            model: Some("claude-opus-4-8".to_string()),
+            tokens: ArchitectTokens {
+                input: 10_000,
+                cache_creation: 5_000,
+                cache_read: 3_000,
+                output: 2_000,
+            },
+        };
+        append_architect_activity(dir.path(), &activity).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let activities = read_architect_activities(&path).unwrap();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].tokens, activity.tokens);
+    }
+
+    #[test]
+    fn legacy_activity_line_without_tokens_defaults_zero() {
+        // A JSON line with the old flat architect_input_tokens/architect_output_tokens
+        // keys (and no `tokens` object) deserializes with tokens == default.
+        let dir = TempDir::new().unwrap();
+        let line = r#"{"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":null,"milestone_id":null,"activity":"assist","outcome":null,"model":null,"architect_input_tokens":1500,"architect_output_tokens":300}"#;
+        std::fs::write(dir.path().join("phase_runs.jsonl"), format!("{line}\n")).unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let activities = read_architect_activities(&path).unwrap();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].tokens, ArchitectTokens::default());
     }
 }

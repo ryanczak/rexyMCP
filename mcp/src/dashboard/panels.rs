@@ -6,17 +6,17 @@ use ratatui::{
 
 use crate::status::{self, StatusSummary};
 use rexymcp_executor::store::sessions::event::TaskState;
+use rexymcp_executor::store::telemetry::{ArchitectRates, ArchitectTokens};
 
 /// Token costs for one budget scope (Session / Milestone / Project).
 /// `executor_*` are local-model tokens (cost = $0.00 until a local rate is
-/// configured; future: paid OpenRouter/provider rates). `architect_*` are summed
-/// from `PhaseRun.tier_telemetry.architect_*_tokens`.
+/// configured; future: paid OpenRouter/provider rates). `architect` is summed
+/// from folded `ArchitectActivity` records.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ScopeCosts {
     pub executor_in: u64,
     pub executor_out: u64,
-    pub architect_in: u64,
-    pub architect_out: u64,
+    pub architect: ArchitectTokens,
 }
 
 /// Cloud-baseline $/Mtok rates for the Budget panel's "Savings:" line.
@@ -24,8 +24,7 @@ pub struct ScopeCosts {
 pub struct BudgetRates {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
-    pub architect_input_per_mtok: f64,
-    pub architect_output_per_mtok: f64,
+    pub architect: ArchitectRates,
 }
 
 /// Wall-clock session duration in ms.
@@ -509,26 +508,13 @@ pub(crate) fn savings_lines(
         }
     };
     let executor_val = |_in: u64, _out: u64| -> String { "$0.00".to_string() };
-    let architect_val = |in_toks: u64, out_toks: u64| -> String {
-        fmt_dollars(cost(
-            in_toks,
-            out_toks,
-            rates.architect_input_per_mtok,
-            rates.architect_output_per_mtok,
-        ))
-    };
-    let net_val = |b_in: u64, b_out: u64, a_in: u64, a_out: u64| -> String {
+    let architect_val = |t: ArchitectTokens| -> String { fmt_dollars(t.cost(&rates.architect)) };
+    let net_val = |b_in: u64, b_out: u64, a: ArchitectTokens| -> String {
         if no_baseline {
             return "—".to_string();
         }
         let baseline = cost(b_in, b_out, rates.input_per_mtok, rates.output_per_mtok);
-        let architect = cost(
-            a_in,
-            a_out,
-            rates.architect_input_per_mtok,
-            rates.architect_output_per_mtok,
-        );
-        fmt_dollars(baseline - architect)
+        fmt_dollars(baseline - a.cost(&rates.architect))
     };
 
     let has_milestone = milestone_costs.is_some();
@@ -587,27 +573,21 @@ pub(crate) fn savings_lines(
 
     if let Some(row) = debit_row(
         "Architect:",
-        architect_val(0, 0),
-        architect_val(mile.architect_in, mile.architect_out),
-        architect_val(project_costs.architect_in, project_costs.architect_out),
+        architect_val(ArchitectTokens::default()),
+        architect_val(mile.architect),
+        architect_val(project_costs.architect),
     ) {
         out.push(row);
     }
 
     out.push(make_row(
         "Net:",
-        net_val(sess_in, sess_out, 0, 0),
-        net_val(
-            mile.executor_in,
-            mile.executor_out,
-            mile.architect_in,
-            mile.architect_out,
-        ),
+        net_val(sess_in, sess_out, ArchitectTokens::default()),
+        net_val(mile.executor_in, mile.executor_out, mile.architect),
         net_val(
             project_costs.executor_in,
             project_costs.executor_out,
-            project_costs.architect_in,
-            project_costs.architect_out,
+            project_costs.architect,
         ),
     ));
     out.push(Line::from(format!("  Assists: {project_escalation_count}")));
@@ -1805,14 +1785,22 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 5.0,
             output_per_mtok: 25.0,
-            architect_input_per_mtok: 5.0,
-            architect_output_per_mtok: 25.0,
+            architect: ArchitectRates {
+                input_per_mtok: 5.0,
+                cache_creation_per_mtok: 6.25,
+                cache_read_per_mtok: 0.5,
+                output_per_mtok: 25.0,
+            },
         };
         let project_costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 0,
-            architect_in: 1_000_000, // 1M architect input tokens
-            architect_out: 0,
+            architect: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
@@ -1838,14 +1826,22 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 5.0,
             output_per_mtok: 25.0,
-            architect_input_per_mtok: 1.0,
-            architect_output_per_mtok: 5.0,
+            architect: ArchitectRates {
+                input_per_mtok: 1.0,
+                cache_creation_per_mtok: 1.25,
+                cache_read_per_mtok: 0.1,
+                output_per_mtok: 5.0,
+            },
         };
         let project_costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 0,
-            architect_in: 1_000_000,
-            architect_out: 0,
+            architect: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
@@ -1881,14 +1877,22 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 5.0,
             output_per_mtok: 25.0,
-            architect_input_per_mtok: 1.0,
-            architect_output_per_mtok: 5.0,
+            architect: ArchitectRates {
+                input_per_mtok: 1.0,
+                cache_creation_per_mtok: 1.25,
+                cache_read_per_mtok: 0.1,
+                output_per_mtok: 5.0,
+            },
         };
         let project_costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 0,
-            architect_in: 1_000_000,
-            architect_out: 0,
+            architect: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
@@ -1940,14 +1944,22 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 3.0,
             output_per_mtok: 15.0,
-            architect_input_per_mtok: 5.0,
-            architect_output_per_mtok: 25.0,
+            architect: ArchitectRates {
+                input_per_mtok: 5.0,
+                cache_creation_per_mtok: 6.25,
+                cache_read_per_mtok: 0.5,
+                output_per_mtok: 25.0,
+            },
         };
         let project_costs = ScopeCosts {
             executor_in: 5_000_000,
             executor_out: 2_000_000,
-            architect_in: 1_000_000,
-            architect_out: 0,
+            architect: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
         };
         let lines = savings_lines(&summary, rates, None, project_costs, 0);
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();

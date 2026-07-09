@@ -80,6 +80,12 @@ pub struct ArchitectConfig {
     pub input_per_mtok: f64,
     /// USD per million output tokens (overridden by `model` when recognised).
     pub output_per_mtok: f64,
+    /// USD per million cache-**read** input tokens (overridden by `model` when
+    /// recognised: 0.1× the input rate).
+    pub cache_read_per_mtok: f64,
+    /// USD per million cache-**creation** input tokens (overridden by `model`
+    /// when recognised: 1.25× the input rate).
+    pub cache_creation_per_mtok: f64,
 }
 
 impl Default for ArchitectConfig {
@@ -88,6 +94,8 @@ impl Default for ArchitectConfig {
             model: None,
             input_per_mtok: 0.0,
             output_per_mtok: 0.0,
+            cache_read_per_mtok: 0.0,
+            cache_creation_per_mtok: 0.0,
         }
     }
 }
@@ -100,6 +108,32 @@ impl ArchitectConfig {
             .as_deref()
             .and_then(known_model_rates)
             .unwrap_or((self.input_per_mtok, self.output_per_mtok))
+    }
+
+    /// Resolved per-class architect rates. When `model` is recognised, cache
+    /// rates derive from its input rate (0.1× read, 1.25× creation); otherwise the
+    /// explicit `cache_*_per_mtok` fields apply. Reuses `effective_rates` for the
+    /// input/output pair.
+    pub fn effective_architect_rates(&self) -> crate::store::telemetry::ArchitectRates {
+        use crate::store::telemetry::{
+            ArchitectRates, CACHE_CREATION_RATE_MULTIPLIER, CACHE_READ_RATE_MULTIPLIER,
+        };
+        let (input, output) = self.effective_rates();
+        let model_known = self.model.as_deref().and_then(known_model_rates).is_some();
+        let (cache_read, cache_creation) = if model_known {
+            (
+                input * CACHE_READ_RATE_MULTIPLIER,
+                input * CACHE_CREATION_RATE_MULTIPLIER,
+            )
+        } else {
+            (self.cache_read_per_mtok, self.cache_creation_per_mtok)
+        };
+        ArchitectRates {
+            input_per_mtok: input,
+            cache_creation_per_mtok: cache_creation,
+            cache_read_per_mtok: cache_read,
+            output_per_mtok: output,
+        }
     }
 }
 
@@ -1418,6 +1452,8 @@ max_turns = 200
             model: Some("claude-opus-4-8".into()),
             input_per_mtok: 0.0,
             output_per_mtok: 0.0,
+            cache_read_per_mtok: 0.0,
+            cache_creation_per_mtok: 0.0,
         };
         assert_eq!(a.effective_rates(), (5.0, 25.0));
     }
@@ -1428,6 +1464,8 @@ max_turns = 200
             model: Some("unknown-model".into()),
             input_per_mtok: 2.5,
             output_per_mtok: 12.5,
+            cache_read_per_mtok: 0.0,
+            cache_creation_per_mtok: 0.0,
         };
         assert_eq!(a.effective_rates(), (2.5, 12.5));
     }
@@ -1803,5 +1841,37 @@ runaway_output_bytes = 102400
 
         let cfg = Config::load(&path).unwrap();
         assert_eq!(cfg.budget.max_turns, 100);
+    }
+
+    #[test]
+    fn effective_architect_rates_derives_cache_from_known_model() {
+        let cfg = ArchitectConfig {
+            model: Some("claude-opus-4-8".to_string()),
+            input_per_mtok: 0.0,
+            output_per_mtok: 0.0,
+            cache_read_per_mtok: 0.0,
+            cache_creation_per_mtok: 0.0,
+        };
+        let rates = cfg.effective_architect_rates();
+        assert_eq!(rates.input_per_mtok, 5.0);
+        assert_eq!(rates.output_per_mtok, 25.0);
+        assert_eq!(rates.cache_read_per_mtok, 0.5);
+        assert_eq!(rates.cache_creation_per_mtok, 6.25);
+    }
+
+    #[test]
+    fn effective_architect_rates_uses_explicit_when_model_unknown() {
+        let cfg = ArchitectConfig {
+            model: Some("unknown-model".to_string()),
+            input_per_mtok: 8.0,
+            output_per_mtok: 40.0,
+            cache_read_per_mtok: 2.0,
+            cache_creation_per_mtok: 9.0,
+        };
+        let rates = cfg.effective_architect_rates();
+        assert_eq!(rates.input_per_mtok, 8.0);
+        assert_eq!(rates.output_per_mtok, 40.0);
+        assert_eq!(rates.cache_read_per_mtok, 2.0);
+        assert_eq!(rates.cache_creation_per_mtok, 9.0);
     }
 }

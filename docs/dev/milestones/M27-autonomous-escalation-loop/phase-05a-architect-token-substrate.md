@@ -1,7 +1,7 @@
 # Phase 05a: Architect token substrate — `ArchitectTokens` type + cache-aware cost + dormant dashboard wiring
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-02 (ArchitectActivity journal record), phase-02b (dashboard reads activities)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -498,3 +498,9 @@ work using only what the workspace already links.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 14:00 (started)
+
+**Executor:** Claude (executor LLM)
+
+Implemented all 9 spec tasks: added `ArchitectTokens`/`ArchitectRates`/cache multipliers to `telemetry.rs`, migrated `ArchitectActivity` to nested `tokens` field, retired `TierTelemetry.architect_*_tokens`, added `fold_activities`, wired `ArchitectConfig::effective_architect_rates()`, updated dashboard cost path in `panels.rs` and `mod.rs` to sum from folded activities, wired `main.rs` to new rates, and documented `[architect]` block in init template. All tests pass including new ones for cost, fold, roundtrip, legacy compat, and effective rates.

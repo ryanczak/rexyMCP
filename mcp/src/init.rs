@@ -78,6 +78,15 @@ output_filter = true              # filter/truncate bash output to conserve cont
 # saved_input_per_mtok = 5.0        # $/MTok input tokens saved vs cloud baseline
 # saved_output_per_mtok = 25.0      # $/MTok output tokens saved vs cloud baseline
 
+[architect]
+# model = "claude-opus-4-8"        # auto-fill architect rates for a known Claude model
+#   (cache rates derive from input: read = 0.1×, creation = 1.25×)
+# Or set rates directly (model overrides these when set & recognised):
+# input_per_mtok = 5.0             # $/MTok uncached input tokens
+# output_per_mtok = 25.0           # $/MTok output tokens
+# cache_read_per_mtok = 0.5        # $/MTok cache-read input tokens
+# cache_creation_per_mtok = 6.25   # $/MTok cache-creation input tokens
+
 [telemetry]
 # dir = "/path/to/shared/telemetry"  # cross-project PhaseRun telemetry store
 "#

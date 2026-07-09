@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use rexymcp_executor::store::sessions::event::SessionRecord;
-use rexymcp_executor::store::telemetry::{self, PhaseRun};
+use rexymcp_executor::store::telemetry::{self, ArchitectTokens, PhaseRun};
 
 use crate::status::{self, StatusSummary};
 
@@ -39,6 +39,26 @@ pub struct DashboardData {
 /// Load the latest session data. Pure, testable.
 /// `project_id` is the UUID from the watched repo's `[project] id`; filters
 /// telemetry to runs belonging to this project. `None` → project savings is `(0,0)`.
+/// Sum architect tokens from a filtered set of folded `ArchitectActivity` records.
+fn sum_architect_tokens(
+    activities: &[telemetry::ArchitectActivity],
+    project_id: Option<&str>,
+    milestone_id: Option<&str>,
+) -> ArchitectTokens {
+    activities
+        .iter()
+        .filter(|a| {
+            a.project_id.as_deref() == project_id && a.milestone_id.as_deref() == milestone_id
+        })
+        .fold(ArchitectTokens::default(), |mut acc, a| {
+            acc.input = acc.input.saturating_add(a.tokens.input);
+            acc.cache_creation = acc.cache_creation.saturating_add(a.tokens.cache_creation);
+            acc.cache_read = acc.cache_read.saturating_add(a.tokens.cache_read);
+            acc.output = acc.output.saturating_add(a.tokens.output);
+            acc
+        })
+}
+
 pub fn load_data(
     repo: &Path,
     session: Option<&str>,
@@ -49,38 +69,45 @@ pub fn load_data(
     // so project_costs is always computed even when session loading fails.
     let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
     // project_costs: executor tokens + architect tokens across all project runs.
+    // Read + fold architect activities once (last-write-wins by identity key).
+    let folded_activities = match (project_id, telemetry_dir) {
+        (Some(_), Some(dir)) => telemetry::fold_activities(
+            telemetry::read_architect_activities(&dir.join("phase_runs.jsonl")).unwrap_or_default(),
+        ),
+        _ => Vec::new(),
+    };
+
     let project_costs = match project_id {
-        Some(pid) => phase_runs
-            .iter()
-            .filter(|r| r.project_id.as_deref() == Some(pid))
-            .fold(ScopeCosts::default(), |mut costs, r| {
-                costs.executor_in = costs
-                    .executor_in
-                    .saturating_add(r.tokens.input_tokens as u64);
-                costs.executor_out = costs
-                    .executor_out
-                    .saturating_add(r.tokens.output_tokens as u64);
-                costs.architect_in = costs
-                    .architect_in
-                    .saturating_add(r.tier_telemetry.architect_input_tokens);
-                costs.architect_out = costs
-                    .architect_out
-                    .saturating_add(r.tier_telemetry.architect_output_tokens);
-                costs
-            }),
+        Some(pid) => {
+            let exec_costs: ScopeCosts = phase_runs
+                .iter()
+                .filter(|r| r.project_id.as_deref() == Some(pid))
+                .fold(ScopeCosts::default(), |mut costs, r| {
+                    costs.executor_in = costs
+                        .executor_in
+                        .saturating_add(r.tokens.input_tokens as u64);
+                    costs.executor_out = costs
+                        .executor_out
+                        .saturating_add(r.tokens.output_tokens as u64);
+                    costs
+                });
+            let arch = sum_architect_tokens(&folded_activities, Some(pid), None);
+            ScopeCosts {
+                executor_in: exec_costs.executor_in,
+                executor_out: exec_costs.executor_out,
+                architect: arch,
+            }
+        }
         None => ScopeCosts::default(),
     };
     // Assists: count `assist` architect-activity journal records for this
     // project (retired tier_telemetry.escalation_count — the executor never
     // wrote it; assists are journaled architect-side by `rexymcp journal`).
     let project_escalation_count = match (project_id, telemetry_dir) {
-        (Some(pid), Some(dir)) => {
-            telemetry::read_architect_activities(&dir.join("phase_runs.jsonl"))
-                .unwrap_or_default()
-                .iter()
-                .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
-                .count() as u32
-        }
+        (Some(pid), Some(_)) => folded_activities
+            .iter()
+            .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
+            .count() as u32,
         _ => 0,
     };
 
@@ -93,7 +120,7 @@ pub fn load_data(
             let milestone_costs = resolve_milestone_dir(repo, summary.phase.as_deref())
                 .zip(project_id)
                 .map(|(milestone_dir, pid)| {
-                    phase_runs
+                    let exec_costs: ScopeCosts = phase_runs
                         .iter()
                         .filter(|r| {
                             r.project_id.as_deref() == Some(pid)
@@ -106,20 +133,23 @@ pub fn load_data(
                             costs.executor_out = costs
                                 .executor_out
                                 .saturating_add(r.tokens.output_tokens as u64);
-                            costs.architect_in = costs
-                                .architect_in
-                                .saturating_add(r.tier_telemetry.architect_input_tokens);
-                            costs.architect_out = costs
-                                .architect_out
-                                .saturating_add(r.tier_telemetry.architect_output_tokens);
                             costs
-                        })
+                        });
+                    let arch =
+                        sum_architect_tokens(&folded_activities, Some(pid), Some(&milestone_dir));
+                    ScopeCosts {
+                        executor_in: exec_costs.executor_in,
+                        executor_out: exec_costs.executor_out,
+                        architect: arch,
+                    }
                 })
                 .filter(|c| {
                     c.executor_in > 0
                         || c.executor_out > 0
-                        || c.architect_in > 0
-                        || c.architect_out > 0
+                        || c.architect.input > 0
+                        || c.architect.cache_creation > 0
+                        || c.architect.cache_read > 0
+                        || c.architect.output > 0
                 });
             DashboardData {
                 summary,
@@ -390,8 +420,7 @@ mod tests {
             ScopeCosts {
                 executor_in: 3000,
                 executor_out: 1300,
-                architect_in: 0,
-                architect_out: 0
+                architect: ArchitectTokens::default(),
             },
             "project costs must sum phase runs with matching project_id"
         );
@@ -428,8 +457,7 @@ mod tests {
             ScopeCosts {
                 executor_in: 1000,
                 executor_out: 500,
-                architect_in: 0,
-                architect_out: 0
+                architect: ArchitectTokens::default(),
             },
             "project costs must exclude runs from other project UUIDs and legacy records"
         );
@@ -458,28 +486,54 @@ mod tests {
     }
 
     #[test]
-    fn load_data_reads_project_architect_costs_from_phase_runs() {
-        // PhaseRun lines with non-zero tier_telemetry.architect_*_tokens are summed.
+    fn load_data_reads_project_architect_costs_from_activities() {
+        // Architect costs come from ArchitectActivity records, not tier_telemetry.
+        // Seed an ArchitectActivity with non-zero tokens and assert the dashboard
+        // sums them into project_costs.architect.
         let dir = TempDir::new().unwrap();
         let sessions = sessions_dir(dir.path());
         std::fs::create_dir_all(&sessions).unwrap();
         let pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-        // A run with architect_input_tokens=1500, architect_output_tokens=300 in tier_telemetry.
-        let run = format!(
-            r#"{{"ts":1,"model":"t","generation_params":{{}},"phase_id":"p1","project_id":"{pid}","tags":[],"status":"complete","escalated":false,"gates":{{}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"input_tokens":1000,"output_tokens":500}},"tier_telemetry":{{"tier":null,"doc_level":null,"architect_input_tokens":1500,"architect_output_tokens":300}}}}"#
-        );
         let telemetry_dir = dir.path().join("telemetry");
         std::fs::create_dir_all(&telemetry_dir).unwrap();
-        std::fs::write(telemetry_dir.join("phase_runs.jsonl"), format!("{run}\n")).unwrap();
+        // An ArchitectActivity with tokens.input=1_000_000, tokens.output=500_000.
+        let activity = format!(
+            r#"{{"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":"{pid}","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{{"input":1000000,"cache_creation":200000,"cache_read":100000,"output":500000}}}}"#
+        );
+        std::fs::write(
+            telemetry_dir.join("phase_runs.jsonl"),
+            format!("{activity}\n"),
+        )
+        .unwrap();
 
         let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
         assert_eq!(
-            data.project_costs.architect_in, 1500,
-            "architect_in must be summed from tier_telemetry"
+            data.project_costs.architect.input, 1_000_000,
+            "architect input tokens must be summed from ArchitectActivity"
         );
         assert_eq!(
-            data.project_costs.architect_out, 300,
-            "architect_out must be summed from tier_telemetry"
+            data.project_costs.architect.cache_creation, 200_000,
+            "architect cache_creation tokens must be summed from ArchitectActivity"
+        );
+        assert_eq!(
+            data.project_costs.architect.cache_read, 100_000,
+            "architect cache_read tokens must be summed from ArchitectActivity"
+        );
+        assert_eq!(
+            data.project_costs.architect.output, 500_000,
+            "architect output tokens must be summed from ArchitectActivity"
+        );
+        // Negative: an activity with a different project_id contributes nothing.
+        let activity_other = r#"{"record":"architect_activity","ts":2,"phase_doc_path":null,"phase_id":"p1","project_id":"other-project","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{"input":999999,"cache_creation":0,"cache_read":0,"output":0}}"#.to_string();
+        std::fs::write(
+            telemetry_dir.join("phase_runs.jsonl"),
+            format!("{activity}\n{activity_other}\n"),
+        )
+        .unwrap();
+        let data2 = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        assert_eq!(
+            data2.project_costs.architect.input, 1_000_000,
+            "other-project activity must not contribute to this project's costs"
         );
     }
 

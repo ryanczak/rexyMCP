@@ -67,8 +67,7 @@ pub fn record_activity(
         activity: args.activity.to_string(),
         outcome: args.outcome.map(str::to_string),
         model: args.model.map(str::to_string),
-        architect_input_tokens: 0,
-        architect_output_tokens: 0,
+        tokens: telemetry::ArchitectTokens::default(),
     };
 
     let path = telemetry::append_architect_activity(&telemetry_dir, &activity)
