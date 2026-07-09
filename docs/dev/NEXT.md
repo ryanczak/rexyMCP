@@ -23,12 +23,11 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none — two single-phase milestones at their close/decision gate.**
-Both **M29** (phase-01 done → ready to close) and **M28** (phase-01 done;
-phase-02 = extend `missing_args_hint` to the other 8 arg-parsing tools is an
-**optional** follow-on) await a human call: `/rexymcp:architect` to close a
-milestone (retrospective + `NEXT.md`), or `/rexymcp:architect next` to draft M28
-phase-02. Not auto-advancing.
+**Active phase: none.** M27, M28, and M29 are all **closed** (2026-07-09). No
+milestone is in progress. The next step is a human decision — kick off a new
+milestone with `/rexymcp:architect`, or draft an optional follow-on (M28 phase-02:
+extend `missing_args_hint` to the other 8 arg-parsing tools, "if the pattern
+proves out"). Nothing is auto-advancing.
 
 **M29 phase-01 — done** (2026-07-09, **approved_first_try**, executor
 AEON-7/Qwen3.6-27B-AEON LARGE; commit `71cb145` feat). Two cleanup fixes:

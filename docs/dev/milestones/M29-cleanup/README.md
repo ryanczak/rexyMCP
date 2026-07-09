@@ -5,7 +5,7 @@ validation runs: the server-authored finalize going dormant when an executor
 skips the `todo→in-progress` start-flip, and a flaky (non-hermetic) tsc-resolution
 test that fails under parallel `cargo test`.
 
-**Status:** in-progress (kicked off 2026-07-09)
+**Status:** done (closed 2026-07-09; single phase)
 
 **Depends on:** none
 
@@ -61,5 +61,22 @@ Two independent fixes in different crates (`mcp/src/finalize.rs`,
 `executor/src/governor/verifier_tests.rs`) bundled as one small cleanup phase
 (the M14/M25 grab-bag-cleanup precedent) — each is well under one session and
 neither warrants its own dispatch round-trip.
+
+### Retrospective — 2026-07-09
+
+Two unrelated infra fixes from the M28 review, one phase (approved_first_try,
+executor AEON-7/Qwen3.6-27B-AEON, clean 142 turns): (1) `finalize_complete` now
+finalizes a `**Status:** todo` doc, not just `in-progress`, so the server-authored
+bookkeeping completes even when the executor skips the `todo→in-progress`
+start-flip — the actual root cause of M28's "left at todo" (finalize was already
+wired into the CLI path, just dormant on `todo`); (2) the ETXTBSY-flaky
+write-then-exec tsc test replaced with pure `resolve_tsc_command` tests, verified
+by 4× back-to-back green `cargo test`.
+
+**Nice loop-closure:** the finalize fix closes the exact bookkeeping hole that
+M28's own dispatch fell into — the binary was rebuilt so future `run-phase`
+dispatches of a `todo` phase now finalize themselves end-to-end. One nit
+(redundant resolver tests vs a pre-existing set), not bounced. No STANDARDS/
+WORKFLOW folds.
 
 <!-- retrospective appended at milestone close -->

@@ -6,7 +6,7 @@ message** naming the missing field and what it did supply — instead of a raw
 serde error the model can't act on — so the loop self-corrects rather than
 hard-failing.
 
-**Status:** in-progress (kicked off 2026-07-09)
+**Status:** done (closed 2026-07-09; single committed phase; phase-02 optional, not taken)
 
 **Depends on:** none (localized to the tool arg-deserialization seam)
 
@@ -75,5 +75,25 @@ to the wrong file) and *context-pressure guards* that bias toward smaller edits
 when the budget is low (a loop-behavior change, not a tool-error change). Both are
 larger, more speculative, and separable; revisit as their own phases only if the
 message-only fix proves insufficient in a follow-up e2e.
+
+### Retrospective — 2026-07-09
+
+Closed issue #1 in a single phase (approved_first_try, executor
+AEON-7/Qwen3.6-27B-AEON, clean 49 turns). `write_file`/`patch` now return an
+actionable, breadcrumbed recovery message (`missing_args_hint` in `registry.rs`)
+instead of the raw serde `missing field \`path\`` — so a truncated edit-tool call
+near max context gives the model something to recover from. Message-only and
+deterministic; auto-`path`-reconstruction and context-pressure guards (issue
+solutions 1 & 3) stay deliberately deferred.
+
+**phase-02 not taken.** Extending the helper to the other 8 arg-parsing tools was
+scoped as optional "if the pattern proves out." Left as a future row — the two
+edit tools the issue named are covered; the reusable helper makes the extension
+cheap whenever it's wanted.
+
+**Findings routed onward, not folded here.** This phase's dispatch surfaced two
+unrelated infra gaps (the `run-phase`/finalize `todo` dormancy and a flaky tsc
+test) — both fixed in **M29**, not by widening this milestone. No STANDARDS/
+WORKFLOW folds: single clean phase, no recurring pattern.
 
 <!-- retrospective appended at milestone close -->

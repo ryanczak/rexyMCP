@@ -1084,7 +1084,7 @@ The project plan. Each entry becomes a milestone with its own
     transcripts and joined onto journal activities (absent — never estimated —
     on clients without transcripts). Design fixed at kickoff with the user; see
     the M27 README § Design.
-28. **M28 — Edit-Tool Arg Recovery** *(in progress — kicked off 2026-07-09)*.
+28. **M28 — Edit-Tool Arg Recovery** *(done, 2026-07-09; single phase; phase-02 optional, not taken)*.
     Close [issue #1](https://github.com/ryanczak/rexyMCP/issues/1), surfaced by
     the M27 `/rexymcp:auto` live-validation run: near max context a small model
     truncates edit-tool calls and drops the required `path` field, and
@@ -1098,7 +1098,7 @@ The project plan. Each entry becomes a milestone with its own
     (issue solution 1) or add context-pressure guards (solution 3); both are
     deferred. Extending the helper to the other 8 arg-parsing tools is a possible
     phase-02.
-29. **M29 — Cleanup** *(in progress — kicked off 2026-07-09)*. Two unrelated
+29. **M29 — Cleanup** *(done, 2026-07-09; single phase)*. Two unrelated
     infra fixes found during the M28 dispatch/review: (a) `finalize_complete`
     was guarded on `in-progress` and skipped a phase left at `todo` when the
     executor missed the `todo→in-progress` start-flip (the M28 AEON run) — broaden
