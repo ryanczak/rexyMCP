@@ -1,7 +1,7 @@
 # Phase 04: `continue_phase` — briefing-seeded resume
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** in-progress (bounced — see bugs/bug-04-1.md)
 **Depends on:** phase-03b (server-authored finalize is live; a failed run leaves the doc at `in-progress`)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=feature, size=l
