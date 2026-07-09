@@ -1098,3 +1098,12 @@ The project plan. Each entry becomes a milestone with its own
     (issue solution 1) or add context-pressure guards (solution 3); both are
     deferred. Extending the helper to the other 8 arg-parsing tools is a possible
     phase-02.
+29. **M29 — Cleanup** *(in progress — kicked off 2026-07-09)*. Two unrelated
+    infra fixes found during the M28 dispatch/review: (a) `finalize_complete`
+    was guarded on `in-progress` and skipped a phase left at `todo` when the
+    executor missed the `todo→in-progress` start-flip (the M28 AEON run) — broaden
+    it to finalize a `todo` doc too, the same server-owns-bookkeeping robustness
+    as M27 04b; (b) the M26 phase-08 `verify_typescript_spawns_resolved_local_binary`
+    test writes-then-exec's a fake `tsc` and flakes on ETXTBSY under parallel
+    `cargo test` — replace it with a deterministic `resolve_tsc_command` resolver
+    test. One small cleanup phase.

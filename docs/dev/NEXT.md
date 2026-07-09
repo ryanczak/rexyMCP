@@ -23,16 +23,21 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none — M28 at a phase-02 decision (human gate).** M28 phase-01
-is **done**; its committed scope was the single phase. **phase-02** (extend the
-`missing_args_hint` helper to the other 8 arg-parsing tools — `patch_lines`,
-`move_file`, `delete_file`, `bash`, `search`, `find_files`, `symbols`,
-`read_file`) is an **optional** follow-on the README marks "if the pattern proves
-out." Human's call: draft phase-02 (`/rexymcp:architect next`), or close M28 as a
-single-phase milestone (`/rexymcp:architect`). Two review findings worth folding
-into a cleanup somewhere: the `run-phase` CLI lacks the M27 server-authored
-finalize, and the M26 `verify_typescript_spawns_resolved_local_binary` test is a
-parallelism flake.
+**Active phase: M29 phase-01 — todo (drafted 2026-07-09).** Two cleanup fixes
+from the M28 review, one phase: (1) `finalize_complete` finalizes a `todo` doc
+(not just `in-progress`) so the server bookkeeping completes even when the
+executor skips the start-flip — the actual root cause of M28's "left at todo"
+(finalize *is* wired into the CLI path; it was dormant because the doc was
+`todo`); (2) replace the ETXTBSY-flaky write-then-exec `verify_typescript_spawns_resolved_local_binary`
+test with a deterministic `resolve_tsc_command` resolver test.
+[Phase doc](milestones/M29-cleanup/phase-01-finalize-todo-and-tsc-test.md)
+· [milestone README](milestones/M29-cleanup/README.md).
+
+**M28 phase-01 — done** (2026-07-09, **approved_first_try**, executor
+AEON-7/Qwen3.6-27B-AEON LARGE; commit `0320019` fix). Actionable missing-field
+recovery hint for `write_file` + `patch` — closes
+[issue #1](https://github.com/ryanczak/rexyMCP/issues/1). M28 phase-02 (extend the
+helper to the other 8 arg-parsing tools) remains an **optional** follow-on.
 
 **M28 phase-01 — done** (2026-07-09, **approved_first_try**, executor
 AEON-7/Qwen3.6-27B-AEON LARGE; commit `0320019` fix). Actionable missing-field
