@@ -4,23 +4,43 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-03b — drafted (todo).** Server-authored finalize
-(D8/D9, half 2 of 2) — the authorship flip that **activates** 03a's dormant
-finalize. Retires the executor's pre-completion bookkeeping gate
-(`command::bookkeeping_feedback` + its loop block + the M22 peek arm + its unit
-tests) and amends the embedded executor contract (`executor_contract.md` §
-"Phase lifecycle") so the executor **stops authoring the completion tail**: it
-keeps the start flip (`todo → in-progress`) but no longer flips to `review` or
-hand-writes the `(complete)` Update Log entry — instead its final message
-carries the Summary/Notes the server splices in. With the gate gone a completed
-run reaches finalize at `in-progress`, and finalize writes the bookkeeping. Two
-activation tests (executor-loop: real `in-progress` doc → `Complete` in one
-turn; mcp end-to-end: `run_phase_with` flips the on-disk doc to `review`).
-Mostly deletions, ~230 lines, size=m, kind=refactor. Authorizes the
-`executor_contract.md` edit. Dispatch with `/rexymcp:dispatch phase-03b`. **Note
-for the user:** the contract wording (Task 5) is a load-bearing contract-doc
-change — review it in the drafted phase doc before dispatching; it is yours to
-shape.
+**Active phase: M27 phase-04 — drafted (todo).** `continue_phase` — the third
+escalation lever: briefing-seeded resume. A new `continue_phase` MCP tool resumes
+a `hard_fail`/`budget_exceeded` phase from a **fresh** context (phase doc +
+architect `guidance` + the current uncommitted diff), with task states **restored
+from the prior session log** so the resumed run does not redo done tasks — not
+transcript rehydration (that would carry the rot re-dispatch escapes). Single
+phase (user chose not to split): additive `PhaseInput.resumed_task_states`
+(consumed at the seed site; every literal gains `None`), a `resume:
+Option<ResumeContext>` threaded through `RunPhaseConfig`/`AssemblyInput`, a new
+`mcp/src/resume.rs` (`restore_task_states` last-write-wins fold + `git diff HEAD`
+via the runner + a **seed-safe** `# Resume context` preamble), the `continue_phase`
+tool wired as a second special-case `call_tool` branch (roots corroboration like
+`execute_phase`), the escalate-skill resume lever un-stubbed, and a verbatim
+"Resuming a phase" **executor-contract amendment**. ~430 lines, size=l,
+kind=feature. Dispatch with `/rexymcp:dispatch phase-04`. **Note for the user:**
+the contract block (Task 5) is a load-bearing contract-doc change — review it in
+the drafted phase doc before dispatching; it is yours to shape. Executor is
+Qwen3.6-27B-FP8 (LARGE tier), so pre-injection is deliberately lighter — behavior
+pinned + seams cited by `file:line` rather than full bodies.
+
+**Design forks resolved with the user at draft time (2026-07-08):** (1) **single
+phase** (not split 04a/04b); (2) **programmatic task-state restore** from the
+session log (additive `PhaseInput` field), not textual-only — else the M21/M22
+task-coverage gate would re-demand done tasks; (3) **amend the executor contract**
+with a resume paragraph. Locator decided architect-side: `prior_log_path` is an
+explicit `continue_phase` param (no `.rexymcp/sessions/` auto-scan), matching the
+no-silent-fallback ethos.
+
+**M27 phase-03b — done** (2026-07-08, **approved_first_try**; commits `5d35df2`
+refactor / `f6a3d35` review-flip / `5ea4abd` approve). Retired the executor's
+pre-completion bookkeeping gate and amended the executor contract so the executor
+keeps the start flip (`todo → in-progress`) but stops authoring the completion
+tail — its final message now carries the Summary/Notes the server splices in.
+With the gate gone a completed run reaches finalize at `in-progress`, activating
+03a's dormant server-authored finalize. (NEXT.md pointer was left stale by the
+approve commit — the recurring pattern — and re-advanced to 04 here at the next
+`/rexymcp:architect next`.)
 
 **M27 phase-03a — done** (2026-07-08, **approved_first_try**, executor Claude
 (Anthropic); commits `9fbc33d` feat / `34f8f93` approve). Added the
