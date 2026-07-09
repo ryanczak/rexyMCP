@@ -23,11 +23,20 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none drafted.** M27 phase-06b (the `/rexymcp:auto` loop skill +
-loop report + WORKFLOW plugin-template mirror) is planned but not yet drafted —
-it is a **direct-execution** phase (a prose skill orchestrating Claude Code
-subagents, not Rust for the local-LLM executor) and will be authored directly
-rather than dispatched. Run `/rexymcp:architect next` to draft it.
+**Active phase: M27 phase-06b — todo (drafted 2026-07-09, direct-execution).**
+The `/rexymcp:auto` loop skill + loop report + WORKFLOW plugin-template mirror.
+[Phase doc](milestones/M27-autonomous-escalation-loop/phase-06b-auto-loop-skill.md)
+pins the composition contract (invoke the four existing skills unchanged), the
+delegation role map (draft/escalate/takeover in the main loop; dispatch/review in
+subagents on 06a's `dispatch_model`/`review_model`, inherit-by-default), the loop
+algorithm + four stop conditions (boundary/budget/blocker/runaway), the exact
+`rexymcp journal`/`harvest` command forms + six canonical activity kinds, and the
+loop report (printed session output + a `boundary` journal record — no committed
+report file). Because it is a **prose skill orchestrating Claude Code subagents,
+not Rust for the local-LLM executor**, it is authored **directly by the architect
+(Claude)**, not dispatched — Pre-flight step 5 verifies the live Claude Code
+subagent/model-override mechanism first (external-API-verify discipline). The doc
+still passes through the normal review gate (`Executor: Claude Code (direct)`).
 
 **M27 phase-05b — done** (2026-07-09, **approved_first_try**; commits `8ff703a`
 draft / `eb0ccd7` feat / `b20dc1d` bookkeeping / `ac04678` approve). Architect usage
