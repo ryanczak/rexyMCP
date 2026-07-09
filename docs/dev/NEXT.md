@@ -23,14 +23,32 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none — M27 at a milestone-boundary decision (human gate).**
-All **committed** M27 phases (01–06b) are `done`. The only remaining row is
-**phase-07 — advisory model routing in dispatch**, an explicit *stretch* the
-README marks "drafted only if appetite remains after 06." So this is a human
-gate: either **close M27** (run `/rexymcp:architect` to write the retrospective,
-fold any calibration lessons, set this pointer to "none") **or** draft the
-stretch phase-07 (`/rexymcp:architect next`). Not auto-advancing — milestone
-close and stretch scope are both the human's call.
+**Active phase: M28 phase-01 — todo (drafted 2026-07-09).** Actionable
+missing-field recovery hint for `write_file` + `patch` — closes
+[issue #1](https://github.com/ryanczak/rexyMCP/issues/1) (raw `missing field
+\`path\`` serde error near max context, surfaced by the M27 `/rexymcp:auto`
+live run). Dispatchable Rust bugfix: a shared `missing_args_hint` helper in
+`registry.rs` + rewritten failure arms in the two edit tools, mirroring
+`update_task`'s `invalid_args_hint`. Message-only (no path-guessing, no
+context-pressure guards — both deferred); the other 8 arg-parsing tools are a
+possible phase-02.
+[Phase doc](milestones/M28-edit-tool-arg-recovery/phase-01-edit-tool-missing-field-hint.md)
+· [milestone README](milestones/M28-edit-tool-arg-recovery/README.md). Dispatch
+with `/rexymcp:dispatch phase-01` (from a rexyMCP-rooted session).
+
+**M27 — Autonomous Escalation Loop — done** (closed 2026-07-09; committed scope
+01–06b all approved, stretch phase-07 advisory routing not taken). The
+`/rexymcp:auto` loop was **live-validated** end-to-end against brainyscript
+(dispatch → `RunawayOutput` hard_fail → escalate refined re-dispatch → code
+written → second failure correctly judged unfixable-by-spec → `STOP(blocker)`
+without over-spending assists), with journaling and the 05a/05b token harvester
+both working on a real run (44.6M cache_read on the dispatch window — live proof
+of the cache-dominates rationale). The run surfaced issue #1 → **M28** (now
+active). Two test-driven `auto`-skill refinements folded post-approval
+(DRAFT-or-adopt; root-corroboration Pre-flight). Retrospective + two flagged
+fold-candidates (stale-NEXT-pointer-at-approve; completion_summary paraphrasing
+E2E) in the
+[M27 README](milestones/M27-autonomous-escalation-loop/README.md#retrospective--2026-07-09).
 
 **M27 phase-06b — done** (2026-07-09, **approved_first_try**, executor **Claude
 Code (direct)**; commits `eae27ed` draft + the 06b implementation commit). The

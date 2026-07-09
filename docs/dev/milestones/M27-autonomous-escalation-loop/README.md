@@ -8,7 +8,7 @@ executor/server changes that make autonomy *cheap* (server-authored bookkeeping,
 briefing-seeded resume) and *honest* (a loop journal with per-activity token/cost
 accounting for the architect's own work).
 
-**Status:** in-progress (kicked off 2026-07-08)
+**Status:** done (closed 2026-07-09; committed scope 01–06b, stretch 07 not taken)
 
 **Depends on:** M26 (gate_retries wired; governor blind spots closed; the loop
 inherits a hardened executor)
@@ -186,7 +186,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 05b | Architect usage harvester: Claude Code transcript reader + `message.id` dedup + ISO→epoch parse + per-phase time-window join + `rexymcp harvest` CLI (fills 05a's tokens) ([phase-05b-architect-usage-harvester.md](phase-05b-architect-usage-harvester.md)) | done |
 | 06a | Per-role model delegation config substrate: `[architect]` `dispatch_model`/`review_model` keys + init template (additive, inert) ([phase-06a-delegation-config-substrate.md](phase-06a-delegation-config-substrate.md)) | done |
 | 06b | `/rexymcp:auto` loop skill + loop report (session + telemetry record) + WORKFLOW template mirror ([phase-06b-auto-loop-skill.md](phase-06b-auto-loop-skill.md)) | done |
-| 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |
+| 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | not taken (deferred) |
 
 Phase 02 was **split at draft time** (2026-07-08) into 02 (the write-side
 substrate: the record type + producer CLI) and 02b (the read-side wiring: the
@@ -281,5 +281,55 @@ appetite remains after 06.
   loop (off by default)" paragraph with the concrete mechanism (skill name,
   stop conditions, budget knob, loop report). The plugin-template mirror of
   WORKFLOW.md is updated in phase-06 alongside the skill it describes.
+
+### Retrospective — 2026-07-09
+
+**Shipped (committed scope 01–06b, all approved).** The escalation budget
+consolidated on `[escalation] max_assists` (01); the portable loop journal
+(`ArchitectActivity` + `rexymcp journal`) with the dashboard Assists counter
+rewired off `assist` records (02/02b); server-authored finalize + the executor-
+contract authorship flip, so correct code no longer dies in the bookkeeping tail
+(03a/03b, with 04b fixing the bounced-status no-op); `continue_phase` briefing-
+seeded resume (04); the cache-aware architect token substrate + the Claude Code
+transcript usage harvester (05a/05b); the per-role delegation config keys (06a);
+and the `/rexymcp:auto` loop skill + WORKFLOW template mirror (06b). Executors: a
+mix of `Qwen/Qwen3.6-27B-*` local runs and Claude-direct on the two prose/contract
+phases (03a, 06b) and the 04 test re-dispatch.
+
+**The loop was live-validated end-to-end.** A real `/rexymcp:auto 1` run against
+the brainyscript e2e subject exercised the whole cycle: dispatch (delegated to a
+Sonnet subagent on `dispatch_model`) → `RunawayOutput` hard_fail → escalate chose
+refined re-dispatch and amended the phase doc → re-dispatch reached the spec and
+wrote code → a second failure the loop correctly judged **unfixable by spec** →
+`STOP(blocker)` without burning the remaining assist budget. Journaling recorded
+`dispatch`/`assist`/`boundary` with the right per-step models, and the token
+harvester enriched each activity with real per-class tokens (44.6M cache_read on
+the dispatch window alone — live proof of the 05a "cache tokens dominate, bill
+them separately" rationale). The `Agent`-subagent model override and MCP-tool
+access from delegated subagents were both proven in practice. **The run also
+surfaced a real executor bug** — `write_file`/`patch` failing with a raw
+`missing field 'path'` near max context — which the loop correctly escalated to
+the human rather than papering over. That bug is now **M28**.
+
+**Two test-driven skill refinements** were folded into `plugin/skills/auto/
+SKILL.md` post-approval (both additive prose, phase stayed done): DRAFT-or-adopt
+(adopt an existing active `todo`/`in-progress` phase before drafting a new one)
+and a Pre-flight assertion that the loop must run from the target repo's own
+session (because `execute_phase` enforces root corroboration on `repo_path`).
+
+**Stretch phase-07 (advisory model routing) not taken** — no appetite after 06b;
+deferred as a future row if the need recurs.
+
+**Calibration — no folds made this close; two candidates flagged for the user.**
+Per WORKFLOW § Calibration, contract-doc folds need explicit sign-off, so none
+were made. Candidates noted for a future decision: (1) the **NEXT.md pointer left
+stale by the approve commit** recurred across most M27 phases (each re-advanced at
+the next `/rexymcp:architect next`) — a ≥3× pattern worth a review-skill/WORKFLOW
+reminder; (2) the **server-authored `completion_summary` paraphrasing E2E command
+output** instead of quoting it raw (STANDARDS §1) — 2nd occurrence (05a/06a
+review notes), not yet a fold. Two live-test observations are data, not folds: the
+executor start-flip (`todo→in-progress`) not sticking when the first dispatch dies
+before any write, and the harvester bucketing all pre-dispatch session tokens into
+the earliest activity.
 
 <!-- retrospective appended at milestone close -->

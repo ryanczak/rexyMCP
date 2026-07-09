@@ -1061,7 +1061,8 @@ The project plan. Each entry becomes a milestone with its own
     verifier's `tsc` via `node_modules/.bin` → `npx` → PATH so it stops
     silently `Skipped`-ing in real Node repos. No new features, no new
     dependencies; schema changes additive only.
-27. **M27 — Autonomous Escalation Loop** *(in progress — kicked off 2026-07-08)*.
+27. **M27 — Autonomous Escalation Loop** *(done, 2026-07-09; committed scope
+    01–06b, all approved; stretch phase-07 advisory routing not taken)*.
     Makes the architect↔executor cycle run hands-off across a whole milestone
     and closes the two design conversations queued since M22. Three threads.
     **Budget & journal substrate:** consolidate the escalation budget on
@@ -1083,3 +1084,17 @@ The project plan. Each entry becomes a milestone with its own
     transcripts and joined onto journal activities (absent — never estimated —
     on clients without transcripts). Design fixed at kickoff with the user; see
     the M27 README § Design.
+28. **M28 — Edit-Tool Arg Recovery** *(in progress — kicked off 2026-07-09)*.
+    Close [issue #1](https://github.com/ryanczak/rexyMCP/issues/1), surfaced by
+    the M27 `/rexymcp:auto` live-validation run: near max context a small model
+    truncates edit-tool calls and drops the required `path` field, and
+    `write_file`/`patch` surface the **raw** `invalid arguments: missing field
+    \`path\`` serde error — a dead end the model can't recover from (the run's
+    log showed 8× before a stall fired). phase-01 replaces it with a
+    model-visible recovery hint (names the missing field, echoes what was
+    supplied, gives an example shape + next-step) via a shared
+    `missing_args_hint` helper — the same enrich-a-dead-end-tool-error pattern as
+    M24. Message-only and deterministic: it does **not** guess the `path` value
+    (issue solution 1) or add context-pressure guards (solution 3); both are
+    deferred. Extending the helper to the other 8 arg-parsing tools is a possible
+    phase-02.
