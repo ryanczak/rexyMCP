@@ -178,7 +178,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 01 | Consolidate escalation budget knobs ([phase-01-consolidate-escalation-knobs.md](phase-01-consolidate-escalation-knobs.md)) | done |
 | 02  | Loop-journal substrate: `ArchitectActivity` record + `rexymcp journal` CLI (retire `EscalationEvent`) ([phase-02-loop-journal-substrate.md](phase-02-loop-journal-substrate.md)) | done |
 | 02b | `escalation_count` wiring: retire orphaned `tier_telemetry.escalation_count`, derive the dashboard Assists counter from `assist` journal records ([phase-02b-escalation-count-wiring.md](phase-02b-escalation-count-wiring.md)) | done |
-| 03a | Server-authored finalize: on `complete`, the server writes the Status flip + baseline Update Log + README row + separate `docs:` commit (additive, dormant-safe) ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | todo |
+| 03a | Server-authored finalize: on `complete`, the server writes the Status flip + baseline Update Log + README row + separate `docs:` commit (additive, dormant-safe) ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | review |
 | 03b | Retire the executor bookkeeping gate + amend the executor contract (flips authorship, activating 03a's finalize) | planned |
 | 04 | `continue_phase` briefing-seeded resume (MCP tool + escalate-skill lever) | planned |
 | 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |

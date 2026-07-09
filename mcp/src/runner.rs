@@ -295,6 +295,17 @@ async fn run_phase_with(
 
     let mut result = agent::execute_phase(&input, deps).await?;
     result.warnings.extend(input_warnings);
+
+    let finalize_input = crate::finalize::FinalizeInput {
+        phase_doc_path: inp.phase_doc_path,
+        repo_root: inp.repo_path,
+        result: &result,
+        now_ms: (seams.clock)(),
+        runner: seams.runner,
+    };
+    if let Err(e) = crate::finalize::finalize_complete(&finalize_input).await {
+        result.warnings.push(format!("server finalize failed: {e}"));
+    }
     Ok(result)
 }
 

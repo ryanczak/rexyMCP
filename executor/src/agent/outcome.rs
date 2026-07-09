@@ -76,6 +76,7 @@ pub(super) fn build_artifacts(
         command_outputs,
         update_log: format!("Executor run: {status} after {turns} turn(s)."),
         log_path,
+        completion_summary: String::new(),
     }
 }
 

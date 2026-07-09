@@ -7,6 +7,7 @@ mod calibrate;
 mod cap;
 mod dashboard;
 mod doctor;
+mod finalize;
 mod init;
 mod journal;
 mod log_query;

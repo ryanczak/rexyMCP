@@ -40,6 +40,11 @@ pub struct Artifacts {
     pub update_log: String,
     /// Path to the on-disk JSONL session log; `None` when the log failed to open.
     pub log_path: Option<PathBuf>,
+    /// The executor's final message text (post-think), captured on the
+    /// `complete` path. Empty on failure paths and until phase-03b makes the
+    /// executor put its Summary/Notes here. Spliced into the server-authored
+    /// completion entry.
+    pub completion_summary: String,
 }
 
 /// The single structured value `execute_phase` returns across the MCP boundary —
@@ -62,6 +67,10 @@ pub struct PhaseResult {
     /// silently-degraded run is visible in the structured result.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// The executor's qualitative completion summary (post-think), spliced into
+    /// the server-authored completion entry. Empty when absent.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub completion_summary: String,
 }
 
 impl PhaseResult {
@@ -90,6 +99,7 @@ impl PhaseResult {
             briefing,
             log_path: artifacts.log_path,
             warnings: Vec::new(),
+            completion_summary: artifacts.completion_summary,
         }
     }
 }
@@ -106,6 +116,7 @@ mod tests {
             command_outputs: CommandOutputs::default(),
             update_log: String::new(),
             log_path: None,
+            completion_summary: String::new(),
         }
     }
 
@@ -204,5 +215,27 @@ mod tests {
         let json = r#"{"status":"complete","files_changed":[],"diff":"","command_outputs":{"format":null,"build":null,"lint":null,"test":null},"update_log":"","briefing":null,"log_path":null}"#;
         let result: PhaseResult = serde_json::from_str(json).unwrap();
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn phase_result_completion_summary_round_trips() {
+        let mut result = PhaseResult::complete(artifacts());
+        result.completion_summary = "I implemented the feature.".to_string();
+        let json = serde_json::to_string(&result).unwrap();
+        let back: PhaseResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.completion_summary, "I implemented the feature.",
+            "non-empty completion_summary survives JSON round-trip"
+        );
+    }
+
+    #[test]
+    fn phase_result_empty_completion_summary_omitted_from_json() {
+        let result = PhaseResult::complete(artifacts());
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"completion_summary\""),
+            "empty completion_summary must be omitted from JSON, got: {json}"
+        );
     }
 }

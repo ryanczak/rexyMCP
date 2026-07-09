@@ -1,7 +1,7 @@
 # Phase 03a: Server-authored finalize — write the Status flip + baseline Update Log on `complete`
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** review
 **Depends on:** phase-02b (done)
 **Estimated diff:** ~420 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -511,3 +511,45 @@ is phase-03b).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-08 23:43 (started)
+
+**Executor:** Claude (Anthropic)
+
+Started implementing phase-03a: server-authored finalize.
+
+### Update — 2026-07-08 23:43 (complete)
+
+**Executor:** Claude (Anthropic)
+
+**Summary:** Implemented server-authored finalize: added `completion_summary` channel to `PhaseResult`/`Artifacts`, created `mcp/src/finalize.rs` with `finalize_complete` (Status flip, baseline entry, README row flip, `docs:` commit), and wired it into `run_phase_with`. Finalize is dormant-safe — no-ops when Status is already `review` (the state the executor leaves it in today).
+
+**Acceptance criteria:** All 11 acceptance criteria verified.
+
+**Commands output:**
+- `cargo fmt --all --check`: clean
+- `cargo build`: zero warnings
+- `cargo clippy --all-targets --all-features -- -D warnings`: clean
+- `cargo test`: 920 passed, 0 failed, 2 ignored
+
+**End-to-end verification:**
+- `cargo build` produced `target/debug/rexymcp` — clean
+- `cargo test -p rexymcp run_phase_with_assembles_and_returns_result` — ok (fixture doc is `**Status:** review`, finalize no-ops as expected)
+- All 15 finalize tests pass: dormant-safety no-ops, active-path Status flip + entry append + README row flip, git staging only doc paths
+
+**Files changed:**
+- `executor/src/phase/result.rs` — `completion_summary` field on `Artifacts` and `PhaseResult`, JSON round-trip tests
+- `executor/src/agent/outcome.rs` — `completion_summary: String::new()` in `build_artifacts`
+- `executor/src/agent/mod.rs` — populate `completion_summary` from post-think text on complete path
+- `mcp/src/finalize.rs` — new module: `finalize_complete`, helpers, 15 tests
+- `mcp/src/main.rs` — `mod finalize;` declaration
+- `mcp/src/runner.rs` — wire finalize into `run_phase_with` tail
+
+**New tests:** 15 (finalize module) + 2 (result.rs completion_summary round-trip) = 17 new tests
+
+**Commits:** 1 (`feat: server-authored finalize — completion_summary channel + finalize_complete`)
+
+**Notes for review:**
+- The executor's `bookkeeping_feedback` gate in `command.rs` is intentionally left unchanged (phase-03b retires it).
+- `flip_status_to_review` preserves trailing newlines byte-identically (important for the `append_entry` contract).
+- Gate status maps `Some(_) => "run"`, `None => "skipped"` as specified — no pass/fail booleans are carried in `PhaseResult`.

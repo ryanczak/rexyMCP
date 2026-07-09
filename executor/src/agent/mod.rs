@@ -942,7 +942,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     // All configured gates passed — this is a true completion.
                     log_session_end(&log_handle, &redactor, deps.clock, "complete", turns);
                     emit_phase_run(&deps, input, "complete", gates, &metrics, &scorer, turns);
-                    let artifacts = build_artifacts(
+                    let mut artifacts = build_artifacts(
                         &pre_edit_content,
                         deps.project_root,
                         log_path.clone(),
@@ -950,6 +950,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         turns,
                         command_outputs,
                     );
+                    artifacts.completion_summary = crate::parser::strip_think_blocks(&completion);
                     return Ok(PhaseResult::complete(artifacts));
                 }
                 ParseResult::Found(tc) => tc,
