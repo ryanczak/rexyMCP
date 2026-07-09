@@ -181,7 +181,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 03a | Server-authored finalize: on `complete`, the server writes the Status flip + baseline Update Log + README row + separate `docs:` commit (additive, dormant-safe) ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | done |
 | 03b | Retire the executor bookkeeping gate + amend the executor contract (flips authorship, activating 03a's finalize) ([phase-03b-retire-executor-bookkeeping-gate.md](phase-03b-retire-executor-bookkeeping-gate.md)) | done |
 | 04 | `continue_phase` briefing-seeded resume ([phase-04-continue-phase-resume.md](phase-04-continue-phase-resume.md)) | done |
-| 04b | Finalize tolerates a bounced status line — fixes the 03a server-authored-finalize no-op surfaced in phase-04 review ([phase-04b-finalize-bounced-status-match.md](phase-04b-finalize-bounced-status-match.md)) | in-progress |
+| 04b | Finalize tolerates a bounced status line — fixes the 03a server-authored-finalize no-op surfaced in phase-04 review ([phase-04b-finalize-bounced-status-match.md](phase-04b-finalize-bounced-status-match.md)) | review |
 | 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |
