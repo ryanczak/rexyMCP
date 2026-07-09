@@ -23,18 +23,31 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M28 phase-01 — todo (drafted 2026-07-09).** Actionable
-missing-field recovery hint for `write_file` + `patch` — closes
+**Active phase: none — M28 at a phase-02 decision (human gate).** M28 phase-01
+is **done**; its committed scope was the single phase. **phase-02** (extend the
+`missing_args_hint` helper to the other 8 arg-parsing tools — `patch_lines`,
+`move_file`, `delete_file`, `bash`, `search`, `find_files`, `symbols`,
+`read_file`) is an **optional** follow-on the README marks "if the pattern proves
+out." Human's call: draft phase-02 (`/rexymcp:architect next`), or close M28 as a
+single-phase milestone (`/rexymcp:architect`). Two review findings worth folding
+into a cleanup somewhere: the `run-phase` CLI lacks the M27 server-authored
+finalize, and the M26 `verify_typescript_spawns_resolved_local_binary` test is a
+parallelism flake.
+
+**M28 phase-01 — done** (2026-07-09, **approved_first_try**, executor
+AEON-7/Qwen3.6-27B-AEON LARGE; commit `0320019` fix). Actionable missing-field
+recovery hint for `write_file` + `patch` — closes
 [issue #1](https://github.com/ryanczak/rexyMCP/issues/1) (raw `missing field
-\`path\`` serde error near max context, surfaced by the M27 `/rexymcp:auto`
-live run). Dispatchable Rust bugfix: a shared `missing_args_hint` helper in
-`registry.rs` + rewritten failure arms in the two edit tools, mirroring
-`update_task`'s `invalid_args_hint`. Message-only (no path-guessing, no
-context-pressure guards — both deferred); the other 8 arg-parsing tools are a
-possible phase-02.
-[Phase doc](milestones/M28-edit-tool-arg-recovery/phase-01-edit-tool-missing-field-hint.md)
-· [milestone README](milestones/M28-edit-tool-arg-recovery/README.md). Dispatch
-with `/rexymcp:dispatch phase-01` (from a rexyMCP-rooted session).
+\`path\`` serde error near max context, surfaced by the M27 `/rexymcp:auto` live
+run). Shared `missing_args_hint(tool, required, present)` + `example_shape` in
+`registry.rs`; both edit tools compute `present` from `&args` before the
+`from_value` move (no `content` clone) and return the helper's message
+(missing-field branch + type-mismatch branch, no raw serde text). 7 new
+mutation-resistant tests; production `invalid arguments` arms gone (grep confirms
+only test assertions). Clean 49-turn first-try; all four gates green on
+independent re-run (935 executor + 483 mcp, 2 ignored). Dispatched via
+`rexymcp run-phase` (MCP server was disconnected); bookkeeping architect-authored
+since the CLI path skips the server finalize.
 
 **M27 — Autonomous Escalation Loop — done** (closed 2026-07-09; committed scope
 01–06b all approved, stretch phase-07 advisory routing not taken). The

@@ -1,7 +1,7 @@
 # Phase 1: Actionable missing-field recovery hint for `write_file` + `patch`
 
 **Milestone:** M28 — Edit-Tool Arg Recovery
-**Status:** todo
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -234,3 +234,65 @@ already recorded in § Status.)
 (Filled in by the executor.)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 (complete)
+
+**Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE tier), 49 turns, dispatched via
+`rexymcp run-phase` CLI (the MCP server was disconnected; same executor loop).
+Bookkeeping authored by the architect at review — the M27 server-authored
+finalize does **not** fire on the CLI path (see Notes for review).
+
+**Summary:** All three spec tasks landed byte-close to the pre-injected code. New
+`missing_args_hint(tool, required, present)` + a small `example_shape(required)`
+helper in `registry.rs` (handles both the missing-field/truncation branch and the
+all-present/type-mismatch branch, no raw serde text in either); `write_file` and
+`patch` failure arms rewritten to compute `present` from `&args` before the
+`from_value` move (no clone of `content`) and return the helper's message. Commit
+`0320019` (executor, `fix:`), 3 source files, +182 −6.
+
+**Commands (independent architect re-run):**
+
+```
+cargo fmt --all --check                                     → clean (exit 0)
+cargo clippy --all-targets --all-features -- -D warnings    → clean (exit 0)
+cargo test                                                  → 935 executor + 483 mcp passed, 2 ignored
+```
+
+(First full-suite re-run showed one failure — `governor::verifier::tests::
+verify_typescript_spawns_resolved_local_binary`, an **M26 phase-08** tsc-resolution
+E2E test that M28 does not touch; it passes in isolation and on retry — a
+pre-existing parallelism flake, not an M28 regression. See Notes for review.)
+
+**End-to-end verification:** per the phase doc, N/A as a standalone CLI E2E — the
+tools have no command surface. The 7 new tests call the real `WriteFile::execute`
+/ `Patch::execute` / `missing_args_hint` code paths against `TempDir` scopes:
+`missing_path_returns_recovery_hint` (both tools), `non_object_args_do_not_panic`
+(both tools, over `"oops"`/`5`/`null`), and the three `missing_args_hint_*` helper
+tests. `grep -n "invalid arguments" write_file.rs patch.rs` returns **only** the
+two negative test assertions — the production arms are gone.
+
+**Files changed:** `executor/src/tools/registry.rs` (+87), `write_file.rs` (+47
+−3), `patch.rs` (+48 −3).
+
+**Notes for review:** (1) **`run-phase` CLI vs `execute_phase` finalize parity** —
+the CLI left the phase `todo` with no Update Log and no `docs:` bookkeeping commit;
+the M27 server-authored finalize (03a) evidently only fires on the MCP
+`execute_phase` path, so a CLI dispatch needs manual bookkeeping. (2) **Flaky M26
+test** `verify_typescript_spawns_resolved_local_binary` is non-hermetic under
+parallel `cargo test` (passes solo) — a pre-existing STANDARDS §3.3 determinism
+gap, unrelated to this phase.
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE tier)
+- **Scope deviations:** none — all three tasks landed as specified; the other 8
+  arg-parsing tools were correctly left for a possible phase-02.
+- **Calibration:** none folded. Two data points for future decision: (1) the
+  `run-phase` CLI does not run the M27 server-authored finalize (phase left `todo`,
+  no bookkeeping commit) — 1st occurrence; if CLI dispatch becomes common, either
+  wire finalize into `run-phase` or document the manual-bookkeeping requirement.
+  (2) `verify_typescript_spawns_resolved_local_binary` (M26 phase-08) is a
+  parallelism flake — worth a hermeticity fix in a future cleanup, tracked
+  separately from this phase.

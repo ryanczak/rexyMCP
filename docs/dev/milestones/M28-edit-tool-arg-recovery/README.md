@@ -55,7 +55,7 @@ update_task.rs:35`). The fix is deterministic and low-risk — it improves the e
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Actionable missing-field recovery hint for `write_file` + `patch` ([phase-01-edit-tool-missing-field-hint.md](phase-01-edit-tool-missing-field-hint.md)) | todo |
+| 01 | Actionable missing-field recovery hint for `write_file` + `patch` ([phase-01-edit-tool-missing-field-hint.md](phase-01-edit-tool-missing-field-hint.md)) | done |
 
 ## Notes
 
