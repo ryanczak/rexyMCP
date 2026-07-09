@@ -182,7 +182,7 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 03b | Retire the executor bookkeeping gate + amend the executor contract (flips authorship, activating 03a's finalize) ([phase-03b-retire-executor-bookkeeping-gate.md](phase-03b-retire-executor-bookkeeping-gate.md)) | done |
 | 04 | `continue_phase` briefing-seeded resume ([phase-04-continue-phase-resume.md](phase-04-continue-phase-resume.md)) | done |
 | 04b | Finalize tolerates a bounced status line — fixes the 03a server-authored-finalize no-op surfaced in phase-04 review ([phase-04b-finalize-bounced-status-match.md](phase-04b-finalize-bounced-status-match.md)) | done |
-| 05a | Architect token substrate: `ArchitectTokens`/`ArchitectRates` cache-aware types, retire `TierTelemetry.architect_*`, dormant cache-aware dashboard cost path ([phase-05a-architect-token-substrate.md](phase-05a-architect-token-substrate.md)) | in-progress | review |
+| 05a | Architect token substrate: `ArchitectTokens`/`ArchitectRates` cache-aware types, retire `TierTelemetry.architect_*`, dormant cache-aware dashboard cost path ([phase-05a-architect-token-substrate.md](phase-05a-architect-token-substrate.md)) | done | review |
 | 05b | Architect usage harvester: Claude Code transcript reader + `message.id` dedup + ISO→epoch parse + per-phase time-window join + `rexymcp harvest` CLI (fills 05a's tokens) | planned |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |

@@ -1,7 +1,7 @@
 # Phase 05a: Architect token substrate — `ArchitectTokens` type + cache-aware cost + dormant dashboard wiring
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** review
+**Status:** done
 **Depends on:** phase-02 (ArchitectActivity journal record), phase-02b (dashboard reads activities)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -513,6 +513,32 @@ Implemented all 9 spec tasks: added `ArchitectTokens`/`ArchitectRates`/cache mul
 This phase rebuilt the architect-side token model from two flat `u64` fields into a coherent 4-class `ArchitectTokens` type with `ArchitectRates`, cache rate multipliers (1.25× creation, 0.1× read), and a `cost()` method. `TierTelemetry.architect_*_tokens` fields were retired (dead — architect tokens now live exclusively on `ArchitectActivity.tokens`). The dashboard cost path in `panels.rs` and `mod.rs` was updated to use `ArchitectTokens.cost()` and sum from folded `ArchitectActivity` records via the new `fold_activities()` function. `ArchitectConfig::effective_architect_rates()` derives cache rates from the known model's input rate. The `rexymcp init` template now documents the `[architect]` block with all four rate keys. The dashboard cost path is **dormant** this phase (no harvester writes tokens yet), so it is covered by the seeded-`ArchitectActivity` unit test in task 7; the full end-to-end proof (harvest a real transcript → dashboard shows non-zero architect cost) lands in phase-05b.
 
 **Gates:** format=run, build=run, lint=run, test=run
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8
+- **Scope deviations:** none
+- **Calibration:** none
+
+Independent re-run of all four gates green (fmt/build/clippy clean; 926 executor
++ 472 mcp tests pass, 2 ignored). Diff matches the phase doc's pre-injected code
+verbatim across all 9 tasks (`ArchitectTokens`/`ArchitectRates`/cost/
+`fold_activities` in `telemetry.rs`; `effective_architect_rates` in `config.rs`;
+the cache-aware cost closures + `ScopeCosts`/`BudgetRates` reshape in
+`panels.rs`; the folded-activity sum + negative test in `mod.rs`;
+`main.rs`/`journal.rs` wiring; the `[architect]` init block). No production
+`unwrap`/`expect`/`panic!`/`TODO`/`dbg!`/`#[allow]`/`#[ignore]`/`unsafe` added
+(all `.unwrap()` hits are test code). `architecture.md`/`Cargo.toml` untouched,
+matching the phase doc's "No" authorizations. `fold_activities_enriched_copy_wins`
+spot-checked as a real mutation-resistant test (reversed-order assertion proves
+order-based, not max-based, selection). End-to-end verified independently: `cargo
+run -p rexymcp -- init --dir <tmp> --force` produces a `[architect]` block with
+all four rate keys (the phase doc's own example command uses a nonexistent
+`--config` flag on `init` — a phase-doc typo, not an executor defect; `init` only
+accepts `--dir`/`--force`, confirmed via `--help`). Dormant-scope claim holds: no
+architect activities exist yet, so the dashboard Architect row stays hidden.
 
 **Command output tails:**
 
