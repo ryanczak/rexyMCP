@@ -4901,3 +4901,101 @@ async fn wall_clock_disabled_when_zero_completes() {
     assert_eq!(result.status, PhaseStatus::Complete);
     assert!(result.briefing.is_none());
 }
+
+#[tokio::test]
+async fn restored_states_override_seeded_pending() {
+    use crate::tools::update_task as make_update_task;
+
+    let dir = TempDir::new().unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+
+    let phase_doc = "\
+## Spec
+
+1. **First task** — do this first
+2. **Second task** — do this second
+";
+    let seeded_tasks = tasks::seed_from_spec(phase_doc);
+
+    // Registry with update_task so the tool call actually resolves.
+    let mut registry = registry_over(scope);
+    registry.register(make_update_task(seeded_tasks.clone()));
+
+    let input = PhaseInput {
+        phase_doc: phase_doc.to_string(),
+        resumed_task_states: Some(
+            [(
+                "1".to_string(),
+                crate::store::sessions::event::TaskState::Done,
+            )]
+            .into_iter()
+            .collect(),
+        ),
+        ..input()
+    };
+    // Turn 1: mark task 2 as done (task 1 is already done from restore)
+    // Turn 2: complete
+    let client = MockAiClientScript::new(vec![
+        vec![native("update_task", json!({"id": "2", "state": "done"}))],
+        vec![token("all done")],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&input, deps(&client, &registry, &budget, 8, dir.path()))
+        .await
+        .unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+
+    let recs = records(dir.path());
+    let task_updates: Vec<_> = recs
+        .iter()
+        .filter(|r| matches!(&r.event, SessionEvent::TaskUpdate { .. }))
+        .collect();
+
+    assert_eq!(
+        task_updates.len(),
+        3,
+        "expected 2 seed + 1 tool-call task_update records"
+    );
+
+    // Build last-write-wins map from all task updates.
+    let mut states: HashMap<String, crate::store::sessions::event::TaskState> = HashMap::new();
+    for rec in &task_updates {
+        if let SessionEvent::TaskUpdate { id, state, .. } = &rec.event {
+            states.insert(id.clone(), *state);
+        }
+    }
+    // Both tasks should be Done at the end.
+    assert_eq!(
+        *states.get("1").unwrap(),
+        crate::store::sessions::event::TaskState::Done,
+        "task 1 should be restored as Done"
+    );
+    assert_eq!(
+        *states.get("2").unwrap(),
+        crate::store::sessions::event::TaskState::Done,
+        "task 2 should be marked Done by update_task tool call"
+    );
+
+    // Verify the seed events (first two) reflect the restored state:
+    // task 1 seeded as Done, task 2 seeded as Pending.
+    let seed_updates: Vec<_> = task_updates.iter().take(2).collect();
+    for rec in &seed_updates {
+        if let SessionEvent::TaskUpdate { id, state, .. } = &rec.event {
+            if id == "1" {
+                assert_eq!(
+                    *state,
+                    crate::store::sessions::event::TaskState::Done,
+                    "seed: task 1 should be restored as Done"
+                );
+            } else if id == "2" {
+                assert_eq!(
+                    *state,
+                    crate::store::sessions::event::TaskState::Pending,
+                    "seed: task 2 should remain Pending"
+                );
+            }
+        }
+    }
+}

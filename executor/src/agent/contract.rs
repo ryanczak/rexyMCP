@@ -158,4 +158,14 @@ mod tests {
             "lint_fix value must not appear in the assembled contract"
         );
     }
+
+    #[test]
+    fn contract_contains_resuming_a_phase() {
+        let commands = CommandConfig::default();
+        let output = assemble_executor_contract(&commands);
+        assert!(
+            output.contains("Resuming a phase"),
+            "contract must contain the 'Resuming a phase' section"
+        );
+    }
 }

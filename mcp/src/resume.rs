@@ -203,12 +203,39 @@ mod tests {
             "some diff content",
             &states,
         );
+        // Test preamble in isolation — it has no ## Spec section, so trivially seeds nothing.
         let tasks = rexymcp_executor::agent::tasks::seed_from_spec(&preamble);
         assert!(
             tasks.is_empty(),
-            "preamble must seed zero tasks: {:?}",
+            "preamble in isolation must seed zero tasks: {:?}",
             tasks
         );
+
+        // Test preamble appended to a real phase doc with a ## Spec section —
+        // the real risk: the preamble must not extend the Spec section or inject
+        // phantom tasks.
+        let full_doc = format!(
+            "\
+## Spec
+
+1. **Real task one** — do this
+
+## Acceptance criteria
+
+- something
+
+{}",
+            preamble
+        );
+        let tasks = rexymcp_executor::agent::tasks::seed_from_spec(&full_doc);
+        assert_eq!(
+            tasks.len(),
+            1,
+            "appended preamble must not inject phantom tasks: {:?}",
+            tasks
+        );
+        assert_eq!(tasks[0].id, "1");
+        assert_eq!(tasks[0].title, "Real task one");
     }
 
     #[test]

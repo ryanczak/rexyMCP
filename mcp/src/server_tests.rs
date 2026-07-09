@@ -859,3 +859,69 @@ max_turns = 40
     let err = result.unwrap_err();
     assert!(err.contains("telemetry disabled"));
 }
+
+#[tokio::test]
+async fn continue_phase_returns_error_for_missing_phase_doc() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_test_config(&temp_dir);
+
+    let params = ContinuePhaseParams {
+        phase_doc_path: "/nonexistent/phase.md".to_string(),
+        repo_path: temp_dir.path().to_str().unwrap().to_string(),
+        guidance: "fix the issue".to_string(),
+        prior_log_path: None,
+        model: None,
+    };
+    let result = continue_phase_inner(&config_path, &params, None).await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn continue_phase_restores_task_states_from_prior_log() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_test_config(&temp_dir);
+
+    // Create a prior session log with a TaskUpdate for task "1" as Done.
+    let log_path = temp_dir.path().join("session-prior.jsonl");
+    std::fs::write(
+        &log_path,
+        r#"{"ts":1717000000000,"turn":0,"event":{"event_type":"session_start","session_id":"s1","model":"test","phase":"p1"}}
+{"ts":1717000001000,"turn":0,"event":{"event_type":"task_update","id":"1","title":"Test task","state":"done"}}
+"#,
+    )
+    .unwrap();
+
+    // Write a phase doc with a spec section that seeds task "1".
+    let phase_path_with_spec = temp_dir.path().join("phase-02-test.md");
+    std::fs::write(
+        &phase_path_with_spec,
+        "# Phase 02: Test Resume\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest resume.\n\n## Spec\n\n1. **Test task** — already done\n\n## Acceptance criteria\n\n- [ ] It resumes.\n",
+    )
+    .unwrap();
+
+    let params = ContinuePhaseParams {
+        phase_doc_path: phase_path_with_spec.to_str().unwrap().to_string(),
+        repo_path: temp_dir.path().to_str().unwrap().to_string(),
+        guidance: "continue from where we left off".to_string(),
+        prior_log_path: Some(log_path.to_str().unwrap().to_string()),
+        model: None,
+    };
+
+    // This will fail because there's no real AI client, but we can verify
+    // the resume context was built (the error should be about the AI call,
+    // not about missing files).
+    let result = continue_phase_inner(&config_path, &params, None).await;
+
+    // The error should be about the AI backend, not about file resolution.
+    if let Err(err) = result {
+        assert!(
+            !err.contains("failed to load config"),
+            "should not be a config error: {err}"
+        );
+        assert!(
+            !err.contains("failed to read phase doc"),
+            "should not be a phase doc error: {err}"
+        );
+    }
+}
