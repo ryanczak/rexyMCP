@@ -182,7 +182,8 @@ review_model   = "claude-sonnet-5"   # /auto delegates review to this
 | 03b | Retire the executor bookkeeping gate + amend the executor contract (flips authorship, activating 03a's finalize) ([phase-03b-retire-executor-bookkeeping-gate.md](phase-03b-retire-executor-bookkeeping-gate.md)) | done |
 | 04 | `continue_phase` briefing-seeded resume ([phase-04-continue-phase-resume.md](phase-04-continue-phase-resume.md)) | done |
 | 04b | Finalize tolerates a bounced status line — fixes the 03a server-authored-finalize no-op surfaced in phase-04 review ([phase-04b-finalize-bounced-status-match.md](phase-04b-finalize-bounced-status-match.md)) | done |
-| 05 | Architect usage harvester (Claude Code transcript join) + dashboard architect-cost wiring | planned |
+| 05a | Architect token substrate: `ArchitectTokens`/`ArchitectRates` cache-aware types, retire `TierTelemetry.architect_*`, dormant cache-aware dashboard cost path ([phase-05a-architect-token-substrate.md](phase-05a-architect-token-substrate.md)) | todo |
+| 05b | Architect usage harvester: Claude Code transcript reader + `message.id` dedup + ISO→epoch parse + per-phase time-window join + `rexymcp harvest` CLI (fills 05a's tokens) | planned |
 | 06 | `/rexymcp:auto` loop skill + loop report + WORKFLOW template mirror | planned |
 | 07 | *(stretch)* Advisory model routing in dispatch (review § 3.3) | planned |
 
@@ -212,6 +213,30 @@ skeleton (gates, files changed, commit sha) and splices in a Summary +
 Notes-for-review the executor returns via the `PhaseResult.completion_summary`
 channel. 03a lands first because it is inert (no-ops on an already-`review`
 doc) until 03b removes the executor gate.
+
+Phase 05 was **split at draft time** (2026-07-09) into 05a (substrate) and 05b
+(harvester), following the 03a/03b precedent. Three design forks were resolved
+with the user before drafting: (1) **per-phase attribution via journal
+time-windows** — harvested transcript usage is attributed to the
+`ArchitectActivity` whose journal-timestamp window contains each message, rolling
+up phase → milestone → project; (2) **no date crate** — the one time operation
+(fixed-format ISO-8601-Zulu → epoch-ms, to window against the journal's epoch-ms
+`ts`) is an exact hand-rolled `days_from_civil` conversion, bit-identical to a
+crate for this UTC format and consistent with the established "raw epoch-ms, no
+date crate" convention; (3) **separate cache rates** — architect cost bills
+uncached-input / cache-creation / cache-read / output at their real per-class
+rates (cache-read 0.1×, cache-creation 1.25× the input rate), not a flat
+input/output pair, because cache tokens dominate real usage. Consequent to fork
+(3), the user chose a **targeted rewrite of the architect-token model** (05a):
+one coherent `ArchitectTokens` type (+ `ArchitectRates` + a `cost` method)
+replaces the scattered flat fields, the dead `TierTelemetry.architect_*_tokens`
+are retired, and the executor's `TokenBreakdown` is left untouched (real history,
+`$0` cost, no accounting benefit). The write path is **append + fold at read**
+(last-write-wins by `(phase_id, activity, ts)`, mirroring `fold_reviews` + the
+resume last-write-wins idiom): 05b's harvester appends enriched activity copies
+and a new `fold_activities` overlays the latest at read time. 05a is additive and
+**dormant** — every architect token count is 0 until 05b's harvester runs, so the
+dashboard is unchanged after 05a.
 
 Phases are drafted **on demand** via `/rexymcp:architect next`; rows above are
 the plan, not final specs. Ordering: substrate first (01–02), then the two

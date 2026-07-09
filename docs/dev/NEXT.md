@@ -4,20 +4,57 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M27 phase-04b — drafted (todo).** Finalize tolerates a bounced
-status line — a `size=s`, `kind=bugfix` follow-up surfaced by the phase-04 review.
-The 03a server-authored finalize (`mcp/src/finalize.rs`) matches the phase-doc
-status line + README row **exactly** against `in-progress`, so the review skill's
-bounce convention (`**Status:** in-progress (bounced — see bug…)`) makes
-`finalize_complete` silently no-op on every bounced-then-completed phase. Fix all
-three match sites to a **prefix-tolerant** rule (`is_in_progress_status` shared
-predicate — the space before the note is the delimiter, so `in-progressish`
-stays out), and make the review-flip **drop** the stale bounce note (result is
-exactly `**Status:** review`). Pure `finalize.rs` change + tests, ~80 lines, no
-authorizations. **Must land before phase-06** — the autonomous loop bounces +
-re-dispatches as normal operation. Dispatch with `/rexymcp:dispatch phase-04b`.
-Option A from the phase-04 verdict (fix the server side; keep the human-readable
-bounce note on the status line). See [[finalize-noops-on-bounced-phase]].
+**Active phase: M27 phase-05a — drafted (todo).** Architect token substrate — a
+`size=l`, `kind=refactor` phase, first of a 05a/05b split. Introduces one
+coherent `ArchitectTokens { input, cache_creation, cache_read, output }` type
+(+ `ArchitectRates` + a `cost(&rates)` method) in `executor/src/store/telemetry.rs`,
+migrates `ArchitectActivity` from its two flat `architect_*_tokens` fields to a
+nested `tokens: ArchitectTokens`, **retires** the dead
+`TierTelemetry.architect_*_tokens` (the only writer, `journal.rs`, hardcodes 0 —
+no real data to migrate), adds cache rates + `effective_architect_rates()` to
+`[architect]` config (cache-read 0.1× / cache-creation 1.25× the input rate when
+the model is known), adds a `fold_activities` last-write-wins overlay
+(by `(phase_id, activity, ts)`, mirroring `fold_reviews`), and rewires the
+dashboard cost path (`ScopeCosts.architect: ArchitectTokens`,
+`BudgetRates.architect: ArchitectRates`, `load_data` sums architect tokens from
+**folded activities** not `tier_telemetry`). All additive and **dormant** — every
+architect token count is 0 until 05b's harvester runs, so the dashboard renders
+unchanged. Pre-injected verbatim: the two new types + `cost`, `fold_activities`,
+`effective_architect_rates`, the rewritten `architect_val`/`net_val` closures, and
+the `[architect]` init block; edit sites cited by file:line. Executor
+`TokenBreakdown` explicitly untouched. Dispatch with `/rexymcp:dispatch phase-05a`.
+
+**Three design forks resolved with the user at draft time (2026-07-09):**
+(1) **per-phase attribution via journal time-windows** (roll up phase → milestone
+→ project); (2) **no date crate** — the fixed-format ISO-Zulu → epoch-ms
+conversion is an exact hand-rolled `days_from_civil` (bit-identical to a crate for
+this UTC format; a crate buys a dependency, not accuracy — the real accuracy risks
+are `message.id` dedup and the cache-token policy, both non-time); (3) **separate
+cache rates** (bill uncached-input / cache-creation / cache-read / output at real
+per-class rates, since cache tokens dominate real usage). Consequent to (3), a
+**targeted architect-token-model rewrite** (05a scope above) over the
+scattered-additive-fields or full-telemetry-rewrite alternatives. Write path =
+**append + fold at read** (last-write-wins). Two transcript gotchas found while
+sampling a real `~/.claude` session and pre-injected into 05b's plan: streaming
+emits multiple assistant JSONL lines per response sharing one `message.id` with
+**identical repeated `usage`** (dedup by `message.id` or 3–4×-overcount), and
+cache tokens dominate (sampled turn: input=131, cache_read=89819,
+cache_creation=10869 — the cache policy *is* the cost figure).
+
+**M27 phase-04b — done** (2026-07-09, **approved_first_try**; commits `65387a4`
+draft / `2d535be` fix / `a12119e` start / `aefb9cb` bookkeeping / `624a396`
+approve). Finalize tolerates a bounced status line: extracted a prefix-tolerant
+`is_in_progress_status()` shared predicate (matches `**Status:** in-progress`
+exactly or with a trailing space-delimited note; the load-bearing space keeps
+`in-progressish` out), and `flip_status_to_review` now emits a clean
+`**Status:** review` (dropping the stale `(bounced — …)` note via a whitespace-
+preserving rebuild, not `str::replace`). 917 tests pass (21 finalize-specific);
+the `finalize_flips_bounced_status_and_appends_entry` integration test proves the
+`TempDir` end-to-end path. Fixes the 03a no-op surfaced in phase-04 review;
+unblocks phase-06's bounce-then-re-dispatch loop. See
+[[finalize-noops-on-bounced-phase]]. (NEXT.md pointer was left stale by the
+approve commit — the recurring pattern — and re-advanced to 05a here at the next
+`/rexymcp:architect next`.)
 
 **M27 phase-04 — done** (2026-07-08, **approved_after_1**, executor
 Qwen/Qwen3.6-27B-FP8; commits `3deb187` feat / `3e075ea` test / `76b38bd`
