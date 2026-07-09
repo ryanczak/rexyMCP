@@ -1,7 +1,7 @@
 # Phase 05a: Architect token substrate — `ArchitectTokens` type + cache-aware cost + dormant dashboard wiring
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-02 (ArchitectActivity journal record), phase-02b (dashboard reads activities)
 **Estimated diff:** ~430 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -504,3 +504,107 @@ work using only what the workspace already links.)
 **Executor:** Claude (executor LLM)
 
 Implemented all 9 spec tasks: added `ArchitectTokens`/`ArchitectRates`/cache multipliers to `telemetry.rs`, migrated `ArchitectActivity` to nested `tokens` field, retired `TierTelemetry.architect_*_tokens`, added `fold_activities`, wired `ArchitectConfig::effective_architect_rates()`, updated dashboard cost path in `panels.rs` and `mod.rs` to sum from folded activities, wired `main.rs` to new rates, and documented `[architect]` block in init template. All tests pass including new ones for cost, fold, roundtrip, legacy compat, and effective rates.
+### Update — ts=1783608155764 (complete, server-authored)
+
+**Summary:** All verification gates pass. The working tree is clean with one conventional commit covering all 9 files.
+
+**Summary + Notes for review:**
+
+This phase rebuilt the architect-side token model from two flat `u64` fields into a coherent 4-class `ArchitectTokens` type with `ArchitectRates`, cache rate multipliers (1.25× creation, 0.1× read), and a `cost()` method. `TierTelemetry.architect_*_tokens` fields were retired (dead — architect tokens now live exclusively on `ArchitectActivity.tokens`). The dashboard cost path in `panels.rs` and `mod.rs` was updated to use `ArchitectTokens.cost()` and sum from folded `ArchitectActivity` records via the new `fold_activities()` function. `ArchitectConfig::effective_architect_rates()` derives cache rates from the known model's input rate. The `rexymcp init` template now documents the `[architect]` block with all four rate keys. The dashboard cost path is **dormant** this phase (no harvester writes tokens yet), so it is covered by the seeded-`ArchitectActivity` unit test in task 7; the full end-to-end proof (harvest a real transcript → dashboard shows non-zero architect cost) lands in phase-05b.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+
+
+TEST
+st tools::symbols::tests::single_file_unsupported_extension_advisory_error ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::update_task::tests::flips_active_task_to_done ... ok
+test tools::update_task::tests::flips_pending_task_to_active ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 926 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-0ef0717e07dc6f8c)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `docs/dev/milestones/M27-autonomous-escalation-loop/README.md` — +1 -1
+- `docs/dev/milestones/M27-autonomous-escalation-loop/phase-05a-architect-token-substrate.md` — +7 -1
+- `executor/src/config.rs` — +70 -0
+- `executor/src/store/telemetry.rs` — +256 -27
+- `mcp/src/dashboard/mod.rs` — +105 -51
+- `mcp/src/dashboard/panels.rs` — +62 -50
+- `mcp/src/init.rs` — +9 -0
+- `mcp/src/journal.rs` — +1 -2
+- `mcp/src/main.rs` — +1 -3
+
+**Commit:** 2334084c38391775bcc5e5c64ea6890f7c9ec0b6
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
