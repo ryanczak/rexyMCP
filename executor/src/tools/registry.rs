@@ -23,6 +23,52 @@ pub trait Tool: Send + Sync {
     async fn execute(&self, args: Value) -> Result<ToolResult>;
 }
 
+/// Return an actionable recovery message for a tool whose arguments failed to
+/// deserialize. `required` is the full list of required field names; `present`
+/// is the subset that actually appeared in the JSON.
+///
+/// When fields are missing (truncation), the message names the missing fields,
+/// echoes what was supplied, and gives an example shape.
+/// When all fields are present but deserialization still failed (type mismatch),
+/// the message reports the fields are present but malformed.
+pub(crate) fn missing_args_hint(tool: &str, required: &[&str], present: &[&str]) -> String {
+    let missing: Vec<&str> = required
+        .iter()
+        .filter(|r| !present.contains(r))
+        .copied()
+        .collect();
+
+    if missing.is_empty() {
+        let example = example_shape(required);
+        format!(
+            "{tool}: could not parse arguments — all required fields were present but \
+             one has an invalid type or value. Re-check against this shape: {example}."
+        )
+    } else {
+        let missing_list = missing.join(", ");
+        let supplied = if present.is_empty() {
+            "(none)".to_string()
+        } else {
+            present.join(", ")
+        };
+        let example = example_shape(required);
+        format!(
+            "{tool}: could not parse arguments — missing required field(s): {missing_list}. \
+             You supplied: {supplied}. Re-send with all required fields, e.g. {example}. \
+             If the content is large and calls keep truncating, make a smaller patch edit instead."
+        )
+    }
+}
+
+/// Build an example JSON shape from the required field names.
+fn example_shape(required: &[&str]) -> String {
+    let fields: Vec<String> = required
+        .iter()
+        .map(|f| format!("\"{f}\": \"<string>\""))
+        .collect();
+    format!("{{{}}}", fields.join(", "))
+}
+
 #[derive(Default, Clone)]
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
@@ -262,5 +308,46 @@ mod tests {
         let names_a: Vec<&str> = tools_a.iter().map(|t| t.name()).collect();
         let names_b: Vec<&str> = tools_b.iter().map(|t| t.name()).collect();
         assert_eq!(names_a, names_b);
+    }
+
+    #[test]
+    fn missing_args_hint_names_missing_and_present() {
+        let msg = super::missing_args_hint("write_file", &["path", "content"], &["content"]);
+
+        // "path" should appear in the missing clause
+        assert!(msg.contains("missing required field(s): path"));
+        // "content" should appear in the supplied clause
+        assert!(msg.contains("You supplied: content"));
+        // "path" should NOT appear in the supplied clause
+        assert!(!msg.contains("You supplied: path"));
+        // Example shape should be present
+        assert!(msg.contains("\"path\": \"<string>\""));
+        assert!(msg.contains("\"content\": \"<string>\""));
+    }
+
+    #[test]
+    fn missing_args_hint_all_present_reports_type_mismatch() {
+        let msg =
+            super::missing_args_hint("write_file", &["path", "content"], &["path", "content"]);
+
+        // Should NOT claim fields are missing
+        assert!(!msg.contains("missing required field"));
+        // Should indicate type/value mismatch
+        assert!(msg.contains("invalid type or value"));
+        // Should NOT contain raw serde text like "missing field"
+        assert!(!msg.contains("missing field"));
+        // Should contain the example shape
+        assert!(msg.contains("\"path\": \"<string>\""));
+    }
+
+    #[test]
+    fn missing_args_hint_empty_present_says_none() {
+        let msg = super::missing_args_hint("write_file", &["path", "content"], &[]);
+
+        // Should list all fields as missing
+        assert!(msg.contains("path"));
+        assert!(msg.contains("content"));
+        // Should say "(none)" for supplied
+        assert!(msg.contains("(none)"));
     }
 }

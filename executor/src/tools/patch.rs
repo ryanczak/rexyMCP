@@ -60,12 +60,25 @@ impl Tool for Patch {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["path", "old_str", "new_str"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<PatchArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "patch", &required, &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -517,7 +530,39 @@ mod tests {
         let result = tool.execute(json!({ "path": "x" })).await.unwrap();
 
         assert!(result.error.is_some());
-        assert!(result.error.as_ref().unwrap().contains("invalid arguments"));
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("missing required field"));
+        assert!(err.contains("old_str"));
+    }
+
+    #[tokio::test]
+    async fn missing_path_returns_recovery_hint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = patch(make_scope(&dir));
+        let result = tool
+            .execute(json!({ "old_str": "x", "new_str": "y" }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_some());
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("missing required field(s): path"));
+        assert!(err.contains("You supplied: old_str"));
+        assert!(!err.contains("invalid arguments: missing field"));
+    }
+
+    #[tokio::test]
+    async fn non_object_args_do_not_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = patch(make_scope(&dir));
+
+        for args in [json!("oops"), json!(5), json!(null)] {
+            let result = tool.execute(args).await.unwrap();
+            assert!(result.error.is_some());
+            let err = result.error.as_ref().unwrap();
+            assert!(err.contains("missing required field"));
+            assert!(err.contains("(none)"));
+        }
     }
 
     #[tokio::test]
