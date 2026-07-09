@@ -1,7 +1,7 @@
 # Phase 04b: Finalize tolerates a bounced status line
 
 **Milestone:** M27 — Autonomous Escalation Loop
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-03a (server-authored finalize), phase-04 (surfaced this defect)
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -151,3 +151,8 @@ skill edit.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 03:23 (started)
+
+**Executor:** Claude (Sonnet 4.5)
+**Action:** Started phase 04b implementation.
