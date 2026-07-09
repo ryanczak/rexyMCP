@@ -48,14 +48,23 @@ pub async fn finalize_complete(inp: &FinalizeInput<'_>) -> std::io::Result<bool>
     Ok(true)
 }
 
-/// True iff some line, trimmed, equals `**Status:** in-progress`.
+/// True iff `trimmed` is an in-progress status line, with or without a trailing
+/// note (the review skill appends `(bounced — …)` on a bounce). The space before
+/// the note is the delimiter, so `**Status:** in-progressish` does NOT match.
+fn is_in_progress_status(trimmed: &str) -> bool {
+    trimmed == "**Status:** in-progress" || trimmed.starts_with("**Status:** in-progress ")
+}
+
+/// True iff some line, trimmed, is an in-progress status line (exact or with a
+/// trailing bounce note).
 fn status_is_in_progress(doc: &str) -> bool {
-    doc.lines()
-        .any(|line| line.trim() == "**Status:** in-progress")
+    doc.lines().any(|line| is_in_progress_status(line.trim()))
 }
 
 /// Replace the single frontmatter line `**Status:** in-progress` with
 /// `**Status:** review`, leaving everything else byte-identical.
+/// If the status line carries a bounce note `(bounced — …)`, the note is
+/// dropped — the canonical review line has no note.
 /// Replaces only the first such line.
 fn flip_status_to_review(doc: &str) -> String {
     let mut replaced = false;
@@ -66,9 +75,11 @@ fn flip_status_to_review(doc: &str) -> String {
             result.push('\n');
         }
         first = false;
-        if !replaced && line.trim() == "**Status:** in-progress" {
+        if !replaced && is_in_progress_status(line.trim()) {
             replaced = true;
-            result.push_str(&line.replace("**Status:** in-progress", "**Status:** review"));
+            let leading = line.len() - line.trim_start().len();
+            result.push_str(&" ".repeat(leading));
+            result.push_str("**Status:** review");
         } else {
             result.push_str(line);
         }
@@ -158,20 +169,34 @@ fn append_entry(doc: &str, entry: &str) -> String {
     format!("{}\n{}\n", doc.trim_end(), entry)
 }
 
-/// Find the one table row that contains `phase_doc_filename` and ends (after
-/// trimming) with `| in-progress |`; replace that row's trailing `| in-progress |`
-/// with `| review |`. Return `None` if no such row.
+/// Find the one table row that contains `phase_doc_filename` whose last table
+/// cell (text between the final two `|`, trimmed) starts with `in-progress`.
+/// Replace that last cell with ` review ` (dropping any bounce note).
+/// Return `None` if no such row.
 pub fn flip_readme_row(readme_doc: &str, phase_doc_filename: &str) -> Option<String> {
     let mut found = false;
     let lines: Vec<String> = readme_doc
         .lines()
         .map(|line| {
-            if !found
-                && line.contains(phase_doc_filename)
-                && line.trim().ends_with("| in-progress |")
-            {
-                found = true;
-                line.trim_end().replace("| in-progress |", "| review |")
+            if !found && line.contains(phase_doc_filename) {
+                // Find the last two `|` delimiters to isolate the last cell
+                if let Some(last_pipe) = line.rfind('|') {
+                    let before_last = &line[..last_pipe];
+                    if let Some(second_last_pipe) = before_last.rfind('|') {
+                        let last_cell = before_last[second_last_pipe + 1..].trim();
+                        if last_cell.starts_with("in-progress") {
+                            found = true;
+                            // Replace the last cell content with " review "
+                            format!("{}| review |{}", &line[..last_pipe], &line[last_pipe + 1..])
+                        } else {
+                            line.to_string()
+                        }
+                    } else {
+                        line.to_string()
+                    }
+                } else {
+                    line.to_string()
+                }
             } else {
                 line.to_string()
             }
@@ -273,6 +298,18 @@ mod tests {
     }
 
     #[test]
+    fn status_is_in_progress_matches_bounced_line() {
+        assert!(status_is_in_progress(
+            "**Status:** in-progress (bounced — see bugs/bug-04-1.md)"
+        ));
+    }
+
+    #[test]
+    fn status_is_in_progress_rejects_in_progressish() {
+        assert!(!status_is_in_progress("**Status:** in-progressish"));
+    }
+
+    #[test]
     fn status_is_in_progress_ignores_prose_containing_in_progress() {
         let doc = "This work is in-progress as of today.\n\n**Status:** review\n";
         assert!(!status_is_in_progress(doc));
@@ -293,6 +330,13 @@ mod tests {
     fn flip_status_to_review_leaves_other_lines_byte_identical() {
         let doc = "# Phase 01\n\n**Status:** in-progress\n\n## Goal\n\nDo it.\n";
         let expected = "# Phase 01\n\n**Status:** review\n\n## Goal\n\nDo it.\n";
+        assert_eq!(flip_status_to_review(doc), expected);
+    }
+
+    #[test]
+    fn flip_status_to_review_drops_bounce_note() {
+        let doc = "# Phase 04\n\n**Status:** in-progress (bounced — see bugs/bug-04-1.md)\n\n## Goal\n\nDo it.\n";
+        let expected = "# Phase 04\n\n**Status:** review\n\n## Goal\n\nDo it.\n";
         assert_eq!(flip_status_to_review(doc), expected);
     }
 
@@ -327,6 +371,25 @@ mod tests {
         let readme = "| 01 | Phase ([phase-01.md](phase-01.md)) | in-progress |\n";
         let result = flip_readme_row(readme, "phase-99.md");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn flip_readme_row_flips_bounced_row() {
+        let readme = "| 04 | Fix ([phase-04.md](phase-04.md)) | in-progress (bounced, bug-04-1) |\n| 05 | Next ([phase-05.md](phase-05.md)) | review |\n";
+        let result = flip_readme_row(readme, "phase-04.md");
+        let updated = result.expect("should have found and flipped the bounced row");
+        // The bounced row should now be review
+        assert!(updated.contains("phase-04.md"));
+        let lines: Vec<&str> = updated.lines().collect();
+        assert!(
+            lines[0].contains("| review |"),
+            "bounced 04 row should be review: {lines:?}"
+        );
+        // The sibling review row must be untouched
+        assert!(
+            lines[1].contains("| review |"),
+            "sibling review row unchanged: {lines:?}"
+        );
     }
 
     // --- finalize_noop tests ---
@@ -593,5 +656,62 @@ mod tests {
                 "git add must reference the phase doc: {add_cmd}"
             );
         }
+    }
+
+    // --- finalize_flips_bounced_status_and_appends_entry ---
+
+    #[tokio::test]
+    async fn finalize_flips_bounced_status_and_appends_entry() {
+        let dir = TempDir::new().unwrap();
+        let doc_path = dir.path().join("phase-04b-tolerates-bounced-status.md");
+        let initial_doc = "# Phase 04b\n\n**Status:** in-progress (bounced — see bugs/bug-04-1.md)\n\n## Update Log\n\n<!-- entries appended below this line -->\n";
+        std::fs::write(&doc_path, initial_doc).unwrap();
+
+        let runner = RecordingRunner::new();
+
+        let result = PhaseResult::complete(rexymcp_executor::phase::Artifacts {
+            files_changed: vec![FileChange {
+                path: PathBuf::from("mcp/src/finalize.rs"),
+                change_summary: "+80 -10".to_string(),
+            }],
+            diff: String::new(),
+            command_outputs: CommandOutputs::default(),
+            update_log: String::new(),
+            log_path: None,
+            completion_summary: "Bounced-status finalize fix.".to_string(),
+        });
+
+        let inp = FinalizeInput {
+            phase_doc_path: &doc_path,
+            repo_root: dir.path(),
+            result: &result,
+            now_ms: 999999,
+            runner: &runner,
+        };
+
+        let did_finalize = finalize_complete(&inp).await.expect("should not error");
+        assert!(did_finalize, "should return true for bounced finalize");
+
+        let after = std::fs::read_to_string(&doc_path).unwrap();
+
+        // Status flipped to clean review (bounce note dropped)
+        assert!(
+            after.contains("**Status:** review"),
+            "status should be review: {after}"
+        );
+        assert!(
+            !after.contains("**Status:** in-progress"),
+            "no residual in-progress: {after}"
+        );
+        assert!(
+            !after.contains("bounced"),
+            "bounce note must be removed: {after}"
+        );
+
+        // Entry appended
+        assert!(
+            after.contains("(complete, server-authored)"),
+            "server-authored entry present: {after}"
+        );
     }
 }
