@@ -1,7 +1,7 @@
 # Phase 1: Finalize tolerates a `todo` start + hermetic tsc-resolver test
 
 **Milestone:** M29 — Cleanup
-**Status:** todo
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -193,3 +193,55 @@ recorded in § Status.)
 (Filled in by the executor.)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-09 (complete)
+
+**Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE tier), 142 turns, via `rexymcp
+run-phase`. Bookkeeping architect-authored — finalize was dormant on this phase's
+own `todo` doc because the *running* binary predates the very fix this phase
+introduces (the fix takes effect for future dispatches after a rebuild).
+
+**Summary:** Both tasks landed. (1) `finalize.rs`: `is_in_progress_status` /
+`status_is_in_progress` renamed to `is_pre_review_status` / `status_is_pre_review`
+and broadened to accept `**Status:** todo` (with optional trailing note) alongside
+`in-progress`; `flip_status_to_review` and `flip_readme_row` follow. (2)
+`verifier_tests.rs`: the ETXTBSY write-then-exec
+`verify_typescript_spawns_resolved_local_binary` test removed and replaced with
+pure `resolve_tsc_command` tests (local-preferred / npx-fallback / bare-tsc).
+Commit `71cb145` (executor, `feat:`), `finalize.rs` +80 −45, `verifier_tests.rs`
++30 −24.
+
+**Commands (independent architect re-run):**
+
+```
+cargo fmt --all --check                                     → clean (exit 0)
+cargo clippy --all-targets --all-features -- -D warnings    → clean (exit 0)
+cargo test  (×4 back-to-back)                               → 937 executor + 485 mcp passed, 2 ignored — no failure on any run
+```
+
+The **repeated** runs are the acceptance check for Task 2: four consecutive green
+`cargo test` runs, where the old write-then-exec test intermittently failed on
+ETXTBSY. The flake is gone (the resolver tests spawn nothing).
+
+**End-to-end verification:** N/A as a standalone CLI E2E (per the phase doc) —
+internal predicate + test changes. The finalize behavior is exercised by the real
+`finalize_complete` / `flip_readme_row` unit tests against `TempDir` docs
+(`flip_status_to_review_flips_todo`, `flip_readme_row_flips_todo_cell`,
+`pre_review_predicate_rejects_lookalikes`, etc.).
+
+**Files changed:** `mcp/src/finalize.rs` (+80 −45), `executor/src/governor/
+verifier_tests.rs` (+30 −24).
+
+### Review verdict — 2026-07-09
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE tier)
+- **Scope deviations:** none — both tasks landed as specified; production tsc
+  resolver logic untouched (test-only, as required).
+- **Calibration:** none folded. One **nit** (not bounced): the executor added 3
+  new `resolve_tsc_command` tests that overlap a pre-existing resolver-test set
+  (`resolve_tsc_command_prefers_local_over_npx` et al. already covered the same
+  order) — harmless duplicate coverage; a future cleanup could dedupe, not worth a
+  re-dispatch. All four gates green on independent re-run, including 4× repeated
+  `cargo test` (the flake-recurrence check).

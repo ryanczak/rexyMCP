@@ -53,7 +53,7 @@ Both surfaced while dispatching M28 phase-01:
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Finalize tolerates a `todo` start + hermetic tsc-resolver test ([phase-01-finalize-todo-and-tsc-test.md](phase-01-finalize-todo-and-tsc-test.md)) | todo |
+| 01 | Finalize tolerates a `todo` start + hermetic tsc-resolver test ([phase-01-finalize-todo-and-tsc-test.md](phase-01-finalize-todo-and-tsc-test.md)) | done |
 
 ## Notes
 
