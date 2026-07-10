@@ -400,6 +400,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok()
                 .and_then(|c| c.project.id);
 
+            let (cancel_handle, cancel_signal) = rexymcp_executor::agent::CancelSignal::new();
+            let stop_watcher = tokio::spawn(stop_watcher::watch_stop_sentinel_single(
+                repo.clone(),
+                cancel_handle,
+                stop_watcher::STOP_POLL_INTERVAL,
+            ));
+
             let result = runner::run_phase(&runner::RunPhaseConfig {
                 cfg: &cfg,
                 phase_doc_path: &phase_doc,
@@ -411,9 +418,12 @@ async fn main() -> anyhow::Result<()> {
                 project_id,
                 resume: None,
                 test_client: None,
-                cancel: rexymcp_executor::agent::CancelSignal::never(),
+                cancel: cancel_signal,
             })
-            .await?;
+            .await;
+
+            stop_watcher.abort();
+            let result = result?;
 
             println!(
                 "{}",

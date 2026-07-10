@@ -1,7 +1,7 @@
 # Phase 04b: blocking `run-phase` honors the `.rexymcp/stop` sentinel
 
 **Milestone:** M30 — Executor Interruption
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-04 (the sentinel helpers + watcher; `stop.rs`, `stop_watcher.rs`)
 **Estimated diff:** ~110 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -249,3 +249,15 @@ must be rebuilt for a live `run-phase` to pick up the change.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-10 17:52 (started)
+
+**Executor:** executor (phase-04b)
+
+**Started:** Implementing single-handle sentinel watcher for `run-phase` and wiring it into the CLI arm.
+
+### Update — 2026-07-10 17:52 (progress)
+
+**Task 1:** Added `watch_stop_sentinel_single` to `stop_watcher.rs` with two hermetic tests.
+**Task 2:** Wired the new watcher into the `run-phase` CLI arm in `main.rs`. Replaced `CancelSignal::never()` with a real `CancelSignal::new()` pair, spawned the watcher, and abort it after the run completes.
+**Task 3:** `CancelReason::UserStop` attribution — no code needed per spec note.
