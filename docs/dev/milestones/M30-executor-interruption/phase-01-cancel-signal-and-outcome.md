@@ -1,7 +1,7 @@
 # Phase 01: Executor `CancelSignal` + `cancelled` outcome
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -941,3 +941,32 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_after_2
+- **Bounces:** 2 (bug-01-1 review bounce; then a no-op re-dispatch that
+  self-reported `complete` without fixing it → escalation)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE)
+- **Bugs filed:** 1 ([bug-01-1](bugs/bug-01-1.md) — resolved)
+- **Scope deviations:** `mcp/src/cap.rs` (+2) — accepted compile-forced touch
+  (`cap_phase_result` reconstructs `PhaseResult` field-by-field, so the new
+  `cancellation` field forces it).
+- **Calibration (flag for the architect):** the executor **no-op'd the first
+  re-dispatch** — from a clean-tree / green-gate state it concluded "all tasks
+  already implemented, complete" and never engaged the bug doc. A plain
+  re-dispatch of a bounced-but-green phase is ineffective; the fix required a
+  refined re-dispatch with a loud "this is a bounce fix, not a re-verify" header
+  and the exact replacement code inline. Worth watching as a pattern (1st
+  occurrence). Also noted (in bug-01-1): the first run ran `cargo fmt --all`
+  (writing form, forbidden) and swept pre-existing architect doc edits into its
+  `feat` commit (root cause: dirty tree at dispatch, architect-side).
+
+**Review method:** all four gates re-run independently green (949 executor + 485
+mcp, 2 ignored); the rewritten `loop_returns_cancelled_when_signal_flipped_mid_stream`
+was **mutation-verified** — breaking the production stage string at `mod.rs:434`
+to `"awaiting_MUTANT"` makes the test fail at `tests.rs:5143`, proving it reaches
+the inner `select!` cancel branch (not the top-of-loop `between_turns` path) and
+that the assertion bites. The forbidden `sleep`, the `Cancelled || HardFail`
+disjunction, and the `tokio::spawn` scheduling dependency are all gone
+(grep-confirmed).
