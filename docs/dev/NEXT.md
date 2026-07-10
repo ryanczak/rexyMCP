@@ -23,18 +23,45 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-01 — `todo`** (drafted 2026-07-09). Executor-crate
-cancellation primitive: a `tokio::sync::watch`-based `CancelSignal` threaded into
-`LoopDeps` and checked at the top of the turn loop + a new `select!` branch, plus
-a fourth `PhaseStatus::Cancelled` outcome that leaves the working tree dirty and
-reports the partial diff + stage + turns-done. No new dependency; no MCP/CLI
-caller wires a real signal yet (phase-02+). Ready to dispatch with
-`/rexymcp:dispatch phase-01`. See
-[phase-01](milestones/M30-executor-interruption/phase-01-cancel-signal-and-outcome.md)
-and the [M30 README](milestones/M30-executor-interruption/README.md); phases
-02–05 (MCP job registry + async `execute_phase`/`get_run_status`, `stop_phase`,
-the `rexymcp stop` CLI + sentinel watcher, and the async-polling skill-loop
-rewrite) are sketched, drafted on demand.
+**Active phase: M30 phase-02 — `todo`** (drafted 2026-07-10). MCP job registry +
+async `execute_phase` + `get_run_status`. A new `mcp/src/jobs.rs` `JobRegistry`
+(a `tokio::sync::watch`-per-run map, `run_id` = v4 UUID, `spawn_run` +
+bounded-long-poll `await_terminal`), `RexyMcpServer` gains an
+`Arc<JobRegistry>`, the `execute_phase` `call_tool` branch **spawns** the run and
+returns `{ run_id }` immediately (roots corroboration + param parse still fail
+synchronously), and a new `get_run_status` `#[rmcp::tool]` (auto-listed)
+long-polls (~15s) → `running`/`done`(+PhaseResult)/`failed`(+error)/`unknown`.
+**No cancellation** (spawned runs keep `CancelSignal::never()`; `stop_phase` +
+real-signal threading is phase-03). No new dependency. **Design fork resolved
+with the user (2026-07-10):** flip `execute_phase` itself to async (per the M30
+README's decided design) rather than add a parallel `execute_phase_async` tool —
+the skills go temporarily out of step until phase-05, with `rexymcp run-phase`
+(still blocking) as the manual fallback in the interim. architecture.md § Layer-2
+tools list + § PhaseResult contract (added `cancelled`/`cancellation`) +
+`get_run_status` entry amended architect-side at draft time. Ready to dispatch
+with `/rexymcp:dispatch phase-02`. See
+[phase-02](milestones/M30-executor-interruption/phase-02-job-registry-and-async-execute.md);
+phases 03–05 (`stop_phase` + cancel threading + reason enrichment, `rexymcp stop`
+CLI + `.rexymcp/stop` sentinel watcher, async-polling skill-loop rewrite) are
+sketched, drafted on demand.
+
+**M30 phase-01 — done** (2026-07-10, **approved_after_2**, executor
+AEON-7/Qwen3.6-27B-AEON LARGE; commit `f7bfc7a` test + prior `f1bc146`/`6008579`).
+Executor-crate cancellation primitive: a `tokio::sync::watch`-based `CancelSignal`
+threaded into `LoopDeps` (all ~17 sites, `never()`) and checked at the top of the
+turn loop (`"between_turns"`) + a third inner `select!` branch (`"awaiting_model"`),
+plus a fourth `PhaseStatus::Cancelled` + `Cancellation`/`CancelReason` that leaves
+the working tree dirty and reports partial diff + stage + turns-done. No new
+dependency. **Bounced twice:** bug-01-1 (major, the mid-stream test was defective
+— `sleep` + a loose `Cancelled || HardFail` disjunction + `tokio::spawn` scheduling
+dependency); then a **plain re-dispatch no-op'd** (clean tree + green gates →
+executor self-reported "complete" without engaging the bug), fixed by a refined
+re-dispatch with a loud bounce-fix header + the exact deterministic `CancelThenPark`
+parking-client test inline. Rewritten test **mutation-verified** (breaking the
+production stage string fails it). **Calibration flag (1st occurrence):** a plain
+re-dispatch of a bounced-but-green phase is ineffective — see
+[[plain-redispatch-noops-on-green-bounce]]. `mcp/src/cap.rs` (+2) accepted as a
+compile-forced touch (`cap_phase_result` reconstructs `PhaseResult` field-by-field).
 
 **M30 — Executor Interruption — opened** (2026-07-09). New milestone: give the
 user and the architect a way to interrupt and stop a running executor mid-phase

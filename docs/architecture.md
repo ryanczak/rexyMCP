@@ -206,12 +206,13 @@ each), **current blocker** (exact diagnostic), **budget remaining**.
 
 ```
 PhaseResult {
-  status:          "complete" | "hard_fail" | "budget_exceeded",
+  status:          "complete" | "hard_fail" | "budget_exceeded" | "cancelled",
   files_changed:   [ { path, change_summary } ],
   diff:            unified diff of the working tree (capped),
   command_outputs: { format, build, lint, test → tail of stdout/stderr },
   update_log:      the completion / blocker entry written into the phase doc,
-  briefing:        present only when status != "complete" — the escalation brief,
+  briefing:        present only when status is "hard_fail" / "budget_exceeded" — the escalation brief,
+  cancellation:    present only when status is "cancelled" (M30) — { reason?, stage, turns_done }; leaves the tree dirty,
 }
 ```
 
@@ -379,7 +380,17 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
 
 - **`execute_phase`** — args: `phase_doc_path` (string), `repo_path` (string,
   the target-repo root), optional `model` / `profile` override. Calls the
-  `executor` library in-process and returns `PhaseResult`.
+  `executor` library in-process. As of M30 it is an **async job**: it spawns the
+  run inside the serve process, registers it under a **`run_id`**, and returns
+  `{ run_id }` immediately; the terminal `PhaseResult` is reaped with
+  `get_run_status`. (The CLI `rexymcp run-phase` stays blocking and returns the
+  `PhaseResult` directly.)
+- **`get_run_status`** (M30) — args: `run_id` (string). Bounded long-poll (≈15s)
+  on a spawned `execute_phase` run: returns `{ state: "running" }` while the run
+  is in flight, the terminal `PhaseResult` once it completes / hard-fails / is
+  cancelled, an infra `{ state: "failed", error }` if the run errored, or
+  `{ state: "unknown" }` for an unrecognized `run_id`. This is how the architect
+  (or the async skill loop, phase-05) reaps a spawned run.
 - **`continue_phase`** (M27) — args: `phase_doc_path`, `repo_path`, `guidance`
   (the architect's targeted directive), optional `model`. The **resume** lever:
   re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh
