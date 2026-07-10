@@ -23,15 +23,35 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M31 phase-01 — `rmcp` 1.8→2.2 bump + API migration**
-([phase doc](milestones/M31-rmcp-v2-upgrade/phase-01-rmcp-22-bump-and-migration.md),
-drafted 2026-07-10, status `todo`). One `mcp/Cargo.toml` constraint bump +
-`cargo update -p rmcp`, then the two pre-injected `ProgressNotificationParam`
-literal→builder fixes (`server.rs:152`, `server_tests.rs:557` — exact
-BEFORE→AFTER in the doc); everything else compiles unchanged per the verified
-surface, compiler as final word. size=s. Dispatch via `/rexymcp:dispatch
-phase-01`. The live serve-restart handshake smoke is review-time
-architect-side work, not the executor's.
+**Active phase: M31 phase-02 — structured output for `execute_phase` /
+`continue_phase`**
+([phase doc](milestones/M31-rmcp-v2-upgrade/phase-02-structured-tool-output.md),
+drafted 2026-07-10 inside the `/rexymcp:auto` run, status `todo`). 13
+mechanical `JsonSchema` derive additions in the executor crate (list
+pre-enumerated from the field graph), a `SpawnedRun` payload struct, one
+`structured_result` helper rewiring the two hand-rolled call sites onto
+`CallToolResult::structured` (verified from vendored source: it emits **both**
+`structured_content` and the back-compat text block), and two tool-builder
+helpers attaching output schemas via the fallible `schema_for_output` +
+`with_raw_output_schema` (the panicking `with_output_schema` is pinned
+out-of-scope). size=m. The milestone's last in-scope phase.
+
+**M31 phase-01 — done** (2026-07-10, **approved_first_try**, executor
+AEON-7/Qwen3.6-27B-AEON; commits `7c26d53` feat / `9ff15c7` bookkeeping /
+`be68796` approve; dispatched + reviewed inside the `/rexymcp:auto` run via
+sonnet-5 subagents). `rmcp` 1.8.0 → **2.2.0**: the one `mcp/Cargo.toml`
+constraint, `cargo update -p rmcp`, the two pre-injected
+`ProgressNotificationParam` literal→builder fixes, **plus one compiler-flagged
+extra the doc's Gotchas anticipated** — `Content`/`RawContent` are gone in 2.x;
+both `call_tool` result sites now use `ContentBlock::text(..)`. All four gates
+green on independent re-run (949 executor + 512 mcp, 2 ignored);
+`cargo tree -i rmcp` → v2.2.0; zero `ProgressNotificationParam {` literals
+remain. **Calibration note (data, not a fold):** the kickoff migration table
+had listed `Content::new(RawContent::text(..), None)` as expected-unchanged —
+docs.rs-level verification missed a removal the compiler caught; the
+react-to-compiler-flags + Gotchas-pattern spec shape absorbed it first-try.
+Review repaired the recurring malformed README-row flip (`| review ||`,
+bug-03a-1 pattern).
 
 **📌 M31 — rmcp v2 Upgrade kicked off (2026-07-10, with the user).** Upgrade the
 `mcp` crate's `rmcp` from 1.8.0 (`Cargo.toml` pins `"1.7"`) to the 2.2 line —

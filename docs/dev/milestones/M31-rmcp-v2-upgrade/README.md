@@ -86,7 +86,7 @@ follows the same spec line, so this milestone does not re-open it
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | rmcp 2.2 bump + API migration ([phase-01-rmcp-22-bump-and-migration.md](phase-01-rmcp-22-bump-and-migration.md)) | done |
-| 02 | Structured output for `execute_phase` / `continue_phase` (phase-02, not yet drafted) | todo |
+| 02 | Structured output for `execute_phase` / `continue_phase` ([phase-02-structured-tool-output.md](phase-02-structured-tool-output.md)) | todo |
 
 ## Notes
 
