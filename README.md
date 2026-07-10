@@ -15,7 +15,7 @@ errors straight back into the next turn, and refusing to let the LLM touch anyth
 outside the repo. The Architect designs; the Executor codes; **rexyMCP keeps the
 herd together and moving toward the goal.**
 
-Your *Architect* runs in either **Claude Code** or **Google Antigravity** —
+Your *Architect* runs in either **Claude Code** or **Google Antigravity**,
 rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
 whichever you drive.
 
@@ -23,8 +23,8 @@ whichever you drive.
 
 rexyMCP is not a free-running "build me an app" agent. It runs a strict,
 **document-driven SDLC** where every unit of work is written down and reviewed
-before code exists — and then it can drive that whole SDLC for you without a human
-in the inner loop. The structure is what makes autonomy *safe*:
+before code exists. Then rexyMCP drives that SDLC autonomously.
+The structure is what makes autonomy *safe* and *reliable*:
 
 - **The architecture is the source of truth.** The Architect first writes
   [`docs/architecture.md`](docs/architecture.md) — the layers, data flows,
