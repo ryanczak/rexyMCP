@@ -1,7 +1,7 @@
 # Phase 02: MCP job registry + async `execute_phase` + `get_run_status`
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** done
 **Depends on:** phase-01
 **Estimated diff:** ~480 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -893,4 +893,12 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 8a43884aec103a7f9f807806e67087fef1f79f22
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bugs: bug-02-1 — major, bug-02-2 — minor; max severity major)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE tier)
+- **Scope deviations:** none (the `Duration::from_millis(1)` timeout-injection technique instead of `#[tokio::test(start_paused = true)]`, noted in the first completion entry, stands — `tokio`'s `test-util` feature isn't enabled in this workspace, so the paused-clock approach in the spec's Test plan wasn't available; the millisecond-injection achieves the same determinism and was accepted at first review)
+- **Calibration:** none — both bugs (a stray real-wall-clock sleep-equivalent and an unauthorized `#[allow(dead_code)]` on speculative wired-in-but-unconsumed state) are each single occurrences of patterns already covered by existing STANDARDS/WORKFLOW rules (§3.3 determinism, "Derive intentionally" calibration on unconsumed wired-in state); no new fold needed.
 
