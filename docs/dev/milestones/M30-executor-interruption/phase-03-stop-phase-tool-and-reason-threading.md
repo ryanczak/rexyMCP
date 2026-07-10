@@ -1,7 +1,7 @@
 # Phase 03: `stop_phase` MCP tool + real `CancelSignal` threading + reason stamping
 
 **Milestone:** M30 — Executor Interruption
-**Status:** todo
+**Status:** in-progress (re-dispatch after hard_fail — see refinement note in Update Log)
 **Depends on:** phase-01 (the executor `CancelSignal` primitive + `Cancelled` outcome), phase-02 (the job registry + async `execute_phase`)
 **Estimated diff:** ~470 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -613,3 +613,42 @@ The real artifact is the running MCP server's tool surface. After the gates pass
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### 🔴 RE-DISPATCH REFINEMENT — 2026-07-10 (read this first)
+
+**The prior dispatch hard-failed** (`VerifierFailurePersistent`, 6 consecutive
+verifier failures) with a `mismatched closing delimiter: }` in `mcp/src/jobs.rs`.
+The substantive changes were *correct* — the failure was purely a **patch-tangling
+mechanics problem**: a sequence of many small overlapping `patch`/`patch_lines`
+edits to `mcp/src/jobs.rs` corrupted the `#[cfg(test)] mod tests` block's brace
+structure (one test lost its closing `);\n    }`; another left orphaned fragments
+from the old `spawn_run_publishes_failed` test dangling after the new tests). The
+executor then spent 6 turns unable to surgically repair the braces.
+
+**The working tree has been reset to a clean HEAD** — `jobs.rs` and `runner.rs`
+are back to their committed state. Start fresh; do not go hunting for partial work.
+
+**Edit-mechanics directive for this re-dispatch (this is what changed):**
+
+- **`mcp/src/jobs.rs` — apply Tasks 1 and 6 with `write_file` on the WHOLE file,
+  in a single write, not with many `patch` calls.** Tasks 1 (registry additions)
+  and 6 (test-module rewrite) together touch most of the file; incremental patches
+  to adjacent regions are exactly what tangled the braces last time. Compose the
+  complete intended `jobs.rs` (existing content + the Task-1 struct/method changes
+  + the Task-6 test updates) and write it once.
+- **After any write, if the verifier reports a delimiter/brace error, do NOT patch
+  around it.** Re-read the entire file and re-`write_file` a clean version. One
+  bad brace is faster to fix by rewriting the file than by patching near it.
+- For `runner.rs` / `server.rs` / `main.rs` (Task 2/3), the edits are small and
+  localized — normal `patch` is fine there. It is specifically `jobs.rs`'s
+  large, multi-region change that must go through `write_file`.
+- Everything else in the Spec below is unchanged and still correct. Follow it as
+  written; only the *how you edit `jobs.rs`* changed.
+
+### Update — 2026-07-10 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the spec was complete and the content was right; the hard_fail was a
+mechanical patch-tangle producing a brace mismatch the executor couldn't surgically
+repair — so the fix is an edit-mechanics directive (write_file the whole jobs.rs)
+plus a clean-tree reset, not a spec change or a takeover on first failure.
