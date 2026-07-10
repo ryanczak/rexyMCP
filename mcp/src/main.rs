@@ -402,6 +402,7 @@ async fn main() -> anyhow::Result<()> {
                 project_id,
                 resume: None,
                 test_client: None,
+                cancel: rexymcp_executor::agent::CancelSignal::never(),
             })
             .await?;
 

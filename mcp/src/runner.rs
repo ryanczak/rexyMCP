@@ -111,6 +111,7 @@ struct AssemblyInput<'a> {
     context_window: Option<usize>,
     project_id: Option<String>,
     resume: Option<&'a crate::resume::ResumeContext>,
+    cancel: CancelSignal,
 }
 
 /// Resolve the telemetry directory for a CLI-driven `run-phase` invocation:
@@ -303,7 +304,7 @@ async fn run_phase_with(
         context_window: inp.context_window,
         governor: cfg.governor,
         task_tracking: cfg.executor.task_tracking,
-        cancel: CancelSignal::never(),
+        cancel: inp.cancel.clone(),
     };
 
     let mut result = agent::execute_phase(&input, deps).await?;
@@ -338,6 +339,9 @@ pub struct RunPhaseConfig<'a> {
     pub test_client: Option<&'a dyn AiClient>,
     /// Resume context for `continue_phase`. `None` on a normal `execute_phase`.
     pub resume: Option<crate::resume::ResumeContext>,
+    /// Cooperative cancel signal for the spawned async run. `CancelSignal::never()`
+    /// disables it (the CLI `run-phase` path and `continue_phase`, for now).
+    pub cancel: CancelSignal,
 }
 
 /// Production wrapper — builds real seams + system clock, delegates.
@@ -404,6 +408,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
         },
         project_id: inp.project_id.clone(),
         resume: inp.resume.as_ref(),
+        cancel: inp.cancel.clone(),
     };
 
     run_phase_with(&assembly, &seams).await
@@ -605,6 +610,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -661,6 +667,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -717,6 +724,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
         let result = run_phase_with(&inp, &seams).await;
 
@@ -781,6 +789,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -835,6 +844,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -907,6 +917,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
 
         let result = run_phase_with(&inp, &seams).await;
@@ -1034,6 +1045,7 @@ mod tests {
             context_window: None,
             project_id: None,
             resume: None,
+            cancel: CancelSignal::never(),
         };
 
         let result = run_phase_with(&inp, &seams).await;

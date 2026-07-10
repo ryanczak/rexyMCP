@@ -10,9 +10,11 @@ use rmcp::service::{RequestContext, RoleServer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use rexymcp_executor::agent::CancelSignal;
 use rexymcp_executor::agent::progress::ProgressCallback;
 use rexymcp_executor::ai::AiClient;
 use rexymcp_executor::config::Config;
+use rexymcp_executor::phase::CancelReason;
 
 use crate::cap;
 use crate::log_query;
@@ -67,6 +69,19 @@ pub struct GetRunStatusOutput {
     /// Infra error string when state == "failed"; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct StopPhaseParams {
+    /// The `run_id` returned by `execute_phase`.
+    pub run_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct StopPhaseOutput {
+    /// `true` if a run with that id existed and its cancel was fired; `false`
+    /// for an unknown `run_id`.
+    pub stopped: bool,
 }
 
 /// Inner logic for `get_run_status` — takes the registry + a timeout so it is
@@ -151,8 +166,9 @@ pub(crate) async fn execute_phase_inner(
     config_path: &Path,
     params: &ExecutePhaseParams,
     progress: Option<&dyn ProgressCallback>,
+    cancel: CancelSignal,
 ) -> Result<ExecutePhaseOutput, String> {
-    execute_phase_inner_with_client(config_path, params, progress, None).await
+    execute_phase_inner_with_client(config_path, params, progress, None, cancel).await
 }
 
 /// Testable variant that accepts an optional mock client.
@@ -161,6 +177,7 @@ pub(crate) async fn execute_phase_inner_with_client(
     params: &ExecutePhaseParams,
     progress: Option<&dyn ProgressCallback>,
     test_client: Option<&dyn AiClient>,
+    cancel: CancelSignal,
 ) -> Result<ExecutePhaseOutput, String> {
     let cfg = rexymcp_executor::config::Config::load_with_env(config_path)
         .map_err(|e| format!("failed to load config: {}", e))?;
@@ -188,6 +205,7 @@ pub(crate) async fn execute_phase_inner_with_client(
         project_id,
         test_client,
         resume: None,
+        cancel,
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -241,6 +259,7 @@ pub(crate) async fn continue_phase_inner(
         project_id,
         test_client: None,
         resume: Some(ctx),
+        cancel: CancelSignal::never(),
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -588,6 +607,19 @@ impl RexyMcpServer {
             get_run_status_inner(&self.runs, &params, crate::jobs::RUN_STATUS_POLL_TIMEOUT).await;
         Ok(Json(out))
     }
+
+    #[rmcp::tool(
+        description = "Stop a spawned execute_phase run by run_id: fires the run's cooperative cancel signal so it aborts at the next turn boundary (or mid model-stream) and returns a PhaseResult with status \"cancelled\", cancellation.reason \"claude_stop\", and the partial diff (working tree left dirty). Returns {stopped:true} if the run_id was known, {stopped:false} if not. The cancel is cooperative and asynchronous — poll get_run_status to observe the terminal cancelled result."
+    )]
+    async fn stop_phase(
+        &self,
+        Parameters(params): Parameters<StopPhaseParams>,
+    ) -> Result<Json<StopPhaseOutput>, String> {
+        let stopped = self
+            .runs
+            .request_stop(&params.run_id, CancelReason::ClaudeStop);
+        Ok(Json(StopPhaseOutput { stopped }))
+    }
 }
 
 impl ServerHandler for RexyMcpServer {
@@ -662,6 +694,7 @@ impl ServerHandler for RexyMcpServer {
                     });
 
                 let run_id = crate::jobs::new_run_id();
+                let (cancel_handle, cancel_signal) = CancelSignal::new();
                 let config_path_owned = config_path.clone();
                 let params_owned = params.clone();
                 let work = async move {
@@ -669,11 +702,12 @@ impl ServerHandler for RexyMcpServer {
                         &config_path_owned,
                         &params_owned,
                         progress_callback.as_deref(),
+                        cancel_signal,
                     )
                     .await
                     .map(|o| o.result)
                 };
-                crate::jobs::spawn_run(runs.clone(), run_id.clone(), work);
+                crate::jobs::spawn_run(runs.clone(), run_id.clone(), cancel_handle, work);
 
                 let payload = serde_json::json!({ "run_id": run_id });
                 let json_str = serde_json::to_string(&payload).map_err(|e| {

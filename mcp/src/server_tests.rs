@@ -72,7 +72,7 @@ async fn execute_phase_returns_error_for_missing_phase_doc() {
         repo_path: temp_dir.path().to_str().unwrap().to_string(),
         model: None,
     };
-    let result = execute_phase_inner(&config_path, &params, None).await;
+    let result = execute_phase_inner(&config_path, &params, None, CancelSignal::never()).await;
 
     assert!(result.is_err());
 }
@@ -88,7 +88,7 @@ async fn execute_phase_returns_error_for_missing_repo() {
         repo_path: "/nonexistent/repo".to_string(),
         model: None,
     };
-    let result = execute_phase_inner(&config_path, &params, None).await;
+    let result = execute_phase_inner(&config_path, &params, None, CancelSignal::never()).await;
 
     assert!(result.is_err());
 }
@@ -645,8 +645,14 @@ async fn execute_phase_inner_forwards_progress_to_loop() {
     };
 
     let capture = CaptureCallback::new();
-    let result =
-        execute_phase_inner_with_client(&config_path, &params, Some(&capture), Some(&client)).await;
+    let result = execute_phase_inner_with_client(
+        &config_path,
+        &params,
+        Some(&capture),
+        Some(&client),
+        CancelSignal::never(),
+    )
+    .await;
 
     assert!(
         result.is_ok(),
@@ -689,7 +695,14 @@ async fn execute_phase_inner_with_none_captures_nothing() {
         model: None,
     };
 
-    let result = execute_phase_inner_with_client(&config_path, &params, None, Some(&client)).await;
+    let result = execute_phase_inner_with_client(
+        &config_path,
+        &params,
+        None,
+        Some(&client),
+        CancelSignal::never(),
+    )
+    .await;
 
     assert!(
         result.is_ok(),
@@ -944,7 +957,8 @@ async fn get_run_status_unknown_run_id() {
 async fn get_run_status_reports_done_with_result() {
     let registry = crate::jobs::JobRegistry::new();
     let run_id = "done-run".to_string();
-    registry.insert(&run_id);
+    let (handle, _signal) = CancelSignal::new();
+    registry.insert(&run_id, handle);
     registry.publish(
         &run_id,
         crate::jobs::RunState::Complete(serde_json::json!({"status": "complete"})),
@@ -962,7 +976,8 @@ async fn get_run_status_reports_done_with_result() {
 async fn get_run_status_reports_failed() {
     let registry = crate::jobs::JobRegistry::new();
     let run_id = "failed-run".to_string();
-    registry.insert(&run_id);
+    let (handle, _signal) = CancelSignal::new();
+    registry.insert(&run_id, handle);
     registry.publish(&run_id, crate::jobs::RunState::Failed("boom".to_string()));
     let params = GetRunStatusParams {
         run_id: run_id.clone(),
@@ -977,7 +992,8 @@ async fn get_run_status_reports_failed() {
 async fn get_run_status_running_times_out() {
     let registry = crate::jobs::JobRegistry::new();
     let run_id = "running-run".to_string();
-    registry.insert(&run_id);
+    let (handle, _signal) = CancelSignal::new();
+    registry.insert(&run_id, handle);
     let params = GetRunStatusParams {
         run_id: run_id.clone(),
     };

@@ -1,7 +1,7 @@
 # Phase 03: `stop_phase` MCP tool + real `CancelSignal` threading + reason stamping
 
 **Milestone:** M30 — Executor Interruption
-**Status:** in-progress (re-dispatch after hard_fail — see refinement note in Update Log)
+**Status:** done
 **Depends on:** phase-01 (the executor `CancelSignal` primitive + `Cancelled` outcome), phase-02 (the job registry + async `execute_phase`)
 **Estimated diff:** ~470 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -652,3 +652,58 @@ are back to their committed state. Start fresh; do not go hunting for partial wo
 mechanical patch-tangle producing a brace mismatch the executor couldn't surgically
 repair — so the fix is an edit-mechanics directive (write_file the whole jobs.rs)
 plus a clean-tree reset, not a spec change or a takeover on first failure.
+
+### Update — 2026-07-10 (complete, architect takeover)
+
+**Summary:** Completed via **session takeover** after two consecutive executor
+hard_fails (both `VerifierFailurePersistent`). The executor's `mcp/src/jobs.rs`
+work (Task 1: `RunEntry.cancel`/`stop_reason`, `insert`/`spawn_run` handle,
+`request_stop`, `recorded_reason`, `stamp_cancel_reason`, and all Task-6 tests)
+landed **verbatim-correct** via the write_file directive from the first refinement,
+as did the runner.rs struct fields + prod-site wiring. The architect finished the
+mechanical remainder the executor could not complete within the verifier's
+6-strike budget: the load-bearing `run_phase_with` `LoopDeps.cancel:
+inp.cancel.clone()` (the executor had left it `never()` — a latent bug that would
+have made `stop_phase` a no-op), the 7 test `AssemblyInput` literals, all of
+`server.rs` Task 3/4 (imports, `cancel` param threaded through
+`execute_phase_inner`/`_with_client`, the `execute_phase` branch signal-pair +
+`spawn_run(handle)`, `continue_phase_inner`/CLI `never()`, the `stop_phase` tool +
+`StopPhaseParams`/`StopPhaseOutput`), `main.rs`, and the `server_tests.rs` callers.
+Two clippy fixes on the executor's tests (`bool_assert_comparison`; and a
+`collapsible_if`/let-chain on the architect's own pre-injected `stamp_cancel_reason`).
+
+**Acceptance criteria:** all met (below).
+
+**Commands (independent architect re-run):**
+
+```
+cargo fmt --all --check      → clean (rustfmt applied to the 5 touched files only)
+cargo build                  → Finished, zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → clean
+cargo test                   → 503 passed (mcp) + 949 passed / 2 ignored (executor); 0 failed
+```
+
+**End-to-end verification:** `stop_phase` is registered via the
+`#[rmcp::tool_router]` auto-list (same mechanism as `get_run_status`); the running
+`rexymcp serve` must be **restarted** to expose it live (a rebuilt binary does not
+hot-swap a running serve process — the known stale-serve caveat). Acceptance pin
+verified: `grep "CancelSignal::never()" mcp/src/runner.rs` shows it only in the 7
+test `AssemblyInput` literals + one doc comment — **not** in `run_phase_with`'s
+`LoopDeps`, which now reads `cancel: inp.cancel.clone()`.
+
+**Files changed:**
+- `mcp/src/jobs.rs` — registry cancel handle + `request_stop`/`recorded_reason`/`stamp_cancel_reason`; `spawn_run` stamps `ClaudeStop` on a `cancelled` result (executor-authored, correct).
+- `mcp/src/runner.rs` — `cancel: CancelSignal` on `RunPhaseConfig`/`AssemblyInput`; `LoopDeps.cancel` now honors the config signal (the `inp.cancel.clone()` fix was architect-authored).
+- `mcp/src/server.rs` — `cancel` threaded through the inner fns + `execute_phase` branch; new `stop_phase` tool + param/output types (architect-authored).
+- `mcp/src/main.rs`, `mcp/src/server_tests.rs` — cascade completions (architect-authored).
+
+**Notes for review:** the two hard_fails are a real calibration signal —
+see the Review verdict.
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** escalated (session takeover after 2 hard_fails)
+- **Bounces:** 0 review bounces; 2 executor hard_fails before takeover (no bug docs — infrastructure/mechanical failures, not defects in shipped code)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE) authored jobs.rs + runner.rs correctly; Claude (direct) finished the multi-site cascade + `stop_phase` tool
+- **Scope deviations:** none — the shipped code matches the spec; only *who* finished it changed
+- **Calibration:** **1st occurrence (flag for the user).** A **required-field cascade** — adding a non-defaultable `cancel: CancelSignal` field to two structs used at ~14 call sites — collides with the governor's 6-consecutive-verifier-failure limit: the crate cannot compile until *every* site is updated, so the verifier strikes out before the executor finishes the cascade (WORKFLOW § "Prefer additive change shapes; avoid wide-blast-radius breaking changes"). The first hard_fail was a *different* class (patch-tangling a brace, fixed by a write_file directive); the second was this cascade-vs-strike wall. Lesson for future specs: a many-site required-field addition should either (a) be split so intermediate states compile, or (b) instruct the executor to make **all** cascade edits before *any* build/verify, or (c) be pre-flagged as architect-takeover-likely. Not yet a fold (1 occurrence); note for the milestone retrospective.
