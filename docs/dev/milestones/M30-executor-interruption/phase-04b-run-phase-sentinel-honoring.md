@@ -1,7 +1,7 @@
 # Phase 04b: blocking `run-phase` honors the `.rexymcp/stop` sentinel
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (the sentinel helpers + watcher; `stop.rs`, `stop_watcher.rs`)
 **Estimated diff:** ~110 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -358,4 +358,12 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** a035a5760bd88d7af1def8962d850b718e2f443b
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE)
+- **Scope deviations:** none
+- **Calibration:** none
 
