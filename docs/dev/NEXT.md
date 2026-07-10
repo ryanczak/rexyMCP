@@ -23,27 +23,49 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-02 — `todo`** (drafted 2026-07-10). MCP job registry +
-async `execute_phase` + `get_run_status`. A new `mcp/src/jobs.rs` `JobRegistry`
-(a `tokio::sync::watch`-per-run map, `run_id` = v4 UUID, `spawn_run` +
-bounded-long-poll `await_terminal`), `RexyMcpServer` gains an
-`Arc<JobRegistry>`, the `execute_phase` `call_tool` branch **spawns** the run and
-returns `{ run_id }` immediately (roots corroboration + param parse still fail
-synchronously), and a new `get_run_status` `#[rmcp::tool]` (auto-listed)
-long-polls (~15s) → `running`/`done`(+PhaseResult)/`failed`(+error)/`unknown`.
-**No cancellation** (spawned runs keep `CancelSignal::never()`; `stop_phase` +
-real-signal threading is phase-03). No new dependency. **Design fork resolved
-with the user (2026-07-10):** flip `execute_phase` itself to async (per the M30
-README's decided design) rather than add a parallel `execute_phase_async` tool —
-the skills go temporarily out of step until phase-05, with `rexymcp run-phase`
-(still blocking) as the manual fallback in the interim. architecture.md § Layer-2
-tools list + § PhaseResult contract (added `cancelled`/`cancellation`) +
-`get_run_status` entry amended architect-side at draft time. Ready to dispatch
-with `/rexymcp:dispatch phase-02`. See
-[phase-02](milestones/M30-executor-interruption/phase-02-job-registry-and-async-execute.md);
-phases 03–05 (`stop_phase` + cancel threading + reason enrichment, `rexymcp stop`
-CLI + `.rexymcp/stop` sentinel watcher, async-polling skill-loop rewrite) are
-sketched, drafted on demand.
+**Active phase: M30 phase-03 — `todo`** (drafted 2026-07-10, via `/rexymcp:auto`).
+`stop_phase` MCP tool + real `CancelSignal` threading + `ClaudeStop` reason
+stamping. Threads a live `CancelSignal` from the spawned `execute_phase` run down
+to `LoopDeps.cancel` (replacing `runner.rs:306`'s `never()`) via a new
+`cancel: CancelSignal` field on `RunPhaseConfig` + `AssemblyInput` (~14-site
+mechanical add, grep-verified list pre-injected); the `JobRegistry` `RunEntry`
+gains a `CancelHandle` + `stop_reason`, `insert`/`spawn_run` take the handle, and
+a new `request_stop(run_id, reason)` + `stamp_cancel_reason` fill
+`cancellation.reason` on a `cancelled` result. New `stop_phase` `#[rmcp::tool]`
+(auto-listed) fires the handle with `CancelReason::ClaudeStop` and returns
+`{ stopped }`. No new dependency; no executor-crate edit (builds on phase-01's
+`CancelSignal`/`CancelReason`). **architecture.md § Layer-2 tools list gained the
+`stop_phase` bullet architect-side at draft time** (user-authorized during the
+`/rexymcp:auto` run — architecture.md edits are otherwise a loop STOP(blocker)).
+Ready to dispatch with `/rexymcp:dispatch phase-03`. See
+[phase-03](milestones/M30-executor-interruption/phase-03-stop-phase-tool-and-reason-threading.md);
+phases 04–05 (`rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher `UserStop`
+path, async-polling skill-loop rewrite + contract-doc updates) are sketched,
+drafted on demand.
+
+**M30 phase-02 — done** (2026-07-10, **approved_after_1**, executor
+AEON-7/Qwen3.6-27B-AEON LARGE; commit `ca25425` approve, prior `e7b5ced` feat).
+MCP job registry + async `execute_phase` + `get_run_status`: `mcp/src/jobs.rs`
+`JobRegistry` (`tokio::sync::watch`-per-run map, `run_id` = v4 UUID, `spawn_run`
++ bounded-long-poll `await_terminal`), `RexyMcpServer` gains an
+`Arc<JobRegistry>`, the `execute_phase` branch **spawns** and returns
+`{ run_id }` immediately, and `get_run_status` `#[rmcp::tool]` long-polls (~15s)
+→ `running`/`done`(+PhaseResult)/`failed`/`unknown`. **Bounced once** (one review
+round, two bugs): bug-02-1 (major) — `get_run_status_running_times_out` drove the
+long-poll with the production 15 s window, a real 15-second test `sleep`
+(STANDARDS §3.3); bug-02-2 (minor) — an unauthorized `#[allow(dead_code)]`
+masking the speculative `JobRegistry::snapshot` (no consumer until phase-03+).
+Both left all four gates **green** — the green-bounce trap
+([[plain-redispatch-noops-on-green-bounce]]); fixed via a refined re-dispatch with
+a loud inline bounce-fix block (timeout → `1ms`; deleted `snapshot` + its 3 tests,
+no coverage lost). Clean on re-dispatch; 949 tests, ~6s. **Design fork resolved
+with the user (2026-07-10):** flipped `execute_phase` itself to async rather than
+a parallel `execute_phase_async` tool — skills temporarily out of step until
+phase-05, `rexymcp run-phase` (blocking) the interim fallback. **Live-serve note:**
+the connected `rexymcp serve` still runs the pre-M30 blocking binary
+([[stale-rexymcp-serve-after-rebuild]]) — `execute_phase` returned a synchronous
+`PhaseResult`, harmless for a phase that *builds* the async path; restart serve to
+exercise the async contract live.
 
 **M30 phase-01 — done** (2026-07-10, **approved_after_2**, executor
 AEON-7/Qwen3.6-27B-AEON LARGE; commit `f7bfc7a` test + prior `f1bc146`/`6008579`).

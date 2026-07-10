@@ -391,6 +391,15 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
   cancelled, an infra `{ state: "failed", error }` if the run errored, or
   `{ state: "unknown" }` for an unrecognized `run_id`. This is how the architect
   (or the async skill loop, phase-05) reaps a spawned run.
+- **`stop_phase`** (M30) — args: `run_id` (string). Fires the spawned run's
+  cooperative `CancelSignal` so it aborts at the next turn boundary (or mid
+  model-stream) and returns a `PhaseResult` with status `cancelled`,
+  `cancellation.reason` `claude_stop`, and the partial diff (working tree left
+  dirty). Returns `{ stopped: true }` if the `run_id` was known, `{ stopped:
+  false }` otherwise. The cancel is cooperative and asynchronous — the caller
+  polls `get_run_status` to observe the terminal `cancelled` result. This is the
+  architect's mid-flight abort, at poll granularity; the human's client-agnostic
+  path is the `.rexymcp/stop` sentinel (`rexymcp stop`, phase-04).
 - **`continue_phase`** (M27) — args: `phase_doc_path`, `repo_path`, `guidance`
   (the architect's targeted directive), optional `model`. The **resume** lever:
   re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh
