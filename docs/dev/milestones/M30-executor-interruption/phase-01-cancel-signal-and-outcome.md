@@ -1,7 +1,7 @@
 # Phase 01: Executor `CancelSignal` + `cancelled` outcome
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** in-progress (bounced — bug-01-1: mid-stream cancel branch untested)
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m

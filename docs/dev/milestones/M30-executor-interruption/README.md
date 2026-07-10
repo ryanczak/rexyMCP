@@ -80,7 +80,7 @@ second terminal.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Executor `CancelSignal` + `cancelled` outcome ([phase-01-cancel-signal-and-outcome.md](phase-01-cancel-signal-and-outcome.md)) | review ||
+| 01 | Executor `CancelSignal` + `cancelled` outcome ([phase-01-cancel-signal-and-outcome.md](phase-01-cancel-signal-and-outcome.md)) | in-progress ||
 | 02 | MCP job registry + async `execute_phase` + `get_run_status` (planned) | — |
 | 03 | `stop_phase` MCP tool + reason/partial-diff enrichment (planned) | — |
 | 04 | `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (planned) | — |
