@@ -1,7 +1,7 @@
 # Phase 04: `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (global stop-all)
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** done
 **Depends on:** phase-03 (`JobRegistry` cancel handles + `request_stop` + real `CancelSignal` threading)
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -608,4 +608,38 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** b2892f0527c1e77119b4abc001c446da2409ffd5
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bugs: bug-04-1 — major, now verified)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE)
+- **Scope deviations:** none
+- **Calibration:** none
+
+All four gates re-ran green independently on a fresh invocation (fmt/build/
+clippy/test — 949 passed, 0 failed, 2 ignored). Confirmed the bounce fix
+(`mcp/src/stop_watcher.rs`'s `watcher_exits_without_firing_when_run_terminal`
+now awaits the `JoinHandle` via `.expect().expect()` instead of discarding
+it) is the only change since the prior review — `git diff
+6bb26ca..b2892f0 -- mcp/src/stop_watcher.rs` touches only the test.
+
+**Mutation test performed independently:** inverted `watch_stop_sentinel`'s
+terminal check (`if !registry.is_running(&run_id)` → `if
+registry.is_running(&run_id)`) and ran `cargo test -p rexymcp stop_watcher`.
+`watcher_exits_without_firing_when_run_terminal` now **failed** —
+`Elapsed(())`, i.e. the 5s timeout elapsed because the watcher never
+returned — proving the test is load-bearing. Reverted the inversion; both
+`stop_watcher` tests pass again and `git diff`/`git status --porcelain` are
+clean.
+
+Also reconfirmed: `rexymcp stop --repo <tmpdir>` E2E still creates
+`<tmpdir>/.rexymcp/stop` with content `stop requested\n`; `request_stop_all`
+fires every run and returns the correct count (incl. 0 on an empty
+registry); `is_running` semantics hold; no `#[allow(...)]`, no new
+dependency, no dead code; Task 6 remains out of scope
+(`mcp/src/main.rs:414` still builds `RunPhase`'s cancel field with
+`CancelSignal::never()`), correctly deferred to phase-04b.
+
+bug-04-1 flipped to `verified`.
 
