@@ -1,7 +1,7 @@
 # Phase 02: Structured output for `execute_phase` / `continue_phase`
 
 **Milestone:** M31 — rmcp v2 Upgrade
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (the rmcp 2.2 constructors this phase calls are 2.x-only; phase-01 is `done`)
 **Estimated diff:** ~200 lines (mostly mechanical derives + tests)
 **Tags:** language=rust, kind=feature, size=m
@@ -508,4 +508,33 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** d70b48bab4b4242f7fc0221022601c5293b4d510
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (hard_fail → refined re-dispatch, commit d63f839: the derive
+  cascade was applied top-down in the first attempt, leaving the crate
+  non-compiling for 6+ turns until `VerifierFailurePersistent` fired; the
+  refinement specified the exact bottom-up edit order)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** none. Independent gate re-run (fmt/build/clippy/test,
+  separate invocations) all green. `executor/src/{governor/hard_fail.rs,
+  governor/verifier.rs, phase/briefing.rs, phase/result.rs}` diffs are derive
+  additions + `use schemars::JsonSchema;` imports only — no field/serde/order
+  changes — except the authorized `phase_result_json_schema_generates` test
+  added to `result.rs`'s `#[cfg(test)]` module (the Test-plan's Task-1 pin),
+  which accounts for the `+18 -1` beyond the six derive-line edits. No
+  `Cargo.toml` edit. No `#[allow]`. No new `unwrap`/`expect`/`panic!` in
+  production paths. `Artifacts` and `DiagnosticSignature` correctly lack the
+  derive. All 13 Task-1 types derive `JsonSchema`. `grep -n
+  'CallToolResult::success' mcp/src/server.rs` shows no remaining hits.
+  Mutation spot-check: deleting the `with_raw_output_schema` call from
+  `execute_phase_tool()` fails
+  `execute_phase_tool_declares_run_id_output_schema` as expected — the
+  silent-degradation pin holds.
+- **Calibration:** confirms the known required-trait-cascade wall (derive
+  graphs must be applied leaf-first, one file per patch) — already captured
+  by this milestone's phase-02 Notes-for-executor; no new fold needed.
+
+**Telemetry:** `rexymcp review --config /home/matt/src/rexyMCP/rexymcp.toml --phase-doc /home/matt/src/rexyMCP/docs/dev/milestones/M31-rmcp-v2-upgrade/phase-02-structured-tool-output.md --phase-id phase-02 --verdict approved_after_1 --bounces 1 --failure-class spec_bug`
 
