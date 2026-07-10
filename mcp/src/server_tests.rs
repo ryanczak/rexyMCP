@@ -1012,3 +1012,86 @@ fn get_run_status_tool_is_registered() {
         "get_run_status tool should be registered"
     );
 }
+
+#[test]
+fn execute_phase_tool_declares_run_id_output_schema() {
+    let tool = execute_phase_tool();
+    let schema = tool
+        .output_schema
+        .expect("execute_phase_tool should have an output_schema");
+    assert!(
+        schema
+            .as_ref()
+            .get("properties")
+            .and_then(|p| p.get("run_id"))
+            .is_some(),
+        "execute_phase output_schema should contain run_id property"
+    );
+    assert!(
+        schema
+            .as_ref()
+            .get("properties")
+            .and_then(|p| p.get("status"))
+            .is_none(),
+        "execute_phase output_schema should NOT contain status (that's PhaseResult, not SpawnedRun)"
+    );
+}
+
+#[test]
+fn continue_phase_tool_declares_phase_result_output_schema() {
+    let tool = continue_phase_tool();
+    let schema = tool
+        .output_schema
+        .expect("continue_phase_tool should have an output_schema");
+    assert!(
+        schema
+            .as_ref()
+            .get("properties")
+            .and_then(|p| p.get("status"))
+            .is_some(),
+        "continue_phase output_schema should contain status property"
+    );
+}
+
+#[test]
+fn list_tools_carries_output_schemas_for_hand_rolled_tools() {
+    let execute_tool = execute_phase_tool();
+    let continue_tool = continue_phase_tool();
+    assert!(
+        execute_tool.output_schema.is_some(),
+        "execute_phase tool must carry an output_schema"
+    );
+    assert!(
+        continue_tool.output_schema.is_some(),
+        "continue_phase tool must carry an output_schema"
+    );
+}
+
+#[test]
+fn structured_result_carries_matching_text_block() {
+    let result = structured_result(&SpawnedRun {
+        run_id: "r-1".to_string(),
+    })
+    .unwrap();
+    let expected = serde_json::json!({ "run_id": "r-1" });
+    assert_eq!(
+        result.structured_content.as_ref(),
+        Some(&expected),
+        "structured_content should match SpawnedRun JSON"
+    );
+    let text = result.content[0]
+        .as_text()
+        .expect("content[0] should be text")
+        .text
+        .as_str();
+    let parsed: serde_json::Value = serde_json::from_str(text).expect("text should parse as JSON");
+    assert_eq!(
+        parsed, expected,
+        "text block should parse to the same JSON as structured_content"
+    );
+    assert_eq!(
+        result.is_error,
+        Some(false),
+        "is_error should be Some(false) for structured results"
+    );
+}

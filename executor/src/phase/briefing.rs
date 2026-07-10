@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::governor::hard_fail::{HardFailSignal, ToolCallSnapshot};
@@ -15,20 +16,20 @@ pub const MAX_WORKING_FILES: usize = 5;
 pub const MAX_ATTEMPT_CHARS: usize = 200;
 
 /// One compressed 1–2 line description of a local-model attempt.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AttemptSummary {
     pub one_line: String,
 }
 
 /// A file the model touched, with its post-edit content.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkingFile {
     pub path: PathBuf,
     pub content: String,
 }
 
 /// What triggered the escalation — one of the two non-`Complete` statuses.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Blocker {
     HardFail(HardFailSignal),
     BudgetExceeded,
@@ -37,7 +38,7 @@ pub enum Blocker {
 /// The escalation hand-off returned to Claude when a phase does not complete.
 /// A fresh brief, not a transcript replay. Not redacted — Claude is the trusted
 /// architect and needs the truth; redaction guards the on-disk session log only.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Briefing {
     pub goal: String,
     pub acceptance_criteria: String,

@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::briefing::Briefing;
 
 /// Terminal status of an `execute_phase` run. Serializes to the contract strings
 /// `"complete"` / `"hard_fail"` / `"budget_exceeded"` / `"cancelled"` (M5 returns this as JSON).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PhaseStatus {
     Complete,
@@ -17,7 +18,7 @@ pub enum PhaseStatus {
 
 /// Who cancelled the phase. Set by the MCP/CLI layer (phase-03+); the executor
 /// loop leaves this `None`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CancelReason {
     UserStop,
@@ -25,7 +26,7 @@ pub enum CancelReason {
 }
 
 /// Cancellation details recorded when a phase is aborted mid-run.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Cancellation {
     /// Who cancelled. The executor loop leaves this `None`; the MCP/CLI layer
     /// (phase-03+) sets it from the entrypoint that fired the signal.
@@ -38,7 +39,7 @@ pub struct Cancellation {
 }
 
 /// One file the phase changed, with a short human summary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FileChange {
     pub path: PathBuf,
     pub change_summary: String,
@@ -46,7 +47,7 @@ pub struct FileChange {
 
 /// Tails of the final command set's stdout/stderr. `None` when a command wasn't
 /// run (e.g. the phase failed before the final gate).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandOutputs {
     pub format: Option<String>,
     pub build: Option<String>,
@@ -73,7 +74,7 @@ pub struct Artifacts {
 /// The single structured value `execute_phase` returns across the MCP boundary —
 /// the entire interface Claude reasons over. `briefing` is present iff the phase
 /// did not complete.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseResult {
     pub status: PhaseStatus,
     pub files_changed: Vec<FileChange>,
@@ -327,6 +328,23 @@ mod tests {
         assert!(
             !json.contains("\"completion_summary\""),
             "empty completion_summary must be omitted from JSON, got: {json}"
+        );
+    }
+
+    #[test]
+    fn phase_result_json_schema_generates() {
+        let schema = schemars::schema_for!(PhaseResult);
+        let json = serde_json::to_value(&schema).unwrap();
+        let props = json
+            .pointer("/properties")
+            .expect("schema should have properties");
+        assert!(
+            props.get("status").is_some(),
+            "PhaseResult schema should contain status property"
+        );
+        assert!(
+            props.get("briefing").is_some(),
+            "PhaseResult schema should contain briefing property"
         );
     }
 }

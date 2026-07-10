@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use rmcp::handler::server::ServerHandler;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ProgressNotificationParam, ProgressToken,
+    CallToolRequestParams, CallToolResult, ProgressNotificationParam, ProgressToken,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use schemars::JsonSchema;
@@ -55,6 +55,13 @@ pub struct ExecutePhaseOutput {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct GetRunStatusParams {
     pub run_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+/// The immediate `execute_phase` response — the spawned run's handle,
+/// polled to completion via `get_run_status`.
+pub(crate) struct SpawnedRun {
+    pub(crate) run_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -154,6 +161,16 @@ impl ProgressCallback for McpProgressNotifier {
                 .await;
         });
     }
+}
+
+/// Build a hand-rolled tool's success result: `structured_content` plus the
+/// spec-recommended back-compat text block (`CallToolResult::structured`
+/// emits both from one `Value`).
+fn structured_result<T: serde::Serialize>(value: &T) -> Result<CallToolResult, rmcp::ErrorData> {
+    let json = serde_json::to_value(value).map_err(|e| {
+        rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
+    })?;
+    Ok(CallToolResult::structured(json))
 }
 
 /// Inner logic for `execute_phase` — extracted so it can be tested without
@@ -711,11 +728,7 @@ impl ServerHandler for RexyMcpServer {
                     crate::stop_watcher::STOP_POLL_INTERVAL,
                 ));
 
-                let payload = serde_json::json!({ "run_id": run_id });
-                let json_str = serde_json::to_string(&payload).map_err(|e| {
-                    rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
-                })?;
-                Ok(CallToolResult::success(vec![ContentBlock::text(json_str)]))
+                structured_result(&SpawnedRun { run_id })
             } else if request.name == "continue_phase" {
                 let params: ContinuePhaseParams = serde_json::from_value(
                     serde_json::Value::Object(request.arguments.unwrap_or_default()),
@@ -764,11 +777,7 @@ impl ServerHandler for RexyMcpServer {
                         .await
                         .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
 
-                let json_str = serde_json::to_string(&output.result).map_err(|e| {
-                    rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
-                })?;
-
-                Ok(CallToolResult::success(vec![ContentBlock::text(json_str)]))
+                structured_result(&output.result)
             } else {
                 let ctx = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
                 router.call(ctx).await
@@ -782,16 +791,8 @@ impl ServerHandler for RexyMcpServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
         let mut tools = Self::tool_router().list_all();
-        tools.insert(0, rmcp::model::Tool::new(
-            "execute_phase",
-            "Execute a phase against a target repository. Spawns the run inside the serve process and returns { run_id } immediately; poll it to completion with get_run_status. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
-            rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
-        ));
-        tools.insert(1, rmcp::model::Tool::new(
-            "continue_phase",
-            "Resume a non-complete phase from a fresh briefing-seeded context. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
-            rmcp::handler::server::tool::schema_for_type::<Parameters<ContinuePhaseParams>>(),
-        ));
+        tools.insert(0, execute_phase_tool());
+        tools.insert(1, continue_phase_tool());
         tools.sort_by(|a, b| a.name.cmp(&b.name));
         let next_cursor = request.and_then(|r| r.cursor);
         Ok(rmcp::model::ListToolsResult {
@@ -803,20 +804,36 @@ impl ServerHandler for RexyMcpServer {
 
     fn get_tool(&self, name: &str) -> Option<rmcp::model::Tool> {
         if name == "execute_phase" {
-            Some(rmcp::model::Tool::new(
-                "execute_phase",
-                "Execute a phase against a target repository. Spawns the run inside the serve process and returns { run_id } immediately; poll it to completion with get_run_status. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
-                rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
-            ))
+            Some(execute_phase_tool())
         } else if name == "continue_phase" {
-            Some(rmcp::model::Tool::new(
-                "continue_phase",
-                "Resume a non-complete phase from a fresh briefing-seeded context. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
-                rmcp::handler::server::tool::schema_for_type::<Parameters<ContinuePhaseParams>>(),
-            ))
+            Some(continue_phase_tool())
         } else {
             Self::tool_router().get(name).cloned()
         }
+    }
+}
+
+fn execute_phase_tool() -> rmcp::model::Tool {
+    let tool = rmcp::model::Tool::new(
+        "execute_phase",
+        "Execute a phase against a target repository. Spawns the run inside the serve process and returns { run_id } immediately; poll it to completion with get_run_status. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+        rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
+    );
+    match rmcp::handler::server::tool::schema_for_output::<SpawnedRun>() {
+        Ok(schema) => tool.with_raw_output_schema(schema),
+        Err(_) => tool,
+    }
+}
+
+fn continue_phase_tool() -> rmcp::model::Tool {
+    let tool = rmcp::model::Tool::new(
+        "continue_phase",
+        "Resume a non-complete phase from a fresh briefing-seeded context. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+        rmcp::handler::server::tool::schema_for_type::<Parameters<ContinuePhaseParams>>(),
+    );
+    match rmcp::handler::server::tool::schema_for_output::<rexymcp_executor::phase::PhaseResult>() {
+        Ok(schema) => tool.with_raw_output_schema(schema),
+        Err(_) => tool,
     }
 }
 

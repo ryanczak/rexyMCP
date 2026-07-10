@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::config::GovernorConfig;
@@ -11,7 +12,7 @@ pub struct ToolCallSnapshot {
     pub succeeded: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum HardFailSignal {
     IdenticalToolCallRepetition {
         tool: String,

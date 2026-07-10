@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
@@ -13,7 +14,7 @@ use tokio::process::Command;
 /// "error" → Error, "warning" → Warning, "note" → Note, "help" → Help.
 /// Only errors are fed back to the model (warnings would be noise); the type
 /// carries all four for future flexibility.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum Severity {
     Error,
     Warning,
@@ -24,7 +25,7 @@ pub enum Severity {
 /// One compile/lint message. Populated from the compiler's structured output.
 /// The shape is stable across languages — all supported compilers map into
 /// this record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Diagnostic {
     pub path: PathBuf,
     /// 1-indexed line number.
