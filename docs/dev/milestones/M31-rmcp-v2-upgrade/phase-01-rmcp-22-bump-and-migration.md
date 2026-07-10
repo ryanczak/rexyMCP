@@ -1,7 +1,7 @@
 # Phase 01: `rmcp` 1.8→2.2 bump + API migration
 
 **Milestone:** M31 — rmcp v2 Upgrade
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~20 source lines (two files) + the one `Cargo.toml` constraint + `Cargo.lock` churn
 **Tags:** language=rust, kind=refactor, size=s
@@ -383,4 +383,24 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 7c26d539ced7cd6f656320754feac721c2cbac31
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** none beyond what the phase doc pre-authorized — the
+  `Content`/`RawContent` → `ContentBlock` migration (server.rs:6, 718, 771)
+  was compiler-forced (task 4 explicitly permits fixing whatever the
+  compiler flags beyond the two known break sites) and matches the Gotchas
+  builder/constructor pattern (`ContentBlock::text(json_str)`), with no
+  `#[allow]` and no preemptive wildcard match arms added.
+- **Calibration:** none — the milestone README's "Verified migration
+  surface" table had listed `Content::new(RawContent::text(..), None)` as
+  expected to compile unchanged; the compiler disagreed. Independent
+  re-run of all four gates (fmt --check, build, clippy -D warnings, test)
+  confirms green; `cargo test -p rexymcp` shows 512 passed, 0 failed,
+  matching the executor's claim; `progress_notifier_maps_fields_correctly`
+  passes with assertions byte-identical to the phase doc's pre-injected
+  AFTER shape.
 
