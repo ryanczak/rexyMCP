@@ -1,14 +1,15 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M29 are fully implemented and closed (M18's
+> **Status:** Living design doc. M1–M30 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
 > committed scope; M27's stretch phase-07 advisory routing was not taken).
-> **M30** (executor interruption) is the active milestone, in progress. The
-> most recent arcs: **M26** (polish & hardening — loop-gate/hook/governor
-> hardening), **M27** (the autonomous escalation loop — `/rexymcp:auto`,
+> **M31** (rmcp v2 upgrade) is the active milestone, in planning. The
+> most recent arcs: **M27** (the autonomous escalation loop — `/rexymcp:auto`,
 > `continue_phase` resume, server-authored bookkeeping, per-role subagent
 > delegation, and the architect loop journal / usage harvester), **M28**
-> (edit-tool arg recovery), and **M29** (cleanup). This document is the source
+> (edit-tool arg recovery), **M29** (cleanup), and **M30** (executor
+> interruption — async `execute_phase` jobs, `stop_phase`, the `.rexymcp/stop`
+> sentinel, and the `cancelled` outcome). This document is the source
 > of truth for the *intended* design; the code under `executor/` and `mcp/` is
 > the source of truth for what actually runs. Milestones are listed in the
 > **Status** section at the bottom — that list is the project plan.
@@ -1190,3 +1191,21 @@ The project plan. Each entry becomes a milestone with its own
     primitive (`CancelSignal` + the `cancelled` outcome); later phases add the MCP
     job registry + tools, the CLI stop command + sentinel watcher, and the
     async-polling skill-loop rewrite.
+31. **M31 — rmcp v2 Upgrade** *(opened 2026-07-10)*. Upgrade the `mcp` crate's
+    `rmcp` dependency from 1.8.0 to the 2.2 line. v2.0.0's headline breaking
+    change aligns the SDK's model types with the **MCP 2025-11-25 spec**, and
+    (per rust-sdk discussion #716 / PRs #715/#720/#739) most public model
+    structs became `#[non_exhaustive]` with builder-style constructors
+    (`Type::new(required).with_optional(val)`); 2.0–2.2 also carry security and
+    conformance fixes (OAuth spoofing/SSRF, streamable-HTTP session leak,
+    cancelled-request handling). The verified migration surface (docs.rs
+    2.2.0) is small: the feature set (`server`/`macros`/`transport-io`), the
+    `ServerHandler` method signatures, `Tool::new`, the `ListToolsResult`
+    literal, `ServerInfo::default()`, and `ProgressToken` construction all
+    survive; the one confirmed source break is the two
+    `ProgressNotificationParam` struct literals (now non-exhaustive →
+    `::new(token, progress).with_message(..)`). The M26 roots-corroboration
+    deferral stands — v2 follows the same spec line that deprecated
+    `roots/list` (SEP-2577). Single compile-fix phase; the milestone closes
+    with a serve restart + live handshake/dispatch smoke test, which doubles
+    as the M30 live interrupt-path validation that closed unexercised.

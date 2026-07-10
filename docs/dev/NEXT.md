@@ -23,7 +23,28 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none.** **M30 — Executor Interruption is closed** (2026-07-10; all
+**Active phase: none — M31 is open, phase-01 not yet drafted.**
+
+**📌 M31 — rmcp v2 Upgrade kicked off (2026-07-10, with the user).** Upgrade the
+`mcp` crate's `rmcp` from 1.8.0 (`Cargo.toml` pins `"1.7"`) to the 2.2 line —
+v2.0.0 aligns model types with the MCP 2025-11-25 spec; most public model
+structs are now `#[non_exhaustive]` with builder constructors (rust-sdk
+[discussion #716](https://github.com/modelcontextprotocol/rust-sdk/discussions/716),
+PRs #715/#720/#739). The full migration surface was **verified against docs.rs
+2.2.0 at kickoff** and recorded in the
+[M31 README](milestones/M31-rmcp-v2-upgrade/README.md): only three files touch
+`rmcp`, and the one confirmed source break is the two
+`ProgressNotificationParam` struct literals (`server.rs:152`,
+`server_tests.rs:557`) → `::new(token, progress).with_message(..)`; everything
+else we use (features, `ServerHandler` signatures, `Tool::new`,
+`ListToolsResult` literal, `ServerInfo::default()`, `ProgressToken`) survives
+per the published docs, compiler as final word. Roots corroboration stays
+deferred (SEP-2577). Single phase planned; exit criteria include a **serve
+restart + live handshake/dispatch smoke** that doubles as M30's unexercised
+live interrupt-path validation. Roadmap entry: `docs/architecture.md`
+§ Status #31. Draft phase-01 via `/rexymcp:architect next`.
+
+**M30 — Executor Interruption is closed** (2026-07-10; all
 7 in-scope phases `01`/`02`/`03`/`04`/`04b`/`05a`/`05b` done). Retrospective in the
 [M30 README](milestones/M30-executor-interruption/README.md#retrospective--2026-07-10);
 `architecture.md` § Status #30 flipped to done. **No new calibration folds** (both
