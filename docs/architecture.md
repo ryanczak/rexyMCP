@@ -1206,6 +1206,16 @@ The project plan. Each entry becomes a milestone with its own
     `ProgressNotificationParam` struct literals (now non-exhaustive →
     `::new(token, progress).with_message(..)`). The M26 roots-corroboration
     deferral stands — v2 follows the same spec line that deprecated
-    `roots/list` (SEP-2577). Single compile-fix phase; the milestone closes
-    with a serve restart + live handshake/dispatch smoke test, which doubles
-    as the M30 live interrupt-path validation that closed unexercised.
+    `roots/list` (SEP-2577). Two phases: 01 the compile-fix bump; 02 adopt
+    **structured tool output** for the two hand-rolled tools —
+    `execute_phase`/`continue_phase` return `structured_content` (2.2.0's
+    `CallToolResult::structured`) alongside the text block and declare
+    output schemas via `Tool::with_output_schema` (the 8 router tools already
+    get this from the `Json<T>` wrapper). The other headline v2 capability —
+    **MCP tasks (SEP-1686)**, a 1:1 spec match for M30's hand-rolled
+    `run_id`/`get_run_status`/`stop_phase` job model — is recorded as a
+    future milestone candidate, blocked on Claude Code client support
+    (claude-code#18617); elicitation and `notifications/cancelled` handling
+    stay non-goals (no live channel / client never sends it). The milestone
+    closes with a serve restart + live handshake/dispatch smoke test, which
+    doubles as the M30 live interrupt-path validation that closed unexercised.

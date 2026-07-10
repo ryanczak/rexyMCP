@@ -39,10 +39,17 @@ PRs #715/#720/#739). The full migration surface was **verified against docs.rs
 else we use (features, `ServerHandler` signatures, `Tool::new`,
 `ListToolsResult` literal, `ServerInfo::default()`, `ProgressToken`) survives
 per the published docs, compiler as final word. Roots corroboration stays
-deferred (SEP-2577). Single phase planned; exit criteria include a **serve
-restart + live handshake/dispatch smoke** that doubles as M30's unexercised
-live interrupt-path validation. Roadmap entry: `docs/architecture.md`
-§ Status #31. Draft phase-01 via `/rexymcp:architect next`.
+deferred (SEP-2577). **Two phases planned** (decided with the user,
+2026-07-10): 01 the compile-fix bump; 02 structured tool output for the two
+hand-rolled tools (`execute_phase`/`continue_phase` return
+`structured_content` + declare output schemas — the 8 router tools already
+get this via `Json<T>`). **SEP-1686 tasks** (v2's spec-native async job
+model, a 1:1 match for M30's `run_id`/`get_run_status`/`stop_phase`) surveyed
+and recorded as a future milestone candidate — blocked on Claude Code client
+support (claude-code#18617). Exit criteria include a **serve restart + live
+handshake/dispatch smoke** that doubles as M30's unexercised live
+interrupt-path validation. Roadmap entry: `docs/architecture.md` § Status
+#31. Draft phase-01 via `/rexymcp:architect next`.
 
 **M30 — Executor Interruption is closed** (2026-07-10; all
 7 in-scope phases `01`/`02`/`03`/`04`/`04b`/`05a`/`05b` done). Retrospective in the

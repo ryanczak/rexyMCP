@@ -70,6 +70,9 @@ follows the same spec line, so this milestone does not re-open it
   initialize handshake with Claude Code and lists all 10 tools; a live async
   `execute_phase` → `get_run_status` round-trip works — this doubles as the
   M30 live smoke test that closed unexercised.
+- `execute_phase` and `continue_phase` return `structured_content` (alongside
+  the existing text block) and declare output schemas in `list_tools` /
+  `get_tool` (phase-02).
 
 ## Architecture references
 
@@ -83,13 +86,51 @@ follows the same spec line, so this milestone does not re-open it
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | rmcp 2.2 bump + API migration (phase-01, not yet drafted) | todo |
+| 02 | Structured output for `execute_phase` / `continue_phase` (phase-02, not yet drafted) | todo |
 
 ## Notes
 
-Single-phase milestone. Phase-01 follows the M25 dep-bump recipe (bump the one
-constraint → `cargo update -p rmcp` → react only to compiler flags → four
-gates), extended for a major bump: the phase doc pre-injects the verified
-before/after for the one known break site (`ProgressNotificationParam`) and
-explicitly authorizes the `mcp/Cargo.toml` + `Cargo.lock` edit (a hard-rule
-trigger otherwise). The live-handshake exit criterion is review-time work
-(architect-side, after a serve restart), not executor work.
+Phase-01 follows the M25 dep-bump recipe (bump the one constraint →
+`cargo update -p rmcp` → react only to compiler flags → four gates), extended
+for a major bump: the phase doc pre-injects the verified before/after for the
+one known break site (`ProgressNotificationParam`) and explicitly authorizes
+the `mcp/Cargo.toml` + `Cargo.lock` edit (a hard-rule trigger otherwise). The
+live-handshake exit criterion is review-time work (architect-side, after a
+serve restart), not executor work.
+
+**Phase-02 — structured tool output (decided with the user, 2026-07-10).**
+The eight router tools already go through rmcp's `Json<T>` wrapper, but the
+two hand-rolled tools return their payloads as a JSON *string* inside a text
+content block (`server.rs:718-725` for `execute_phase`'s `{ run_id }`,
+`server.rs:774-781` for `continue_phase`'s `PhaseResult`). rmcp 2.2.0's
+`CallToolResult` carries a `structured_content: Option<Value>` field with
+`CallToolResult::structured(value)` / `structured_error(value)` constructors,
+and `Tool::with_output_schema::<T>()` (server feature) advertises a typed
+output schema. Phase-02 has the two tools return `structured_content`
+(keeping the text block for back-compat — spec-recommended) and declares
+output schemas on the two hand-built `Tool` entries in
+`list_tools`/`get_tool`. No client dependency — Claude Code consumes
+`structuredContent` today. Depends on phase-01 (the constructors are
+2.x-only).
+
+**Adoption survey (2026-07-10).** Two v2 capabilities were evaluated with the
+user and **not** taken:
+
+- **MCP tasks (SEP-1686).** rmcp 2.2.0 ships the full experimental task
+  surface from the 2025-11-25 spec (task-augmented `tools/call` →
+  `CreateTaskResult`, `tasks/get` / `tasks/result` polling, `tasks/cancel`,
+  `TaskStatusNotification`, `TasksCapability`) — a 1:1 match for M30's
+  hand-rolled job model (`run_id` ↔ task ID, `get_run_status` ↔ `tasks/get`,
+  `stop_phase` ↔ `tasks/cancel`). **Blocked on the client:** Claude Code's
+  MCP tool calls are still synchronous/blocking; SEP-1686 support is an open
+  feature request
+  ([claude-code#18617](https://github.com/anthropics/claude-code/issues/18617))
+  — the same client gap as progress notifications and the `context.ct` cancel
+  token. Recorded as a **future milestone candidate**: migrate (or
+  dual-expose) the M30 job model onto spec tasks once Claude Code lands
+  support. Watch that issue.
+- **Elicitation, cancelled-request handling, meta/trace helpers, icons.**
+  Elicitation cuts against the no-live-channel design (human gates live in
+  the architect's skills); `notifications/cancelled` is a dead channel
+  (Claude Code orphans requests — verified in M30); the rest have no consumer
+  in our loop.
