@@ -1,7 +1,7 @@
 # Phase 02: MCP job registry + async `execute_phase` + `get_run_status`
 
 **Milestone:** M30 — Executor Interruption
-**Status:** in-progress (bounced — bug-02-1 major, bug-02-2 minor)
+**Status:** review
 **Depends on:** phase-01
 **Estimated diff:** ~480 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -795,3 +795,102 @@ tests, so nothing else changes. Do **not** add snapshot back or add any other
 Nothing else in the phase needs changing — the registry, the async
 `execute_phase` spawn, and `get_run_status` are all correct and already
 committed.
+### Update — ts=1783700345954 (complete, server-authored)
+
+**Summary:** All four gates pass cleanly. The bounce fixes are complete:
+
+1. **Bug-02-1 (major):** Changed `get_run_status_running_times_out` timeout from `Duration::from_secs(15)` to `Duration::from_millis(1)` — no more 15-second test block.
+2. **Bug-02-2 (minor):** Removed the dead `snapshot` method and its `#[allow(dead_code)]` attribute, plus the three tests that only exercised it.
+
+Verification greps confirmed: `#[allow]` → no output, `fn snapshot` → no output, `from_secs(15)` in `server_tests.rs` → no output. Tests finish in ~6s (not ~21s). All changes committed.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+_active ... ok
+test tools::update_task::tests::flips_active_task_to_done ... ok
+test tools::symbols::tests::rejects_nonexistent_path ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 949 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.10s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling rexymcp v0.9.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.16s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-0ef0717e07dc6f8c)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `mcp/src/jobs.rs` — +0 -30
+- `mcp/src/server_tests.rs` — +1 -1
+
+**Commit:** 8a43884aec103a7f9f807806e67087fef1f79f22
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
