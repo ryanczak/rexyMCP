@@ -1,7 +1,7 @@
 # Phase 05a: async-polling skill rewrite + `cancelled` handling
 
 **Milestone:** M30 — Executor Interruption
-**Status:** todo
+**Status:** done
 **Depends on:** phase-02 (async `execute_phase` + `get_run_status`), phase-03 (`stop_phase` + `cancelled`), phase-04/04b (`rexymcp stop` sentinel)
 **Estimated diff:** ~180 lines (Markdown skills only)
 **Tags:** language=markdown, kind=refactor, size=m
@@ -157,3 +157,40 @@ this explicitly per the phase-doc template's E2E-N/A rule.)
 (Architect-authored; direct execution.)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-10 (complete, architect direct execution)
+
+**Summary:** Authored the four skill edits directly (Claude). `dispatch/SKILL.md`
+§2 rewritten to the async detect-and-adapt flow (poll `get_run_status` on
+`{run_id}`; use a direct `status` object as the `PhaseResult` for the old-serve /
+`run-phase` fallback), with all four `get_run_status` states handled
+(running/done/failed/lost-unknown), a "Stopping a running phase" note, and a new
+§6 `cancelled` branch. `auto/SKILL.md` gained the fifth stop condition
+`STOP(cancelled)` (step-4 branch, §3 bullet, four→five everywhere it meant stop
+conditions, journaling outcome, loop-report line). `review/SKILL.md` §2 refuses a
+`cancelled` result; `escalate/SKILL.md` §1 accepts `cancelled` and the Resume
+lever names it the clearest resume case. Poll-until-terminal (no skill cap) and
+human-only stop agency per the design.
+
+**Acceptance criteria:** all met.
+
+**End-to-end verification:** frontmatter (`name`/`description`/`allowed-tools`)
+intact on all four skills; slash-command names unchanged; the two remaining "four"
+mentions in `auto` are "four *composed skills*" (correct, not stop conditions);
+`grep PhaseResult plugin/skills/dispatch/SKILL.md` shows only terminal-status
+branches + the back-compat line, no stale synchronous assumption. `cargo build`
+and `cargo test` green (949 passed / 2 ignored) — no Rust changed.
+
+**Files changed:**
+- `plugin/skills/dispatch/SKILL.md` — async detect-and-adapt reap + `cancelled` §6 + stop note
+- `plugin/skills/auto/SKILL.md` — `STOP(cancelled)` fifth stop condition
+- `plugin/skills/review/SKILL.md` — refuse `cancelled`
+- `plugin/skills/escalate/SKILL.md` — accept `cancelled` as a resume candidate
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (direct) — architect-authored skill prose, self-reviewed (M27 phase-06b pattern)
+- **Scope deviations:** none — contract-doc updates held for phase-05b as planned
+- **Calibration:** none

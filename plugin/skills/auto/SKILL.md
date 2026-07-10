@@ -30,7 +30,7 @@ without giving up any review rigor.
 | decide an escalation lever | `escalate` |
 
 The loop adds **only** sequencing, the per-phase assist budget, journaling, the
-four stop conditions, and the loop report. It does **not** restate the Definition
+five stop conditions, and the loop report. It does **not** restate the Definition
 of Done, the bug-report template, the escalation levers, or the status-flip
 mechanics — each composed skill owns those, and running that skill's procedure
 verbatim is what keeps an autonomous run identical to an interactive one.
@@ -129,6 +129,10 @@ happen.
 4. **Branch on `PhaseResult.status`:**
    - `complete` → go to **REVIEW** (step 5).
    - `hard_fail` / `budget_exceeded` → go to **ESCALATE** (step 6).
+   - `cancelled` → **STOP(cancelled)** (§3). A deliberate mid-phase interrupt
+     (a human `rexymcp stop` or an architect `stop_phase`) is **not** a failure to
+     escalate or a bounce to re-dispatch — the loop hands the partial work back to
+     the human. Do **not** re-dispatch, review, or escalate a cancelled phase.
 5. **REVIEW** (subagent, `review_model`). Run the `review` skill for the phase.
    Journal `review` with `--outcome` = the verdict.
    - **approved** → `phases_this_run += 1`. If that was the milestone's last
@@ -153,7 +157,7 @@ happen.
      request, or a spec-vs-architecture conflict → **STOP(blocker)**.
 7. **BACKSTOP.** If `phases_this_run >= max-phases` → **STOP(runaway)**.
 
-## 3. Stop conditions (four — the loop always halts for the human)
+## 3. Stop conditions (five — the loop always halts for the human)
 
 The loop **never** auto-continues past any of these. On each, go to §5 (harvest +
 loop report) and stop.
@@ -171,6 +175,13 @@ loop report) and stop.
 - **runaway** — `phases_this_run >= max-phases` (the backstop; default 8,
   overridable via the `max-phases` argument). A safety net against an unbounded
   run, not a normal exit.
+- **cancelled** — a dispatched phase returned `status: "cancelled"` (a human
+  `rexymcp stop` from a second terminal, or an architect `stop_phase` between
+  polls, fired mid-run). A deliberate interrupt is human territory by definition:
+  the loop surfaces the partial diff + `cancellation.reason` and hands back — it
+  **never** silently re-dispatches or escalates a phase someone chose to stop. The
+  human decides whether to resume (`continue_phase`), re-dispatch, or abandon. The
+  loop stays **passive** about stopping — it does not fire `stop_phase` itself.
 
 ## 4. Journaling — every activity, exact command
 
@@ -205,8 +216,8 @@ but warns:
 Do all of the following, in order, on **every** stop:
 
 **a. Journal the `boundary` activity** with `--outcome` = the stop reason
-(`boundary` / `budget` / `blocker` / `runaway`). This is the persisted, queryable
-half of the loop report.
+(`boundary` / `budget` / `blocker` / `runaway` / `cancelled`). This is the
+persisted, queryable half of the loop report.
 
 **b. Harvest token usage (Claude Code only; degrade gracefully).** So the report's
 cost totals are real, not estimated:
@@ -228,7 +239,7 @@ persisted half is the `boundary` record from step a):
 ## /rexymcp:auto loop report
 
 - **Milestone:** M<n> — <name>
-- **Stopped:** <boundary | assist budget exhausted on <phase> | blocker: <what> | runaway backstop>
+- **Stopped:** <boundary | assist budget exhausted on <phase> | blocker: <what> | runaway backstop | cancelled: <phase> interrupted (<reason>) — partial diff attached>
 - **Phases this run:** <N>
   - <phase-id> — <verdict> (assists: <n>)
   - …

@@ -43,6 +43,8 @@ Check `PhaseResult.status`:
 - If `"complete"`: this is a review, not an escalation. Point the user at
   `/rexymcp:review <phase>` and stop. Escalate is not for clean results.
 - If `"hard_fail"` or `"budget_exceeded"`: proceed to §2.
+- If `"cancelled"`: proceed to §2 — a deliberately-stopped run is the clearest
+  **resume** candidate (its partial work is already on disk). See the Resume lever.
 
 ## 2. Choosing a lever
 
@@ -135,6 +137,14 @@ same gap forward.
 
 **Choose resume over takeover** when the executor can reach the work but just
 needs more turns or a hint about what to fix.
+
+**A `cancelled` result is the clearest resume case.** When a phase was
+deliberately stopped mid-run (`rexymcp stop` → `user_stop`, or `stop_phase` →
+`claude_stop`), its partial work is already on the (dirty) working tree and the
+`cancellation` record says which `stage`/`turns_done` it reached. `continue_phase`
+re-enters from that diff with a briefing of what was interrupted — nothing was
+lost, so resume (not re-dispatch) is almost always right unless the interrupt was
+itself a signal the phase was mis-scoped.
 
 **Execution steps:**
 

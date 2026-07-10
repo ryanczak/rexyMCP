@@ -42,13 +42,17 @@ If the phase doc's `Status:` line is not `review`, stop. Tell the user:
 be reviewed by the executor first — re-dispatch via `/rexymcp:dispatch
 <phase>` if it is still `todo`."
 
-## 2. Refuse hard_fail / budget_exceeded results
+## 2. Refuse hard_fail / budget_exceeded / cancelled results
 
 Check `PhaseResult.status`:
 
 - If `"hard_fail"` or `"budget_exceeded"`: this is an escalation, not a
   review. Point the user at `/rexymcp:escalate <phase>` and stop. Do not
   attempt to review partial work.
+- If `"cancelled"`: the run was **deliberately stopped** mid-phase (`rexymcp stop`
+  or `stop_phase`) — its work is partial and the tree is dirty, so it is **not**
+  reviewable. Point the user at `/rexymcp:escalate <phase>` (to resume the partial
+  work) or a fresh re-dispatch, and stop.
 - If `"complete"`: proceed to §3.
 
 ## 3. Re-run the command set

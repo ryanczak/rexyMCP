@@ -45,7 +45,7 @@ unreachable, surface the error to the user and stop. Do **not** invoke
 Example healthy response: `{"status": "ok", "model": "qwen-32b", ...}`
 Example unhealthy response: connection refused, timeout, or 5xx.
 
-## 2. Invoke execute_phase
+## 2. Invoke execute_phase — and reap the result (async)
 
 Call the `execute_phase` MCP tool with these arguments:
 
@@ -56,9 +56,46 @@ Call the `execute_phase` MCP tool with these arguments:
   client's workspace roots).
 - `model` (optional): if the user supplied a model override, pass it here.
 
-The executor will run the phase. The agent's client interface (Claude Code or Google Antigravity) surfaces MCP progress
-notifications to the user automatically — you do not need to manage them.
-The user will see progress as the executor works.
+**As of M30, `execute_phase` is an async job** — it spawns the run inside the
+serve process and returns immediately, before the phase finishes. **Detect and
+adapt** on what it returns:
+
+- **`{ run_id }` present** → the run is in flight; reap it by **polling**
+  `get_run_status(run_id)`. Call it, and while the returned `state == "running"`,
+  **call it again** — each call bounded-long-polls (~15s) server-side, so this is
+  efficient, not a busy spin. Keep polling until the state leaves `running`. There
+  is **no** skill-level poll cap: the run is bounded by its own terminators
+  (`max_turns`, `wall_clock_secs`, the governor). On the terminal state:
+  - `state == "done"` → `result` is the `PhaseResult`; branch on `result.status`
+    per §3–§6.
+  - `state == "failed"` → an **infrastructure** error (config load / scope / IO),
+    **not** a model `hard_fail`. Surface `error` and stop; suggest `executor_health`
+    and the log. Do not route to `/rexymcp:escalate` — there is no briefing.
+  - `state == "unknown"` **after** you have already seen `running`/`done` for this
+    id → the run was **lost** (the serve process likely restarted mid-run — a
+    rebuilt binary doesn't hot-swap a running `serve`, and the registry is
+    in-memory). Surface "run lost — check `rexymcp status`, then re-dispatch"; do
+    **not** report success.
+- **`status` present instead of `run_id`** (an older blocking serve binary, or the
+  `rexymcp run-phase` CLI path) → the object **is** the `PhaseResult`. Use it
+  directly, no polling. This one branch keeps the skill working across the binary
+  transition until every serve process runs the M30 async binary.
+
+The user watches progress via `rexymcp status` / `rexymcp dashboard` (Claude Code
+sends no MCP progressToken, so live notifications don't fire).
+
+### Stopping a running phase
+
+While a phase is in flight it can be stopped — the M30 interrupt path:
+
+- **Human, second terminal:** `rexymcp stop` writes the `.rexymcp/stop` sentinel;
+  the serve-side watcher cancels every live run in that repo (global stop-all).
+- **Architect, between polls:** call `stop_phase(run_id)` — you are free to issue
+  it precisely because you are polling, not blocked inside one long call.
+
+Either way the run comes back terminal with `status: "cancelled"` (§6): a partial
+diff, a `cancellation.reason`, and the working tree left dirty. Stopping is a
+**deliberate** act — the skill never fires it on its own.
 
 ## 3. On return: complete
 
@@ -99,11 +136,31 @@ When `PhaseResult.status == "budget_exceeded"`, the shape is the same as
 `hard_fail` — a `briefing` is present. Surface the same fields and suggest
 the same next step: `/rexymcp:escalate <phase>`.
 
-## 6. What you do not do
+## 6. On return: cancelled
+
+When the terminal `PhaseResult.status == "cancelled"`, the run was **deliberately
+stopped** mid-phase (a human `rexymcp stop` or an architect `stop_phase`). Surface:
+
+- **Status:** cancelled
+- **Reason:** `cancellation.reason` — `user_stop` (human sentinel) or `claude_stop`
+  (architect `stop_phase`)
+- **Where:** `cancellation.stage` + `cancellation.turns_done` (turns completed
+  before the stop)
+- **Partial work:** `files_changed` / `diff` — and note that the **working tree is
+  left dirty** (unreverted, uncommitted) for triage.
+
+Suggest the next step: the run was interrupted on purpose, so the user decides —
+**resume** the partial work (`/rexymcp:escalate <phase>` → `continue_phase`),
+re-dispatch fresh, or abandon. Do **not** auto-advance and do **not** treat a
+cancel as a failure to escalate on your own.
+
+## 7. What you do not do
 
 - You do **not** review the executor's work. That is `/rexymcp:review`.
 - You do **not** decide escalation levers. That is `/rexymcp:escalate`.
 - You do **not** re-dispatch automatically. The user gates each step.
+- You do **not** stop a running phase on your own — stopping is a deliberate
+  human/architect act (`rexymcp stop` / `stop_phase`), never a skill decision.
 - You do **not** flip phase status. Status management belongs to the
   architect (on dispatch) and the review skill (on approval).
 - You do **not** auto-advance to review or escalate. The user advances
