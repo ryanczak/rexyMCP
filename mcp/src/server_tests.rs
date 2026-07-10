@@ -981,7 +981,7 @@ async fn get_run_status_running_times_out() {
     let params = GetRunStatusParams {
         run_id: run_id.clone(),
     };
-    let out = get_run_status_inner(&registry, &params, Duration::from_secs(15)).await;
+    let out = get_run_status_inner(&registry, &params, Duration::from_millis(1)).await;
     assert_eq!(out.state, "running");
     assert!(out.result.is_none());
     assert!(out.error.is_none());

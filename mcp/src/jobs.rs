@@ -61,12 +61,6 @@ impl JobRegistry {
         }
     }
 
-    /// Non-blocking snapshot. `None` = unknown id.
-    #[allow(dead_code)]
-    pub fn snapshot(&self, run_id: &str) -> Option<RunState> {
-        self.lock().get(run_id).map(|e| e.state_tx.borrow().clone())
-    }
-
     fn subscribe(&self, run_id: &str) -> Option<watch::Receiver<RunState>> {
         self.lock().get(run_id).map(|e| e.state_tx.subscribe())
     }
@@ -138,30 +132,6 @@ mod tests {
             5,
             "UUID should have four hyphens (5 segments)"
         );
-    }
-
-    #[test]
-    fn snapshot_unknown_id_is_none() {
-        let registry = JobRegistry::new();
-        assert!(registry.snapshot("nonexistent").is_none());
-    }
-
-    #[test]
-    fn insert_then_snapshot_is_running() {
-        let registry = JobRegistry::new();
-        registry.insert("r1");
-        assert!(matches!(registry.snapshot("r1"), Some(RunState::Running)));
-    }
-
-    #[test]
-    fn publish_sets_terminal_snapshot() {
-        let registry = JobRegistry::new();
-        registry.insert("r1");
-        registry.publish("r1", RunState::Complete(json!({"status": "ok"})));
-        assert!(matches!(
-            registry.snapshot("r1"),
-            Some(RunState::Complete(_))
-        ));
     }
 
     #[tokio::test]
