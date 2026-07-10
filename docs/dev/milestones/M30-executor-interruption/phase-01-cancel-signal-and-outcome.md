@@ -1,7 +1,7 @@
 # Phase 01: Executor `CancelSignal` + `cancelled` outcome
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** in-progress (bounced — bug-01-1; refined re-dispatch 2026-07-10)
 **Depends on:** none
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -471,6 +471,153 @@ site in `mcp/src/runner.rs` — set to `CancelSignal::never()` only).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Update — 2026-07-10 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the failure was a framing gap, not a capability gap — from a
+clean-tree/green-gate state the executor concluded "already complete" and never
+engaged bug-01-1 (the mid-stream test was left defective, zero files changed). A
+sharpened spec with an unmissable "do not re-verify — this is a bounce fix" header
+and the exact parking-client + test code inline (worked example) directly targets
+that gap; takeover would forfeit the model-vs-spec telemetry point on the first
+real escalation.
+
+### Notes for executor — 2026-07-10 (REQUIRED FIX — read before doing anything)
+
+**⛔ This is a BOUNCE FIX, not a green-gate re-verify.** The working tree is
+clean and all four gates are green **on purpose** — the prior run committed the
+code. A clean tree and passing gates are **NOT** evidence this phase is done, and
+"all tasks already implemented" is the wrong conclusion. There is exactly **one**
+required change below. The phase is **not complete** until you make it, commit it,
+and the verification greps come back empty. Do not report `complete` without the
+edit.
+
+**The defect (bug-01-1, major):** the test
+`loop_returns_cancelled_when_signal_flipped_mid_stream` in
+`executor/src/agent/tests.rs` does **not** actually exercise the inner `select!`
+cancellation branch (`mod.rs` → `cancelled_result("awaiting_model", …)`). It is
+defective three ways:
+
+1. It uses `tokio::time::sleep(...)` — **forbidden** by STANDARDS §3.3 (no `sleep`
+   in tests; tests must be deterministic).
+2. Its assertion is `status == Cancelled || status == HardFail` and stage
+   `== "awaiting_model" || == "between_turns"` — a disjunction so loose it passes
+   even if cancellation never fires. It proves nothing.
+3. It uses `MockAiClientScript` (which completes `chat` synchronously) instead of
+   a **parking** client, so the `select!` outcome is scheduling-dependent — that
+   is why the sleep and the loose assertion were needed. (You started writing a
+   `ParkingClient` last run, then deleted it. Don't delete it this time.)
+
+**Required fix — replace the entire body of
+`loop_returns_cancelled_when_signal_flipped_mid_stream` with this exact test, and
+add a small parking client that flips the signal on its first poll.** This is
+deterministic with **no sleep and no `tokio::spawn`**: the top-of-loop cancel
+check runs *before* `chat` is ever polled (signal still `false`, so it does not
+short-circuit to `"between_turns"`); the loop then enters the `select!`, polls the
+chat future which flips the signal and parks forever, so the **only** way the
+inner loop can resolve is the cancel branch → stage `"awaiting_model"`.
+
+First, ensure these imports are present at the top of `executor/src/agent/tests.rs`
+(re-add the two you removed last run):
+
+```rust
+use crate::agent::cancel::{CancelHandle, CancelSignal};
+use crate::ai::AiClient;
+use async_trait::async_trait;
+use tokio::sync::mpsc::UnboundedSender;
+```
+
+Add this parking client at module scope (near `NoopVerifier`/`NoopRunner`).
+Note `#[async_trait]` and the `anyhow::Result<()>` return type — match the other
+`AiClient` impls in `executor/src/ai/testing.rs` exactly:
+
+```rust
+struct CancelThenPark {
+    handle: CancelHandle,
+}
+
+#[async_trait]
+impl AiClient for CancelThenPark {
+    async fn chat(
+        &self,
+        _system_prompt: &str,
+        _messages: Vec<Message>,
+        _tx: UnboundedSender<AiEvent>,
+        _tools: Option<&[ToolSchema]>,
+    ) -> anyhow::Result<()> {
+        // Fire the cancel signal the moment the loop is awaiting the model, then
+        // park forever so the select!'s cancel branch is the only exit.
+        self.handle.cancel();
+        std::future::pending::<()>().await;
+        Ok(())
+    }
+}
+```
+
+Then the test body (delete the old one entirely — the `tokio::spawn`, the
+`sleep`, and both disjunction asserts must all be gone):
+
+```rust
+#[tokio::test]
+async fn loop_returns_cancelled_when_signal_flipped_mid_stream() {
+    let root = TempDir::new().unwrap();
+    let (handle, signal) = CancelSignal::new();
+    let client = CancelThenPark { handle };
+    let scope = Scope::new(root.path()).unwrap();
+    let budget = Budget::default();
+    let deps = LoopDeps {
+        client: &client,
+        registry: &registry_over(scope),
+        tools: &[],
+        budget: &budget,
+        max_turns: 10,
+        project_root: root.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams {
+            temperature: None,
+            seed: None,
+        },
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: signal,
+    };
+    let result = execute_phase(&input(), deps).await.unwrap();
+    assert_eq!(result.status, PhaseStatus::Cancelled);
+    let c = result.cancellation.as_ref().unwrap();
+    assert_eq!(c.stage, "awaiting_model");
+}
+```
+
+(If any helper name above differs from the one this file actually uses — e.g. the
+registry/clock/verifier/runner helpers — mirror what the neighboring test
+`loop_returns_cancelled_when_signal_flipped_between_turns` uses; do **not** invent
+new helpers.)
+
+**Verification (all must hold before you report complete):**
+
+- `grep -n "tokio::time::sleep" executor/src/agent/tests.rs` → **no output**.
+- `grep -n "Cancelled || result.status == PhaseStatus::HardFail" executor/src/agent/tests.rs`
+  → **no output**.
+- The mid-stream test asserts `stage == "awaiting_model"` exactly (no `||`).
+- `cargo test loop_returns_cancelled` → both cancellation tests pass.
+- All four gates green. Commit as a `test:` (or `fix:`) commit; stage only the
+  file(s) you changed with `git add -- <path>` — do **not** `git add -A`.
+
+Nothing else in the phase needs changing — the production code and all other tests
+are correct and already committed.
+
+---
+
 ### Update — ts=1783656011046 (complete, server-authored)
 
 **Summary:** Phase 01 is complete. Here's the summary:
