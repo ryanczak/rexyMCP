@@ -1,7 +1,7 @@
 # Phase 02: MCP job registry + async `execute_phase` + `get_run_status`
 
 **Milestone:** M30 — Executor Interruption
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01
 **Estimated diff:** ~480 lines
 **Tags:** language=rust, kind=feature, size=l

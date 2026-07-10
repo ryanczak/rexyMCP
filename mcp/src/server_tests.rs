@@ -925,3 +925,75 @@ async fn continue_phase_restores_task_states_from_prior_log() {
         );
     }
 }
+
+use std::time::Duration;
+
+#[tokio::test]
+async fn get_run_status_unknown_run_id() {
+    let registry = crate::jobs::JobRegistry::new();
+    let params = GetRunStatusParams {
+        run_id: "nonexistent".into(),
+    };
+    let out = get_run_status_inner(&registry, &params, Duration::from_secs(1)).await;
+    assert_eq!(out.state, "unknown");
+    assert!(out.result.is_none());
+    assert!(out.error.is_none());
+}
+
+#[tokio::test]
+async fn get_run_status_reports_done_with_result() {
+    let registry = crate::jobs::JobRegistry::new();
+    let run_id = "done-run".to_string();
+    registry.insert(&run_id);
+    registry.publish(
+        &run_id,
+        crate::jobs::RunState::Complete(serde_json::json!({"status": "complete"})),
+    );
+    let params = GetRunStatusParams {
+        run_id: run_id.clone(),
+    };
+    let out = get_run_status_inner(&registry, &params, Duration::from_secs(1)).await;
+    assert_eq!(out.state, "done");
+    assert!(out.result.is_some());
+    assert!(out.error.is_none());
+}
+
+#[tokio::test]
+async fn get_run_status_reports_failed() {
+    let registry = crate::jobs::JobRegistry::new();
+    let run_id = "failed-run".to_string();
+    registry.insert(&run_id);
+    registry.publish(&run_id, crate::jobs::RunState::Failed("boom".to_string()));
+    let params = GetRunStatusParams {
+        run_id: run_id.clone(),
+    };
+    let out = get_run_status_inner(&registry, &params, Duration::from_secs(1)).await;
+    assert_eq!(out.state, "failed");
+    assert!(out.result.is_none());
+    assert_eq!(out.error.as_deref(), Some("boom"));
+}
+
+#[tokio::test]
+async fn get_run_status_running_times_out() {
+    let registry = crate::jobs::JobRegistry::new();
+    let run_id = "running-run".to_string();
+    registry.insert(&run_id);
+    let params = GetRunStatusParams {
+        run_id: run_id.clone(),
+    };
+    let out = get_run_status_inner(&registry, &params, Duration::from_secs(15)).await;
+    assert_eq!(out.state, "running");
+    assert!(out.result.is_none());
+    assert!(out.error.is_none());
+}
+
+#[test]
+fn get_run_status_tool_is_registered() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let config_path = make_test_config(&temp_dir);
+    let server = RexyMcpServer::new(config_path);
+    assert!(
+        server.get_tool("get_run_status").is_some(),
+        "get_run_status tool should be registered"
+    );
+}

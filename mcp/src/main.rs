@@ -10,6 +10,7 @@ mod doctor;
 mod finalize;
 mod harvest;
 mod init;
+mod jobs;
 mod journal;
 mod log_query;
 mod profile;
@@ -427,9 +428,7 @@ async fn main() -> anyhow::Result<()> {
                 config.display(),
                 config.exists()
             );
-            let server = server::RexyMcpServer {
-                config_path: config,
-            };
+            let server = server::RexyMcpServer::new(config);
             let transport = rmcp::transport::stdio();
             let _running = rmcp::serve_server(server, transport)
                 .await

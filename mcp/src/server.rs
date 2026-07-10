@@ -51,8 +51,72 @@ pub struct ExecutePhaseOutput {
     pub result: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct GetRunStatusParams {
+    pub run_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct GetRunStatusOutput {
+    pub run_id: String,
+    /// One of: "running", "done", "failed", "unknown".
+    pub state: String,
+    /// The terminal PhaseResult JSON when state == "done"; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+    /// Infra error string when state == "failed"; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Inner logic for `get_run_status` — takes the registry + a timeout so it is
+/// hermetically testable without the rmcp wrapper.
+pub(crate) async fn get_run_status_inner(
+    registry: &crate::jobs::JobRegistry,
+    params: &GetRunStatusParams,
+    timeout: std::time::Duration,
+) -> GetRunStatusOutput {
+    let run_id = params.run_id.clone();
+    match registry.await_terminal(&run_id, timeout).await {
+        None => GetRunStatusOutput {
+            run_id,
+            state: "unknown".into(),
+            result: None,
+            error: None,
+        },
+        Some(crate::jobs::RunState::Running) => GetRunStatusOutput {
+            run_id,
+            state: "running".into(),
+            result: None,
+            error: None,
+        },
+        Some(crate::jobs::RunState::Complete(json)) => GetRunStatusOutput {
+            run_id,
+            state: "done".into(),
+            result: Some(json),
+            error: None,
+        },
+        Some(crate::jobs::RunState::Failed(e)) => GetRunStatusOutput {
+            run_id,
+            state: "failed".into(),
+            result: None,
+            error: Some(e),
+        },
+    }
+}
+
 pub struct RexyMcpServer {
     pub config_path: PathBuf,
+    pub runs: std::sync::Arc<crate::jobs::JobRegistry>,
+}
+
+impl RexyMcpServer {
+    pub fn new(config_path: PathBuf) -> Self {
+        Self {
+            config_path,
+            runs: std::sync::Arc::new(crate::jobs::JobRegistry::new()),
+        }
+    }
 }
 
 /// A `ProgressCallback` that fires MCP `notifications/progress` via the
@@ -512,6 +576,18 @@ impl RexyMcpServer {
     ) -> Result<Json<ModelProfileOutput>, String> {
         model_profile_inner(&self.config_path, &params).map(Json)
     }
+
+    #[rmcp::tool(
+        description = "Poll a spawned execute_phase run by run_id. Bounded long-poll (~15s): returns {state:\"running\"} while the run is in flight, {state:\"done\", result: PhaseResult} once it completes / hard-fails / is cancelled, {state:\"failed\", error} on an infrastructure error, or {state:\"unknown\"} for an unrecognized run_id. Re-poll while running."
+    )]
+    async fn get_run_status(
+        &self,
+        Parameters(params): Parameters<GetRunStatusParams>,
+    ) -> Result<Json<GetRunStatusOutput>, String> {
+        let out =
+            get_run_status_inner(&self.runs, &params, crate::jobs::RUN_STATUS_POLL_TIMEOUT).await;
+        Ok(Json(out))
+    }
 }
 
 impl ServerHandler for RexyMcpServer {
@@ -536,6 +612,7 @@ impl ServerHandler for RexyMcpServer {
     + '_ {
         let router = Self::tool_router();
         let config_path = self.config_path.clone();
+        let runs = self.runs.clone();
 
         async move {
             if request.name == "execute_phase" {
@@ -584,15 +661,24 @@ impl ServerHandler for RexyMcpServer {
                         }) as Box<dyn ProgressCallback>
                     });
 
-                let output =
-                    execute_phase_inner(&config_path, &params, progress_callback.as_deref())
-                        .await
-                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+                let run_id = crate::jobs::new_run_id();
+                let config_path_owned = config_path.clone();
+                let params_owned = params.clone();
+                let work = async move {
+                    execute_phase_inner(
+                        &config_path_owned,
+                        &params_owned,
+                        progress_callback.as_deref(),
+                    )
+                    .await
+                    .map(|o| o.result)
+                };
+                crate::jobs::spawn_run(runs.clone(), run_id.clone(), work);
 
-                let json_str = serde_json::to_string(&output.result).map_err(|e| {
+                let payload = serde_json::json!({ "run_id": run_id });
+                let json_str = serde_json::to_string(&payload).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
                 })?;
-
                 Ok(CallToolResult::success(vec![Content::new(
                     RawContent::text(json_str),
                     None,
@@ -668,7 +754,7 @@ impl ServerHandler for RexyMcpServer {
         let mut tools = Self::tool_router().list_all();
         tools.insert(0, rmcp::model::Tool::new(
             "execute_phase",
-            "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+            "Execute a phase against a target repository. Spawns the run inside the serve process and returns { run_id } immediately; poll it to completion with get_run_status. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
             rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
         ));
         tools.insert(1, rmcp::model::Tool::new(
@@ -689,7 +775,7 @@ impl ServerHandler for RexyMcpServer {
         if name == "execute_phase" {
             Some(rmcp::model::Tool::new(
                 "execute_phase",
-                "Execute a phase against a target repository. Runs the local LLM through a tool-using loop, verifies edits, runs build/lint/test commands, and returns a structured PhaseResult. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+                "Execute a phase against a target repository. Spawns the run inside the serve process and returns { run_id } immediately; poll it to completion with get_run_status. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
                 rmcp::handler::server::tool::schema_for_type::<Parameters<ExecutePhaseParams>>(),
             ))
         } else if name == "continue_phase" {
