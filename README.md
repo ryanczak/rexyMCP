@@ -19,6 +19,45 @@ Your *Architect* runs in either **Claude Code** or **Google Antigravity** —
 rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
 whichever you drive.
 
+## An architecture-defined, milestone-based workflow — run autonomously
+
+rexyMCP is not a free-running "build me an app" agent. It runs a strict,
+**document-driven SDLC** where every unit of work is written down and reviewed
+before code exists — and then it can drive that whole SDLC for you without a human
+in the inner loop. The structure is what makes autonomy *safe*:
+
+- **The architecture is the source of truth.** The Architect first writes
+  [`docs/architecture.md`](docs/architecture.md) — the layers, data flows,
+  non-goals, and a **milestone roadmap** that is the project plan. Every later
+  decision is checked against it; when docs disagree, architecture wins. Nothing
+  gets built that the design didn't call for.
+- **Milestones decompose into spec'd phases.** Each milestone
+  (`docs/dev/milestones/M<n>-<slug>/`) has a goal, exit criteria, and a table of
+  **phases** — and each phase is a self-contained doc: the exact files to change,
+  a step-by-step spec, acceptance criteria, a test plan, explicit
+  authorizations/out-of-scope, and an Update Log. A phase is a *bounded contract*,
+  sized so a small local model can complete it in one session. The Architect
+  drafts phases **on demand**, pre-injecting the worked examples and idioms the
+  offline executor can't look up mid-run.
+- **Every phase is executed, verified, and reviewed against a written
+  Definition of Done.** The executor implements exactly one phase; the local
+  project's format/build/lint/test gates must pass; the reviewer walks
+  [`STANDARDS.md`](docs/dev/STANDARDS.md) and the phase's acceptance criteria
+  before the phase flips to `done` and [`NEXT.md`](docs/dev/NEXT.md) advances.
+  The [`WORKFLOW.md`](docs/dev/WORKFLOW.md) lifecycle (`todo → in-progress →
+  review → done`) governs every transition.
+- **`/rexymcp:auto` runs that entire cycle across a milestone.** Drafting the
+  next phase, dispatching it, reviewing with full rigor, escalating on failure,
+  committing, and advancing — one phase after another until the milestone closes.
+  Because the work is spec'd and gated at every step, an autonomous run is held to
+  the *same* contract an interactive one is; the only thing removed is the human
+  pause between steps. **Milestone boundaries always stop for you** — that human
+  gate is absolute. And each pass folds recurring failures back into the workflow
+  contract, so the process the *next* milestone runs under is a little better than
+  the last (see [The improvement loop](#the-improvement-loop)).
+
+The rest of this README walks that workflow in depth. First, what makes it work.
+
 Three things make rexyMCP stand out:
 
 1. **It runs an entire milestone autonomously.** One command — `/rexymcp:auto` —
