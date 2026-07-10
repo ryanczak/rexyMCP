@@ -23,7 +23,15 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none — M31 is open, phase-01 not yet drafted.**
+**Active phase: M31 phase-01 — `rmcp` 1.8→2.2 bump + API migration**
+([phase doc](milestones/M31-rmcp-v2-upgrade/phase-01-rmcp-22-bump-and-migration.md),
+drafted 2026-07-10, status `todo`). One `mcp/Cargo.toml` constraint bump +
+`cargo update -p rmcp`, then the two pre-injected `ProgressNotificationParam`
+literal→builder fixes (`server.rs:152`, `server_tests.rs:557` — exact
+BEFORE→AFTER in the doc); everything else compiles unchanged per the verified
+surface, compiler as final word. size=s. Dispatch via `/rexymcp:dispatch
+phase-01`. The live serve-restart handshake smoke is review-time
+architect-side work, not the executor's.
 
 **📌 M31 — rmcp v2 Upgrade kicked off (2026-07-10, with the user).** Upgrade the
 `mcp` crate's `rmcp` from 1.8.0 (`Cargo.toml` pins `"1.7"`) to the 2.2 line —
