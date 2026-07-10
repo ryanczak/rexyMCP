@@ -554,12 +554,11 @@ fn progress_notifier_maps_fields_correctly() {
         message: "turn=4 stage=tool:patch +12/-3 files=1".to_string(),
     };
 
-    let params = ProgressNotificationParam {
-        progress_token: ProgressToken(NumberOrString::Number(42)),
-        progress: event.turn as f64,
-        total: None,
-        message: Some(event.message.clone()),
-    };
+    let params = ProgressNotificationParam::new(
+        ProgressToken(NumberOrString::Number(42)),
+        event.turn as f64,
+    )
+    .with_message(event.message.clone());
 
     assert_eq!(params.progress, 4.0);
     assert!(params.total.is_none());

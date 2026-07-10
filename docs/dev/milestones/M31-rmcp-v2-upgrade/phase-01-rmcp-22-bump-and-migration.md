@@ -1,7 +1,7 @@
 # Phase 01: `rmcp` 1.8→2.2 bump + API migration
 
 **Milestone:** M31 — rmcp v2 Upgrade
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~20 source lines (two files) + the one `Cargo.toml` constraint + `Cargo.lock` churn
 **Tags:** language=rust, kind=refactor, size=s
@@ -276,5 +276,10 @@ violation.
 ## Update Log
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+### Update — 2026-07-10 23:13 (started)
+
+**Executor:** rexyMCP executor
+**Action:** Started phase — bumping `rmcp` from 1.8 to 2.2, fixing two `ProgressNotificationParam` break sites.
 
 <!-- entries appended below this line -->

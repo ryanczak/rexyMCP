@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use rmcp::handler::server::ServerHandler;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ProgressNotificationParam, ProgressToken,
-    RawContent,
+    CallToolRequestParams, CallToolResult, ContentBlock, ProgressNotificationParam, ProgressToken,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use schemars::JsonSchema;
@@ -149,12 +148,9 @@ impl ProgressCallback for McpProgressNotifier {
         let message = event.message.clone();
         tokio::spawn(async move {
             let _ = peer
-                .notify_progress(ProgressNotificationParam {
-                    progress_token: token,
-                    progress,
-                    total: None,
-                    message: Some(message),
-                })
+                .notify_progress(
+                    ProgressNotificationParam::new(token, progress).with_message(message),
+                )
                 .await;
         });
     }
@@ -719,10 +715,7 @@ impl ServerHandler for RexyMcpServer {
                 let json_str = serde_json::to_string(&payload).map_err(|e| {
                     rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
                 })?;
-                Ok(CallToolResult::success(vec![Content::new(
-                    RawContent::text(json_str),
-                    None,
-                )]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(json_str)]))
             } else if request.name == "continue_phase" {
                 let params: ContinuePhaseParams = serde_json::from_value(
                     serde_json::Value::Object(request.arguments.unwrap_or_default()),
@@ -775,10 +768,7 @@ impl ServerHandler for RexyMcpServer {
                     rmcp::ErrorData::internal_error(format!("serialization failed: {}", e), None)
                 })?;
 
-                Ok(CallToolResult::success(vec![Content::new(
-                    RawContent::text(json_str),
-                    None,
-                )]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(json_str)]))
             } else {
                 let ctx = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
                 router.call(ctx).await
