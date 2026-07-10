@@ -587,6 +587,55 @@ Otherwise: None beyond the files named in the Spec (`mcp/src/jobs.rs` [new],
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### 🔴 BOUNCE FIX REQUIRED — 2026-07-10 (read this first)
+
+**This phase was bounced in review. Two bugs are open. The gates are currently
+GREEN — that is the trap: the code compiles, clippy is clean, and every test
+passes, but two of them are wrong.** Do **not** report "complete" until you have
+made the two edits below and re-run the gates. A clean tree and green gates do
+**not** mean this phase is done — the whole point of the bounce is that the green
+state is masking two defects. Make these exact changes:
+
+**Bug-02-1 (major) — a real 15-second `sleep` in a test.**
+In `mcp/src/server_tests.rs`, the test `get_run_status_running_times_out` drives
+the long-poll with the **production** 15 s window, so `cargo test -p rexymcp`
+now blocks for a real 15 seconds. Change the injected timeout from
+`Duration::from_secs(15)` to `Duration::from_millis(1)`:
+
+```rust
+// before:
+let out = get_run_status_inner(&registry, &params, Duration::from_secs(15)).await;
+// after:
+let out = get_run_status_inner(&registry, &params, Duration::from_millis(1)).await;
+```
+
+The assertion `out.state == "running"` is unchanged — it holds for any tiny
+timeout because the run never publishes. Do **NOT** change the production
+constant `RUN_STATUS_POLL_TIMEOUT` (stays 15 s) — only this test's injected
+value changes. Mirror the sibling `await_terminal_times_out_to_running` test in
+`jobs.rs`, which already uses `Duration::from_millis(1)`.
+
+**Bug-02-2 (minor) — unauthorized `#[allow(dead_code)]` masking dead code.**
+`JobRegistry::snapshot` in `mcp/src/jobs.rs` has no production caller and was
+silenced with `#[allow(dead_code)]`, which this phase never authorized (adding an
+`#[allow]` to mask a diagnostic is a hard-rule violation). **Delete** the whole
+`snapshot` method (including its `#[allow(dead_code)]` line and doc comment) and
+the **three** tests that only exercise it:
+
+- `snapshot_unknown_id_is_none`
+- `insert_then_snapshot_is_running`
+- `publish_sets_terminal_snapshot`
+
+No coverage is lost — `await_terminal_returns_immediately_when_already_terminal`
+and `await_terminal_unknown_id_is_none` already cover `insert`/`publish`. After
+this, `grep -n "#\[allow" mcp/src/jobs.rs` and `grep -n "fn snapshot"
+mcp/src/jobs.rs` must both return **nothing**.
+
+**Then re-run all four gates and confirm:** `cargo test -p rexymcp` finishes in
+well under a second (no 15 s tax); clippy stays clean with no re-appearing
+`dead_code` warning; format and build clean.
+
 ### Update — ts=1783696087991 (complete, server-authored)
 
 **Summary:** All spec tasks are now complete. Here's a summary of what was built:
