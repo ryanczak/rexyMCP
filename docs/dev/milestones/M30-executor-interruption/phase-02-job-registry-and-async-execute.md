@@ -1,7 +1,7 @@
 # Phase 02: MCP job registry + async `execute_phase` + `get_run_status`
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** in-progress (bounced — bug-02-1 major, bug-02-2 minor)
 **Depends on:** phase-01
 **Estimated diff:** ~480 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -689,3 +689,60 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Notes for executor — 2026-07-10 (REQUIRED FIX — read before doing anything)
+
+**⛔ This is a BOUNCE FIX, not a green-gate re-verify.** The working tree is
+clean and all four gates are green **on purpose** — the prior run committed the
+code and the feature works. A clean tree and passing gates are **NOT** evidence
+this phase is done. There are exactly **two** required changes below, both in
+the test suite / a dead method. The phase is **not complete** until you make
+both, commit, and the verification greps come back as specified. Do **not**
+report `complete` without the edits.
+
+**Fix 1 (bug-02-1, major) — the timeout test blocks for a real 15 seconds.**
+In `mcp/src/server_tests.rs`, `get_run_status_running_times_out` calls
+`get_run_status_inner(&registry, &params, Duration::from_secs(15))`. Because the
+run never publishes, this waits a real **15 seconds** (`cargo test -p rexymcp`
+now takes 15.04s). STANDARDS §3.3 forbids sleeps. Change that one argument to
+`Duration::from_millis(1)` — exactly what the sibling test
+`await_terminal_times_out_to_running` in `mcp/src/jobs.rs` already uses. Leave
+the assertion (`out.state == "running"`) and the production constant
+`RUN_STATUS_POLL_TIMEOUT = 15s` unchanged.
+
+```rust
+// mcp/src/server_tests.rs, in get_run_status_running_times_out:
+let out = get_run_status_inner(&registry, &params, Duration::from_millis(1)).await;
+assert_eq!(out.state, "running");
+```
+
+**Fix 2 (bug-02-2, minor) — delete the speculative `snapshot` + its
+`#[allow(dead_code)]`.** `JobRegistry::snapshot` in `mcp/src/jobs.rs` has no
+production caller (`get_run_status` uses `await_terminal`), so it is dead code
+in this binary crate and was silenced with an unauthorized `#[allow(dead_code)]`
+(a hard-rule violation). Remove it entirely:
+
+- Delete the whole `snapshot` method **including** its `#[allow(dead_code)]`
+  attribute (`mcp/src/jobs.rs`, the method whose doc comment is
+  `/// Non-blocking snapshot. \`None\` = unknown id.`).
+- Delete its three unit tests in the `jobs.rs` `#[cfg(test)] mod tests` block:
+  `snapshot_unknown_id_is_none`, `insert_then_snapshot_is_running`,
+  `publish_sets_terminal_snapshot`.
+
+Coverage of `insert`/`publish` is preserved by the surviving `await_terminal`
+tests, so nothing else changes. Do **not** add snapshot back or add any other
+`#[allow]`; a later phase (`stop_phase`, phase-03) will add a non-blocking peek
+*with* its caller if one is needed.
+
+**Verification (all must hold before you report complete):**
+
+- `grep -n "#\[allow" mcp/src/jobs.rs` → **no output**.
+- `grep -n "fn snapshot" mcp/src/jobs.rs` → **no output**.
+- `grep -n "from_secs(15)" mcp/src/server_tests.rs` → **no output**.
+- `cargo test -p rexymcp` finishes in a few seconds (not ~15s) and is green.
+- All four gates green. Commit as a `fix:` (or `test:`) commit; stage only the
+  files you changed with `git add -- <path>` — do **not** `git add -A`.
+
+Nothing else in the phase needs changing — the registry, the async
+`execute_phase` spawn, and `get_run_status` are all correct and already
+committed.
