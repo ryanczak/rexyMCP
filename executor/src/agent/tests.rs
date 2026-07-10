@@ -1,6 +1,7 @@
 use super::*;
-use crate::agent::cancel::CancelSignal;
+use crate::agent::cancel::{CancelHandle, CancelSignal};
 use crate::agent::command::{CommandResult, MAX_COMMAND_TAIL_CHARS, RealCommandRunner};
+use crate::ai::AiClient;
 use crate::ai::testing::{MockAiClientScript, MockCall};
 use crate::ai::types::{AiEvent, Message, TokenBreakdown, ToolSchema};
 use crate::phase::{Blocker, PhaseStatus};
@@ -10,6 +11,7 @@ use crate::tools::{bash_with_filter, patch, read_file, write_file};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
+use tokio::sync::mpsc::UnboundedSender;
 
 fn registry_over(scope: Scope) -> ToolRegistry {
     let mut r = ToolRegistry::new();
@@ -5083,81 +5085,60 @@ async fn loop_returns_cancelled_when_signal_flipped_between_turns() {
     assert_eq!(c.stage, "between_turns");
 }
 
+struct CancelThenPark {
+    handle: CancelHandle,
+}
+
+#[async_trait::async_trait]
+impl AiClient for CancelThenPark {
+    async fn chat(
+        &self,
+        _system_prompt: &str,
+        _messages: Vec<Message>,
+        _tx: UnboundedSender<AiEvent>,
+        _tools: Option<&[ToolSchema]>,
+    ) -> anyhow::Result<()> {
+        self.handle.cancel();
+        std::future::pending::<()>().await;
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn loop_returns_cancelled_when_signal_flipped_mid_stream() {
     let root = TempDir::new().unwrap();
     let (handle, signal) = CancelSignal::new();
-    let script = MockAiClientScript::new(vec![vec![
-        AiEvent::ToolCallGeneric {
-            id: "tc1".to_string(),
-            name: "write_file".to_string(),
-            args: json!({"path": "foo.txt", "content": "hello\n"}),
-            thought_signature: None,
-        },
-        AiEvent::Done(TokenBreakdown {
-            input_tokens: 10,
-            output_tokens: 20,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-        }),
-    ]]);
-    let client = Arc::new(script);
+    let client = CancelThenPark { handle };
     let scope = Scope::new(root.path()).unwrap();
     let budget = Budget::default();
-    let root_path = root.path().to_path_buf();
-    let input = input();
-    let task = tokio::spawn(async move {
-        let deps = LoopDeps {
-            client: &*client,
-            registry: &registry_over(scope),
-            tools: &[],
-            budget: &budget,
-            max_turns: 10,
-            project_root: &root_path,
-            model: "test-model",
-            session_id: SESSION_ID,
-            clock: &clock_zero,
-            verifier: &NoopVerifier,
-            commands: &EMPTY_COMMANDS,
-            runner: &NoopRunner,
-            generation_params: GenerationParams {
-                temperature: None,
-                seed: None,
-            },
-            telemetry_dir: None,
-            progress: None,
-            context_window: None,
-            governor: GovernorConfig::default(),
-            task_tracking: true,
-            gate_retries: u32::MAX,
-            wall_clock_secs: 0,
-            cancel: signal,
-        };
-        execute_phase(&input, deps).await
-    });
-    // Let the chat future start, then flip the signal so the inner select!
-    // cancellation branch fires.
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    handle.cancel();
-    let result = task.await.unwrap().unwrap();
-    // The cancellation signal was flipped, but the mock client completed the
-    // chat synchronously (no real async delay). The select! branch that fires
-    // depends on scheduling — the chat may have returned before the cancel
-    // branch had a chance to fire. In that case, the loop processes the turn,
-    // then hits the top-of-loop cancellation check and returns Cancelled.
-    // Either path is valid; the key invariant is that cancellation was observed.
-    assert!(
-        result.status == PhaseStatus::Cancelled || result.status == PhaseStatus::HardFail,
-        "expected Cancelled or HardFail, got: {:?}",
-        result.status
-    );
-    if result.status == PhaseStatus::Cancelled {
-        assert!(result.cancellation.is_some());
-        let c = result.cancellation.as_ref().unwrap();
-        assert!(
-            c.stage == "awaiting_model" || c.stage == "between_turns",
-            "expected awaiting_model or between_turns, got: {}",
-            c.stage
-        );
-    }
+    let deps = LoopDeps {
+        client: &client,
+        registry: &registry_over(scope),
+        tools: &[],
+        budget: &budget,
+        max_turns: 10,
+        project_root: root.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams {
+            temperature: None,
+            seed: None,
+        },
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: signal,
+    };
+    let result = execute_phase(&input(), deps).await.unwrap();
+    assert_eq!(result.status, PhaseStatus::Cancelled);
+    let c = result.cancellation.as_ref().unwrap();
+    assert_eq!(c.stage, "awaiting_model");
 }
