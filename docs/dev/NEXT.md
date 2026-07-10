@@ -23,11 +23,29 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none.** M27, M28, and M29 are all **closed** (2026-07-09). No
-milestone is in progress. The next step is a human decision — kick off a new
-milestone with `/rexymcp:architect`, or draft an optional follow-on (M28 phase-02:
-extend `missing_args_hint` to the other 8 arg-parsing tools, "if the pattern
-proves out"). Nothing is auto-advancing.
+**Active phase: M30 phase-01 — `todo`** (drafted 2026-07-09). Executor-crate
+cancellation primitive: a `tokio::sync::watch`-based `CancelSignal` threaded into
+`LoopDeps` and checked at the top of the turn loop + a new `select!` branch, plus
+a fourth `PhaseStatus::Cancelled` outcome that leaves the working tree dirty and
+reports the partial diff + stage + turns-done. No new dependency; no MCP/CLI
+caller wires a real signal yet (phase-02+). Ready to dispatch with
+`/rexymcp:dispatch phase-01`. See
+[phase-01](milestones/M30-executor-interruption/phase-01-cancel-signal-and-outcome.md)
+and the [M30 README](milestones/M30-executor-interruption/README.md); phases
+02–05 (MCP job registry + async `execute_phase`/`get_run_status`, `stop_phase`,
+the `rexymcp stop` CLI + sentinel watcher, and the async-polling skill-loop
+rewrite) are sketched, drafted on demand.
+
+**M30 — Executor Interruption — opened** (2026-07-09). New milestone: give the
+user and the architect a way to interrupt and stop a running executor mid-phase
+(there is none today — the loop is uninterruptible, bounded only by budgets).
+Design decided with the user: async job model on MCP `execute_phase` (returns a
+`run_id`; `get_run_status` long-poll; `stop_phase` cancels) + a `.rexymcp/stop`
+filesystem sentinel for the client-agnostic human path — necessary because Claude
+Code sends no MCP `notifications/cancelled` and the architect is itself blocked
+awaiting the call mid-phase. Roadmap entry: `docs/architecture.md` § Status #30.
+
+**M27, M28, and M29 are all closed** (2026-07-09).
 
 **M29 phase-01 — done** (2026-07-09, **approved_first_try**, executor
 AEON-7/Qwen3.6-27B-AEON LARGE; commit `71cb145` feat). Two cleanup fixes:

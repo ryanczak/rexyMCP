@@ -2,7 +2,8 @@
 
 > **Status:** Living design doc. M1–M29 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
-> committed scope; M27's stretch phase-07 advisory routing was not taken). The
+> committed scope; M27's stretch phase-07 advisory routing was not taken).
+> **M30** (executor interruption) is the active milestone, in progress. The
 > most recent arcs: **M26** (polish & hardening — loop-gate/hook/governor
 > hardening), **M27** (the autonomous escalation loop — `/rexymcp:auto`,
 > `continue_phase` resume, server-authored bookkeeping, per-role subagent
@@ -1138,3 +1139,24 @@ The project plan. Each entry becomes a milestone with its own
     test writes-then-exec's a fake `tsc` and flakes on ETXTBSY under parallel
     `cargo test` — replace it with a deterministic `resolve_tsc_command` resolver
     test. One small cleanup phase.
+30. **M30 — Executor Interruption** *(in progress, opened 2026-07-09)*. Give the
+    user **and** the architect a way to stop a running executor mid-phase — today
+    there is none. The MCP `execute_phase` becomes an **async job** instead of a
+    single blocking call: it spawns the run inside the serve process, registers it
+    under a `run_id`, and returns immediately; a new `get_run_status(run_id)` tool
+    bounded-long-polls the run and `stop_phase(run_id)` cancels it. Because Claude
+    Code sends no MCP `notifications/cancelled` and the architect is itself blocked
+    awaiting the call while a phase runs, the client-agnostic path is a filesystem
+    sentinel: `rexymcp stop [--run <id>]` writes `.rexymcp/stop`, which a serve-side
+    watcher (and the still-blocking CLI `run-phase`) honor — what a human uses from
+    a second terminal. The executor loop gains a cooperative cancel check (a
+    `tokio::sync::watch`-based `CancelSignal`, no new dependency) evaluated at the
+    top of the turn loop and as a third `tokio::select!` branch that aborts a stuck
+    in-flight model stream. Cancellation adds a fourth `PhaseResult` status,
+    **`cancelled`**, which **leaves the working tree dirty** and reports the partial
+    diff + stage + turns-done for the architect (or human) to triage — no
+    auto-commit, no auto-revert. This supersedes the "opaque *and blocking*"
+    characterization in § Layer 2 "Liveness". Phase-01 lands the executor-side
+    primitive (`CancelSignal` + the `cancelled` outcome); later phases add the MCP
+    job registry + tools, the CLI stop command + sentinel watcher, and the
+    async-polling skill-loop rewrite.

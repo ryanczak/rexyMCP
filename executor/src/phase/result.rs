@@ -5,13 +5,36 @@ use serde::{Deserialize, Serialize};
 use super::briefing::Briefing;
 
 /// Terminal status of an `execute_phase` run. Serializes to the contract strings
-/// `"complete"` / `"hard_fail"` / `"budget_exceeded"` (M5 returns this as JSON).
+/// `"complete"` / `"hard_fail"` / `"budget_exceeded"` / `"cancelled"` (M5 returns this as JSON).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PhaseStatus {
     Complete,
     HardFail,
     BudgetExceeded,
+    Cancelled,
+}
+
+/// Who cancelled the phase. Set by the MCP/CLI layer (phase-03+); the executor
+/// loop leaves this `None`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CancelReason {
+    UserStop,
+    ClaudeStop,
+}
+
+/// Cancellation details recorded when a phase is aborted mid-run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Cancellation {
+    /// Who cancelled. The executor loop leaves this `None`; the MCP/CLI layer
+    /// (phase-03+) sets it from the entrypoint that fired the signal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<CancelReason>,
+    /// Where in the turn cycle cancellation was observed.
+    pub stage: String,
+    /// Turns fully completed before cancellation.
+    pub turns_done: usize,
 }
 
 /// One file the phase changed, with a short human summary.
@@ -71,6 +94,8 @@ pub struct PhaseResult {
     /// the server-authored completion entry. Empty when absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub completion_summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancellation: Option<Cancellation>,
 }
 
 impl PhaseResult {
@@ -88,6 +113,11 @@ impl PhaseResult {
     pub fn budget_exceeded(briefing: Briefing, artifacts: Artifacts) -> Self {
         Self::assemble(PhaseStatus::BudgetExceeded, Some(briefing), artifacts)
     }
+    pub fn cancelled(cancellation: Cancellation, artifacts: Artifacts) -> Self {
+        let mut result = Self::assemble(PhaseStatus::Cancelled, None, artifacts);
+        result.cancellation = Some(cancellation);
+        result
+    }
 
     fn assemble(status: PhaseStatus, briefing: Option<Briefing>, artifacts: Artifacts) -> Self {
         Self {
@@ -100,6 +130,7 @@ impl PhaseResult {
             log_path: artifacts.log_path,
             warnings: Vec::new(),
             completion_summary: artifacts.completion_summary,
+            cancellation: None,
         }
     }
 }
@@ -215,6 +246,66 @@ mod tests {
         let json = r#"{"status":"complete","files_changed":[],"diff":"","command_outputs":{"format":null,"build":null,"lint":null,"test":null},"update_log":"","briefing":null,"log_path":null}"#;
         let result: PhaseResult = serde_json::from_str(json).unwrap();
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn cancelled_status_serializes_to_snake_case() {
+        assert_eq!(
+            serde_json::to_value(PhaseStatus::Cancelled).unwrap(),
+            serde_json::json!("cancelled")
+        );
+    }
+
+    #[test]
+    fn cancel_reason_serializes_to_snake_case() {
+        assert_eq!(
+            serde_json::to_value(CancelReason::UserStop).unwrap(),
+            serde_json::json!("user_stop")
+        );
+        assert_eq!(
+            serde_json::to_value(CancelReason::ClaudeStop).unwrap(),
+            serde_json::json!("claude_stop")
+        );
+    }
+
+    #[test]
+    fn cancelled_result_has_no_briefing_and_carries_cancellation() {
+        let cancellation = Cancellation {
+            reason: None,
+            stage: "between_turns".to_string(),
+            turns_done: 3,
+        };
+        let result = PhaseResult::cancelled(cancellation, artifacts());
+        assert_eq!(result.status, PhaseStatus::Cancelled);
+        assert!(result.briefing.is_none());
+        assert!(result.cancellation.is_some());
+        let c = result.cancellation.as_ref().unwrap();
+        assert_eq!(c.stage, "between_turns");
+        assert_eq!(c.turns_done, 3);
+        assert!(c.reason.is_none());
+    }
+
+    #[test]
+    fn phase_result_cancellation_round_trips_through_json() {
+        let cancellation = Cancellation {
+            reason: Some(CancelReason::UserStop),
+            stage: "awaiting_model".to_string(),
+            turns_done: 5,
+        };
+        let result = PhaseResult::cancelled(cancellation, artifacts());
+        let json = serde_json::to_string(&result).unwrap();
+        let back: PhaseResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(result, back);
+    }
+
+    #[test]
+    fn phase_result_absent_cancellation_omitted_from_json() {
+        let result = PhaseResult::complete(artifacts());
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"cancellation\""),
+            "absent cancellation must be omitted from JSON, got: {json}"
+        );
     }
 
     #[test]

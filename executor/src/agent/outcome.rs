@@ -6,8 +6,8 @@ use similar::{ChangeTag, TextDiff};
 use crate::governor::hard_fail::{HardFailSignal, ToolCallSnapshot};
 use crate::governor::verifier::Diagnostic;
 use crate::phase::{
-    Artifacts, Blocker, Briefing, CommandOutputs, FileChange, PhaseResult, collect_working_files,
-    summarize_attempts,
+    Artifacts, Blocker, Briefing, Cancellation, CommandOutputs, FileChange, PhaseResult,
+    collect_working_files, summarize_attempts,
 };
 
 use super::PhaseInput;
@@ -37,6 +37,17 @@ pub(super) fn hard_fail_result(
 
 pub(super) fn turns_line(max_turns: usize) -> String {
     format!("0 of {max_turns} turns remaining")
+}
+
+pub(super) fn cancelled_result(stage: &str, turns: usize, artifacts: Artifacts) -> PhaseResult {
+    PhaseResult::cancelled(
+        Cancellation {
+            reason: None,
+            stage: stage.to_string(),
+            turns_done: turns,
+        },
+        artifacts,
+    )
 }
 
 pub(super) fn budget_exceeded_result(

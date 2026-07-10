@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rexymcp_executor::agent::command::CommandRunner;
 use rexymcp_executor::agent::progress::ProgressCallback;
 use rexymcp_executor::agent::verify::FileVerifier;
-use rexymcp_executor::agent::{self, LoopDeps, PhaseInput};
+use rexymcp_executor::agent::{self, CancelSignal, LoopDeps, PhaseInput};
 use rexymcp_executor::ai::{AiClient, OpenAiClient, SamplingParams, ToolSchema};
 use rexymcp_executor::config::Config;
 use rexymcp_executor::context::budget::Budget;
@@ -303,6 +303,7 @@ async fn run_phase_with(
         context_window: inp.context_window,
         governor: cfg.governor,
         task_tracking: cfg.executor.task_tracking,
+        cancel: CancelSignal::never(),
     };
 
     let mut result = agent::execute_phase(&input, deps).await?;

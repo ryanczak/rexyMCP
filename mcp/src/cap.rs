@@ -62,6 +62,7 @@ pub fn cap_phase_result(result: PhaseResult) -> PhaseResult {
         log_path: result.log_path,
         warnings: result.warnings,
         completion_summary: result.completion_summary,
+        cancellation: result.cancellation,
     }
 }
 
@@ -133,6 +134,7 @@ mod tests {
             log_path: None,
             warnings: Vec::new(),
             completion_summary: String::new(),
+            cancellation: None,
         }
     }
 

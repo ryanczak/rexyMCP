@@ -12,11 +12,14 @@ pub mod progress;
 pub mod prompt;
 pub mod verify;
 
+mod cancel;
 mod log;
 mod metrics;
 mod outcome;
 pub mod tasks;
 mod tools;
+
+pub use cancel::{CancelHandle, CancelSignal};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -44,7 +47,9 @@ use crate::tools::ToolRegistry;
 use command::{CommandRunner, run_command_set, run_post_write_hooks};
 use log::{log_event, log_session_end};
 use metrics::{RunMetrics, emit_phase_run};
-use outcome::{budget_exceeded_result, build_artifacts, hard_fail_result, turns_line};
+use outcome::{
+    budget_exceeded_result, build_artifacts, cancelled_result, hard_fail_result, turns_line,
+};
 use progress::{EmitCtx, ProgressCallback, emit_progress};
 use tools::{
     append_tool_exchange, assistant_text, destructive_restore_refusal, dispatch, edit_target,
@@ -137,6 +142,8 @@ pub struct LoopDeps<'a> {
     /// `[executor] task_tracking` (default true). Off → zero `TaskUpdate`
     /// events, byte-identical to pre-06a behavior.
     pub task_tracking: bool,
+    /// Cooperative cancellation signal; `CancelSignal::never()` disables it.
+    pub cancel: CancelSignal,
 }
 
 /// Run the turn cycle until the model stops calling tools (`complete`) or the
@@ -278,6 +285,28 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     }
 
     loop {
+        // Cancellation check — cooperative signal from the caller.
+        if deps.cancel.is_cancelled() {
+            log_session_end(&log_handle, &redactor, deps.clock, "cancelled", turns);
+            emit_phase_run(
+                &deps,
+                input,
+                "cancelled",
+                Gates::default(),
+                &metrics,
+                &scorer,
+                turns,
+            );
+            let artifacts = build_artifacts(
+                &pre_edit_content,
+                deps.project_root,
+                log_path.clone(),
+                "cancelled",
+                turns,
+                CommandOutputs::default(),
+            );
+            return Ok(cancelled_result("between_turns", turns, artifacts));
+        }
         // Step 2a — wall-clock ceiling. A [budget] wall_clock_secs of 0 disables
         // it; otherwise a run past the ceiling terminates as budget_exceeded — a
         // clock-based budget terminal, distinct from the turn/context caps.
@@ -380,8 +409,30 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         tokio::pin!(chat_fut);
         let mut heartbeat = interval(HEARTBEAT_PERIOD);
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut cancel = deps.cancel.clone();
         loop {
             tokio::select! {
+                _ = cancel.cancelled() => {
+                    log_session_end(&log_handle, &redactor, deps.clock, "cancelled", turns);
+                    emit_phase_run(
+                        &deps,
+                        input,
+                        "cancelled",
+                        Gates::default(),
+                        &metrics,
+                        &scorer,
+                        turns,
+                    );
+                    let artifacts = build_artifacts(
+                        &pre_edit_content,
+                        deps.project_root,
+                        log_path.clone(),
+                        "cancelled",
+                        turns,
+                        CommandOutputs::default(),
+                    );
+                    return Ok(cancelled_result("awaiting_model", turns, artifacts));
+                }
                 result = &mut chat_fut => {
                     match result {
                         Ok(()) => {}
