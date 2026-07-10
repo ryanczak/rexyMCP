@@ -23,7 +23,27 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-04b — `todo`** (drafted 2026-07-10, via `/rexymcp:auto`).
+**Active phase: M30 phase-05a — `todo`** (drafted 2026-07-10; **direct execution
+— architect-authored**, self-reviewed like M27 phase-06b; not dispatched to the
+local LLM). Async-polling skill rewrite + `cancelled` handling. Rewrites the
+`dispatch` skill to drive M30's async `execute_phase` contract
+(**detect-and-adapt**: `run_id` → poll `get_run_status`; a direct `status` field →
+use it, for the stale-serve/`run-phase` fallback), adds the `cancelled` outcome
+branch (partial diff + reason + dirty-tree note → decide resume/re-dispatch/
+abandon), gives `auto` a **5th stop condition `STOP(cancelled)`** (a deliberate
+interrupt is human territory — never silently re-dispatch a stopped phase), and
+adds coherence one-liners to `review` (refuse `cancelled`) + `escalate` (accept
+`cancelled` as a resume candidate). **Design decided with the user (2026-07-10):**
+`cancelled`→STOP-for-human; human-only stop agency (loop stays passive, run
+budgets bound it); detect-and-adapt back-compat; poll-until-terminal no skill cap;
+split from contract docs (05b). See
+[phase-05a](milestones/M30-executor-interruption/phase-05a-async-polling-skill-rewrite.md).
+**phase-05b** (architecture.md + WORKFLOW.md async/interrupt fold + plugin-template
+mirror) follows; M30 then closes at the milestone boundary (human gate:
+retrospective + the required-field-cascade calibration fold).
+
+**M30 phase-04b — done** (2026-07-10, **approved_first_try**, executor
+AEON-7/Qwen3.6-27B-AEON LARGE; commit `72b0918`).
 Blocking CLI `run-phase` honors the `.rexymcp/stop` sentinel: a new
 `watch_stop_sentinel_single(repo, CancelHandle, poll)` in `mcp/src/stop_watcher.rs`
 (fires one handle — `run-phase` has no `JobRegistry`), and the `RunPhase` match arm
