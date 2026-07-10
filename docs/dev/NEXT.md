@@ -23,25 +23,47 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-03 — `todo`** (drafted 2026-07-10, via `/rexymcp:auto`).
-`stop_phase` MCP tool + real `CancelSignal` threading + `ClaudeStop` reason
-stamping. Threads a live `CancelSignal` from the spawned `execute_phase` run down
-to `LoopDeps.cancel` (replacing `runner.rs:306`'s `never()`) via a new
-`cancel: CancelSignal` field on `RunPhaseConfig` + `AssemblyInput` (~14-site
-mechanical add, grep-verified list pre-injected); the `JobRegistry` `RunEntry`
-gains a `CancelHandle` + `stop_reason`, `insert`/`spawn_run` take the handle, and
-a new `request_stop(run_id, reason)` + `stamp_cancel_reason` fill
-`cancellation.reason` on a `cancelled` result. New `stop_phase` `#[rmcp::tool]`
-(auto-listed) fires the handle with `CancelReason::ClaudeStop` and returns
-`{ stopped }`. No new dependency; no executor-crate edit (builds on phase-01's
-`CancelSignal`/`CancelReason`). **architecture.md § Layer-2 tools list gained the
-`stop_phase` bullet architect-side at draft time** (user-authorized during the
-`/rexymcp:auto` run — architecture.md edits are otherwise a loop STOP(blocker)).
-Ready to dispatch with `/rexymcp:dispatch phase-03`. See
-[phase-03](milestones/M30-executor-interruption/phase-03-stop-phase-tool-and-reason-threading.md);
-phases 04–05 (`rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher `UserStop`
-path, async-polling skill-loop rewrite + contract-doc updates) are sketched,
-drafted on demand.
+**Active phase: M30 phase-04 — `todo`** (drafted 2026-07-10, via `/rexymcp:auto`;
+**awaiting human review before dispatch** — user chose "draft then pause").
+`rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher, **global stop-all** (decided
+with the user: `.rexymcp/stop` is a presence flag, no run-id payload; `--run <id>`
+deferred). Fully **additive** (applies the phase-03 cascade lesson — no
+required-field cascade): new `mcp/src/stop.rs` (sentinel path/write/present/clear
+helpers under `<repo>/.rexymcp/stop`), new `mcp/src/stop_watcher.rs`
+(`watch_stop_sentinel` polls at `STOP_POLL_INTERVAL` 500ms, fires
+`request_stop_all(UserStop)` + clears the sentinel; exits when its run goes
+terminal), two additive `JobRegistry` methods (`request_stop_all(reason) -> usize`,
+`is_running(run_id) -> bool`), a localized watcher spawn in the `execute_phase`
+branch, and a new `rexymcp stop --repo` CLI subcommand. Wires `CancelReason::UserStop`
+(its first producer). **No architecture.md edit** (§ Status #30 already describes
+the sentinel; global-stop is a subset). **No new dependency.** Blocking `run-phase`
+sentinel honoring is a flagged **optional Task 6** (recommend split to phase-04b).
+See [phase-04](milestones/M30-executor-interruption/phase-04-stop-cli-and-sentinel-watcher.md);
+phase-05 (async-polling skill-loop rewrite + contract-doc updates) is the
+milestone's final phase and a flagged `/rexymcp:auto` pause point.
+
+**M30 phase-03 — done** (2026-07-10, **escalated / session takeover** after 2
+executor hard_fails; executor AEON-7/Qwen3.6-27B-AEON LARGE authored the correct
+core, Claude finished the cascade; commit `18d36a9`). `stop_phase` MCP tool + real
+`CancelSignal` threading + `ClaudeStop` stamping. `stop_phase` `#[rmcp::tool]`
+(auto-listed) fires a run's `CancelHandle` (`ClaudeStop`) via
+`JobRegistry::request_stop`; `spawn_run` stamps `cancellation.reason` on a
+`cancelled` result; a live `CancelSignal` now threads to `LoopDeps.cancel` (a
+`cancel: CancelSignal` field on `RunPhaseConfig`/`AssemblyInput`). **Two hard_fails:**
+(1) patch-tangling corrupted `jobs.rs`'s brace structure → refined re-dispatch with
+a "use `write_file`, not many patches" directive (worked — jobs.rs came back
+verbatim-correct); (2) the **verifier's 6-strike limit fired mid-cascade** — the
+required-field `cancel` addition across ~14 sites can't compile until *every* site
+is fixed, so the executor struck out before finishing server.rs/main.rs/test
+literals. Session takeover finished the mechanical remainder on top of the correct
+jobs.rs + runner.rs work, incl. a **latent-bug fix** (executor had left
+`run_phase_with`'s `LoopDeps.cancel` as `never()` — would have made `stop_phase` a
+silent no-op). **Calibration (1st occurrence, flag):** a wide-blast-radius
+required-field cascade vs the governor's 6-verifier-strike limit — the executor
+cannot keep the crate compiling long enough to finish (WORKFLOW § "Prefer additive
+change shapes"). Fold candidate for the M30 retrospective; already shaped phase-04
+to be fully additive. architecture.md § Layer-2 tools list gained the `stop_phase`
+bullet architect-side (user-authorized).
 
 **M30 phase-02 — done** (2026-07-10, **approved_after_1**, executor
 AEON-7/Qwen3.6-27B-AEON LARGE; commit `ca25425` approve, prior `e7b5ced` feat).
