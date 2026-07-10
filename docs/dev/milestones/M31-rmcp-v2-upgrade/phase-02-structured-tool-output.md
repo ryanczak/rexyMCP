@@ -137,6 +137,22 @@ above) and write the bare `JsonSchema` name in the derive lists:
 - `executor/src/governor/hard_fail.rs`: `HardFailSignal` (15).
 - `executor/src/governor/verifier.rs`: `Severity` (17), `Diagnostic` (28).
 
+**Edit order is load-bearing — leaf types first.** Deriving `JsonSchema` on a
+container type before its field types have it leaves the crate
+**non-compiling** (`E0277: the trait bound X: JsonSchema is not satisfied`)
+until the whole graph is done, and every non-compiling turn burns a verifier
+strike. Apply the derives **bottom-up**, one file per patch, in exactly this
+order — the crate compiles after every step:
+
+1. `executor/src/governor/verifier.rs` — `Severity`, `Diagnostic` (leaves).
+2. `executor/src/governor/hard_fail.rs` — `HardFailSignal` (leaf).
+3. `executor/src/phase/briefing.rs` — `AttemptSummary`, `WorkingFile`,
+   `Blocker`, `Briefing` (needs 1 and 2 in place).
+4. `executor/src/phase/result.rs` — the six result.rs types (`PhaseResult`
+   needs 3 in place).
+
+Then run `cargo build` and confirm it is green **before** starting Task 2.
+
 Do **not** add the derive to `Artifacts` (result.rs:59) or
 `DiagnosticSignature` (verifier.rs:48) — neither is part of the serialized
 `PhaseResult`. If the compiler reports a further nested type missing a
@@ -346,3 +362,42 @@ dependency of both crates). No new dependency.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Notes for executor — 2026-07-10 (READ THIS FIRST — re-dispatch after a mid-cascade hard_fail)
+
+The first run hard-failed (`VerifierFailurePersistent`, 6 strikes) because the
+Task-1 derives were applied **top-down**, leaving the crate non-compiling for
+6+ consecutive turns. The working tree already carries **correct partial
+work — do not redo or revert it**:
+
+- `executor/src/phase/result.rs` — **DONE.** All 6 types derive `JsonSchema`;
+  the import is in place. Do not touch this file again.
+- `executor/src/phase/briefing.rs` — import + 3 derives in place
+  (`AttemptSummary`, `WorkingFile`, `Blocker`). **Only `Briefing` (line ~41)
+  is missing the derive** — one edit: append `, JsonSchema` to its
+  `#[derive(..)]` list.
+- `executor/src/governor/hard_fail.rs` — the `use schemars::JsonSchema;`
+  import is in place. **`HardFailSignal` (line ~14) is missing the derive** —
+  one edit: append `, JsonSchema`.
+- `executor/src/governor/verifier.rs` — **untouched.** Add the
+  `use schemars::JsonSchema;` import and the derive on `Severity` (~17) and
+  `Diagnostic` (~28).
+
+**Finish Task 1 in this exact order (4 small patches, then build):**
+(1) verifier.rs import + `Severity` + `Diagnostic`; (2) hard_fail.rs
+`HardFailSignal`; (3) briefing.rs `Briefing`; (4) run `cargo build` — it must
+be green before you start Task 2. If it is not green, read the compiler error
+and fix only what it names; do not churn.
+
+Then proceed with Tasks 2–5 exactly as specced (all in `mcp/src/server.rs` /
+`mcp/src/server_tests.rs` — the mcp half was never started).
+
+### Update — 2026-07-10 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** spec gap, not an executor-capability gap — Task 1 didn't order
+the derive cascade, so the crate couldn't compile until the whole graph was
+done and the 6-strike verifier limit fired mid-cascade (the known
+required-trait-cascade wall). The partial diff on disk is correct as far as it
+goes; the refinement enumerates the exact remaining edits bottom-up so every
+step compiles.
