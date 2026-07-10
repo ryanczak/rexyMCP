@@ -1,7 +1,7 @@
 # Phase 05b: fold the async-poll + interrupt model into the contract docs
 
 **Milestone:** M30 — Executor Interruption
-**Status:** todo
+**Status:** done
 **Depends on:** phase-05a (the skills already describe the async/interrupt model)
 **Estimated diff:** ~70 lines (Markdown docs only)
 **Tags:** language=markdown, kind=refactor, size=s
@@ -130,3 +130,38 @@ the greps below.
 (Architect-authored; direct execution.)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-10 (complete, architect direct execution)
+
+**Summary:** Folded M30's async-poll + interrupt model into the contract docs
+across the four sites. `architecture.md` § Liveness: the M8 rationale is now
+past-tense ("then-blocking … was"), followed by an "As of M30, `execute_phase` is
+an async job" paragraph (poll `get_run_status`; interruptible via `rexymcp stop` /
+`stop_phase` → `cancelled`). `architecture.md` `dispatch` skill bullet: added the
+async detect-and-adapt + `cancelled` clause. `WORKFLOW.md` § "Opt-in autonomous
+loop": added the async/interrupt sentence and extended the stop-condition list to
+**five** (incl. `cancelled`). `plugin/templates/WORKFLOW.md`: the same two edits,
+mirror kept in sync.
+
+**Acceptance criteria:** all met.
+
+**End-to-end verification:** `grep "blocking" docs/architecture.md` — the remaining
+hits are the genuinely-blocking CLI `run-phase`, the past-tense M8 § Liveness line,
+and historical § Status narrative (M30 "instead of a single blocking call", "still-
+blocking CLI run-phase", "supersedes the opaque *and blocking*") — no present-tense
+claim that the async `execute_phase` blocks. `grep -c cancelled` = 1 in each
+WORKFLOW file (the fifth stop condition). `cargo build` + `cargo test` green (512
+mcp + 949 executor) — no Rust changed.
+
+**Files changed:**
+- `docs/architecture.md` — § Liveness async/interrupt; `dispatch` skill bullet
+- `docs/dev/WORKFLOW.md` — autonomous-loop fifth stop condition + async note
+- `plugin/templates/WORKFLOW.md` — mirror
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Claude (direct) — architect-authored contract-doc prose, self-reviewed
+- **Scope deviations:** none — historical Status entries + the § Status #30 marker left for milestone close, as scoped
+- **Calibration:** none

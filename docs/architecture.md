@@ -451,9 +451,16 @@ Practical concerns this layer owns:
   live watcher), and `rexymcp status` is what surfaces motion to the human; MCP
   progress fires only if a future client opts in with a token. A richer live view
   over this same JSONL — a full-screen, continuously refreshed dashboard —
-  shipped as **M8** (`rexymcp dashboard`): the opacity of a blocking
-  `execute_phase` call is exactly what leaves the user without insight mid-phase,
-  and a one-shot `status` only partly answers it.
+  shipped as **M8** (`rexymcp dashboard`): the opacity of a then-blocking
+  `execute_phase` call was exactly what left the user without insight mid-phase,
+  and a one-shot `status` only partly answers it. **As of M30, `execute_phase` is
+  an async job** — it returns a `run_id` and the architect reaps the result by
+  polling `get_run_status`, so the architect is no longer blocked inside one long
+  call, and a running phase is **interruptible** out-of-band: `rexymcp stop`
+  (human, second terminal, via the `.rexymcp/stop` sentinel) or `stop_phase`
+  (architect, between polls) cancels it, returning a `cancelled` `PhaseResult`
+  with the partial diff and a dirty working tree. `rexymcp status` / `dashboard`
+  remain the liveness surface either way.
 - **Context hygiene.** Returned output is capped (`MAX_MCP_OUTPUT_TOKENS`) so a
   phase's inner transcript can never flood Claude's context. Claude gets the
   `PhaseResult` summary + diff + (on failure) briefing — nothing more.
@@ -486,8 +493,11 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
     This is the primary, offline, per-phase-free way Claude's capability reaches
     the local model.
   - `dispatch` — thin glue around `execute_phase`: pre-flight `executor_health`,
-    dispatch the phase, surface the summary (→ review) or the briefing (→
-    escalate).
+    dispatch the phase, then **drive the async contract** (detect-and-adapt: poll
+    `get_run_status` on a returned `run_id`, or use a direct `PhaseResult` from an
+    old-serve / `run-phase` response), and surface the summary (→ review), the
+    briefing (→ escalate), or a **`cancelled`** result (partial diff — the phase
+    was stopped via `rexymcp stop` / `stop_phase`).
   - `review-phase` — check executor output against the Definition of Done in
     `STANDARDS.md`, rerun the project's commands, then approve or file a bug.
   - `escalate` — given a returned briefing, pick a lever: re-dispatch with a

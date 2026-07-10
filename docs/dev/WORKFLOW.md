@@ -450,10 +450,16 @@ re-runs, DoD walk, telemetry verdict, commit); only the human pause between
 steps is removed. It is explicitly enabled per run, never the default, and it
 **composes** the interactive skills rather than forking them — a behavior
 difference between an interactive and an autonomous run of the same step is a
-bug. The loop stops for the human on: a milestone boundary (always), any
-blocker or "What Executors Never Decide" item, exhaustion of the per-phase
-assist budget (`[escalation] max_assists` autonomous escalation round-trips on
-one phase), or the loop-level runaway backstop. Every stop produces a
+bug. Dispatch drives `execute_phase`'s **async contract** — it polls
+`get_run_status` to reap each spawned run — and a running phase is
+**interruptible** out-of-band (`rexymcp stop` for the human, `stop_phase` for the
+architect between polls), which the loop treats as a deliberate human signal. The
+loop stops for the human on: a milestone boundary (always), any blocker or "What
+Executors Never Decide" item, exhaustion of the per-phase assist budget
+(`[escalation] max_assists` autonomous escalation round-trips on one phase), the
+loop-level runaway backstop, or a phase returning **`cancelled`** (a deliberate
+`rexymcp stop` / `stop_phase` interrupt — the loop surfaces the partial work and
+hands back, never silently re-dispatching a stopped phase). Every stop produces a
 **loop report** — phases run, verdicts, assists spent, token/cost totals where
 harvested, and why it stopped — so the human resumes from a briefing, not a
 scrollback dig. Every architect activity in the loop is journaled to the
