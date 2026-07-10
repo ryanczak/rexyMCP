@@ -132,43 +132,47 @@ Three things make rexyMCP stand out:
   you
    │
    ▼
-/rexymcp:architect          ← Claude explores your repo and writes the design
+/rexymcp:architect            ← Claude explores your repo and writes the design
+   │   bootstrap on first run (idempotent):
+   │     rexymcp.toml · STANDARDS.md · WORKFLOW.md · REXYMCP.md (+ CLAUDE.md / .agents/AGENTS.md)
+   │   writes: docs/architecture.md · milestones/M1-<slug>/README.md · docs/dev/NEXT.md
    │
-   ├─ bootstrap (first run) ─→ rexymcp.toml · STANDARDS.md · WORKFLOW.md
-   │                            REXYMCP.md (+ CLAUDE.md / .agents/AGENTS.md)  (idempotent — safe to re-run)
+   ▼
+┌────────────────────────────  the per-phase cycle  ───────────────────────────┐
+│  interactive → you trigger each step, one phase at a time                    │
+│  /rexymcp:auto → the whole cycle runs hands-off, no per-phase pause;         │
+│      dispatch & review are delegated to subagents on a cheaper model         │
+│      (dispatch_model / review_model); drafting & escalation judgment stay    │
+│      on your session model                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
    │
-   ├─ writes docs/architecture.md
-   ├─ writes docs/dev/milestones/M1-<slug>/README.md
-   └─ writes docs/dev/NEXT.md  ───────────────────────────────────────────┐
-                                                                          │
-         ┌────────────────────────────────────────────────────────────────┘
-         ▼
-/rexymcp:architect next     ← Claude drafts the next phase doc (spec + tests + DoD)
-   │
-   └─ writes docs/dev/milestones/M<n>-<slug>/phase-<m>-<slug>.md ─────────┐
-                                                                          │
-         ┌────────────────────────────────────────────────────────────────┘
-         ▼
-/rexymcp:dispatch <phase>   ← Claude calls execute_phase over MCP
-   │                            (the local LLM does the work; rexyMCP herds it)
-   │
-   ├─ [complete]  ──────────────────────────────────────────────────────┐
-   │                                                                    │
-   └─ [hard_fail / budget_exceeded]                                     │
-        │                                                               │
-        ▼                                                               │
-   /rexymcp:escalate <phase>                                            │
-        │                                                               │
-        ├─ refine spec → re-dispatch ─────────────────────────────────▶┤
-        ├─ resume (continue_phase: fresh context, keep the done work) ─▶┤
-        └─ session takeover (Claude finishes it) ─────────────────────▶┤
-                                                                        │
-         ┌──────────────────────────────────────────────────────────────┘
-         ▼
-/rexymcp:review <phase>     ← Claude reruns format/build/lint/test + checks the DoD
-   │
-   ├─ approved  → status → done; NEXT.md advances; repeat from "architect next"
-   └─ bounced   → bug filed; executor re-dispatched with the fix spec
+   ▼
+① /rexymcp:architect next     ← draft the next phase doc (spec + tests + DoD)
+   │                             → docs/dev/milestones/M<n>-<slug>/phase-<m>-<slug>.md
+   ▼
+② /rexymcp:dispatch <phase>   ← execute_phase over MCP; the local LLM does the
+   │                             work, rexyMCP herds it turn by turn
+   ├── complete ──────────────────────────────────────────────▶  go to ④ review
+   └── hard_fail / budget_exceeded
+          │
+          ▼
+③ /rexymcp:escalate <phase>   ← read the returned briefing, pick a lever:
+   │     • refine spec       → re-dispatch                              (back to ②)
+   │     • resume            → continue_phase: fresh context, keep the done work  → ④
+   │     • session takeover  → Claude finishes the phase itself                   → ④
+   ▼
+④ /rexymcp:review <phase>     ← rerun format/build/lint/test + walk the DoD
+   ├── bounced   → file a bug → re-dispatch with the fix spec           (back to ②)
+   └── approved  → status=done · commit · NEXT.md advances
+          │
+          ├── more phases remain in the milestone → next phase          (back to ①)
+          │
+          └── milestone's last phase approved
+                 │
+                 ▼
+              ■ milestone boundary → STOP for the human
+                (write the retrospective + calibration folds — an absolute
+                 human gate, even under /rexymcp:auto)
 ```
 
 The MCP boundary is load-bearing. The Executor's inner transcript stays opaque;
@@ -177,16 +181,19 @@ command outputs, an Update Log entry, and (on failure) a tight `briefing`.
 rexyMCP **never links a cloud provider**: escalation returns the briefing to
 Claude rather than calling out to any cloud LLM itself.
 
+The diagram shows **both modes**. In **interactive** mode you drive each
+`/rexymcp:` step and inspect between them; steps ①–④ are exactly the four skills
+you invoke by hand. In **autonomous** mode, `/rexymcp:auto` runs that same
+cycle — the same skills, the same gates — with no per-phase pause, until a stop
+condition fires. The [next section](#run-a-whole-milestone-autonomously--rexymcpauto)
+covers it in depth.
+
 **Watch a run live:**
 
 ```bash
 rexymcp dashboard --repo .   # full-screen TUI — stays open, auto-follows sessions
 rexymcp status    --repo .   # one-shot summary; scriptable with --json
 ```
-
-The loop above is the **interactive** mode — you drive each `/rexymcp:` step and
-inspect between them. When you'd rather hand rexyMCP the wheel for a whole
-milestone, run it autonomously.
 
 ---
 
