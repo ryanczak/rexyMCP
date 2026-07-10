@@ -708,6 +708,12 @@ impl ServerHandler for RexyMcpServer {
                     .map(|o| o.result)
                 };
                 crate::jobs::spawn_run(runs.clone(), run_id.clone(), cancel_handle, work);
+                tokio::spawn(crate::stop_watcher::watch_stop_sentinel(
+                    repo_path.clone(),
+                    runs.clone(),
+                    run_id.clone(),
+                    crate::stop_watcher::STOP_POLL_INTERVAL,
+                ));
 
                 let payload = serde_json::json!({ "run_id": run_id });
                 let json_str = serde_json::to_string(&payload).map_err(|e| {

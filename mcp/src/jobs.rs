@@ -115,6 +115,29 @@ impl JobRegistry {
         }
     }
 
+    /// Fire every live run's cancel signal with `reason`, recording it for the
+    /// terminal-result stamp. Returns how many runs were signalled. The global
+    /// stop-all path: one sentinel detection stops the whole serve process's runs.
+    pub fn request_stop_all(&self, reason: CancelReason) -> usize {
+        let mut map = self.lock();
+        let mut n = 0;
+        for entry in map.values_mut() {
+            entry.stop_reason = Some(reason.clone());
+            entry.cancel.cancel();
+            n += 1;
+        }
+        n
+    }
+
+    /// Whether a run exists and is still `Running` (not yet terminal). Used to bound
+    /// the sentinel watcher's lifetime so it exits once its run finishes.
+    pub fn is_running(&self, run_id: &str) -> bool {
+        self.lock()
+            .get(run_id)
+            .map(|e| !e.state_tx.borrow().is_terminal())
+            .unwrap_or(false)
+    }
+
     /// The reason recorded by a prior `request_stop`, if any. Read by `spawn_run`
     /// when a run finishes so a `cancelled` result can be stamped.
     fn recorded_reason(&self, run_id: &str) -> Option<CancelReason> {
@@ -336,5 +359,45 @@ mod tests {
             .await_terminal(&run_id, Duration::from_secs(60))
             .await;
         assert!(matches!(result, Some(RunState::Failed(_))));
+    }
+
+    #[test]
+    fn request_stop_all_fires_every_run_and_counts() {
+        let registry = JobRegistry::new();
+        let (handle1, signal1) = CancelSignal::new();
+        let (handle2, signal2) = CancelSignal::new();
+        registry.insert("r1", handle1);
+        registry.insert("r2", handle2);
+        assert!(!signal1.is_cancelled());
+        assert!(!signal2.is_cancelled());
+
+        let count = registry.request_stop_all(CancelReason::UserStop);
+        assert_eq!(count, 2, "should fire two runs");
+        assert!(signal1.is_cancelled(), "signal1 should be cancelled");
+        assert!(signal2.is_cancelled(), "signal2 should be cancelled");
+    }
+
+    #[test]
+    fn request_stop_all_on_empty_registry_is_zero() {
+        let registry = JobRegistry::new();
+        let count = registry.request_stop_all(CancelReason::UserStop);
+        assert_eq!(count, 0, "empty registry should return 0");
+    }
+
+    #[test]
+    fn is_running_true_for_running_false_after_publish() {
+        let registry = JobRegistry::new();
+        let (handle, _signal) = CancelSignal::new();
+        registry.insert("r1", handle);
+        assert!(registry.is_running("r1"), "should be running after insert");
+        registry.publish("r1", RunState::Complete(json!({"status": "ok"})));
+        assert!(
+            !registry.is_running("r1"),
+            "should not be running after publish terminal"
+        );
+        assert!(
+            !registry.is_running("unknown"),
+            "unknown id should not be running"
+        );
     }
 }

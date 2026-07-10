@@ -1,7 +1,7 @@
 # Phase 04: `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (global stop-all)
 
 **Milestone:** M30 — Executor Interruption
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-03 (`JobRegistry` cancel handles + `request_stop` + real `CancelSignal` threading)
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m

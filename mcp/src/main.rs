@@ -24,6 +24,8 @@ mod scorecard;
 mod scorecard_cli;
 mod server;
 mod status;
+mod stop;
+mod stop_watcher;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"), version = env!("CARGO_PKG_VERSION"))]
@@ -230,6 +232,13 @@ enum Commands {
         /// Emit the report as JSON instead of a human summary
         #[arg(long)]
         json: bool,
+    },
+    /// Signal a running executor to stop — writes `.rexymcp/stop` in the target repo,
+    /// which the serve-side watcher (or a blocking `run-phase`) sees and cancels.
+    Stop {
+        /// Target repo root (where `.rexymcp/` lives). Defaults to the current dir.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
     },
     /// Record an architect review verdict as a PhaseReview annotation
     Review {
@@ -660,6 +669,12 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 std::process::exit(1);
             }
+        }
+        Commands::Stop { repo } => {
+            let path = stop::write_sentinel(&repo)?;
+            println!("wrote stop sentinel: {}", path.display());
+            println!("running executors in this repo will cancel within ~1s.");
+            Ok(())
         }
         Commands::Journal {
             config,
