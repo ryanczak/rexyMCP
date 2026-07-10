@@ -91,7 +91,10 @@ mod tests {
             Duration::from_millis(1),
         ));
 
-        let _ = tokio::time::timeout(Duration::from_secs(5), watcher).await;
+        tokio::time::timeout(Duration::from_secs(5), watcher)
+            .await
+            .expect("watcher should exit promptly once the run is terminal")
+            .expect("watcher task should not panic");
 
         // Signal should NOT be cancelled (watcher exited before seeing sentinel)
         assert!(
