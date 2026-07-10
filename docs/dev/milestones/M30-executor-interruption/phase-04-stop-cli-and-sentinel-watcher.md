@@ -1,7 +1,7 @@
 # Phase 04: `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (global stop-all)
 
 **Milestone:** M30 — Executor Interruption
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03 (`JobRegistry` cancel handles + `request_stop` + real `CancelSignal` threading)
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -350,3 +350,112 @@ pattern. **No wall-clock sleeps in tests beyond the 1ms injected poll.**
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Update — ts=1783704780055 (complete, server-authored)
+
+**Summary:** The commit is clean — all 7 files are included. The shell mangled the commit message display but the actual commit content is fine.
+
+**Summary:** Implemented phase-04: `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (global stop-all). Built:
+
+1. **`mcp/src/stop.rs`** — sentinel file helpers (`sentinel_path`, `write_sentinel`, `sentinel_present`, `clear_sentinel`) with roundtrip tests.
+2. **`mcp/src/jobs.rs`** — added `JobRegistry::request_stop_all` (fires every run's cancel signal, returns count) and `is_running` (checks if a run is still `Running`). All with tests.
+3. **`mcp/src/stop_watcher.rs`** — async `watch_stop_sentinel` that polls for the sentinel and fires `request_stop_all(UserStop)` when found, exiting when the run goes terminal. Includes hermetic tests.
+4. **`mcp/src/server.rs`** — spawns the watcher alongside each async run.
+5. **`mcp/src/main.rs`** — new `Stop` CLI subcommand that writes the sentinel.
+
+End-to-end verified: `cargo run -p rexymcp -- stop --repo <tmp>` successfully created `<tmp>/.rexymcp/stop` with content "stop requested\n". All 510 tests pass, clippy clean, fmt clean. Blocking `run-phase` sentinel honoring is deferred to phase-04b per spec.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
+
+
+TEST
+::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::symbols::tests::references_exclude_substring ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::symbols::tests::exact_match_no_substring ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::update_task::tests::flips_pending_task_to_active ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 949 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.18s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-0ef0717e07dc6f8c)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `docs/dev/milestones/M30-executor-interruption/README.md` — +1 -1
+- `docs/dev/milestones/M30-executor-interruption/phase-04-stop-cli-and-sentinel-watcher.md` — +1 -1
+- `mcp/src/jobs.rs` — +63 -0
+- `mcp/src/main.rs` — +15 -0
+- `mcp/src/server.rs` — +6 -0
+- `mcp/src/stop.rs` — +68 -0
+- `mcp/src/stop_watcher.rs` — +102 -0
+
+**Commit:** 2496d103ad0367c51da649cd7b929a2f24e5e956
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
