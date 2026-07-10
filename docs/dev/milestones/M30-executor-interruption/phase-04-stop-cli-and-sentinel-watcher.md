@@ -1,7 +1,7 @@
 # Phase 04: `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (global stop-all)
 
 **Milestone:** M30 — Executor Interruption
-**Status:** review
+**Status:** in-progress (bounced — see bug-04-1)
 **Depends on:** phase-03 (`JobRegistry` cancel handles + `request_stop` + real `CancelSignal` threading)
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -459,3 +459,18 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+### Review verdict — 2026-07-10
+
+- **Verdict:** bounced
+- **Bounces:** 1 (bugs: bug-04-1 — major)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (LARGE)
+- **Scope deviations:** none
+- **Calibration:** none
+
+All four gates re-ran green independently (fmt/build/clippy/test), the
+`rexymcp stop --repo <tmpdir>` E2E path was re-verified, `request_stop_all` /
+`is_running` semantics hold, no `#[allow]`/new dependency, and Task 6
+(`RunPhase` still `CancelSignal::never()`) is correctly deferred to phase-04b.
+Bounced solely on bug-04-1: `watcher_exits_without_firing_when_run_terminal`
+doesn't actually verify the watcher exits — confirmed by injecting an inverted
+exit condition into `watch_stop_sentinel` and observing the test still pass.
