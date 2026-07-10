@@ -267,19 +267,26 @@ so* in the loop report — it never claims a switch that didn't happen.
   of the executor's failure briefing: what ran, every verdict, assists spent, the
   token/cost totals, why it stopped, and what needs you.
 
-Because `execute_phase` blocks and Claude Code sends no progress token, the live
-window into an autonomous run is the same one an interactive run uses — keep
-`rexymcp dashboard --repo .` open in a tmux split and watch every phase go by.
+As of M30 `execute_phase` is an **async job** — Claude gets a `run_id` back
+immediately and polls `get_run_status` to reap each phase, so it is no longer
+blocked inside one long call and can even **stop a runaway** with `stop_phase`
+between polls. The executor's *inner* work stays opaque (the boundary caps
+detail), so the live window is still the one an interactive run uses — keep
+`rexymcp dashboard --repo .` open in a tmux split and watch every phase go by;
+`rexymcp stop` from another terminal aborts a run you don't want.
 
 ---
 
 ## Watch it work — the live dashboard
 
-`execute_phase` is opaque *and* blocking: once Claude dispatches a phase, the
-local model can churn for minutes while the MCP call sits there returning
-nothing until it's done. That's the right boundary for protecting Claude's
-context — but it leaves *you* with no idea what's happening. **`rexymcp
-dashboard` is the window into that black box.**
+`execute_phase` is **opaque**: once Claude dispatches a phase, the local model
+can churn for minutes and — by design, to protect Claude's context — the MCP
+boundary surfaces only a terminal `PhaseResult`, never the turn-by-turn detail.
+(As of M30 the call is also **async and interruptible**: Claude polls
+`get_run_status` rather than blocking, and `rexymcp stop` / `stop_phase` can
+cancel a run mid-flight.) The opacity is the right boundary — but it leaves *you*
+with no idea what's happening inside. **`rexymcp dashboard` is the window into
+that black box.**
 
 ```bash
 rexymcp dashboard --repo .   # run from your target repo's root
@@ -311,18 +318,20 @@ exactly what rexyMCP is working on:
 
 It is a **read-only monitoring view** — it never drives the executor, only
 reflects it (see [Non-goals in the
-architecture](docs/architecture.md#non-goals)).
+architecture](docs/architecture.md#non-goals)). To *act* on what you see and stop
+a run that's going nowhere, use `rexymcp stop` (or the architect's `stop_phase`) —
+the dashboard watches, the stop path controls (M30).
 
 ### Pairs perfectly with tmux + Claude Code
 
 The dashboard really shines in a **tmux split alongside Claude Code**:
 
 - One pane runs **Claude Code** as the Architect — you `/rexymcp:dispatch` a
-  phase and Claude blocks on the `execute_phase` MCP call.
+  phase; Claude spawns the run and polls it to completion (async, since M30).
 - The other pane runs **`rexymcp dashboard --repo .`** — and immediately lights
   up with the live run Claude just kicked off, auto-following the new session.
 
-So while Claude waits on the opaque MCP boundary, you get a real-time feed of
+So while Claude polls the opaque MCP boundary, you get a real-time feed of
 exactly what the local model is doing turn-by-turn: which tool it just called,
 whether the verifier is happy, how much context it's burned, which tasks are
 left. When the phase finishes, Claude surfaces the `PhaseResult` in its pane and
@@ -405,7 +414,7 @@ you through the first design session. Everything is idempotent — safe to re-ru
 ## The plugin (Claude Code & Antigravity)
 
 The plugin (`plugin/`, manifest version **0.1.3**) bundles the MCP server with
-the architect/executor workflow as **five skills** and **eight MCP tools**. Its
+the architect/executor workflow as **five skills** and **ten MCP tools**. Its
 `.mcp.json` launches `rexymcp serve --config ./rexymcp.toml`, so the binary must
 be on `$PATH`. The same package drives both **Claude Code** and **Google
 Antigravity** — they consume the identical skills and MCP tools, so the workflow
@@ -461,15 +470,17 @@ writes one pointing at `REXYMCP.md`), and the architect skill uses Antigravity's
 | **`/rexymcp:dispatch`** | sonnet | `<phase>` | Thin glue around `execute_phase`: reads `NEXT.md` + the phase doc + `rexymcp.toml`, runs an `executor_health` pre-flight, then dispatches. On `complete` it surfaces the summary and suggests `/rexymcp:review`; on `hard_fail`/`budget_exceeded` it surfaces the briefing and suggests `/rexymcp:escalate`. |
 | **`/rexymcp:review`** | opus | `<phase>` | Reviews a phase whose status is `review`: reruns the `[commands]` set (format/build/lint/test as separate invocations), walks the STANDARDS Definition of Done and the phase's acceptance criteria, spot-checks that tests are real. Pass → records the verdict via `rexymcp review`, flips status to `done`, advances `NEXT.md`, commits (and writes the milestone retrospective if it's the last phase). Fail → files a bug, bounces status to `in-progress`. |
 | **`/rexymcp:escalate`** | opus | `<phase>` | Decides what to do with a `hard_fail` briefing: **refined re-dispatch** (default — tighten the spec, add a Notes-for-executor block, keep status `in-progress`), **session takeover** (last resort — the Architect implements it directly and records an `escalated` verdict), or **resume** — a briefing-seeded `continue_phase` that rebuilds a *fresh* executor context from the phase doc + briefing + one targeted directive + the current diff (task states restored from the session log), so "the 90% that's done" isn't redone while the context rot that stalled the model is discarded. |
-| **`/rexymcp:auto`** | opus | `[max-phases]` | The opt-in **autonomous milestone loop** ([above](#run-a-whole-milestone-autonomously--rexymcpauto)). Composes the other four skills — draft → dispatch → review → escalate/re-dispatch — hands-off across a whole milestone with full review rigor and no per-phase pause. Delegates dispatch/review to subagents on `dispatch_model` / `review_model`; budgeted by `max_assists`; journals every activity; stops at a milestone boundary, blocker, budget exhaustion, or the `max-phases` backstop (default 8) with a structured loop report. |
+| **`/rexymcp:auto`** | opus | `[max-phases]` | The opt-in **autonomous milestone loop** ([above](#run-a-whole-milestone-autonomously--rexymcpauto)). Composes the other four skills — draft → dispatch → review → escalate/re-dispatch — hands-off across a whole milestone with full review rigor and no per-phase pause. Delegates dispatch/review to subagents on `dispatch_model` / `review_model`; budgeted by `max_assists`; journals every activity; stops at a milestone boundary, blocker, budget exhaustion, an interrupted (`cancelled`) phase, or the `max-phases` backstop (default 8) with a structured loop report. |
 
 ### MCP tools
 
-The `rmcp` stdio server (`rexymcp serve`) exposes **eight** tools to Claude Code:
+The `rmcp` stdio server (`rexymcp serve`) exposes **ten** tools to Claude Code:
 
 | Tool | What it does |
 |---|---|
-| `execute_phase` | Run the executor against a phase doc + target repo; returns a `PhaseResult`. The `repo_path` is corroborated against the project-dir env var (`CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`) — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
+| `execute_phase` | Run the executor against a phase doc + target repo. **As of M30 it is an async job**: it spawns the run and returns `{ run_id }` immediately — reap the terminal `PhaseResult` by polling `get_run_status`. The `repo_path` is corroborated against the project-dir env var (`CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`) — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
+| `get_run_status` | Reap a spawned `execute_phase` run by `run_id` — a bounded long-poll (~15s): `running` while in flight, `done` + the terminal `PhaseResult` once it completes / hard-fails / is cancelled, `failed` + error on an infra error, or `unknown`. Re-poll while running. Param: `run_id`. (M30) |
+| `stop_phase` | Stop a spawned run by `run_id`: fires its cooperative cancel so it aborts at the next turn boundary (or mid model-stream) and comes back a `cancelled` `PhaseResult` — reason `claude_stop`, the partial diff, working tree left dirty. The human's client-agnostic equivalent is the `rexymcp stop` CLI (a `.rexymcp/stop` sentinel). Param: `run_id`. (M30) |
 | `continue_phase` | The **resume** escalation lever: re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh executor context built from the phase doc + the returned briefing + one architect `guidance` directive + the current working-tree diff, with `task_states` restored from the session log. Keeps the completed work without replaying the context rot that stalled the run. Params: `phase_doc_path`, `repo_path`, `guidance`, optional `model`. |
 | `executor_health` | Check connectivity to the configured LLM endpoint and list models. Optional `base_url` override. |
 | `executor_log_search` | Search a session JSONL log by `event_type` (exact), `tool_name` (substring, on tool events), and/or `query_text` (substring) — all AND-ed. Capped per-record, limit default 20 / max 50. |
@@ -539,7 +550,7 @@ close.
 
 ## The CLI
 
-`rexymcp` is one binary with fourteen subcommands. Flags are all long-form; there
+`rexymcp` is one binary with fifteen subcommands. Flags are all long-form; there
 are no short aliases.
 
 ### Command reference
@@ -550,7 +561,8 @@ are no short aliases.
 | `rexymcp health` | Connectivity check against the configured endpoint; lists models. | `--config <path>`, `--base-url <url>` |
 | `rexymcp doctor` | Verify the toolchain is installed: Tier-0 `[commands]` binaries (required — a missing one exits non-zero) and Tier-1 verifier enhancers (`cargo` / `tsc` / `ruff`, advisory / fail-open). | `--config <path>`, `--json` |
 | `rexymcp calibrate <TIER>` | Write tier-derived budget defaults (`tier`, `max_turns`, `gate_retries`, `[escalation]`) to the config, preserving comments and explicit overrides. | `<TIER>` = `LARGE`\|`MEDIUM`\|`SMALL`; `--config <path>` |
-| `rexymcp run-phase` | Run a single phase from the shell; prints the `PhaseResult` as JSON. No MCP client required. | `--config`, `--phase-doc`, `--repo` (all required), `--model` |
+| `rexymcp run-phase` | Run a single phase from the shell; prints the `PhaseResult` as JSON. No MCP client required. Honors the `.rexymcp/stop` sentinel. | `--config`, `--phase-doc`, `--repo` (all required), `--model` |
+| `rexymcp stop` | Signal a running executor to stop — writes a `.rexymcp/stop` sentinel in the target repo that the serve-side watcher (and a blocking `run-phase`) honor, cancelling every live run there. The human's out-of-band interrupt (M30). | `--repo <path>` (default `.`) |
 | `rexymcp serve` | Start the MCP stdio server. | `--config <path>` (required) |
 | `rexymcp status` | One-shot session summary (human or `--json`). The lightweight, scriptable alternative to `dashboard` for CI / piping. | `--repo <path>` (required), `--session <substr>`, `--json` |
 | `rexymcp dashboard` | Live full-screen TUI over the session JSONL (see panels below). Stays open and auto-follows new sessions. | `--repo <path>` (required), `--session <id>`, `--config <path>` (drives cost rates) |
@@ -916,12 +928,14 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
   configured commands in order **format → build → lint → test** and only reports
   success if they pass.
 - **`PhaseResult`** (`phase/result.rs`) — the single value that crosses the MCP
-  boundary: `status` (`complete` / `hard_fail` / `budget_exceeded`), files
-  changed, the diff, per-command outputs, an Update Log entry, an optional
+  boundary: `status` (`complete` / `hard_fail` / `budget_exceeded` / `cancelled`),
+  files changed, the diff, per-command outputs, an Update Log entry, an optional
   `briefing`, a `warnings` list surfacing silent degradations (M26 — empty
-  `STANDARDS.md`, phase-doc heading drift), and the session-log path. On a clean
-  `complete` the server also authors the phase's bookkeeping tail — the Status
-  flip and a baseline Update Log entry — as a separate `docs:` commit (M27).
+  `STANDARDS.md`, phase-doc heading drift), a `cancellation` record on the
+  `cancelled` path (M30 — reason / stage / turns-done, working tree left dirty),
+  and the session-log path. On a clean `complete` the server also authors the
+  phase's bookkeeping tail — the Status flip and a baseline Update Log entry — as
+  a separate `docs:` commit (M27).
 - **Per-run telemetry** (`store/telemetry.rs`) — every dispatch appends a
   `PhaseRun` record: model, sampling params, served-model id, status, gates,
   turns, wall-clock, token breakdown, context window, `length_finish_rate`,
