@@ -1169,7 +1169,7 @@ The project plan. Each entry becomes a milestone with its own
     test writes-then-exec's a fake `tsc` and flakes on ETXTBSY under parallel
     `cargo test` — replace it with a deterministic `resolve_tsc_command` resolver
     test. One small cleanup phase.
-30. **M30 — Executor Interruption** *(in progress, opened 2026-07-09)*. Give the
+30. **M30 — Executor Interruption** *(done 2026-07-10; opened 2026-07-09)*. Give the
     user **and** the architect a way to stop a running executor mid-phase — today
     there is none. The MCP `execute_phase` becomes an **async job** instead of a
     single blocking call: it spawns the run inside the serve process, registers it

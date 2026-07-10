@@ -23,19 +23,25 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-05b — `todo`** (drafted 2026-07-10; **direct execution
-— architect-authored**, contract-doc fold). Brings the contract docs in line with
-M30 + phase-05a: `architecture.md` § Liveness retires the "blocking `execute_phase`"
-framing for the async poll + interrupt model; the `dispatch` skill bullet gains the
-async-poll/`cancelled` note; `WORKFLOW.md` § "Opt-in autonomous loop" gets the
-**fifth stop condition (`cancelled`)** + the async/interrupt mention; and the
-`plugin/templates/WORKFLOW.md` mirror stays in sync. Docs-only, ~70 lines; no Rust,
-no STANDARDS change. **Out of scope:** rewriting historical Status entries and the
-§ Status #30 roadmap marker (that flip is milestone-close boundary work). See
-[phase-05b](milestones/M30-executor-interruption/phase-05b-contract-doc-fold.md).
-**After 05b, all M30 in-scope phases are done → milestone-boundary human gate**
-(retrospective + the required-field-cascade calibration fold + go/no-go for the
-next milestone).
+**Active phase: none.** **M30 — Executor Interruption is closed** (2026-07-10; all
+7 in-scope phases `01`/`02`/`03`/`04`/`04b`/`05a`/`05b` done). Retrospective in the
+[M30 README](milestones/M30-executor-interruption/README.md#retrospective--2026-07-10);
+`architecture.md` § Status #30 flipped to done. **No new calibration folds** (both
+observed patterns — the required-field-cascade-vs-verifier-strike wall and the
+green-bounce refined re-dispatch — are recurrences of already-folded lessons).
+**Next-milestone go/no-go is a human decision** (no milestone kicked off). **First
+recommended action next session:** restart `rexymcp serve` on the new M30 binary
+and live smoke-test the async `execute_phase` / `stop_phase` / `rexymcp stop` path
+— it ran on hermetic tests only this milestone (the stale-serve binary returned
+synchronous `PhaseResult`s throughout; see
+[[stale-rexymcp-serve-after-rebuild]]).
+
+**M30 phase-05b — done** (2026-07-10, **approved_first_try**, **Executor: Claude
+(direct)**; commit `589a653`). Contract-doc fold: `architecture.md` § Liveness
+retired the present-tense "blocking `execute_phase`" for the async poll + interrupt
+model, the `dispatch` skill bullet gained the async/`cancelled` note, and
+`WORKFLOW.md` + its `plugin/templates/` mirror got the **fifth autonomous-loop stop
+condition (`cancelled`)** + the async/interrupt mention.
 
 **M30 phase-05a — done** (2026-07-10, **approved_first_try**, **Executor: Claude
 (direct)** — architect-authored skill prose, self-reviewed; commit `92524b8`).

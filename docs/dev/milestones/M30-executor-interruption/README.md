@@ -3,7 +3,7 @@
 **Goal:** Give both the user and the architect a way to interrupt and stop a
 running executor mid-phase — a capability that does not exist today.
 
-**Status:** in-progress
+**Status:** done
 
 **Depends on:** none
 
@@ -99,3 +99,50 @@ phase-02), so it is exercised entirely by hermetic unit tests firing a
 `CancelSignal` against a `MockAiClient`/parking `AiClient`.
 
 <!-- retrospective appended at milestone close -->
+
+## Retrospective — 2026-07-10
+
+**Shipped:** a complete mid-phase interrupt path. `execute_phase` became an async
+job (`run_id` + `get_run_status` long-poll, phase-02); `stop_phase` gives the
+architect a `claude_stop` abort (phase-03); `rexymcp stop` → `.rexymcp/stop`
+(global stop-all) gives the human a `user_stop` abort honored by both the serve
+async path (phase-04) and the blocking `run-phase` CLI (phase-04b); a fourth
+`cancelled` `PhaseStatus` carries the partial diff on a dirty tree (phase-01); and
+the skills + contract docs were realigned to the async/interrupt model with a 5th
+`auto` stop condition `STOP(cancelled)` (phase-05a/05b).
+
+**Verdicts:** 01 approved_after_2 · 02 approved_after_1 · 03 **escalated
+(takeover, 2 hard_fails)** · 04 approved_after_1 · 04b approved_first_try · 05a
+approved_first_try (Claude direct) · 05b approved_first_try (Claude direct).
+
+**Calibration — no new folds** (both are recurrences of already-folded patterns):
+
+1. **Required-field cascade vs. the governor's 6-verifier-strike limit** (phase-03,
+   2 hard_fails → takeover). Adding a non-defaultable `cancel: CancelSignal` field
+   across ~14 call sites means the crate can't compile until *every* site is fixed,
+   so the verifier strikes out mid-cascade before the executor finishes. This is
+   the WORKFLOW § "Prefer additive change shapes" pattern (already folded, M7
+   phase-05a/05b) — recurring, not new. **The mitigation worked:** once phases 04/
+   04b/05 were designed *additively* (new modules/methods, no cascade), the executor
+   completed them cleanly (04 first-try, 04b/05a/05b first-try, one one-line test
+   bounce on 04). The forward lesson for a future required-field change: either
+   split so intermediate states compile, or instruct "make all cascade edits before
+   any build," or pre-flag the phase as takeover-likely.
+2. **Green-bounce refined re-dispatch** held 3× (bug-02-1, bug-02-2, bug-04-1): when
+   a bounce leaves all gates green (a slow test, a masking `#[allow]`, a weak test),
+   a plain re-dispatch no-ops; a loud "read this first" header with the exact inline
+   fix converts it. Consistent with the `plain-redispatch-noops-on-green-bounce`
+   calibration — reconfirmed, no doc change.
+
+**Design decisions recorded:** async-job model on MCP `execute_phase` (decided at
+kickoff); global stop-all sentinel with `--run <id>` scoping deferred; CLI-path
+`cancelled` reason-stamping deferred (async path owns it); `cancelled` → STOP-for-
+human in the auto loop with human-only stop agency (the loop never fires
+`stop_phase` itself); detect-and-adapt dispatch for the stale-serve/`run-phase`
+transition.
+
+**Not exercised live:** the async `execute_phase` / `stop_phase` / `rexymcp stop`
+path was validated by hermetic tests only — the connected `rexymcp serve` ran the
+pre-M30 blocking binary all run (the `stale-rexymcp-serve-after-rebuild` pattern),
+so every dispatch returned a synchronous `PhaseResult`. A serve restart + live
+smoke test of the interrupt path is the recommended first action next session.
