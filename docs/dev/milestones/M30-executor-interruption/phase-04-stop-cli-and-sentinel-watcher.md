@@ -350,6 +350,46 @@ pattern. **No wall-clock sleeps in tests beyond the 1ms injected poll.**
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### 🔴 BOUNCE FIX REQUIRED — 2026-07-10 (read this first)
+
+**This phase was bounced in review on `bug-04-1` (major). The gates are all GREEN
+— that is the trap: the production code is correct, but one test does not actually
+test what it is named for, so it would pass even if the code were broken.** Do
+**not** report "complete" until you make the one-line test fix below and re-run the
+gates. This is a **test-quality** bounce; the production `watch_stop_sentinel` is
+correct — do **not** change it.
+
+**The fix (bug-04-1):** in `mcp/src/stop_watcher.rs`, the test
+`watcher_exits_without_firing_when_run_terminal` discards the watcher task's
+outcome, so it can't tell whether the watcher actually exited on a terminal run.
+Replace this line:
+
+```rust
+        let _ = tokio::time::timeout(Duration::from_secs(5), watcher).await;
+```
+
+with an assertion that the spawned watcher task **actually returned** (a timeout =
+the watcher never exited = test failure):
+
+```rust
+        tokio::time::timeout(Duration::from_secs(5), watcher)
+            .await
+            .expect("watcher should exit promptly once the run is terminal")
+            .expect("watcher task should not panic");
+```
+
+(`.expect()` on a test-only path is allowed — STANDARDS §2.1 exempts test code.)
+
+**Prove it is load-bearing before you finish:** temporarily invert the terminal
+check in `watch_stop_sentinel` (`if !registry.is_running(&run_id)` →
+`if registry.is_running(&run_id)`, making the watcher loop forever), confirm the
+rewritten test now **fails** (the 5 s timeout elapses), then **revert the
+inversion** so the shipped production code is unchanged. Only the test changes in
+this fix.
+
+Then re-run all four gates; they must stay green with the corrected test.
+
 ### Update — ts=1783704780055 (complete, server-authored)
 
 **Summary:** The commit is clean — all 7 files are included. The shell mangled the commit message display but the actual commit content is fine.
