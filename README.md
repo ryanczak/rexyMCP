@@ -180,8 +180,8 @@ Claude rather than calling out to any cloud LLM itself.
 **Watch a run live:**
 
 ```bash
-rexymcp dashboard --repo /path/to/your/repo   # full-screen TUI — stays open, auto-follows sessions
-rexymcp status    --repo /path/to/your/repo   # one-shot summary; scriptable with --json
+rexymcp dashboard --repo .   # full-screen TUI — stays open, auto-follows sessions
+rexymcp status    --repo .   # one-shot summary; scriptable with --json
 ```
 
 The loop above is the **interactive** mode — you drive each `/rexymcp:` step and
@@ -275,7 +275,7 @@ context — but it leaves *you* with no idea what's happening. **`rexymcp
 dashboard` is the window into that black box.**
 
 ```bash
-rexymcp dashboard --repo /path/to/your/repo
+rexymcp dashboard --repo .   # run from your target repo's root
 ```
 
 ![The rexymcp dashboard](docs/rexymcp_dashboard.png)
@@ -345,7 +345,7 @@ cargo build
 **2 — Scaffold a config** in your target repo:
 
 ```bash
-cd /path/to/your/repo
+# from your target repo's root:
 rexymcp init                 # writes rexymcp.toml with a generated [project] id
 ```
 
