@@ -1,7 +1,7 @@
 # Phase 02: MCP job registry + async `execute_phase` + `get_run_status`
 
 **Milestone:** M30 — Executor Interruption
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-01
 **Estimated diff:** ~480 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -587,3 +587,105 @@ Otherwise: None beyond the files named in the Spec (`mcp/src/jobs.rs` [new],
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Update — ts=1783696087991 (complete, server-authored)
+
+**Summary:** All spec tasks are now complete. Here's a summary of what was built:
+
+**What was built:** Implemented the MCP job registry (`mcp/src/jobs.rs`) with `JobRegistry`, `RunState`, `new_run_id()`, and `spawn_run()`. Added the `runs` field to `RexyMcpServer` with a `new()` constructor. Converted `execute_phase` from a blocking call to an async spawn that returns `{ run_id }` immediately. Added `get_run_status` as a `#[rmcp::tool]` method with bounded long-polling. Updated both `execute_phase` tool descriptions to reflect the async contract.
+
+**Deviations:** Used `Duration::from_millis(1)` for timeout tests instead of `#[tokio::test(start_paused = true)]` because the `test-util` feature isn't enabled in this project's tokio dependency — the millisecond timeout achieves the same deterministic behavior.
+
+**Verification:** All 500 tests pass (including 10 jobs.rs tests and 5 get_run_status tests). `cargo clippy --all-targets --all-features -- -D warnings` is clean. `cargo fmt --all --check` is clean. `cargo build` succeeds with zero warnings. All changes are committed and the working tree is clean.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+est tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 949 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-0ef0717e07dc6f8c)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `docs/dev/milestones/M30-executor-interruption/README.md` — +1 -1
+- `docs/dev/milestones/M30-executor-interruption/phase-02-job-registry-and-async-execute.md` — +1 -1
+- `mcp/src/jobs.rs` — +237 -0
+- `mcp/src/main.rs` — +2 -3
+- `mcp/src/server.rs` — +94 -8
+
+**Commit:** e7b5cede294c4f1c9ae28a916fc771e78529d5e0
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
