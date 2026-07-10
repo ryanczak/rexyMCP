@@ -23,8 +23,34 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-04 — `todo`** (drafted 2026-07-10, via `/rexymcp:auto`;
-**awaiting human review before dispatch** — user chose "draft then pause").
+**Active phase: M30 phase-04b — `todo`** (drafted 2026-07-10, via `/rexymcp:auto`).
+Blocking CLI `run-phase` honors the `.rexymcp/stop` sentinel: a new
+`watch_stop_sentinel_single(repo, CancelHandle, poll)` in `mcp/src/stop_watcher.rs`
+(fires one handle — `run-phase` has no `JobRegistry`), and the `RunPhase` match arm
+builds a real `CancelSignal::new()` + spawns that watcher + passes the signal into
+`RunPhaseConfig` (was `never()`) + aborts the watcher after the run. Additive,
+size=s, no architecture.md edit (§ Status #30 already says run-phase honors the
+sentinel), no new dep. Reason-stamping the CLI `cancelled` result is out of scope
+(async path owns that). See
+[phase-04b](milestones/M30-executor-interruption/phase-04b-run-phase-sentinel-honoring.md);
+phase-05 (async-polling skill-loop rewrite + contract-doc updates) is the
+milestone's final phase and the `/rexymcp:auto` pause point.
+
+**M30 phase-04 — done** (2026-07-10, **approved_after_1**, executor
+AEON-7/Qwen3.6-27B-AEON LARGE; commit `141f666` approve, prior `2496d10` feat).
+`rexymcp stop` CLI + `.rexymcp/stop` global-stop-all sentinel watcher: new
+`mcp/src/stop.rs` (sentinel helpers), `mcp/src/stop_watcher.rs`
+(`watch_stop_sentinel` fires `request_stop_all(UserStop)` + clears the sentinel,
+exits when its run is terminal), additive `JobRegistry::request_stop_all`/
+`is_running`, a localized watcher spawn in the `execute_phase` branch, and the
+`Stop` CLI subcommand. **Fully additive** (applied the phase-03 cascade lesson) —
+executor completed it **first-try**. **Bounced once** (bug-04-1, major, test
+quality): `watcher_exits_without_firing_when_run_terminal` discarded the watcher
+`JoinHandle` outcome, so it didn't actually verify the exit (review mutation-proved
+it). Green-bounce ([[plain-redispatch-noops-on-green-bounce]]); refined re-dispatch
+with the exact one-line fix (assert the `JoinHandle` returns) landed clean,
+mutation-verified on re-review. Global stop-all; `--run` scoping + reason-stamping
+the CLI path deferred.
 `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher, **global stop-all** (decided
 with the user: `.rexymcp/stop` is a presence flag, no run-id payload; `--run <id>`
 deferred). Fully **additive** (applies the phase-03 cascade lesson — no
