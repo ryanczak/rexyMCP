@@ -271,25 +271,13 @@ Commands::Stop { repo } => {
 enough — reference it as `stop::write_sentinel` / `crate::stop::write_sentinel`
 consistently with the other modules.)
 
-### 6. (OPTIONAL — architect to confirm at review) Blocking `run-phase` honoring
+### 6. Blocking `run-phase` sentinel honoring — DEFERRED to phase-04b
 
-The `docs/architecture.md` narrative says the blocking CLI `run-phase` also
-honors the sentinel. That requires `run-phase` to build a **real** `CancelSignal`
-(instead of `never()`) and spawn a single-handle watcher firing that one handle
-(it has no `JobRegistry`). This is a **separable** addition.
-
-**Recommendation:** ship Tasks 1–5 (the async `execute_phase` path — the primary,
-and the one the phase-05 skill loop will drive) as phase-04, and split `run-phase`
-honoring into a small **phase-04b** if it risks pushing this over one session. The
-architect will decide at review which way to cut it; if included, add:
-
-- a `watch_stop_sentinel_single(repo_path, cancel_handle, poll)` in
-  `stop_watcher.rs` (fires one `CancelHandle`, no registry), and
-- change the `RunPhase` arm to `let (h, s) = CancelSignal::new();` + spawn that
-  watcher + pass `cancel: s` into `RunPhaseConfig`.
-
-Leave this task out unless the review says otherwise; do **not** silently expand
-scope.
+**Not in this phase.** Making the blocking CLI `run-phase` honor the sentinel
+(build a real `CancelSignal` + a single-handle watcher, since it has no
+`JobRegistry`) is split into **phase-04b** (decided with the user, 2026-07-10).
+The `RunPhase` arm keeps `cancel: CancelSignal::never()` here — do **not** touch
+it. This phase is the async `execute_phase` path only (Tasks 1–5).
 
 ## Acceptance criteria
 
@@ -351,8 +339,8 @@ pattern. **No wall-clock sleeps in tests beyond the 1ms injected poll.**
 
 - **Run-scoped stop** (`rexymcp stop --run <id>`, a sentinel carrying a run-id) —
   deferred; this phase is global stop-all only.
-- **Blocking `run-phase` sentinel honoring** — Task 6, ship only if the review
-  says so (else phase-04b).
+- **Blocking `run-phase` sentinel honoring** — **phase-04b** (the `RunPhase` arm
+  keeps `CancelSignal::never()` here; do not modify it).
 - **The async-polling skill-loop rewrite** — phase-05.
 - **A filesystem-notify/inotify watcher** — polling at `STOP_POLL_INTERVAL` is
   intentionally simple and dependency-free; do not add a notify crate.

@@ -83,7 +83,8 @@ second terminal.
 | 01 | Executor `CancelSignal` + `cancelled` outcome ([phase-01-cancel-signal-and-outcome.md](phase-01-cancel-signal-and-outcome.md)) | done |
 | 02 | MCP job registry + async `execute_phase` + `get_run_status` ([phase-02-job-registry-and-async-execute.md](phase-02-job-registry-and-async-execute.md)) | done |
 | 03 | `stop_phase` MCP tool + reason/partial-diff enrichment ([phase-03-stop-phase-tool-and-reason-threading.md](phase-03-stop-phase-tool-and-reason-threading.md)) | done |
-| 04 | `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher ([phase-04-stop-cli-and-sentinel-watcher.md](phase-04-stop-cli-and-sentinel-watcher.md)) | todo |
+| 04 | `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (async path) ([phase-04-stop-cli-and-sentinel-watcher.md](phase-04-stop-cli-and-sentinel-watcher.md)) | todo |
+| 04b | Blocking `run-phase` sentinel honoring (split from 04) | — |
 | 05 | Async-polling skill-loop rewrite + contract-doc updates (planned) | — |
 
 ## Notes
