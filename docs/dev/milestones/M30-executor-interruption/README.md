@@ -86,7 +86,7 @@ second terminal.
 | 04 | `rexymcp stop` CLI + `.rexymcp/stop` sentinel watcher (async path) ([phase-04-stop-cli-and-sentinel-watcher.md](phase-04-stop-cli-and-sentinel-watcher.md)) | done |
 | 04b | Blocking `run-phase` sentinel honoring ([phase-04b-run-phase-sentinel-honoring.md](phase-04b-run-phase-sentinel-honoring.md)) | done |
 | 05a | Async-polling skill rewrite + `cancelled` handling ([phase-05a-async-polling-skill-rewrite.md](phase-05a-async-polling-skill-rewrite.md)) | done |
-| 05b | Contract-doc updates (architecture.md + WORKFLOW.md + template mirror) | — |
+| 05b | Contract-doc fold: async/interrupt model ([phase-05b-contract-doc-fold.md](phase-05b-contract-doc-fold.md)) | todo |
 
 ## Notes
 

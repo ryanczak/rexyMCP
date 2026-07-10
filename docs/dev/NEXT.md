@@ -23,9 +23,23 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M30 phase-05a — `todo`** (drafted 2026-07-10; **direct execution
-— architect-authored**, self-reviewed like M27 phase-06b; not dispatched to the
-local LLM). Async-polling skill rewrite + `cancelled` handling. Rewrites the
+**Active phase: M30 phase-05b — `todo`** (drafted 2026-07-10; **direct execution
+— architect-authored**, contract-doc fold). Brings the contract docs in line with
+M30 + phase-05a: `architecture.md` § Liveness retires the "blocking `execute_phase`"
+framing for the async poll + interrupt model; the `dispatch` skill bullet gains the
+async-poll/`cancelled` note; `WORKFLOW.md` § "Opt-in autonomous loop" gets the
+**fifth stop condition (`cancelled`)** + the async/interrupt mention; and the
+`plugin/templates/WORKFLOW.md` mirror stays in sync. Docs-only, ~70 lines; no Rust,
+no STANDARDS change. **Out of scope:** rewriting historical Status entries and the
+§ Status #30 roadmap marker (that flip is milestone-close boundary work). See
+[phase-05b](milestones/M30-executor-interruption/phase-05b-contract-doc-fold.md).
+**After 05b, all M30 in-scope phases are done → milestone-boundary human gate**
+(retrospective + the required-field-cascade calibration fold + go/no-go for the
+next milestone).
+
+**M30 phase-05a — done** (2026-07-10, **approved_first_try**, **Executor: Claude
+(direct)** — architect-authored skill prose, self-reviewed; commit `92524b8`).
+Async-polling skill rewrite + `cancelled` handling. Async-polling skill rewrite + `cancelled` handling. Rewrites the
 `dispatch` skill to drive M30's async `execute_phase` contract
 (**detect-and-adapt**: `run_id` → poll `get_run_status`; a direct `status` field →
 use it, for the stale-serve/`run-phase` fallback), adds the `cancelled` outcome
