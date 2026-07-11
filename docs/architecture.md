@@ -3,7 +3,8 @@
 > **Status:** Living design doc. M1–M31 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
 > committed scope; M27's stretch phase-07 advisory routing was not taken).
-> **M32** (README row-flip fix) is the active milestone. The most recent arcs: **M28**
+> **No milestone is currently active** (M32, the README row-flip fix, closed
+> 2026-07-10). The most recent arcs: **M28**
 > (edit-tool arg recovery), **M29** (cleanup), **M30** (executor
 > interruption — async `execute_phase` jobs, `stop_phase`, the `.rexymcp/stop`
 > sentinel, and the `cancelled` outcome), and **M31** (rmcp v2 upgrade —
@@ -1219,7 +1220,8 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-32. **M32 — README Row-Flip Fix** *(opened 2026-07-10)*. Single-phase cleanup
+32. **M32 — README Row-Flip Fix** *(done 2026-07-10; opened the same day)*.
+    Single-phase cleanup
     (the M29 shape): the server-authored finalize's `flip_readme_row`
     (`mcp/src/finalize.rs`) has malformed the milestone README's phase-table
     row in four production runs (M27 05a/06a as a duplicated status cell —

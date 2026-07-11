@@ -4,7 +4,7 @@
 one status cell, exactly one trailing pipe — and its tests would fail on any
 malformed shape.
 
-**Status:** in-progress
+**Status:** done
 
 **Depends on:** none
 
@@ -41,7 +41,7 @@ malformed `| review ||` too.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Fix the doubled trailing pipe in `flip_readme_row` ([phase-01-fix-row-flip-trailing-pipe.md](phase-01-fix-row-flip-trailing-pipe.md)) | review ||
+| 01 | Fix the doubled trailing pipe in `flip_readme_row` ([phase-01-fix-row-flip-trailing-pipe.md](phase-01-fix-row-flip-trailing-pipe.md)) | done |
 
 ## Notes
 
@@ -52,3 +52,36 @@ can't pass silently again. The architect flips bug-03a-1 to resolved at
 milestone close.
 
 <!-- retrospective appended at milestone close -->
+
+## Retrospective — 2026-07-10
+
+**Shipped:** the one-character suffix-slice fix in `flip_readme_row`
+(`&line[last_pipe..]` → `&line[last_pipe + 1..]`, commit `c930d02`) plus the
+test hardening that makes the malformation class unrepresentable in a green
+suite: exact full-row equality assertions, pinned `!contains("||")` /
+stale-status negatives, and the `flip_readme_row_emits_single_trailing_pipe`
+regression test.
+
+**Verdict:** phase-01 approved_first_try (executor AEON-7/Qwen3.6-27B-AEON,
+46 turns; diff landed byte-identical to the spec's pre-injected fragments).
+**Mutation-verified in review:** reverting the fix fails 4 of the 6 flip
+tests — before this phase, the reverted state passed all of them.
+
+**Meta-evidence:** this phase's own server-authored finalize — running the
+pre-fix serve binary — wrote `| review ||` into this README's phase row (the
+5th and final production occurrence), hand-repaired at approve time. The next
+finalize after a serve restart runs the fixed code; observing one well-formed
+row flip on the next milestone's first phase completes the loop.
+
+**Calibration:** the deeper lesson is about *test shape*, not the slice: all
+five prior tests asserted `contains("| review |")`, which the malformed
+`| review ||` output also satisfies — a weak-substring-assertion blind spot
+that let both the original bug (duplicated cell) and the partial fix's
+regression (doubled pipe) ship green. Same family as the M30 phase-01/02/04
+weak-test bounces: **substring/disjunction assertions on exact-format output
+are calibration data for "pin exact equality + negatives."** Recurring
+pattern; fold candidate alongside the cascade-ordering one from M31.
+
+**History closed:** bug-03a-1 (M27) flipped to resolved — its "How to fix"
+splice was half-applied in `2d535be` (prefix corrected, suffix off-by-one
+introduced); this milestone finishes it.

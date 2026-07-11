@@ -1,7 +1,7 @@
 # Phase 01: Fix the doubled trailing pipe in `flip_readme_row`
 
 **Milestone:** M32 — README Row-Flip Fix
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~40 lines (one production character + test hardening)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -286,3 +286,25 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** none — diff is exactly the specced one-character fix +
+  test hardening, all in `mcp/src/finalize.rs` (+32 −7)
+- **Calibration:** none new. Note: the acceptance grep `'last_pipe + 1'` also
+  substring-matches the pre-existing `second_last_pipe + 1` — the criterion's
+  intent (one new suffix-slice fix, line 195) is met; imprecision was the
+  architect's, not the executor's.
+
+Independent re-run: all four gates green (fmt clean, build zero warnings,
+clippy clean, 517 mcp + 950 executor tests, 2 ignored). All 6 `flip_readme_row`
+tests pass. **Mutation-verified:** reverting the one-character fix fails 4 of
+the 6 tests (`emits_single_trailing_pipe`, `flips_todo_cell`,
+`flips_bounced_row`, `flips_matching_row_only`) — before this phase, the
+suite was blind to the malformed shape. Meta-evidence at review time: this
+very phase's server-authored finalize (running the pre-fix serve binary)
+produced `| review ||` in the M32 README — the last hand-repair; the next
+finalize runs the fixed code once serve restarts.

@@ -23,18 +23,23 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M32 phase-01 — fix the doubled trailing pipe in
-`flip_readme_row`**
-([phase doc](milestones/M32-readme-row-flip/phase-01-fix-row-flip-trailing-pipe.md),
-drafted 2026-07-10, status `todo`). **📌 M32 — README Row-Flip Fix kicked off
-(2026-07-10, with the user)** — the 4-occurrence calibration flag from the M31
-close, promoted to a single-phase cleanup milestone (M29 shape). Root cause
-pinned at draft time: bug-03a-1's partial fix (`2d535be`) splices the stale
-cell correctly but keeps the final `|` inside the suffix slice
-(`&line[last_pipe..]`), emitting `| review ||`; the five existing tests assert
-`contains("| review |")`, a substring of the malformed output too. The phase
-is the one-character fix + exact-equality/pinned-negative test hardening + a
-regression test. Roadmap: `architecture.md` § Status #32.
+**Active phase: none.** **M32 — README Row-Flip Fix is closed** (2026-07-10;
+single phase done, opened and closed the same day). **phase-01 —
+approved_first_try** (executor AEON-7/Qwen3.6-27B-AEON, 46 turns; commits
+`c930d02` fix / `dcaa4e6` bookkeeping / approve+close below). The
+one-character suffix-slice fix (`&line[last_pipe + 1..]`) + exact-equality
+test hardening; **mutation-verified** — reverting the fix fails 4 of 6 flip
+tests where the old substring assertions passed all. bug-03a-1 (M27) flipped
+to resolved. Retrospective in the
+[M32 README](milestones/M32-readme-row-flip/README.md#retrospective--2026-07-10).
+**Two standing fold candidates for the next fold window** (user sign-off
+pending): (1) cascade-vs-6-strikes → pre-inject leaf-first edit order (M30/M31,
+2 occurrences, countermeasure 2-for-2); (2) weak-substring-assertions on
+exact-format output → pin exact equality + negatives (M30 phases 01/02/04 +
+this bug's 5-occurrence history). **Live observation pending:** the running
+serve binary predates M31+M32 — restart it (`/mcp` reconnect), then the next
+real phase completion should produce a well-formed `| review |` row flip,
+closing the loop on this fix. **Next-milestone go/no-go is a human decision.**
 
 **M31 — rmcp v2 Upgrade is closed** (2026-07-10; both
 phases done, opened and closed the same day inside a single `/rexymcp:auto`

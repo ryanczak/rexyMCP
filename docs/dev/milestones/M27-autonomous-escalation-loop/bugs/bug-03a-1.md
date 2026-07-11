@@ -1,7 +1,7 @@
 # Bug 1 on phase-03a: `flip_readme_row` duplicates the status cell instead of replacing it
 
 **Severity:** minor
-**Status:** open
+**Status:** resolved (M32 phase-01, 2026-07-10 — commit c930d02; the 2d535be partial fix corrected the prefix but introduced a doubled trailing pipe, closed here)
 **Filed:** 2026-07-09
 
 ## What's wrong
