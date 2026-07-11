@@ -23,7 +23,21 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: none.** **M32 — README Row-Flip Fix is closed** (2026-07-10;
+**Active phase: M28 phase-02 — extend the `missing_args_hint` recovery message
+to the remaining 8 arg-parsing tools**
+([phase doc](milestones/M28-edit-tool-arg-recovery/phase-02-extend-arg-hint-remaining-tools.md),
+drafted 2026-07-10, status `todo`). Reactivates M28's pre-declared optional
+follow-on. Mechanical repeat of phase-01's proven arm-rewrite across
+`patch_lines`/`move_file`/`delete_file`/`bash`/`search`/`find_files`/`symbols`/
+`read_file` (per-tool required-field table + the two breaking existing-test
+updates pre-injected; `symbols` = empty-required type-mismatch branch;
+`registry.rs` helper reused unchanged). **Dispatched to verify the M32
+`flip_readme_row` fix live** — the first server-authored finalize on the
+rebuilt M31/M32 serve binary should flip this phase's README row to a
+well-formed single-pipe `| review |`. Dispatch via `/rexymcp:dispatch
+phase-02`.
+
+**M32 — README Row-Flip Fix is closed** (2026-07-10;
 single phase done, opened and closed the same day). **phase-01 —
 approved_first_try** (executor AEON-7/Qwen3.6-27B-AEON, 46 turns; commits
 `c930d02` fix / `dcaa4e6` bookkeeping / approve+close below). The

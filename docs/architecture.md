@@ -1147,7 +1147,7 @@ The project plan. Each entry becomes a milestone with its own
     transcripts and joined onto journal activities (absent — never estimated —
     on clients without transcripts). Design fixed at kickoff with the user; see
     the M27 README § Design.
-28. **M28 — Edit-Tool Arg Recovery** *(done, 2026-07-09; single phase; phase-02 optional, not taken)*.
+28. **M28 — Edit-Tool Arg Recovery** *(phase-01 done 2026-07-09; phase-02 — the optional follow-on extending the helper to the remaining 8 arg-parsing tools — activated 2026-07-10)*.
     Close [issue #1](https://github.com/ryanczak/rexyMCP/issues/1), surfaced by
     the M27 `/rexymcp:auto` live-validation run: near max context a small model
     truncates edit-tool calls and drops the required `path` field, and

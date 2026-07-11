@@ -6,7 +6,8 @@ message** naming the missing field and what it did supply — instead of a raw
 serde error the model can't act on — so the loop self-corrects rather than
 hard-failing.
 
-**Status:** done (closed 2026-07-09; single committed phase; phase-02 optional, not taken)
+**Status:** in-progress (phase-01 done 2026-07-09; phase-02 — the optional
+follow-on — activated 2026-07-10 to extend the helper to the remaining 8 tools)
 
 **Depends on:** none (localized to the tool arg-deserialization seam)
 
@@ -56,6 +57,7 @@ update_task.rs:35`). The fix is deterministic and low-risk — it improves the e
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Actionable missing-field recovery hint for `write_file` + `patch` ([phase-01-edit-tool-missing-field-hint.md](phase-01-edit-tool-missing-field-hint.md)) | done |
+| 02 | Extend the recovery hint to the remaining 8 arg-parsing tools ([phase-02-extend-arg-hint-remaining-tools.md](phase-02-extend-arg-hint-remaining-tools.md)) | todo |
 
 ## Notes
 

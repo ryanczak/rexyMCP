@@ -1,0 +1,254 @@
+# Phase 2: Extend the `missing_args_hint` recovery message to the remaining 8 arg-parsing tools
+
+**Milestone:** M28 — Edit-Tool Arg Recovery
+**Status:** todo
+**Depends on:** phase-01 (the `missing_args_hint` helper it reuses is `done`)
+**Estimated diff:** ~200 lines (8 uniform arm rewrites + tests + 2 test updates)
+**Tags:** language=rust, kind=bugfix, size=m
+
+## Goal
+
+Phase-01 replaced the dead-end raw `invalid arguments: <serde error>` message
+with the actionable `missing_args_hint(tool, required, present)` recovery
+message for `write_file` and `patch`. Eight other tools still surface the raw
+serde error on a deserialization failure. This phase extends the **same
+helper** (unchanged) to all eight, so a truncated/malformed call to any tool
+gives the model a recoverable message instead of a dead end. Purely a
+failure-message change: happy paths stay byte-identical.
+
+## Architecture references
+
+Read before starting:
+
+- `docs/architecture.md` § Status #24 (M24 — Edit-Loop Recovery) and #28
+  (this milestone) — the precedent of enriching a dead-end tool error.
+- `executor/src/tools/registry.rs:34` — the `missing_args_hint` helper (already
+  written and tested in phase-01; **reuse as-is, do not modify it**).
+- `phase-01-edit-tool-missing-field-hint.md` § Spec task 2 — the worked
+  arm-rewrite this phase repeats eight times (quoted below).
+
+## Pre-flight
+
+1. Read `docs/dev/STANDARDS.md` top to bottom.
+2. Read the architecture references above.
+3. Read this entire phase doc before touching any code.
+4. Confirm the repo is on a clean branch with no uncommitted changes.
+
+## Current state
+
+All eight tools share the **identical** failing arm — the raw serde error is
+surfaced verbatim. Example, `executor/src/tools/read_file.rs:71-78`:
+
+```rust
+let parsed = match serde_json::from_value::<ReadFileArgs>(args) {
+    Ok(a) => a,
+    Err(e) => {
+        return Ok(ToolResult {
+            output: String::new(),
+            error: Some(format!("invalid arguments: {e}")),
+            metadata: None,
+        });
+    }
+};
+```
+
+The helper is already `pub(crate)` in `registry.rs` and is imported in the
+`write_file`/`patch` sibling modules as `super::registry::missing_args_hint`
+(see `write_file.rs:75`). Same import works for all eight.
+
+### The worked rewrite to repeat (from phase-01, proven)
+
+Compute the present required keys from `&args` **before** the `from_value`
+move (do **not** clone `args` — some payloads are large), then call the helper
+on failure:
+
+```rust
+async fn execute(&self, args: Value) -> Result<ToolResult> {
+    let required = ["path", "content"];               // <- per-tool list, see table
+    let present: Vec<&str> = args
+        .as_object()
+        .map(|m| required.iter().copied().filter(|k| m.contains_key(*k)).collect())
+        .unwrap_or_default();
+    let parsed = match serde_json::from_value::<ReadFileArgs>(args) {
+        Ok(a) => a,
+        Err(_) => {
+            return Ok(ToolResult {
+                output: String::new(),
+                error: Some(super::registry::missing_args_hint(
+                    "read_file", &required, &present,
+                )),
+                metadata: None,
+            });
+        }
+    };
+```
+
+Everything after the deserialization is unchanged.
+
+### Per-tool required-field list (the `required` slice for each)
+
+The `required` slice is exactly the **non-`Option`** fields of each tool's
+args struct, in declaration order (verified from source at draft time). The
+tool name string is the tool's `name()` (matches the file/struct):
+
+| Tool (file) | Args struct | `required` slice |
+|---|---|---|
+| `patch_lines.rs:65` | `PatchLinesArgs` | `["path", "start_line", "end_line", "new_content"]` |
+| `move_file.rs:53` | `MoveFileArgs` | `["from", "to"]` |
+| `delete_file.rs:48` | `DeleteFileArgs` | `["path"]` |
+| `bash.rs:67` | `BashArgs` | `["command"]` |
+| `search.rs:85` | `SearchArgs` | `["pattern"]` |
+| `find_files.rs:68` | `FindFilesArgs` | `["pattern"]` |
+| `symbols.rs:122` | `SymbolsArgs` | `[]` — see note |
+| `read_file.rs:71` | `ReadFileArgs` | `["path"]` |
+
+**`symbols` is the special case: it has _no_ required fields** (every field of
+`SymbolsArgs` is `Option`). Pass `required = []` (an empty `[&str; 0]`). With
+an empty `required`, the helper computes `missing = []` and `present = []`, so
+it returns its **type-mismatch** branch ("all required fields were present but
+one has an invalid type or value…"). That is the correct message for symbols:
+a `from_value` failure there can only be a wrong field *type*
+(e.g. `max_results` given a string), never a dropped required field — nothing
+is mandatory to drop. Do **not** invent a required field for symbols to make
+the example shape prettier; the empty-required, type-mismatch path is right.
+
+### Two existing tests assert the OLD message — they will break; update them
+
+These currently assert the removed `"invalid arguments"` string and **must**
+be updated as part of this phase (else `cargo test` fails):
+
+- `bash.rs:461` (`rejects_malformed_args`, args `{"timeout_secs": 5}` — the
+  required `command` is missing): replace
+  `assert!(result.error.as_ref().unwrap().contains("invalid arguments"));`
+  with an assertion that the message names the missing `command` field and is
+  **not** the raw serde string — e.g.
+  ```rust
+  let err = result.error.as_ref().unwrap();
+  assert!(err.contains("command"), "should name the missing field: {err}");
+  assert!(!err.contains("invalid arguments: missing field"), "no raw serde text: {err}");
+  ```
+- `read_file.rs:357` (args `{"wrong_field": "value"}` — the required `path` is
+  missing): the same update, asserting the message names `path` and is not the
+  raw serde string. Keep the existing `assert!(result.output.is_empty());`.
+
+## Spec
+
+For each of the eight tools in the table above, in its own file:
+
+1. **`patch_lines.rs`** — rewrite the `from_value::<PatchLinesArgs>` failing arm
+   (line ~65) to the worked pattern with
+   `required = ["path", "start_line", "end_line", "new_content"]` and tool name
+   `"patch_lines"`.
+2. **`move_file.rs`** — arm at ~53, `required = ["from", "to"]`, name
+   `"move_file"`.
+3. **`delete_file.rs`** — arm at ~48, `required = ["path"]`, name
+   `"delete_file"`.
+4. **`bash.rs`** — arm at ~67, `required = ["command"]`, name `"bash"`. Then
+   update the `rejects_malformed_args` test (line ~461) per "Two existing
+   tests" above.
+5. **`search.rs`** — arm at ~85, `required = ["pattern"]`, name `"search"`.
+6. **`find_files.rs`** — arm at ~68, `required = ["pattern"]`, name
+   `"find_files"`.
+7. **`symbols.rs`** — arm at ~122, `required = []` (empty), name `"symbols"`.
+   The `present` computation with an empty `required` yields `[]`; that is
+   fine. (Because `required` is empty, the `.filter(...)` produces nothing —
+   this compiles and needs no special-casing.)
+8. **`read_file.rs`** — arm at ~71, `required = ["path"]`, name `"read_file"`.
+   Then update the malformed-args test (line ~357) per "Two existing tests".
+
+Then add the per-tool tests below and run the four gates (separate
+invocations).
+
+**Do not touch** `registry.rs`'s `missing_args_hint` / `example_shape` — they
+are correct as-is. In particular, `example_shape` renders every field as
+`"<string>"` regardless of its real JSON type (so `patch_lines`'s numeric
+`start_line`/`end_line` show as `"<string>"` in the example). That is an
+accepted, deliberate limitation — the hint's load-bearing content is the
+**field names**, and the tool's own `schema()` remains the type authority.
+Improving `example_shape` to encode types is explicitly out of scope (it would
+churn the shared helper used by the phase-01 tools).
+
+## Acceptance criteria
+
+- [ ] `grep -rn "invalid arguments" executor/src/tools/` returns **nothing**
+      (no production arm and no test assertion still references the removed
+      string across any tool).
+- [ ] Each of the eight tools' deserialization-failure arm calls
+      `missing_args_hint` with the tool's name and the required slice from the
+      table.
+- [ ] A `read_file` call `{"start_line": 1}` (no `path`) returns a message
+      naming `path` missing — not `invalid arguments: missing field \`path\``.
+- [ ] A `move_file` call `{"from": "a"}` (no `to`) names `to` missing and
+      echoes `from` as supplied.
+- [ ] A `symbols` call with a wrong-typed field (e.g.
+      `{"max_results": "lots"}`) returns the hint (type-mismatch branch) with
+      **no** raw serde text and no panic.
+- [ ] A **valid** call to each tool still behaves byte-identically (happy path
+      unchanged; the hint fires only on a `from_value` failure).
+- [ ] Non-object args (e.g. `json!(5)`) to any rewired tool return the hint
+      without a panic.
+- [ ] The updated `bash` and `read_file` tests pass and assert the new hint
+      shape (not the old `"invalid arguments"` substring).
+- [ ] `cargo build` (zero new warnings), `clippy -D warnings`,
+      `fmt --all --check`, and `cargo test` all pass.
+- [ ] `registry.rs` is unchanged (helper reused, not modified).
+
+## Test plan
+
+Mirror the phase-01 tool tests, in each tool's existing `#[cfg(test)] mod
+tests` against a `TempDir` scope where the tool needs one. Names describe
+behavior:
+
+- `read_file_missing_path_returns_recovery_hint` — `execute(json!({"start_line":
+  1}))` → error names `path`, is not the raw serde string.
+- `move_file_missing_to_returns_recovery_hint` — `{"from": "a"}` → names `to`
+  missing, echoes `from` supplied (assert both, distinctly).
+- `delete_file_missing_path_returns_recovery_hint`.
+- `patch_lines_missing_fields_returns_recovery_hint` — `{"path": "x"}` → names
+  the three missing numeric/content fields.
+- `search_missing_pattern_returns_recovery_hint`.
+- `find_files_missing_pattern_returns_recovery_hint`.
+- `symbols_type_mismatch_returns_recovery_hint` — `{"max_results": "lots"}` →
+  hint present, **no** raw serde text, no panic.
+- `bash_missing_command_returns_recovery_hint` — either fold into the updated
+  `rejects_malformed_args` or add alongside it.
+- For at least two tools, a `non_object_args_do_not_panic` test over
+  `json!(5)` / `json!("oops")` asserting a hint (not a panic), matching the
+  phase-01 coverage shape.
+
+Make the missing-vs-supplied assertions distinct (missing field named in the
+missing clause, supplied field in the supplied clause) so a mislabeled helper
+call fails.
+
+## End-to-end verification
+
+> Not applicable as a standalone CLI/binary E2E — these tools have no command
+> surface; they run only through `execute_phase`. The unit tests call the
+> **real** `execute` methods against `TempDir` scopes (the shipped code path),
+> which is the same verification basis phase-01 used. Quote the
+> `grep -rn "invalid arguments" executor/src/tools/` empty result and the
+> `cargo test` pass line in the completion Update Log.
+
+## Authorizations
+
+None. (No new dependency; no `docs/architecture.md` edit — the milestone is
+already recorded in § Status, and this phase adds no architectural surface;
+`registry.rs` is not modified.)
+
+## Out of scope
+
+- Modifying `missing_args_hint` or `example_shape` in `registry.rs` (including
+  type-aware example shapes) — reuse the helper unchanged.
+- **Auto-reconstructing** any missing field value, or **context-pressure
+  guards** (issue #1 solutions 1 & 3) — still deferred, as in phase-01.
+- Changing any tool's `schema()` / args struct / required JSON — the fields
+  stay as they are; only the *failure message* changes.
+- Adding a required field to `symbols` to prettify its example shape — its
+  empty-required, type-mismatch path is correct.
+- Any tool not in the eight-row table (`write_file`/`patch` are already done).
+
+## Update Log
+
+(Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+<!-- entries appended below this line -->
