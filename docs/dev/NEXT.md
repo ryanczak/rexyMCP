@@ -32,11 +32,11 @@ test hardening; **mutation-verified** — reverting the fix fails 4 of 6 flip
 tests where the old substring assertions passed all. bug-03a-1 (M27) flipped
 to resolved. Retrospective in the
 [M32 README](milestones/M32-readme-row-flip/README.md#retrospective--2026-07-10).
-**Two standing fold candidates for the next fold window** (user sign-off
-pending): (1) cascade-vs-6-strikes → pre-inject leaf-first edit order (M30/M31,
-2 occurrences, countermeasure 2-for-2); (2) weak-substring-assertions on
-exact-format output → pin exact equality + negatives (M30 phases 01/02/04 +
-this bug's 5-occurrence history). **Live observation pending:** the running
+**Both fold candidates folded (2026-07-10, user-approved; commit `6351231`)**
+into `WORKFLOW.md` + the plugin-template mirror: (1) cascade-vs-6-strikes →
+pre-inject a topological leaf-first edit order, appended to § "Prefer additive
+change shapes"; (2) weak-substring-assertions on exact-format output → pin
+exact equality + negatives, appended to the § "Pin negative cases" fold. **Live observation pending:** the running
 serve binary predates M31+M32 — restart it (`/mcp` reconnect), then the next
 real phase completion should produce a well-formed `| review |` row flip,
 closing the loop on this fix. **Next-milestone go/no-go is a human decision.**

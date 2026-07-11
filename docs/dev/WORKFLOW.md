@@ -552,6 +552,19 @@ outside the sandbox; and bug-05-1, a classifier that matched `shutdown` as a bar
 substring and so blocked `cargo test shutdown`. Both would have been caught by a
 single pinned negative example.)
 
+**Exact-format output needs exact-equality assertions, not substring checks.**
+When code emits output whose exact shape is the contract (a markdown table
+row, a wire payload, a rendered template line), a `contains(..)` or loose
+disjunction assertion is blind to malformed supersets of the expected string —
+the test passes on the broken output because the correct fragment is embedded
+in it. Spec such tests as **exact equality on the full line/value plus a
+pinned must-NOT** (the specific malformation, e.g. `!contains("||")`).
+(Folded 2026-07-10: `flip_readme_row`'s five production misfires — bug-03a-1's
+duplicated cell and the doubled trailing pipe `| review ||` — all survived a
+suite asserting `contains("| review |")`, a substring of every malformed shape
+too; M32's exact-equality rewrite made a revert of the fix fail 4 of 6 tests.
+Same family: M30 bug-01-1's loose `Cancelled || HardFail` disjunction.)
+
 ### Derive intentionally
 
 Before pinning serde derives on a struct, ask whether it actually gets serialized
@@ -714,6 +727,22 @@ signatures without updating all callers — `E0061` on 2 sites); M7 phase-05b (m
 before the 3-strike verifier limit). Both resolved by additive restructure (phase-05a:
 a worked-example cascade in Task 5; phase-05b: new sibling `AiEvent::Completion`
 variant leaving `Done` untouched).
+
+**When the cascade is truly unavoidable, pre-inject a topological (leaf-first)
+edit order.** Some changes have no additive shape — a required (non-defaultable)
+field on a widely-constructed type, or a trait derive whose `#[derive]` on a
+container fails until every nested field type also carries it. For these, the
+spec must give the **exact edit order in which every intermediate step
+compiles**: dependencies (leaf types, callee signatures) first, dependents
+(containers, callers) last, with an explicit "run the build now, it must be
+green" checkpoint at each file boundary. An unordered cascade leaves the crate
+non-compiling for many consecutive turns and the verifier's strike limit fires
+mid-cascade regardless of how correct the individual edits are.
+(Folded 2026-07-10 after two occurrences with the countermeasure proven both
+times: M30 phase-03 — a required `cancel` field across ~14 sites, 2 hard_fails
+→ session takeover; M31 phase-02 — a `JsonSchema` derive graph applied
+top-down, hard_fail at 6 strikes, then a refined re-dispatch pinning the
+leaf-first order landed clean first-try.)
 
 ### Validation features depend on the target toolchain — verify availability at design time
 

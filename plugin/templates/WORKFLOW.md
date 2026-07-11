@@ -495,6 +495,17 @@ and a classifier that matched a shutdown keyword as a bare substring and so
 blocked an unrelated command containing that substring. Both would have been
 caught by a single pinned negative example.)
 
+**Exact-format output needs exact-equality assertions, not substring checks.**
+When code emits output whose exact shape is the contract (a markdown table
+row, a wire payload, a rendered template line), a `contains(..)` or loose
+disjunction assertion is blind to malformed supersets of the expected string —
+the test passes on the broken output because the correct fragment is embedded
+in it. Spec such tests as **exact equality on the full line/value plus a
+pinned must-NOT** (the specific malformation, e.g. a doubled delimiter).
+*(Folded after a formatter bug shipped five production misfires under a suite
+whose substring assertions matched every malformed shape; the exact-equality
+rewrite made a revert of the fix fail 4 of 6 tests.)*
+
 ### Derive intentionally
 
 Before adding protocol-derived traits to a struct, ask whether it actually gets
@@ -619,6 +630,21 @@ executor changes the definition and runs out of runway.
 *(Folded from M7/phase-05b: two hard_fails of the same class — breaking a
 multi-site type change — on two separate phases, Qwen3.6-27B-FP8. Additive
 restructure resolved both.)*
+
+**When the cascade is truly unavoidable, pre-inject a topological (leaf-first)
+edit order.** Some changes have no additive shape — a required (non-defaultable)
+field on a widely-constructed type, or a trait derive whose `#[derive]` on a
+container fails until every nested field type also carries it. For these, the
+spec must give the **exact edit order in which every intermediate step
+compiles**: dependencies (leaf types, callee signatures) first, dependents
+(containers, callers) last, with an explicit "run the build now, it must be
+green" checkpoint at each file boundary. An unordered cascade leaves the
+project non-compiling for many consecutive turns and the verifier's strike
+limit fires mid-cascade regardless of how correct the individual edits are.
+*(Folded after two occurrences with the countermeasure proven both times: an
+unordered required-field cascade struck out and needed a takeover; an
+unordered derive-graph cascade struck out, then a refined re-dispatch pinning
+the leaf-first order landed clean first-try.)*
 
 ### Post-write formatting is a runtime concern, not a spec concern
 
