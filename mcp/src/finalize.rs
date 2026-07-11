@@ -192,7 +192,7 @@ pub fn flip_readme_row(readme_doc: &str, phase_doc_filename: &str) -> Option<Str
                             format!(
                                 "{} review |{}",
                                 &line[..second_last_pipe + 1],
-                                &line[last_pipe..]
+                                &line[last_pipe + 1..]
                             )
                         } else {
                             line.to_string()
@@ -372,12 +372,17 @@ mod tests {
         let readme = "| 03a | Server-authored finalize ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | in-progress |\n| 03b | Retire executor gate ([phase-03b-retire-gate.md](phase-03b-retire-gate.md)) | in-progress |\n";
         let result = flip_readme_row(readme, "phase-03a-server-authored-finalize.md");
         let updated = result.expect("should have found and flipped the row");
-        assert!(updated.contains("phase-03a-server-authored-finalize.md"));
-        assert!(updated.contains("| review |"));
-        // The sibling row must still be in-progress
-        assert!(updated.contains("phase-03b-retire-gate.md"));
         let lines: Vec<&str> = updated.lines().collect();
-        assert!(lines[0].contains("| review |"), "03a row should be review");
+        assert_eq!(
+            lines[0],
+            "| 03a | Server-authored finalize ([phase-03a-server-authored-finalize.md](phase-03a-server-authored-finalize.md)) | review |"
+        );
+        assert!(!lines[0].contains("||"));
+        assert!(
+            !lines[0].contains("in-progress"),
+            "status cell should not contain in-progress"
+        );
+        // The sibling row must still be in-progress
         assert!(
             lines[1].contains("| in-progress |"),
             "03b row should still be in-progress"
@@ -390,7 +395,11 @@ mod tests {
         let result = flip_readme_row(readme, "phase-01.md");
         assert!(result.is_some());
         let new = result.unwrap();
-        assert!(new.contains("| review |"));
+        assert_eq!(
+            new.lines().next().unwrap(),
+            "| 01 | Phase ([phase-01.md](phase-01.md)) | review |"
+        );
+        assert!(!new.contains("||"));
         assert!(!new.contains("| todo |"));
     }
 
@@ -420,10 +429,26 @@ mod tests {
             lines[0].contains("| review |"),
             "bounced 04 row should be review: {lines:?}"
         );
+        assert!(!lines[0].contains("||"), "no doubled pipe in bounced row");
         // The sibling review row must be untouched
         assert!(
             lines[1].contains("| review |"),
             "sibling review row unchanged: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn flip_readme_row_emits_single_trailing_pipe() {
+        let readme = "| 02 | Structured output ([phase-02-structured-tool-output.md](phase-02-structured-tool-output.md)) | in-progress |\n";
+        let result = flip_readme_row(readme, "phase-02-structured-tool-output.md");
+        let updated = result.expect("row should flip");
+        assert_eq!(
+            updated.lines().next().unwrap(),
+            "| 02 | Structured output ([phase-02-structured-tool-output.md](phase-02-structured-tool-output.md)) | review |"
+        );
+        assert!(
+            !updated.contains("||"),
+            "no doubled pipe anywhere: {updated}"
         );
     }
 
