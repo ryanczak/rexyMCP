@@ -119,12 +119,25 @@ impl Tool for Symbols {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required: &[&str] = &[];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<SymbolsArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "symbols", required, &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -1410,6 +1423,40 @@ mod tests {
         assert!(
             body.contains("max_results"),
             "references-mode truncation note should point at `max_results`: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn type_mismatch_returns_recovery_hint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = symbols(make_scope(&dir));
+        let result = tool
+            .execute(json!({ "max_results": "lots" }))
+            .await
+            .unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            err.contains("could not parse arguments"),
+            "should return hint: {err}"
+        );
+        assert!(
+            !err.contains("invalid arguments: data"),
+            "no raw serde text: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_args_do_not_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = symbols(make_scope(&dir));
+        let result = tool.execute(json!(5)).await.unwrap();
+
+        assert!(result.error.is_some());
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            !err.contains("invalid arguments: data"),
+            "no raw serde text: {err}"
         );
     }
 }

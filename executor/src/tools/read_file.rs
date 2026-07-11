@@ -68,12 +68,27 @@ impl Tool for ReadFile {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["path"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<ReadFileArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "read_file",
+                        &required,
+                        &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -353,8 +368,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.error.is_some());
-        assert!(result.error.as_ref().unwrap().contains("invalid arguments"));
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("path"), "should name the missing field: {err}");
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
+        );
         assert!(result.output.is_empty());
     }
 

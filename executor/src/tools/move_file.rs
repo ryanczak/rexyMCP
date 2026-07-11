@@ -50,12 +50,27 @@ impl Tool for MoveFile {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["from", "to"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<MoveFileArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "move_file",
+                        &required,
+                        &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -281,6 +296,35 @@ mod tests {
         assert!(
             err.contains("escapes") || err.contains("outside"),
             "error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_to_returns_recovery_hint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = move_file(make_scope(&dir));
+        let result = tool.execute(json!({ "from": "a" })).await.unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("to"), "should name missing field: {err}");
+        assert!(err.contains("from"), "should echo supplied field: {err}");
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_args_do_not_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = move_file(make_scope(&dir));
+        let result = tool.execute(json!("oops")).await.unwrap();
+
+        assert!(result.error.is_some());
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
         );
     }
 }

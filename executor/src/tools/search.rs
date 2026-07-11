@@ -82,12 +82,25 @@ impl Tool for Search {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["pattern"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<SearchArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "search", &required, &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -796,6 +809,20 @@ mod tests {
         assert!(
             !out.contains("---"),
             "no separator for adjacent hits whose context windows overlap: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_pattern_returns_recovery_hint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = search(make_scope(&dir));
+        let result = tool.execute(json!({})).await.unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("pattern"), "should name missing field: {err}");
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
         );
     }
 }

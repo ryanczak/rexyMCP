@@ -64,12 +64,25 @@ impl Tool for Bash {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["command"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<BashArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "bash", &required, &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -457,8 +470,15 @@ mod tests {
         let tool = make_bash(dir.path(), 30);
         let result = tool.execute(json!({ "timeout_secs": 5 })).await.unwrap();
 
-        assert!(result.error.is_some());
-        assert!(result.error.as_ref().unwrap().contains("invalid arguments"));
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            err.contains("command"),
+            "should name the missing field: {err}"
+        );
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
+        );
     }
 
     #[tokio::test]

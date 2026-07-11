@@ -62,12 +62,27 @@ impl Tool for PatchLines {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["path", "start_line", "end_line", "new_content"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<PatchLinesArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "patch_lines",
+                        &required,
+                        &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -312,6 +327,43 @@ mod tests {
                 .contains("must be >= start_line"),
             "error: {:?}",
             result.error
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_fields_returns_recovery_hint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = patch_lines(make_scope(&dir));
+        let result = tool.execute(json!({ "path": "x" })).await.unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            err.contains("start_line"),
+            "should name missing field: {err}"
+        );
+        assert!(err.contains("end_line"), "should name missing field: {err}");
+        assert!(
+            err.contains("new_content"),
+            "should name missing field: {err}"
+        );
+        assert!(err.contains("path"), "should echo supplied field: {err}");
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_args_do_not_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = patch_lines(make_scope(&dir));
+        let result = tool.execute(json!(5)).await.unwrap();
+
+        assert!(result.error.is_some());
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
         );
     }
 }

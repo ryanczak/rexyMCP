@@ -1,7 +1,7 @@
 # Phase 2: Extend the `missing_args_hint` recovery message to the remaining 8 arg-parsing tools
 
 **Milestone:** M28 — Edit-Tool Arg Recovery
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01 (the `missing_args_hint` helper it reuses is `done`)
 **Estimated diff:** ~200 lines (8 uniform arm rewrites + tests + 2 test updates)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -248,6 +248,12 @@ already recorded in § Status, and this phase adds no architectural surface;
 - Any tool not in the eight-row table (`write_file`/`patch` are already done).
 
 ## Update Log
+
+### Update — 2026-07-11 04:30 (started)
+
+**Executor:** Phase 2 executor
+
+**Progress:** Starting implementation — extending `missing_args_hint` to 8 remaining tools.
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 

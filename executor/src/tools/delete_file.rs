@@ -45,12 +45,27 @@ impl Tool for DeleteFile {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolResult> {
+        let required = ["path"];
+        let present: Vec<&str> = args
+            .as_object()
+            .map(|m| {
+                required
+                    .iter()
+                    .copied()
+                    .filter(|k| m.contains_key(*k))
+                    .collect()
+            })
+            .unwrap_or_default();
         let parsed = match serde_json::from_value::<DeleteFileArgs>(args) {
             Ok(a) => a,
-            Err(e) => {
+            Err(_) => {
                 return Ok(ToolResult {
                     output: String::new(),
-                    error: Some(format!("invalid arguments: {e}")),
+                    error: Some(super::registry::missing_args_hint(
+                        "delete_file",
+                        &required,
+                        &present,
+                    )),
                     metadata: None,
                 });
             }
@@ -204,6 +219,34 @@ mod tests {
         assert!(
             err.contains("escapes") || err.contains("outside"),
             "error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_path_returns_recovery_hint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = delete_file(make_scope(&dir));
+        let result = tool.execute(json!({})).await.unwrap();
+
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("path"), "should name missing field: {err}");
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_args_do_not_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = delete_file(make_scope(&dir));
+        let result = tool.execute(json!(5)).await.unwrap();
+
+        assert!(result.error.is_some());
+        let err = result.error.as_ref().unwrap();
+        assert!(
+            !err.contains("invalid arguments: missing field"),
+            "no raw serde text: {err}"
         );
     }
 }
