@@ -23,18 +23,39 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M31 phase-02 — structured output for `execute_phase` /
-`continue_phase`**
-([phase doc](milestones/M31-rmcp-v2-upgrade/phase-02-structured-tool-output.md),
-drafted 2026-07-10 inside the `/rexymcp:auto` run, status `todo`). 13
-mechanical `JsonSchema` derive additions in the executor crate (list
-pre-enumerated from the field graph), a `SpawnedRun` payload struct, one
-`structured_result` helper rewiring the two hand-rolled call sites onto
-`CallToolResult::structured` (verified from vendored source: it emits **both**
-`structured_content` and the back-compat text block), and two tool-builder
-helpers attaching output schemas via the fallible `schema_for_output` +
-`with_raw_output_schema` (the panicking `with_output_schema` is pinned
-out-of-scope). size=m. The milestone's last in-scope phase.
+**Active phase: none.** **M31 — rmcp v2 Upgrade is closed** (2026-07-10; both
+phases done, opened and closed the same day inside a single `/rexymcp:auto`
+loop — 1 assist spent of 3). Retrospective in the
+[M31 README](milestones/M31-rmcp-v2-upgrade/README.md#retrospective--2026-07-10);
+`architecture.md` § Status #31 flipped to done. Exit criteria all met,
+including the live checks: the async `execute_phase`→`get_run_status`
+round-trip ran live through Claude Code during the loop (retiring M30's
+unexercised interrupt-path validation), and the rebuilt 2.2 binary was driven
+over stdio JSON-RPC — handshake OK, 10 tools, output schemas on both
+hand-rolled tools, `structuredContent` on a live call. **The connected serve
+still runs the pre-M31 binary until the next `/mcp` reconnect**
+([[stale-rexymcp-serve-after-rebuild]]). **Calibration flags for the next
+fold window:** (1) cascade-vs-6-strikes now 2 distinct occurrences (M30
+phase-03 field, M31 phase-02 derive) with the leaf-first-edit-order
+countermeasure proven 2-for-2 — WORKFLOW fold candidate awaiting user
+sign-off; (2) `flip_readme_row` malformed cell (bug-03a-1) now at 4
+occurrences — past threshold, fix-phase candidate for a cleanup milestone;
+(3) rendered-doc API verification missed a removed type (`Content`) that the
+compiler caught — grep vendored crate source for future major bumps.
+**Next-milestone go/no-go is a human decision.**
+
+**M31 phase-02 — done** (2026-07-10, **approved_after_1**, executor
+AEON-7/Qwen3.6-27B-AEON; commits `8d05005` draft / `d63f839` refine /
+`a7b2eb8` approve). Structured tool output: 13 `JsonSchema` derives across 4
+executor files, `SpawnedRun` + `structured_result` on
+`CallToolResult::structured` (emits both `structured_content` and the
+back-compat text block), output schemas on both hand-rolled `Tool` entries via
+the fallible `schema_for_output` + `with_raw_output_schema` (degradation pin
+mutation-verified in review). **Bounced once at dispatch** (hard_fail
+`VerifierFailurePersistent` at 24 turns — the derive cascade was applied
+top-down, the known cascade-vs-strikes wall); the refined re-dispatch
+pre-injected a bottom-up compiles-at-every-step edit order and landed clean
+in 155 turns. 950 tests green.
 
 **M31 phase-01 — done** (2026-07-10, **approved_first_try**, executor
 AEON-7/Qwen3.6-27B-AEON; commits `7c26d53` feat / `9ff15c7` bookkeeping /

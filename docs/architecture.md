@@ -1,15 +1,14 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M30 are fully implemented and closed (M18's
+> **Status:** Living design doc. M1–M31 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
 > committed scope; M27's stretch phase-07 advisory routing was not taken).
-> **M31** (rmcp v2 upgrade) is the active milestone, in planning. The
-> most recent arcs: **M27** (the autonomous escalation loop — `/rexymcp:auto`,
-> `continue_phase` resume, server-authored bookkeeping, per-role subagent
-> delegation, and the architect loop journal / usage harvester), **M28**
-> (edit-tool arg recovery), **M29** (cleanup), and **M30** (executor
+> **No milestone is currently active.** The most recent arcs: **M28**
+> (edit-tool arg recovery), **M29** (cleanup), **M30** (executor
 > interruption — async `execute_phase` jobs, `stop_phase`, the `.rexymcp/stop`
-> sentinel, and the `cancelled` outcome). This document is the source
+> sentinel, and the `cancelled` outcome), and **M31** (rmcp v2 upgrade —
+> `rmcp` 2.2.0 on the MCP 2025-11-25 spec line, plus structured tool output
+> for `execute_phase`/`continue_phase`). This document is the source
 > of truth for the *intended* design; the code under `executor/` and `mcp/` is
 > the source of truth for what actually runs. Milestones are listed in the
 > **Status** section at the bottom — that list is the project plan.
@@ -1191,7 +1190,8 @@ The project plan. Each entry becomes a milestone with its own
     primitive (`CancelSignal` + the `cancelled` outcome); later phases add the MCP
     job registry + tools, the CLI stop command + sentinel watcher, and the
     async-polling skill-loop rewrite.
-31. **M31 — rmcp v2 Upgrade** *(opened 2026-07-10)*. Upgrade the `mcp` crate's
+31. **M31 — rmcp v2 Upgrade** *(done 2026-07-10; opened 2026-07-10; both
+    phases ran in a single `/rexymcp:auto` loop)*. Upgrade the `mcp` crate's
     `rmcp` dependency from 1.8.0 to the 2.2 line. v2.0.0's headline breaking
     change aligns the SDK's model types with the **MCP 2025-11-25 spec**, and
     (per rust-sdk discussion #716 / PRs #715/#720/#739) most public model

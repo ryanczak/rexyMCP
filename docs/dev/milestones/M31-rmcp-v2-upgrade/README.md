@@ -3,7 +3,7 @@
 **Goal:** The `mcp` crate builds and serves on `rmcp` 2.2.x (up from 1.8.0),
 with all four gates green and the live `rexymcp serve` handshake verified.
 
-**Status:** planning
+**Status:** done
 
 **Depends on:** none
 
@@ -134,3 +134,63 @@ user and **not** taken:
   the architect's skills); `notifications/cancelled` is a dead channel
   (Claude Code orphans requests — verified in M30); the rest have no consumer
   in our loop.
+
+## Retrospective — 2026-07-10
+
+**Shipped:** the `mcp` crate on `rmcp` 2.2.0 (phase-01: one constraint bump +
+`cargo update -p rmcp`, the two pre-injected `ProgressNotificationParam`
+literal→builder fixes, and the compiler-flagged `Content`/`RawContent` →
+`ContentBlock` migration), and spec-native structured output for the two
+hand-rolled tools (phase-02: 13 `JsonSchema` derives across 4 executor files,
+`SpawnedRun` + a `structured_result` helper on `CallToolResult::structured`,
+and output schemas on both `Tool` entries via the fallible
+`schema_for_output` + `with_raw_output_schema` pair, mutation-verified against
+silent degradation).
+
+**Verdicts:** 01 approved_first_try · 02 **approved_after_1** (first dispatch
+hard-failed `VerifierFailurePersistent`; a refined re-dispatch with a
+bottom-up compile-green derive order landed clean). Both phases ran inside a
+single `/rexymcp:auto` loop (executor AEON-7/Qwen3.6-27B-AEON; dispatch/review
+delegated to claude-sonnet-5 subagents) — 1 assist spent of 3, harvested
+architect usage ≈ 51.9k input / 903k cache-creation / 27.0M cache-read /
+141k output across 11 journaled activities.
+
+**Exit criteria — all met.** Gates green on independent re-runs both phases
+(950 tests at close). Live verification 2026-07-10: (a) the async
+`execute_phase` → `get_run_status` round-trip ran live through Claude Code
+during this loop's two dispatches — retiring the M30 validation that closed
+unexercised; (b) the rebuilt 2.2 binary was driven over stdio JSON-RPC
+directly (scripted client): initialize handshake OK, all 10 tools listed,
+`execute_phase` advertises `{run_id}` / `continue_phase` the full
+`PhaseResult` output schema, and a live `executor_health` `tools/call`
+returned `structuredContent`. The *connected* serve process still runs the
+pre-M31 binary until the next `/mcp` reconnect
+(the standing stale-serve pattern).
+
+**Calibration:**
+
+1. **Required-trait cascade vs the verifier's 6-strike wall — 2nd distinct
+   occurrence** (M30 phase-03 required-*field*, M31 phase-02
+   required-*trait-derive*): any change that cannot compile until a whole
+   graph of edits lands burns verifier strikes mid-cascade. The proven
+   countermeasure is now also 2-for-2: pre-inject a **leaf-first,
+   compiles-at-every-step edit order** (the phase-02 refinement turned a
+   24-turn strikeout into a 155-turn clean completion). **Fold candidate**
+   for WORKFLOW § "Prefer additive change shapes": when a cascade is
+   unavoidable, spec the topological edit order. Held for user sign-off per
+   the calibration rule.
+2. **`flip_readme_row` malformed-cell bug (bug-03a-1) recurred twice more**
+   (phase-01 and phase-02 finalize both produced `| review ||`); both reviews
+   repaired it manually — now 4 occurrences total. Past the fold threshold:
+   worth a small fix phase in a future cleanup milestone.
+3. **docs.rs-level API verification has a false-negative mode:** the kickoff
+   table listed `Content::new` as expected-unchanged, but the type was gone
+   in 2.2 — small-model doc summarization missed a removal the compiler
+   caught. The react-to-compiler-flags + Gotchas-pattern spec shape absorbed
+   it first-try; for future major bumps, grep the *vendored crate source*
+   (as phase-02's draft did) rather than trusting rendered-doc summaries.
+
+**Not taken / deferred:** MCP tasks (SEP-1686) — future milestone candidate
+blocked on Claude Code client support (claude-code#18617); roots
+corroboration — standing deferral (SEP-2577); `--run`-scoped stop and CLI
+`cancelled` reason-stamping — M30 deferrals, untouched.
