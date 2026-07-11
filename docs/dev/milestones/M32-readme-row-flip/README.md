@@ -41,7 +41,7 @@ malformed `| review ||` too.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Fix the doubled trailing pipe in `flip_readme_row` ([phase-01-fix-row-flip-trailing-pipe.md](phase-01-fix-row-flip-trailing-pipe.md)) | todo |
+| 01 | Fix the doubled trailing pipe in `flip_readme_row` ([phase-01-fix-row-flip-trailing-pipe.md](phase-01-fix-row-flip-trailing-pipe.md)) | review ||
 
 ## Notes
 
