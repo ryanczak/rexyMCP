@@ -23,19 +23,34 @@ twice in production (05a, 06a); manually corrected the malformed row here per th
 [phase doc](milestones/M27-autonomous-escalation-loop/phase-06a-delegation-config-substrate.md)
 for the full review verdict.
 
-**Active phase: M28 phase-02 — extend the `missing_args_hint` recovery message
-to the remaining 8 arg-parsing tools**
-([phase doc](milestones/M28-edit-tool-arg-recovery/phase-02-extend-arg-hint-remaining-tools.md),
-drafted 2026-07-10, status `todo`). Reactivates M28's pre-declared optional
-follow-on. Mechanical repeat of phase-01's proven arm-rewrite across
-`patch_lines`/`move_file`/`delete_file`/`bash`/`search`/`find_files`/`symbols`/
-`read_file` (per-tool required-field table + the two breaking existing-test
-updates pre-injected; `symbols` = empty-required type-mismatch branch;
-`registry.rs` helper reused unchanged). **Dispatched to verify the M32
-`flip_readme_row` fix live** — the first server-authored finalize on the
-rebuilt M31/M32 serve binary should flip this phase's README row to a
-well-formed single-pipe `| review |`. Dispatch via `/rexymcp:dispatch
-phase-02`.
+**Active phase: none.** **M28 phase-02 — done** (2026-07-10, **approved_first_try**,
+executor AEON-7/Qwen3.6-27B-AEON, 102 turns; commits `22e23a8` feat / `a11f4a4`
+bookkeeping / approve below). M28's optional follow-on taken: `missing_args_hint`
+now covers all 10 arg-parsing tools (8 added — `patch_lines`/`move_file`/
+`delete_file`/`bash`/`search`/`find_files`/`symbols`/`read_file`); `registry.rs`
+reused unchanged; 960 tests. **M28 closed** (retrospective addendum in the
+[M28 README](milestones/M28-edit-tool-arg-recovery/README.md); architecture § Status
+#28 → done).
+
+**⚠️ Live row-flip verification finding (2026-07-10).** This phase was dispatched
+to verify the M32 `flip_readme_row` fix live. The finalize produced the doubled
+pipe `| review ||` **once more** — because the connected `rexymcp serve` process
+(PID 529216, started 21:22:14) predated the M32-fixed binary (built 21:45:53), and
+the earlier `/mcp` reconnect reattached the client **without restarting the serve
+subprocess**. Diagnosed by process-vs-binary timestamps. **Two-step staleness** (both required to go live): the plugin launches
+the **`$PATH` binary** `~/.cargo/bin/rexymcp` (`plugin/.mcp.json` command
+`"rexymcp"`), which `cargo build` never updates — so `cargo install --path mcp
+--force` was run to install the fixed binary; **and** the running serve subprocess
+had to be killed (a `/mcp` reconnect only reattaches the client, it does **not**
+relaunch the process). Both done: row hand-repaired, `cargo install` completed,
+stale serve killed. The fix is confirmed correct on the fresh build —
+`cargo test -p rexymcp finalize` (24 tests incl. the real-TempDir
+`finalize_flips_status_and_appends_entry` integration test) green, and M32
+mutation-proved a revert fails 4/6 flip tests. **The next `/mcp` relaunch serves
+the fixed binary; a literal live serve-path flip will show on the next real phase
+dispatch.** Lesson: [[stale-rexymcp-serve-after-rebuild]] — going live after a
+server-code change needs BOTH `cargo install --force` (plugin runs the PATH
+binary) AND a serve **process** restart (reconnect ≠ relaunch).
 
 **M32 — README Row-Flip Fix is closed** (2026-07-10;
 single phase done, opened and closed the same day). **phase-01 —

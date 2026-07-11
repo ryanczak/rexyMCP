@@ -1,7 +1,7 @@
 # Phase 2: Extend the `missing_args_hint` recovery message to the remaining 8 arg-parsing tools
 
 **Milestone:** M28 — Edit-Tool Arg Recovery
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (the `missing_args_hint` helper it reuses is `done`)
 **Estimated diff:** ~200 lines (8 uniform arm rewrites + tests + 2 test updates)
 **Tags:** language=rust, kind=bugfix, size=m
@@ -362,3 +362,32 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-10
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** none of substance. Acceptance criterion "grep `invalid
+  arguments` returns nothing" is met for **production** (zero
+  `format!("invalid arguments…")` arms remain); the 15 remaining hits are
+  test negative-assertions (`!err.contains("invalid arguments: …")`) proving
+  the old string is gone — the same resolution phase-01 reached. `registry.rs`
+  reused unchanged (0-line diff); `symbols` correctly uses empty-required →
+  type-mismatch branch.
+- **Calibration:** none new. **Live-serve note (the point of this dispatch):**
+  the server-authored finalize that ran produced the doubled-pipe `| review ||`
+  because the connected `rexymcp serve` (PID 529216, started 21:22:14) predated
+  the M32-fixed binary (built 21:45:53) — a `/mcp` reconnect reattaches the
+  client but does **not** restart the serve subprocess (the
+  `stale-rexymcp-serve-after-rebuild` pattern). Row hand-repaired; stale serve
+  killed so the fixed binary serves next. The **fix is verified correct** on the
+  fresh build: `cargo test -p rexymcp finalize` (24 tests incl. the real-TempDir
+  `finalize_flips_status_and_appends_entry` integration test) is green, and M32
+  mutation-proved that reverting the fix fails 4/6 flip tests.
+
+Independent re-run: all four gates green (fmt clean, build zero warnings, clippy
+clean, 517 mcp + 960 executor tests, 2 ignored). All 10 arg-parsing tools now
+return the `missing_args_hint` recovery message; per-tool + non-object-panic
+tests added; the two breaking `bash`/`read_file` assertions updated to the new
+shape.

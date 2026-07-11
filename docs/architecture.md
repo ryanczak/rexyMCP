@@ -3,8 +3,8 @@
 > **Status:** Living design doc. M1–M31 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
 > committed scope; M27's stretch phase-07 advisory routing was not taken).
-> **No milestone is currently active** (M32, the README row-flip fix, closed
-> 2026-07-10). The most recent arcs: **M28**
+> **No milestone is currently active** (M32 closed 2026-07-10; M28's optional
+> phase-02 also taken and closed 2026-07-10). The most recent arcs: **M28**
 > (edit-tool arg recovery), **M29** (cleanup), **M30** (executor
 > interruption — async `execute_phase` jobs, `stop_phase`, the `.rexymcp/stop`
 > sentinel, and the `cancelled` outcome), and **M31** (rmcp v2 upgrade —
@@ -1147,7 +1147,7 @@ The project plan. Each entry becomes a milestone with its own
     transcripts and joined onto journal activities (absent — never estimated —
     on clients without transcripts). Design fixed at kickoff with the user; see
     the M27 README § Design.
-28. **M28 — Edit-Tool Arg Recovery** *(phase-01 done 2026-07-09; phase-02 — the optional follow-on extending the helper to the remaining 8 arg-parsing tools — activated 2026-07-10)*.
+28. **M28 — Edit-Tool Arg Recovery** *(done; phase-01 2026-07-09, phase-02 2026-07-10 — the recovery hint now covers all 10 arg-parsing tools)*.
     Close [issue #1](https://github.com/ryanczak/rexyMCP/issues/1), surfaced by
     the M27 `/rexymcp:auto` live-validation run: near max context a small model
     truncates edit-tool calls and drops the required `path` field, and

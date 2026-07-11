@@ -6,8 +6,8 @@ message** naming the missing field and what it did supply — instead of a raw
 serde error the model can't act on — so the loop self-corrects rather than
 hard-failing.
 
-**Status:** in-progress (phase-01 done 2026-07-09; phase-02 — the optional
-follow-on — activated 2026-07-10 to extend the helper to the remaining 8 tools)
+**Status:** done (phase-01 2026-07-09; phase-02 2026-07-10 — full arg-recovery
+coverage across all 10 arg-parsing tools)
 
 **Depends on:** none (localized to the tool arg-deserialization seam)
 
@@ -57,7 +57,7 @@ update_task.rs:35`). The fix is deterministic and low-risk — it improves the e
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Actionable missing-field recovery hint for `write_file` + `patch` ([phase-01-edit-tool-missing-field-hint.md](phase-01-edit-tool-missing-field-hint.md)) | done |
-| 02 | Extend the recovery hint to the remaining 8 arg-parsing tools ([phase-02-extend-arg-hint-remaining-tools.md](phase-02-extend-arg-hint-remaining-tools.md)) | review ||
+| 02 | Extend the recovery hint to the remaining 8 arg-parsing tools ([phase-02-extend-arg-hint-remaining-tools.md](phase-02-extend-arg-hint-remaining-tools.md)) | done |
 
 ## Notes
 
@@ -97,5 +97,31 @@ cheap whenever it's wanted.
 unrelated infra gaps (the `run-phase`/finalize `todo` dormancy and a flaky tsc
 test) — both fixed in **M29**, not by widening this milestone. No STANDARDS/
 WORKFLOW folds: single clean phase, no recurring pattern.
+
+### Retrospective addendum — 2026-07-10 (phase-02)
+
+**phase-02 taken and done** (approved_first_try, executor AEON-7/Qwen3.6-27B-AEON,
+102 turns; commits `22e23a8` feat / `a11f4a4` bookkeeping / approve below). The
+reusable `missing_args_hint` helper now covers the remaining 8 arg-parsing tools
+(`patch_lines`, `move_file`, `delete_file`, `bash`, `search`, `find_files`,
+`symbols`, `read_file`) — a truncated/malformed call to **any** tool now returns
+an actionable recovery message instead of a raw serde dead end. Mechanical repeat
+of the phase-01 arm-rewrite; `registry.rs` reused unchanged; `symbols`
+(no required fields) correctly routes to the type-mismatch branch. 960 tests.
+
+**This dispatch doubled as the live check of the M32 `flip_readme_row` fix — and
+surfaced a real operational finding.** The server-authored finalize produced the
+doubled-pipe `| review ||` one more time, because the connected `rexymcp serve`
+process predated the M32-fixed binary and a `/mcp` reconnect does **not** restart
+the serve subprocess (only reattaches the client). Diagnosed via process-vs-binary
+timestamps (serve 21:22:14 < binary 21:45:53). Going live took **two** steps, not
+one: the plugin launches the `$PATH` binary (`~/.cargo/bin/rexymcp`), which
+`cargo build` never updates — so `cargo install --path mcp --force` was run — **and**
+the stale serve subprocess was killed (a `/mcp` reconnect only reattaches the
+client). The fix is verified correct on the fresh build (the `finalize_*`
+integration tests pass; M32 mutation-proved it); the live serve path will
+demonstrate the clean flip on the next real dispatch after the `/mcp` relaunch.
+Reinforces [[stale-rexymcp-serve-after-rebuild]]: **reconnect ≠ process restart,
+and the plugin serves the PATH binary — `cargo install --force`, not `cargo build`.**
 
 <!-- retrospective appended at milestone close -->
