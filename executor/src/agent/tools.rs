@@ -127,7 +127,48 @@ pub(super) fn destructive_restore_refusal(
             ));
         }
     }
+    // `git stash` (push) removes ALL uncommitted working-tree changes at once —
+    // a whole-session revert that `restore_path_tokens` (per-path) does not see.
+    if !edited.is_empty() && stashes_working_tree(command) {
+        return Some(format!(
+            "refusing to run `{command}`: `git stash` would remove your uncommitted edits \
+             ({} file(s) changed this session) from the working tree. Do not stash your own \
+             work — fix forward from the current state, and only commit if you need a checkpoint.",
+            edited.len()
+        ));
+    }
     None
+}
+
+/// True if `command` contains a `git stash` *push* action (bare `git stash`,
+/// `git stash push`, or `git stash save`) in any `&&`/`;`/`|`-joined segment.
+/// Restoring/inspecting forms (`pop`/`apply`/`list`/`show`/`drop`/`clear`/
+/// `branch`) are NOT flagged — they do not remove the model's current work.
+/// Conservative and NOT a shell parser, mirroring `restore_path_tokens`.
+fn stashes_working_tree(command: &str) -> bool {
+    for segment in command.split(['&', ';', '|']) {
+        let mut toks = segment.split_whitespace();
+        let mut found_git = false;
+        for tok in toks.by_ref() {
+            if !found_git {
+                if tok == "git" {
+                    found_git = true;
+                }
+                continue;
+            }
+            if tok != "stash" {
+                break; // some other git subcommand in this segment
+            }
+            // The first non-flag token after `stash` is the stash subcommand;
+            // its absence means the bare (pushing) form.
+            let sub = toks.by_ref().find(|t| !t.starts_with('-'));
+            if matches!(sub, None | Some("push") | Some("save")) {
+                return true;
+            }
+            break; // a non-pushing stash form in this segment; check the next
+        }
+    }
+    false
 }
 
 /// Path-like argument tokens of a `git checkout` / `git restore` sub-command, across
@@ -1079,6 +1120,79 @@ mod tests {
         let call = make_patch_call();
         let result = destructive_restore_refusal(&call, &edited, dir.path());
         assert!(result.is_none(), "non-bash calls should be ignored");
+    }
+
+    fn edited_one(dir: &std::path::Path) -> HashMap<PathBuf, Option<String>> {
+        let mut edited = HashMap::new();
+        edited.insert(dir.join("src/x.ts"), Some("old".to_string()));
+        edited
+    }
+
+    #[test]
+    fn refuses_bare_stash_when_edited() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let edited = edited_one(dir.path());
+        let call = make_bash_call("git stash");
+        let msg = destructive_restore_refusal(&call, &edited, dir.path());
+        assert!(
+            msg.is_some(),
+            "bare `git stash` must be refused while edits exist"
+        );
+        assert!(msg.unwrap().contains("stash"));
+    }
+
+    #[test]
+    fn refuses_stash_push_and_save_when_edited() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let edited = edited_one(dir.path());
+        for cmd in [
+            "git stash push",
+            "git stash save \"wip\"",
+            "git stash push -m msg",
+        ] {
+            let call = make_bash_call(cmd);
+            assert!(
+                destructive_restore_refusal(&call, &edited, dir.path()).is_some(),
+                "`{cmd}` must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_stash_in_compound_command() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let edited = edited_one(dir.path());
+        let call = make_bash_call("cargo test && git stash");
+        assert!(destructive_restore_refusal(&call, &edited, dir.path()).is_some());
+    }
+
+    #[test]
+    fn allows_stash_restore_and_inspect_forms() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let edited = edited_one(dir.path());
+        for cmd in [
+            "git stash pop",
+            "git stash apply",
+            "git stash list",
+            "git stash show",
+        ] {
+            let call = make_bash_call(cmd);
+            assert!(
+                destructive_restore_refusal(&call, &edited, dir.path()).is_none(),
+                "`{cmd}` restores/inspects and must be allowed"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_stash_when_no_edits() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let edited: HashMap<PathBuf, Option<String>> = HashMap::new();
+        let call = make_bash_call("git stash");
+        assert!(
+            destructive_restore_refusal(&call, &edited, dir.path()).is_none(),
+            "with no session edits there is nothing to protect"
+        );
     }
 
     #[test]
