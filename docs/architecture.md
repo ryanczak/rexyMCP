@@ -135,8 +135,13 @@ hits a budget cap:
    undoes it.
 6. After edit-class tools, run the verifier (the project's typecheck/build). On
    failure, feed the diagnostics back for a retry.
-7. The hard-fail detector watches for repetition loops, repeated verifier
-   failures, and budget overflow. If it trips, assemble a **briefing** and stop.
+7. The hard-fail detector watches for stuck states — identical-call and
+   oscillation loops, a **no-progress read-only stall** (N consecutive tool
+   calls with no file edit among them, the signature of a verify-loop of varied
+   `grep`/test/`git status` calls that the identical/oscillation detectors miss),
+   repeated verifier failures, empty-completion and stuck-gate stalls,
+   runaway/cumulative-flood output, and budget overflow. If it trips, assemble a
+   **briefing** and stop.
 8. When the model signals completion (`NoToolCall`), run the project's full
    command set (`{FORMAT_COMMAND}`/`{BUILD_COMMAND}`/`{LINT_COMMAND}`/
    `{TEST_COMMAND}`). If any gate exits non-zero, inject its output as a user
@@ -652,7 +657,11 @@ The project plan. Each entry becomes a milestone with its own
    read this session or that changed on disk underneath it. The M2 `patch` tool
    (phase-04) deliberately ships *without* this enforcement — it lives in the
    loop's session state, not the stateless tool — so M4 wires the check around the
-   tool rather than inside it.
+   tool rather than inside it. The same session state powers a **self-revert
+   refusal**: a `git checkout`/`git restore <path>` (including the `HEAD -- <path>`
+   form) or a `git stash` push that would discard files the executor edited this
+   session is blocked before it runs — small models otherwise wipe their own green
+   work and then loop in confusion.
 5. **M5 — MCP server.** The `rmcp` stdio server exposing `execute_phase` and
    `executor_health`, with progress notifications and output capping. Also
    exposes the **session-log query tools** (`executor_log_search`,

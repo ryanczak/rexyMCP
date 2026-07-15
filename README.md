@@ -81,8 +81,10 @@ Three things make rexyMCP stand out:
    mistakes a frontier model never would. So every layer of the loop has a
    specific answer: a forgiving tool-call parser that *repairs* malformed output
    instead of aborting the turn, a post-edit verifier that feeds compiler
-   diagnostics back for an immediate retry, a governor that catches repetition
-   and runaway output, security-scoped tools that can't escape the target repo,
+   diagnostics back for an immediate retry, a governor that catches repetition,
+   verify-loops that make no code progress, and runaway output, security-scoped
+   tools that can't escape the target repo (and won't let the model `git
+   checkout`/`stash` away its own uncommitted work),
    recovery-oriented tool errors that hand the model a next step instead of a
    dead end, and a read-before-edit rule that stops blind overwrites. The server
    even authors the phase's bookkeeping tail itself, so correct code never dies
@@ -840,6 +842,7 @@ output_filter = true                      # false → raw head+tail truncation, 
 identical_call_threshold        = 6       # consecutive identical tool calls → hard-fail (default 6)
 verifier_persistence_threshold  = 6       # consecutive verifier-failing turns → hard-fail (default 6)
 runaway_output_bytes            = 102400  # single tool-output byte cap → hard-fail (default 100 KiB)
+read_only_stall_threshold       = 20      # consecutive tool calls with no file edit → hard-fail (verify-loop; resets on any patch/write_file; default 20, 0 disables)
 
 # ── /rexymcp:auto per-phase escalation budget ─────────────────────
 [escalation]
@@ -855,6 +858,7 @@ temperature                    = 0.2      # any of these override the global val
 # identical_call_threshold     = 8
 # verifier_persistence_threshold = 8
 # runaway_output_bytes         = 204800
+# read_only_stall_threshold    = 30       # raise for exploration-heavy phases; 0 disables per-model
 ```
 
 **Section reference:**
@@ -869,7 +873,7 @@ temperature                    = 0.2      # any of these override the global val
 | `[dashboard]` | Cloud-baseline `$/Mtok` rates for the Budget panel's Savings block (or a `saved_model` to auto-fill them). |
 | `[architect]` | `$/Mtok` rates for the **real** cost of architect work (or a Claude `model` to auto-fill), plus the per-role `dispatch_model` / `review_model` keys the `/rexymcp:auto` loop delegates those steps to (M27). |
 | `[context]` | `output_filter` kill-switch for the M10 boundary filter. |
-| `[governor]` | The three hard-fail thresholds (identical-call, verifier-persistence, runaway-output). |
+| `[governor]` | Hard-fail thresholds (identical-call, verifier-persistence, runaway-output, no-progress read-only stall, and the oscillation/output-flood windows). |
 | `[escalation]` | `max_assists` — the flat, tier-independent per-phase escalation budget for the `/rexymcp:auto` loop (M27). |
 | `[models."<id>"]` | Per-model overrides (exact-id match) for sampling (`temperature`/`seed`/`max_tokens`/`enable_thinking`), task-tracking, and the governor thresholds. |
 
