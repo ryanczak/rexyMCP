@@ -1282,8 +1282,8 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         }
 
         // Step 7 — hard-fail detection (repetition / persistent verifier failure /
-        // runaway output / oscillation / cumulative-output flood). Checked before the
-        // turn cap so the specific cause wins.
+        // runaway output / oscillation / cumulative-output flood / no-progress
+        // read-only stall). Checked before the turn cap so the specific cause wins.
         let hard_fail_signal = evaluate(
             &recent_tool_calls,
             &recent_verifier_error_counts,
@@ -1302,6 +1302,12 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 &recent_output_bytes,
                 deps.governor.output_window,
                 deps.governor.output_window_bytes,
+            )
+        })
+        .or_else(|| {
+            crate::governor::hard_fail::check_read_only_stall(
+                &recent_tool_calls,
+                deps.governor.read_only_stall_threshold,
             )
         });
         if let Some(signal) = hard_fail_signal {

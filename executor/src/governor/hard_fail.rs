@@ -42,6 +42,9 @@ pub enum HardFailSignal {
         window: usize,
         bytes: usize,
     },
+    NoProgressStall {
+        consecutive_read_only: u32,
+    },
 }
 
 impl HardFailSignal {
@@ -83,6 +86,13 @@ impl HardFailSignal {
             Self::CumulativeOutputFlood { window, bytes } => {
                 format!(
                     "tool output flooded {bytes} bytes across the last {window} calls (over threshold)"
+                )
+            }
+            Self::NoProgressStall {
+                consecutive_read_only,
+            } => {
+                format!(
+                    "{consecutive_read_only} consecutive read-only tool calls with no file edit (no-progress stall)"
                 )
             }
         }
@@ -224,6 +234,41 @@ pub fn check_oscillation(
         Some(HardFailSignal::Oscillation {
             distinct_calls: n,
             window,
+        })
+    } else {
+        None
+    }
+}
+
+/// File-mutating tools whose presence resets the no-progress counter. Kept in
+/// sync with `agent::tools` (the only tools that change files on disk).
+const MUTATING_TOOLS: [&str; 2] = ["patch", "write_file"];
+
+/// No-progress read-only stall: the executor has made `threshold` consecutive
+/// tool calls without a single file-mutating call (`patch`/`write_file`) among
+/// them — the signature of a verify-loop (repeated `grep`/test/`git status`
+/// calls that make no code progress) that `check_identical_repetition` (needs
+/// *exactly* repeated calls) and `check_oscillation` (needs a *small distinct*
+/// set) both miss when the calls vary. The trailing run resets on any mutating
+/// call, so ordinary read-heavy exploration *between* edits never trips it.
+/// `threshold == 0` disables.
+pub fn check_read_only_stall(
+    recent: &VecDeque<ToolCallSnapshot>,
+    threshold: usize,
+) -> Option<HardFailSignal> {
+    if threshold == 0 {
+        return None;
+    }
+    let mut run = 0usize;
+    for call in recent.iter().rev() {
+        if MUTATING_TOOLS.contains(&call.tool.as_str()) {
+            break;
+        }
+        run += 1;
+    }
+    if run >= threshold {
+        Some(HardFailSignal::NoProgressStall {
+            consecutive_read_only: run as u32,
         })
     } else {
         None
@@ -660,5 +705,97 @@ mod tests {
         assert!(desc.contains("flooded"));
         assert!(desc.contains("1200"));
         assert!(desc.contains("3"));
+    }
+
+    // --- no-progress read-only stall tests ---
+
+    fn read_only_call(i: usize) -> ToolCallSnapshot {
+        // Distinct read-only calls (varying args), the exact shape that evades
+        // identical-repetition and oscillation detectors.
+        let tool = ["bash", "read_file", "grep"][i % 3];
+        ToolCallSnapshot {
+            tool: tool.to_string(),
+            arguments: serde_json::json!({"q": format!("query_{i}")}),
+            succeeded: true,
+        }
+    }
+
+    #[test]
+    fn read_only_stall_fires_on_long_varied_run() {
+        let mut recent = VecDeque::new();
+        for i in 0..20 {
+            recent.push_back(read_only_call(i));
+        }
+        let signal = check_read_only_stall(&recent, 20).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::NoProgressStall {
+                consecutive_read_only: 20
+            }
+        ));
+    }
+
+    #[test]
+    fn read_only_stall_resets_on_mutating_call() {
+        let mut recent = VecDeque::new();
+        // 30 read-only calls, but a patch 5 calls from the end resets the run.
+        for i in 0..30 {
+            recent.push_back(read_only_call(i));
+        }
+        // Insert a mutating call, then 5 more read-only calls.
+        recent.push_back(ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "x.rs"}),
+            succeeded: true,
+        });
+        for i in 30..35 {
+            recent.push_back(read_only_call(i));
+        }
+        // Trailing run is only 5 — below the threshold.
+        assert!(check_read_only_stall(&recent, 20).is_none());
+    }
+
+    #[test]
+    fn read_only_stall_silent_below_threshold() {
+        let mut recent = VecDeque::new();
+        for i in 0..19 {
+            recent.push_back(read_only_call(i));
+        }
+        assert!(check_read_only_stall(&recent, 20).is_none());
+    }
+
+    #[test]
+    fn read_only_stall_disabled_when_threshold_zero() {
+        let mut recent = VecDeque::new();
+        for i in 0..50 {
+            recent.push_back(read_only_call(i));
+        }
+        assert!(check_read_only_stall(&recent, 0).is_none());
+    }
+
+    #[test]
+    fn read_only_stall_counts_write_file_as_progress() {
+        let mut recent = VecDeque::new();
+        recent.push_back(ToolCallSnapshot {
+            tool: "write_file".to_string(),
+            arguments: serde_json::json!({"path": "x.rs"}),
+            succeeded: true,
+        });
+        for i in 0..10 {
+            recent.push_back(read_only_call(i));
+        }
+        // Only 10 read-only calls since the last write — below threshold.
+        assert!(check_read_only_stall(&recent, 20).is_none());
+    }
+
+    #[test]
+    fn describe_no_progress_stall() {
+        let signal = HardFailSignal::NoProgressStall {
+            consecutive_read_only: 20,
+        };
+        let desc = signal.describe();
+        assert!(desc.contains("read-only"));
+        assert!(desc.contains("20"));
+        assert!(desc.contains("no-progress"));
     }
 }
