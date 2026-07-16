@@ -4,6 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
+**M33 — Governor Mutating-Tool Classifier Unification is closed** (2026-07-16;
+single phase, opened and closed the same day; **executor: Claude Code (direct)**).
+Fixes [issue #2](https://github.com/ryanczak/rexyMCP/issues/2): the router's
+`Category::Write` set is now the single source of truth for "this tool mutated a
+file," exposed as `tools::mutates_files`. The no-progress stall governor
+(`hard_fail.rs`) and the escalation briefing's `collect_working_files`
+(`briefing.rs`) each carried a stale hardcoded `["patch", "write_file"]`
+duplicate, so an executor editing via `patch_lines`/`delete_file`/`move_file`
+kept incrementing the read-only counter *while actively editing* and drew a
+false `NoProgressStall` hard_fail (three live occurrences on a downstream
+project; two corrupted the tree mid-edit). Both consumers now call the shared
+helper; the briefing resolves `move_file` via its `to` key. **phase-01 —
+approved_first_try** (direct execution, self-reviewed): all four gates green on
+independent re-run (976 passed, 2 ignored); `grep MUTATING_TOOLS` → no hits. The
+key regression test (`read_only_stall_counts_every_write_tool_as_progress`) is
+mutation-proof — it fails under the old two-name list. **Executed directly rather
+than dispatched** because the bug lives in the governor supervising the executor
+loop; a `patch_lines`-favoring model could trip the false hard_fail mid-fix.
+**Next-milestone go/no-go is a human decision.**
+
 **M27 phase-06a — done** (2026-07-09, **approved_first_try**, executor
 Qwen/Qwen3.6-27B-FP8; commit `e805862` feat). Per-role model delegation config
 substrate: two `[architect]` keys on `ArchitectConfig` (`executor/src/config.rs`),

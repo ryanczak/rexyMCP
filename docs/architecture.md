@@ -1,10 +1,10 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M31 are fully implemented and closed (M18's
+> **Status:** Living design doc. M1–M33 are fully implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
 > committed scope; M27's stretch phase-07 advisory routing was not taken).
-> **No milestone is currently active** (M32 closed 2026-07-10; M28's optional
-> phase-02 also taken and closed 2026-07-10). The most recent arcs: **M28**
+> **No milestone is currently active** (M33 closed 2026-07-16; M32 closed
+> 2026-07-10; M28's optional phase-02 also taken and closed 2026-07-10). The most recent arcs: **M28**
 > (edit-tool arg recovery), **M29** (cleanup), **M30** (executor
 > interruption — async `execute_phase` jobs, `stop_phase`, the `.rexymcp/stop`
 > sentinel, and the `cancelled` outcome), and **M31** (rmcp v2 upgrade —
@@ -1229,6 +1229,19 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+33. **M33 — Governor Mutating-Tool Classifier Unification** *(done 2026-07-16;
+    opened the same day; executor Claude Code direct)*. Single-phase cleanup
+    fixing [issue #2](https://github.com/ryanczak/rexyMCP/issues/2): the router's
+    `Category::Write` set (`executor/src/tools/router.rs`) is now the single
+    source of truth for "this tool mutated a file," exposed as
+    `tools::mutates_files`. The no-progress stall governor
+    (`hard_fail.rs`) and the escalation briefing's working-file collector
+    (`briefing.rs`) each carried a stale hardcoded `["patch", "write_file"]`
+    duplicate, so an executor editing via `patch_lines`/`delete_file`/`move_file`
+    kept incrementing the read-only counter while actively editing and drew a
+    false `NoProgressStall` hard_fail (observed three times live on a downstream
+    project), and its edits were undercounted in briefings. Both consumers now
+    call the shared helper; the briefing resolves `move_file` via its `to` key.
 32. **M32 — README Row-Flip Fix** *(done 2026-07-10; opened the same day)*.
     Single-phase cleanup
     (the M29 shape): the server-authored finalize's `flip_readme_row`
