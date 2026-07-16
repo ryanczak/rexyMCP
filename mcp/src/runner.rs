@@ -766,6 +766,8 @@ mod tests {
                 output_window: None,
                 output_window_bytes: None,
                 read_only_stall_threshold: None,
+                novelty_window: None,
+                novelty_distinct_floor: None,
             },
         );
         let mock = MockAiClient::new(vec!["Done.".to_string()]);
@@ -894,6 +896,8 @@ mod tests {
                 output_window: None,
                 output_window_bytes: None,
                 read_only_stall_threshold: None,
+                novelty_window: None,
+                novelty_distinct_floor: None,
             },
         );
 

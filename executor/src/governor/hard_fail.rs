@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::config::GovernorConfig;
+use crate::tools::Category;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCallSnapshot {
@@ -44,6 +45,10 @@ pub enum HardFailSignal {
     },
     NoProgressStall {
         consecutive_read_only: u32,
+    },
+    LowNoveltyStall {
+        window: usize,
+        distinct_targets: usize,
     },
 }
 
@@ -93,6 +98,14 @@ impl HardFailSignal {
             } => {
                 format!(
                     "{consecutive_read_only} consecutive read-only tool calls with no file edit (no-progress stall)"
+                )
+            }
+            Self::LowNoveltyStall {
+                window,
+                distinct_targets,
+            } => {
+                format!(
+                    "only {distinct_targets} distinct read targets across the last {window} read-only calls (low-novelty churn)"
                 )
             }
         }
@@ -266,6 +279,88 @@ pub fn check_read_only_stall(
     if run >= threshold {
         Some(HardFailSignal::NoProgressStall {
             consecutive_read_only: run as u32,
+        })
+    } else {
+        None
+    }
+}
+
+/// Normalize a read-only tool call to the *target* it probes, with volatile
+/// detail (line ranges, grep patterns, numeric literals) stripped, so the
+/// novelty detector can tell "re-probing the same files" from "reading new
+/// ground." Re-reading `foo.rs` at shifting line windows, and re-grepping the
+/// same scope with tweaked patterns, both collapse to a single target.
+///
+/// - `read_file`/`symbols` → the `path` (line range dropped; `symbols` without
+///   a path falls back to the symbol `name` it hunts).
+/// - `search`/`find_files` → the `path` scope (pattern dropped; a whole-repo
+///   search buckets to `.`).
+/// - `bash` → the `command` with ASCII digits removed, so `sed -n '1,9p'` and
+///   `sed -n '9,20p'` collapse to one target.
+/// - anything else → a raw `tool(arguments)` string, so novelty is never
+///   *undercounted* for a tool we don't model.
+fn normalize_target(call: &ToolCallSnapshot) -> String {
+    let field = |key: &str| call.arguments.get(key).and_then(|v| v.as_str());
+    match crate::tools::categorize(&call.tool) {
+        Some(Category::Read) => field("path")
+            .or_else(|| field("name"))
+            .map(str::to_string)
+            .unwrap_or_else(|| raw_target(call)),
+        Some(Category::Search) => field("path").unwrap_or(".").to_string(),
+        Some(Category::Run) => match field("command") {
+            Some(cmd) => cmd.chars().filter(|c| !c.is_ascii_digit()).collect(),
+            None => raw_target(call),
+        },
+        _ => raw_target(call),
+    }
+}
+
+fn raw_target(call: &ToolCallSnapshot) -> String {
+    format!("{}({})", call.tool, call.arguments)
+}
+
+/// Low-novelty (churn) stall: across the last `window` *read-only* tool calls
+/// the executor probed only `<= distinct_floor` distinct normalized targets
+/// (see `normalize_target`) — it is re-reading/re-grepping a small set of files
+/// rather than covering new ground, with no intervening edit. Unlike
+/// `check_read_only_stall` (raw volume) this keys on *novelty*: a wide
+/// legitimate investigation over many distinct files passes however long it
+/// runs, while tight churn fails fast — below the raw-count backstop. The
+/// trailing read-only run resets on any file-mutating call, so exploration
+/// *between* edits never trips it. `window == 0` disables.
+pub fn check_low_novelty_stall(
+    recent: &VecDeque<ToolCallSnapshot>,
+    window: usize,
+    distinct_floor: usize,
+) -> Option<HardFailSignal> {
+    if window == 0 {
+        return None;
+    }
+    // Examine only the trailing read-only run; a mutating call is file progress.
+    let mut run: Vec<&ToolCallSnapshot> = Vec::new();
+    for call in recent.iter().rev() {
+        if crate::tools::mutates_files(&call.tool) {
+            break;
+        }
+        run.push(call);
+        if run.len() == window {
+            break;
+        }
+    }
+    if run.len() < window {
+        return None;
+    }
+    let mut distinct: Vec<String> = Vec::new();
+    for call in &run {
+        let key = normalize_target(call);
+        if !distinct.contains(&key) {
+            distinct.push(key);
+        }
+    }
+    if distinct.len() <= distinct_floor {
+        Some(HardFailSignal::LowNoveltyStall {
+            window,
+            distinct_targets: distinct.len(),
         })
     } else {
         None
@@ -821,5 +916,190 @@ mod tests {
         assert!(desc.contains("read-only"));
         assert!(desc.contains("20"));
         assert!(desc.contains("no-progress"));
+    }
+
+    // --- issue #3: low-novelty (churn) stall tests ---
+
+    fn read(path: &str, start: usize) -> ToolCallSnapshot {
+        ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": path, "start_line": start, "end_line": start + 20}),
+            succeeded: true,
+        }
+    }
+
+    fn grep(pattern: &str, path: Option<&str>) -> ToolCallSnapshot {
+        ToolCallSnapshot {
+            tool: "search".to_string(),
+            arguments: match path {
+                Some(p) => serde_json::json!({"pattern": pattern, "path": p}),
+                None => serde_json::json!({"pattern": pattern}),
+            },
+            succeeded: true,
+        }
+    }
+
+    #[test]
+    fn novelty_passes_wide_exploration() {
+        // 30 reads of 30 *distinct* files — legit large-codebase investigation.
+        // Distinct targets in any 24-call window == 24, well above the floor.
+        let mut recent = VecDeque::new();
+        for i in 0..30 {
+            recent.push_back(read(&format!("src/file_{i}.rs"), 1));
+        }
+        assert!(check_low_novelty_stall(&recent, 24, 6).is_none());
+    }
+
+    #[test]
+    fn novelty_fires_on_churn_over_few_files() {
+        // 24 read-only calls re-probing the same 4 files with shifting line
+        // windows and grep patterns — the phase-09 churn shape. 4 <= floor 6.
+        let files = ["mod.rs", "hook.rs", "handlers.rs", "session.rs"];
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            let f = files[i % files.len()];
+            if i % 2 == 0 {
+                recent.push_back(read(f, i * 5));
+            } else {
+                recent.push_back(grep(&format!("pattern_{i}"), Some(f)));
+            }
+        }
+        let signal = check_low_novelty_stall(&recent, 24, 6).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::LowNoveltyStall {
+                window: 24,
+                distinct_targets: 4,
+            }
+        ));
+    }
+
+    #[test]
+    fn novelty_ignores_line_ranges_when_rereading_one_file() {
+        // Re-reading a single file at 24 different line windows is churn: the
+        // dropped line range collapses every call to one distinct target.
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(read("session.rs", i * 10));
+        }
+        let signal = check_low_novelty_stall(&recent, 24, 6).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::LowNoveltyStall {
+                distinct_targets: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn novelty_ignores_grep_patterns_over_one_scope() {
+        // Re-grepping one scope with 24 tweaked patterns collapses to one target.
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(grep(&format!("sweep_session_{i}"), Some("executor/")));
+        }
+        assert!(check_low_novelty_stall(&recent, 24, 6).is_some());
+    }
+
+    #[test]
+    fn novelty_buckets_whole_repo_greps_together() {
+        // Whole-repo searches (no path) all bucket to `.`, so varied patterns
+        // across the whole tree read as a single target — churn, not coverage.
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(grep(&format!("remove_file_{i}"), None));
+        }
+        let signal = check_low_novelty_stall(&recent, 24, 6).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::LowNoveltyStall {
+                distinct_targets: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn novelty_strips_numeric_literals_from_bash() {
+        // `sed -n 'A,Bp' file` at shifting line ranges is one bash target once
+        // digits are stripped.
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(ToolCallSnapshot {
+                tool: "bash".to_string(),
+                arguments: serde_json::json!({"command": format!("sed -n '{},{}p' session.rs", i, i + 5)}),
+                succeeded: true,
+            });
+        }
+        let signal = check_low_novelty_stall(&recent, 24, 6).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::LowNoveltyStall {
+                distinct_targets: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn novelty_resets_on_mutating_call() {
+        // A patch 5 calls from the end shortens the trailing read-only run below
+        // the window, so churn before the edit does not trip the detector.
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(read("session.rs", i));
+        }
+        recent.push_back(ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "session.rs"}),
+            succeeded: true,
+        });
+        for i in 0..5 {
+            recent.push_back(read("session.rs", i));
+        }
+        assert!(check_low_novelty_stall(&recent, 24, 6).is_none());
+    }
+
+    #[test]
+    fn novelty_silent_when_run_shorter_than_window() {
+        let mut recent = VecDeque::new();
+        for i in 0..23 {
+            recent.push_back(read("session.rs", i));
+        }
+        assert!(check_low_novelty_stall(&recent, 24, 6).is_none());
+    }
+
+    #[test]
+    fn novelty_disabled_when_window_zero() {
+        let mut recent = VecDeque::new();
+        for i in 0..50 {
+            recent.push_back(read("session.rs", i));
+        }
+        assert!(check_low_novelty_stall(&recent, 0, 6).is_none());
+    }
+
+    #[test]
+    fn novelty_fires_below_raw_stall_threshold() {
+        // The whole point: churn fails at the 24-call novelty window, *before*
+        // the raw read-only backstop (default 60) would ever fire.
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(read("session.rs", i));
+        }
+        assert!(check_low_novelty_stall(&recent, 24, 6).is_some());
+        assert!(check_read_only_stall(&recent, 60).is_none());
+    }
+
+    #[test]
+    fn describe_low_novelty_stall() {
+        let signal = HardFailSignal::LowNoveltyStall {
+            window: 24,
+            distinct_targets: 4,
+        };
+        let desc = signal.describe();
+        assert!(desc.contains("distinct"));
+        assert!(desc.contains("24"));
+        assert!(desc.contains("novelty"));
     }
 }

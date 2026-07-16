@@ -1305,6 +1305,13 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             )
         })
         .or_else(|| {
+            crate::governor::hard_fail::check_low_novelty_stall(
+                &recent_tool_calls,
+                deps.governor.novelty_window,
+                deps.governor.novelty_distinct_floor,
+            )
+        })
+        .or_else(|| {
             crate::governor::hard_fail::check_read_only_stall(
                 &recent_tool_calls,
                 deps.governor.read_only_stall_threshold,

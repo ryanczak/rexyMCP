@@ -136,9 +136,12 @@ hits a budget cap:
 6. After edit-class tools, run the verifier (the project's typecheck/build). On
    failure, feed the diagnostics back for a retry.
 7. The hard-fail detector watches for stuck states — identical-call and
-   oscillation loops, a **no-progress read-only stall** (N consecutive tool
-   calls with no file edit among them, the signature of a verify-loop of varied
-   `grep`/test/`git status` calls that the identical/oscillation detectors miss),
+   oscillation loops, a **low-novelty (churn) stall** (over a window of
+   read-only calls the executor keeps re-probing a small set of *normalized
+   targets* — files/grep scopes with line ranges and patterns stripped — rather
+   than covering new ground, so wide legitimate exploration passes while tight
+   churn fails fast), a **no-progress read-only stall** (a high raw-volume
+   backstop of N consecutive tool calls with no file edit among them),
    repeated verifier failures, empty-completion and stuck-gate stalls,
    runaway/cumulative-flood output, and budget overflow. If it trips, assemble a
    **briefing** and stop.
