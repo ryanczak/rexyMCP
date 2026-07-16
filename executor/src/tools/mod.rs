@@ -23,7 +23,7 @@ pub use patch::{Patch, patch};
 pub use patch_lines::{PatchLines, patch_lines};
 pub use read_file::{ReadFile, read_file};
 pub use registry::{Tool, ToolRegistry, ToolResult};
-pub use router::{Category, categorize};
+pub use router::{Category, categorize, mutates_files};
 pub use search::{Search, search};
 pub use symbols::{Symbols, symbols};
 pub use update_task::{UpdateTask, update_task};

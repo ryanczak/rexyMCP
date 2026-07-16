@@ -138,19 +138,28 @@ pub fn summarize_attempts(recent_tool_calls: &VecDeque<ToolCallSnapshot>) -> Vec
         .collect()
 }
 
-/// Collect post-edit content of files the model touched via `patch` / `write_file`.
-/// Newest-first, deduped, capped at `MAX_WORKING_FILES`; unreadable paths are
-/// skipped rather than failing the whole briefing.
+/// Collect post-edit content of files the model touched via any file-mutating
+/// tool (`patch`/`write_file`/`patch_lines`/`delete_file`/`move_file`, per
+/// `tools::mutates_files`). Newest-first, deduped, capped at `MAX_WORKING_FILES`;
+/// unreadable paths (e.g. a `delete_file` target) are skipped rather than failing
+/// the whole briefing.
 pub fn collect_working_files(
     recent_tool_calls: &VecDeque<ToolCallSnapshot>,
     project_root: &Path,
 ) -> Vec<WorkingFile> {
     let mut seen: Vec<PathBuf> = Vec::new();
     for snapshot in recent_tool_calls.iter().rev() {
-        if snapshot.tool != "patch" && snapshot.tool != "write_file" {
+        if !crate::tools::mutates_files(&snapshot.tool) {
             continue;
         }
-        let path = match snapshot.arguments.get("path").and_then(|v| v.as_str()) {
+        // Most write tools name the file in `path`; `move_file` writes the new
+        // content at `to` (its `from` no longer exists post-edit).
+        let path_key = if snapshot.tool == "move_file" {
+            "to"
+        } else {
+            "path"
+        };
+        let path = match snapshot.arguments.get(path_key).and_then(|v| v.as_str()) {
             Some(p) => PathBuf::from(p),
             None => continue,
         };
@@ -408,5 +417,41 @@ mod tests {
         ));
         let files = collect_working_files(&recent, dir.path());
         assert!(files.is_empty());
+    }
+
+    #[test]
+    fn collect_working_files_includes_patch_lines_edits() {
+        // Regression for issue #2: `patch_lines` mutates the file and must be
+        // reported as a working file, not omitted from the briefing.
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = dir.path().join("edited.rs");
+        std::fs::write(&p, "post-edit content").unwrap();
+        let mut recent = VecDeque::new();
+        recent.push_back(snap(
+            "patch_lines",
+            serde_json::json!({"path": p.to_str().unwrap()}),
+            true,
+        ));
+        let files = collect_working_files(&recent, dir.path());
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].content, "post-edit content");
+    }
+
+    #[test]
+    fn collect_working_files_resolves_move_file_via_to_key() {
+        // `move_file` names the surviving file in `to`, not `path`; the collector
+        // must read the destination content.
+        let dir = tempfile::TempDir::new().unwrap();
+        let to = dir.path().join("moved.rs");
+        std::fs::write(&to, "moved content").unwrap();
+        let mut recent = VecDeque::new();
+        recent.push_back(snap(
+            "move_file",
+            serde_json::json!({"from": "gone.rs", "to": to.to_str().unwrap()}),
+            true,
+        ));
+        let files = collect_working_files(&recent, dir.path());
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].content, "moved content");
     }
 }

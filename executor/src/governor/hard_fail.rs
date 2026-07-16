@@ -240,12 +240,9 @@ pub fn check_oscillation(
     }
 }
 
-/// File-mutating tools whose presence resets the no-progress counter. Kept in
-/// sync with `agent::tools` (the only tools that change files on disk).
-const MUTATING_TOOLS: [&str; 2] = ["patch", "write_file"];
-
 /// No-progress read-only stall: the executor has made `threshold` consecutive
-/// tool calls without a single file-mutating call (`patch`/`write_file`) among
+/// tool calls without a single file-mutating call (any `Category::Write` tool —
+/// `patch`/`write_file`/`patch_lines`/`delete_file`/`move_file`) among
 /// them — the signature of a verify-loop (repeated `grep`/test/`git status`
 /// calls that make no code progress) that `check_identical_repetition` (needs
 /// *exactly* repeated calls) and `check_oscillation` (needs a *small distinct*
@@ -261,7 +258,7 @@ pub fn check_read_only_stall(
     }
     let mut run = 0usize;
     for call in recent.iter().rev() {
-        if MUTATING_TOOLS.contains(&call.tool.as_str()) {
+        if crate::tools::mutates_files(&call.tool) {
             break;
         }
         run += 1;
@@ -786,6 +783,33 @@ mod tests {
         }
         // Only 10 read-only calls since the last write — below threshold.
         assert!(check_read_only_stall(&recent, 20).is_none());
+    }
+
+    #[test]
+    fn read_only_stall_counts_every_write_tool_as_progress() {
+        // Regression for issue #2: `patch_lines`/`delete_file`/`move_file` are
+        // first-class file mutations and must reset the no-progress counter, or
+        // an executor that favors `patch_lines` gets a false NoProgressStall
+        // while it is actively editing.
+        for tool in ["patch_lines", "delete_file", "move_file"] {
+            let mut recent = VecDeque::new();
+            for i in 0..30 {
+                recent.push_back(read_only_call(i));
+            }
+            recent.push_back(ToolCallSnapshot {
+                tool: tool.to_string(),
+                arguments: serde_json::json!({"path": "x.rs"}),
+                succeeded: true,
+            });
+            for i in 30..35 {
+                recent.push_back(read_only_call(i));
+            }
+            // Trailing read-only run since the mutation is only 5 — below 20.
+            assert!(
+                check_read_only_stall(&recent, 20).is_none(),
+                "{tool} should reset the no-progress counter"
+            );
+        }
     }
 
     #[test]

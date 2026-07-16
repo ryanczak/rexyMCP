@@ -22,6 +22,14 @@ pub fn categorize(tool_name: &str) -> Option<Category> {
     })
 }
 
+/// Does this built-in tool mutate files on disk? The single source of truth for
+/// "the model made file progress" — the no-progress stall governor and the
+/// escalation briefing both ask this instead of each keeping a private list that
+/// can (and did) drift from the `Category::Write` set above.
+pub fn mutates_files(tool_name: &str) -> bool {
+    categorize(tool_name) == Some(Category::Write)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,6 +77,40 @@ mod tests {
     #[test]
     fn categorize_unknown_name_returns_none() {
         assert_eq!(categorize("frobnicate"), None);
+    }
+
+    #[test]
+    fn mutates_files_covers_every_write_tool() {
+        for tool in [
+            "write_file",
+            "patch",
+            "patch_lines",
+            "delete_file",
+            "move_file",
+        ] {
+            assert!(
+                mutates_files(tool),
+                "{tool} should count as a file mutation"
+            );
+        }
+    }
+
+    #[test]
+    fn mutates_files_false_for_non_write_tools() {
+        for tool in [
+            "read_file",
+            "symbols",
+            "search",
+            "find_files",
+            "bash",
+            "update_task",
+        ] {
+            assert!(
+                !mutates_files(tool),
+                "{tool} should not count as a file mutation"
+            );
+        }
+        assert!(!mutates_files("frobnicate"));
     }
 
     #[test]
