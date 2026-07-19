@@ -19,6 +19,12 @@ struct RunReplay {
     model: String,
     outcome: String,
     tool_calls: Vec<ToolCallSnapshot>,
+    /// Author-attributed verifier error count per `Verify` event, in order.
+    verifier_error_counts: Vec<usize>,
+    /// Per `Completion` event: whether it was blank/think-only. NOTE: this misses
+    /// truncation-driven empties (`finish_reason == length` is not logged), so it
+    /// is a lower bound on the loop's empty-completion counter.
+    completion_empty: Vec<bool>,
 }
 
 /// Signal extractor seam — extensible for 06b.
@@ -28,6 +34,14 @@ enum Signal {
     NoveltyDistinct,
     /// Longest consecutive read-only run in the run — one sample/run.
     MaxReadOnlyRun,
+    /// Longest run of consecutive identical (tool, arguments).
+    IdenticalRun,
+    /// Minimum distinct (tool, arguments) over any sliding window.
+    OscillationMinDistinct,
+    /// Longest streak of consecutive non-decreasing positive author-error counts.
+    VerifierPersistenceRun,
+    /// Longest run of consecutive empty completions (lower bound — misses truncation).
+    EmptyCompletionRun,
 }
 
 impl Signal {
@@ -35,18 +49,22 @@ impl Signal {
         match self {
             Signal::NoveltyDistinct => "novelty_distinct_targets",
             Signal::MaxReadOnlyRun => "max_read_only_run",
+            Signal::IdenticalRun => "identical_run",
+            Signal::OscillationMinDistinct => "oscillation_min_distinct",
+            Signal::VerifierPersistenceRun => "verifier_persistence_run",
+            Signal::EmptyCompletionRun => "empty_completion_run",
         }
     }
 
-    /// Extract this signal's raw samples from one run's tool-call sequence.
-    fn samples(self, calls: &[ToolCallSnapshot], novelty_window: usize) -> Vec<usize> {
+    /// Extract this signal's raw samples from one replayed run.
+    fn samples(self, run_: &RunReplay, novelty_window: usize) -> Vec<usize> {
         match self {
             Signal::NoveltyDistinct => {
                 // Replay turn-by-turn: measure_novelty over the growing history,
                 // collecting distinct_targets at every full-window measurement.
                 let mut deque: VecDeque<ToolCallSnapshot> = VecDeque::new();
                 let mut out = Vec::new();
-                for c in calls {
+                for c in &run_.tool_calls {
                     deque.push_back(c.clone());
                     if let Some(m) = measure_novelty(&deque, novelty_window) {
                         out.push(m.distinct_targets);
@@ -57,7 +75,7 @@ impl Signal {
             Signal::MaxReadOnlyRun => {
                 let mut max = 0usize;
                 let mut run = 0usize;
-                for c in calls {
+                for c in &run_.tool_calls {
                     if tools::mutates_files(&c.tool) {
                         run = 0;
                     } else {
@@ -67,11 +85,84 @@ impl Signal {
                 }
                 vec![max]
             }
+            Signal::IdenticalRun => {
+                let mut max = 0usize;
+                let mut run = 0usize;
+                let mut prev: Option<&ToolCallSnapshot> = None;
+                for c in &run_.tool_calls {
+                    let same = prev.is_some_and(|p| p.tool == c.tool && p.arguments == c.arguments);
+                    run = if same { run + 1 } else { 1 };
+                    max = max.max(run);
+                    prev = Some(c);
+                }
+                if run_.tool_calls.is_empty() {
+                    vec![]
+                } else {
+                    vec![max]
+                }
+            }
+            Signal::OscillationMinDistinct => {
+                let calls = &run_.tool_calls;
+                if calls.len() < OSCILLATION_WINDOW {
+                    return vec![];
+                }
+                let mut min = usize::MAX;
+                for start in 0..=calls.len() - OSCILLATION_WINDOW {
+                    let window = &calls[start..start + OSCILLATION_WINDOW];
+                    let mut distinct: Vec<(&str, &serde_json::Value)> = Vec::new();
+                    for c in window {
+                        let key = (c.tool.as_str(), &c.arguments);
+                        if !distinct.iter().any(|(t, a)| *t == key.0 && *a == key.1) {
+                            distinct.push(key);
+                        }
+                    }
+                    min = min.min(distinct.len());
+                }
+                vec![min]
+            }
+            Signal::VerifierPersistenceRun => {
+                if run_.verifier_error_counts.is_empty() {
+                    return vec![];
+                }
+                let mut max = 0usize;
+                let mut run = 0usize;
+                let mut prev = 0usize;
+                for &c in &run_.verifier_error_counts {
+                    run = if c == 0 {
+                        0
+                    } else if run == 0 || c >= prev {
+                        run + 1
+                    } else {
+                        1 // positive but decreased → a fresh streak of length 1
+                    };
+                    max = max.max(run);
+                    prev = c;
+                }
+                vec![max]
+            }
+            Signal::EmptyCompletionRun => {
+                let mut max = 0usize;
+                let mut run = 0usize;
+                for &empty in &run_.completion_empty {
+                    run = if empty { run + 1 } else { 0 };
+                    max = max.max(run);
+                }
+                vec![max]
+            }
         }
     }
 }
 
-const SIGNALS: &[Signal] = &[Signal::NoveltyDistinct, Signal::MaxReadOnlyRun];
+const OSCILLATION_WINDOW: usize = 8;
+
+const SIGNALS: &[Signal] = &[
+    Signal::NoveltyDistinct,
+    Signal::MaxReadOnlyRun,
+    Signal::IdenticalRun,
+    Signal::OscillationMinDistinct,
+    Signal::VerifierPersistenceRun,
+    Signal::EmptyCompletionRun,
+];
 
 /// Nearest-rank percentile of a sorted slice. `p` in 0.0..=1.0. Empty → 0.
 fn percentile(sorted: &[usize], p: f64) -> usize {
@@ -102,12 +193,25 @@ fn format_report(rows: &[ReportRow]) -> String {
     }
 
     let mut lines = Vec::new();
-    for signal in &["novelty_distinct_targets", "max_read_only_run"] {
+    let signals: &[&str] = &[
+        "novelty_distinct_targets",
+        "max_read_only_run",
+        "identical_run",
+        "oscillation_min_distinct",
+        "verifier_persistence_run",
+        "empty_completion_run",
+    ];
+    for signal in signals {
         let signal_rows: Vec<_> = rows.iter().filter(|r| r.signal == *signal).collect();
         if signal_rows.is_empty() {
             continue;
         }
-        lines.push(format!("signal: {}", signal));
+        let header = if *signal == "empty_completion_run" {
+            "signal: empty_completion_run  (lower bound — excludes length-truncated turns)"
+        } else {
+            &format!("signal: {}", signal)
+        };
+        lines.push(header.to_string());
         lines.push("MODEL  OUTCOME  RUNS  N  P50  P90  P99".to_string());
         for row in signal_rows {
             lines.push(format!(
@@ -177,7 +281,7 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
         let mut by_model_outcome: HashMap<(String, String), CellAccum> = HashMap::new();
 
         for replay in &all_replays {
-            let samples = signal.samples(&replay.tool_calls, novelty_window);
+            let samples = signal.samples(replay, novelty_window);
             if samples.is_empty() {
                 continue;
             }
@@ -247,6 +351,8 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
     let mut model = String::from("(unknown)");
     let mut outcome = String::from("unknown");
     let mut tool_calls = Vec::new();
+    let mut verifier_error_counts = Vec::new();
+    let mut completion_empty = Vec::new();
     for rec in records {
         match &rec.event {
             SessionEvent::SessionStart { model: m, .. } => model = m.clone(),
@@ -256,6 +362,16 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
                 arguments: tool_call.arguments.clone(),
                 succeeded: true, // the 06a stall signals key on tool+args, not success
             }),
+            SessionEvent::Verify { diagnostics } => {
+                verifier_error_counts.push(diagnostics.len());
+            }
+            SessionEvent::Completion { raw } => {
+                completion_empty.push(
+                    rexymcp_executor::parser::strip_think_blocks(raw)
+                        .trim()
+                        .is_empty(),
+                );
+            }
             _ => {}
         }
     }
@@ -263,6 +379,8 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
         model,
         outcome,
         tool_calls,
+        verifier_error_counts,
+        completion_empty,
     }
 }
 
@@ -380,7 +498,14 @@ mod tests {
                 succeeded: true,
             });
         }
-        let samples = Signal::NoveltyDistinct.samples(&calls, 24);
+        let run = RunReplay {
+            model: "test".into(),
+            outcome: "complete".into(),
+            tool_calls: calls,
+            verifier_error_counts: Vec::new(),
+            completion_empty: Vec::new(),
+        };
+        let samples = Signal::NoveltyDistinct.samples(&run, 24);
         // After 24 calls, measure_novelty returns Some, and we get samples for calls 24..30
         assert!(!samples.is_empty(), "expected samples: {samples:?}");
         // All samples should have 24 distinct targets (each file is unique)
@@ -414,7 +539,14 @@ mod tests {
                 succeeded: true,
             },
         ];
-        let samples = Signal::MaxReadOnlyRun.samples(&calls, 24);
+        let run = RunReplay {
+            model: "test".into(),
+            outcome: "complete".into(),
+            tool_calls: calls,
+            verifier_error_counts: Vec::new(),
+            completion_empty: Vec::new(),
+        };
+        let samples = Signal::MaxReadOnlyRun.samples(&run, 24);
         // Max read-only run is 2 (the first two read_file calls before patch)
         assert_eq!(
             samples,
@@ -533,7 +665,14 @@ mod tests {
                 succeeded: true,
             },
         ];
-        let samples = Signal::NoveltyDistinct.samples(&calls, 24);
+        let run = RunReplay {
+            model: "test".into(),
+            outcome: "complete".into(),
+            tool_calls: calls,
+            verifier_error_counts: Vec::new(),
+            completion_empty: Vec::new(),
+        };
+        let samples = Signal::NoveltyDistinct.samples(&run, 24);
         // With only 2 calls and window=24, measure_novelty returns None until window is reached
         assert!(
             samples.is_empty(),
