@@ -4,9 +4,28 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none — M34 mid-flight; phase-05 done 2026-07-19, next is
-phase-06 (metrics/back-test), which is a deferred design task needing a
-talk-through before drafting.** phase-04 done 2026-07-18.
+**Active phase: M34 phase-06a — Governor calibration framework + stall-signal
+report (todo, drafted 2026-07-19).** phase-05 done 2026-07-19; phase-04 done
+2026-07-18.
+
+**📌 phase-06 design resolved with the user (2026-07-19) + split for
+dispatchability.** Four forks answered: (1) scope = **governor-wide** (all
+detectors) as the milestone goal; (2) ship shape = **new `rexymcp
+calibrate-governor` subcommand**; (3) granularity = **per-model with global
+fallback** (always show N); (4) output = **report-only** (no auto-suggested
+thresholds, no config mutation). Two forks I resolved + recorded (not asked):
+re-derive signals from raw `Parsed` events (not phase-04 `NoveltySample`, so the
+whole ~209-log corpus is in reach); live advisory marker deferred. Governor-wide
+is too big for one executor session, so **split**: **06a** = the corpus-replay /
+aggregate / report framework + `calibrate-governor` subcommand wired for the two
+stall signals (novelty distinct-targets, longest read-only run), with an
+extensible `Signal` seam; **06b** = additive variants for the remaining 5
+detectors (identical / oscillation / verifier-persistence / empty-completion /
+output-flood — with open questions on Verify/Completion extraction and
+output-flood reachability). **06a is dispatchable** (read-only analysis in `mcp/`,
+no governor-internal risk) — leaf-first build order pre-injected for the
+multi-piece churn. Then 07 (briefing quality, reduced scope). Dispatch via
+`/rexymcp:dispatch phase-06a` or direct-execute.
 
 **M34 phase-05 — done (2026-07-19, approved_first_try; Claude Code direct).**
 Advisory-demotion of the novelty stall detector: `[governor] novelty_action`

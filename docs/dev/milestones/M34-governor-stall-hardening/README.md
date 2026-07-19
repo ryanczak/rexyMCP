@@ -80,7 +80,8 @@ added ahead of the (now reduced-scope) briefing-quality phase, renumbered 07.
 | 03 | Low-novelty churn stall detector (issue #3) ([phase-03-low-novelty-stall.md](phase-03-low-novelty-stall.md)) | done |
 | 04 | Novelty-detector observability ([phase-04-novelty-detector-observability.md](phase-04-novelty-detector-observability.md)) | done |
 | 05 | Advisory-demotion of the novelty stall detector ([phase-05-advisory-demotion.md](phase-05-advisory-demotion.md)) | done |
-| 06 | Threshold calibration & governor metrics overhaul ([phase-06-threshold-calibration-metrics.md](phase-06-threshold-calibration-metrics.md)) | planning |
+| 06a | Governor calibration framework + stall-signal report ([phase-06a-calibration-framework-and-stall-signals.md](phase-06a-calibration-framework-and-stall-signals.md)) | todo |
+| 06b | Extend calibration to the remaining detectors ([phase-06b-calibration-remaining-detectors.md](phase-06b-calibration-remaining-detectors.md)) | todo (planned) |
 | 07 | Stall-fire briefing quality ([phase-07-stall-fire-briefing-quality.md](phase-07-stall-fire-briefing-quality.md)) | todo |
 
 ## Notes
