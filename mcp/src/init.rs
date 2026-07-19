@@ -42,6 +42,7 @@ oscillation_window = 8            # sliding window scanned for A,B,A,B oscillati
 oscillation_distinct_max = 2      # ≤ this many distinct calls in the window → hard-fail
 output_window = 6                 # sliding window of tool outputs summed for flood check (0 disables)
 output_window_bytes = 262144      # total bytes across the output window → hard-fail (256 KB)
+novelty_action = "advisory"       # "advisory" (default): log low-novelty churn but keep running; "terminate": hard-fail on it
 
 # [models."<model-id>"]              # per-model knob overrides; key is the exact
 #                                    # active model id (no prefix/substring match).

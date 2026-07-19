@@ -1472,6 +1472,98 @@ async fn novelty_samples_are_emitted_deduped_and_rearm_after_edit() {
     );
 }
 
+// ── M34 phase-05: advisory-demotion integration tests ───────────────────
+
+/// Shared churn setup: read one file repeatedly so a `novelty_window` of 3
+/// collapses to 1 distinct target (≤ `novelty_distinct_floor` = 1 → would trip),
+/// with the raw stall + oscillation + identical-repetition detectors disabled so
+/// novelty is the only relevant signal. `action` selects advisory vs terminate.
+async fn run_low_novelty_churn(action: crate::config::NoveltyAction) -> (TempDir, PhaseResult) {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "aaa").unwrap();
+    let path_a = dir.path().join("a.txt").to_string_lossy().to_string();
+    let read_a = || native("read_file", json!({ "path": path_a.clone() }));
+    let client = MockAiClientScript::new(vec![
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry_over(Scope::new(dir.path()).unwrap()),
+        tools: &[],
+        budget: &Budget::new(1_000_000),
+        max_turns: 5,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig {
+            novelty_window: 3,
+            novelty_distinct_floor: 1, // distinct=1 ≤ 1 → the window would trip
+            novelty_action: action,
+            read_only_stall_threshold: 0, // isolate novelty from the raw backstop
+            oscillation_window: 0,
+            identical_call_threshold: 50,
+            ..GovernorConfig::default()
+        },
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    // Await inside the helper so the LoopDeps borrows end before `dir` is returned.
+    let result = execute_phase(&input(), d).await.unwrap();
+    (dir, result)
+}
+
+#[tokio::test]
+async fn low_novelty_churn_is_advisory_by_default() {
+    let (dir, result) = run_low_novelty_churn(crate::config::NoveltyAction::Advisory).await;
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::BudgetExceeded,
+        "advisory novelty must not hard-fail; the run reaches the turn cap"
+    );
+    let flagged = records(dir.path()).iter().any(|r| {
+        matches!(
+            r.event,
+            SessionEvent::NoveltySample { distinct_targets, .. } if distinct_targets <= 1
+        )
+    });
+    assert!(
+        flagged,
+        "the advisory measurement (distinct_targets ≤ floor) is still recorded"
+    );
+}
+
+#[tokio::test]
+async fn low_novelty_churn_hard_fails_when_action_is_terminate() {
+    let (_dir, result) = run_low_novelty_churn(crate::config::NoveltyAction::Terminate).await;
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    assert!(
+        matches!(
+            result.briefing.unwrap().current_blocker,
+            Blocker::HardFail(HardFailSignal::LowNoveltyStall { .. })
+        ),
+        "terminate mode preserves the pre-demotion LowNoveltyStall hard-fail"
+    );
+}
+
 // ── M26 phase-07a: cumulative-output-flood integration test ─────────────
 
 #[tokio::test]
