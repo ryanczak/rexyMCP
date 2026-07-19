@@ -1,7 +1,7 @@
 # Phase 06a: Governor calibration framework + stall-signal report
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-04 (`measure_novelty`), phase-05 (advisory-demotion — so runs
 reach natural length and the corpus reflects real behavior)
 **Estimated diff:** ~400 lines
@@ -354,5 +354,9 @@ compiles.
 ## Update Log
 
 (Filled in by the executor.)
+
+### Update — 2026-07-19 18:23 (started)
+
+**Executor:** Starting phase 06a — building `calibrate_governor` module with replay, signal-extractor seam, aggregation, report formatting, CLI wiring, and tests.
 
 <!-- entries appended below this line -->

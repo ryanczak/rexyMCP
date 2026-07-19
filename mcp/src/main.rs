@@ -4,6 +4,7 @@ use rexymcp_executor::health;
 use std::path::PathBuf;
 
 mod calibrate;
+mod calibrate_governor;
 mod cap;
 mod dashboard;
 mod doctor;
@@ -339,6 +340,32 @@ enum Commands {
         /// Override the telemetry phase_runs.jsonl path
         #[arg(long)]
         telemetry_path: Option<PathBuf>,
+    },
+    /// Calibrate governor thresholds by replaying the session-log corpus
+    CalibrateGovernor {
+        /// Target repo root (where `.rexymcp/sessions/` lives)
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+
+        /// Override the sessions directory (default: `<repo>/.rexymcp/sessions`)
+        #[arg(long)]
+        sessions_dir: Option<PathBuf>,
+
+        /// Restrict to one model (exact match)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Novelty window size (default: 24)
+        #[arg(long, default_value_t = 24)]
+        novelty_window: usize,
+
+        /// Drop per-model cells with fewer than this many samples (default: 0)
+        #[arg(long, default_value_t = 0)]
+        min_runs: usize,
+
+        /// Emit JSON instead of a human table
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -759,6 +786,27 @@ async fn main() -> anyhow::Result<()> {
                     std::process::exit(1);
                 }
             }
+        }
+        Commands::CalibrateGovernor {
+            repo,
+            sessions_dir,
+            model,
+            novelty_window,
+            min_runs,
+            json,
+        } => {
+            let sessions_dir =
+                sessions_dir.unwrap_or_else(|| repo.join(".rexymcp").join("sessions"));
+            let model_ref = model.as_deref();
+            let args = calibrate_governor::CalibrateGovernorArgs {
+                sessions_dir: &sessions_dir,
+                model_filter: model_ref,
+                novelty_window,
+                min_runs,
+                json,
+            };
+            println!("{}", calibrate_governor::run(&args));
+            Ok(())
         }
     }
 }
