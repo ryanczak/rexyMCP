@@ -1,7 +1,7 @@
 # Bug 1 on phase-06a: `min_runs` and the `N` column count samples, not runs — overstating evidence for multi-sample signals
 
 **Severity:** major
-**Status:** open
+**Status:** verified
 **Filed:** 2026-07-19
 
 ## What's wrong

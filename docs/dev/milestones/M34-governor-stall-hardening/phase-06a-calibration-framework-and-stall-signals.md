@@ -1,7 +1,7 @@
 # Phase 06a: Governor calibration framework + stall-signal report
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** review
+**Status:** done
 **Depends on:** phase-04 (`measure_novelty`), phase-05 (advisory-demotion — so runs
 reach natural length and the corpus reflects real behavior)
 **Estimated diff:** ~400 lines
@@ -577,3 +577,15 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-19
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-06a-1 — major, `spec_bug`: `--min-runs`/`N` counted samples not runs)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (79-turn first dispatch + 38-turn fix)
+- **Scope deviations:** none
+- **Calibration:** 1st occurrence — a multi-sample aggregation spec must pin the
+  runs-vs-samples distinction and a negative (a 1-run/many-sample cell must be
+  dropped by the run floor). Data, not a fold yet. Fix verified E2E: the real
+  corpus now shows `budget_exceeded` as `RUNS=1` (was a misleading per-model
+  `N=253`), and successful runs cluster at novelty P50=15 vs the guessed floor=6.

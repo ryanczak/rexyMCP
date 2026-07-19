@@ -4,9 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M34 phase-06a — Governor calibration framework + stall-signal
-report (todo, drafted 2026-07-19).** phase-05 done 2026-07-19; phase-04 done
-2026-07-18.
+**Active phase: none — M34 phase-06a done 2026-07-19 (approved_after_1). Next is
+phase-06b (remaining detectors) or phase-07 (briefing quality), drafted on demand
+via `/rexymcp:architect next`.** phase-05 done 2026-07-19; phase-04 done 2026-07-18.
+
+**M34 phase-06a — done (2026-07-19, approved_after_1; executor
+AEON-7/Qwen3.6-27B-AEON).** The `rexymcp calibrate-governor` subcommand: replays
+the `.rexymcp/sessions/` corpus, re-derives the two stall signals (novelty
+distinct-targets via `measure_novelty`; longest read-only run via `mutates_files`),
+and reports per-model (+ global fallback) p50/p90/p99 by outcome. **Bounced once**
+(bug-06a-1, major, `spec_bug`): `--min-runs`/`N` counted samples not runs, so a
+single 276-call `budget_exceeded` run showed as novelty `N=253` and passed
+`--min-runs 3`. Fixed via a `CellAccum { runs, samples }` split — `--min-runs`
+filters on runs, a `RUNS` column exposes independence, N stays samples (percentiles
+are over samples); +1 mutation-resistant negative test. Clean 79-turn first
+dispatch + 38-turn fix; all four gates green (526 mcp + 996 executor).
+**First real calibration data:** successful runs cluster at novelty distinct-target
+**P50=15** (RUNS=14), stuck (`budget_exceeded`) runs at **P50=1** — the guessed
+`novelty_distinct_floor = 6` sits in the empty gap between, so there's a
+data-backed window to retune it (a phase-06b/human decision, not yet taken).
 
 **📌 phase-06 design resolved with the user (2026-07-19) + split for
 dispatchability.** Four forks answered: (1) scope = **governor-wide** (all
