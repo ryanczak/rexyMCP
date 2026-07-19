@@ -1,7 +1,7 @@
 # Phase 06b: Extend calibration to the remaining governor detectors
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** review
+**Status:** in-progress (bounced — see bug-06b-1)
 **Depends on:** phase-06a (the replay/aggregate/report framework + `Signal` seam)
 **Estimated diff:** ~280 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -452,3 +452,22 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review — 2026-07-19 (bounced → bug-06b-1)
+
+**Verdict:** bounced (1 bug, major). The four extractors, the `RunReplay`/replay
+extension, the `samples()` signature change, and the report wiring are all correct
+— clean 153-turn dispatch, four gates green on independent re-run (526 mcp + 996
+executor), no banned patterns, and the real-corpus E2E (which the executor
+skipped) produces plausible distributions for all four new signals.
+
+**Notes for the executor (fix on re-dispatch):** one major defect —
+[bug-06b-1](bugs/bug-06b-1.md). The four new extractors shipped with **zero
+tests** (STANDARDS §3.1; the phase's Test plan named 7 tests, none written). Add
+the seven tests from the Test plan; extend `make_session_file` (or add a sibling)
+so fixtures can emit `Verify` and `Completion` events for the
+verifier-persistence and empty-completion signals. Do **not** change the
+extractor logic — it is correct as shipped; this bounce is purely the missing
+coverage. See the bug for the exact per-test pins (incl. the negative/boundary
+cases). The bug's Notes flag a p50/p90/p99-vs-min-signal reporting observation
+that is **out of scope** here — it belongs to the deferred metrics pass.
