@@ -1,7 +1,7 @@
 # Bug 1 on phase-06b: the four new signal extractors ship with zero tests
 
 **Severity:** major
-**Status:** open
+**Status:** verified
 **Filed:** 2026-07-19
 
 ## What's wrong

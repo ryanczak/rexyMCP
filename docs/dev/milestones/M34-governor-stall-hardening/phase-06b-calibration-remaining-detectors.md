@@ -1,7 +1,7 @@
 # Phase 06b: Extend calibration to the remaining governor detectors
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a (the replay/aggregate/report framework + `Signal` seam)
 **Estimated diff:** ~280 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -568,3 +568,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-19
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 — bug-06b-1 (major, `false_completion`: the 4 extractors shipped untested)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (153-turn first dispatch + 136-turn test fix)
+- **Scope deviations:** none
+- **Calibration:** none new. The re-dispatch added 10 tests (>7 required) covering all
+  four extractors + the negative/boundary cases; `verifier_persistence_reset_on_decrease`
+  mutation-verified at review (breaking the reset makes it fail). Real-corpus E2E (run at
+  first review) produced plausible distributions for all four signals. The
+  p50/p90/p99-vs-min-signal reporting observation (bug-06b-1 Notes) is carried to the
+  deferred metrics/reporting pass, not a 06b defect.

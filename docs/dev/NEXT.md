@@ -4,9 +4,28 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M34 phase-06b — Extend calibration to the remaining detectors
-(todo, drafted 2026-07-19).** phase-06a done 2026-07-19 (approved_after_1);
-phase-05 done 2026-07-19; phase-04 done 2026-07-18.
+**Active phase: none — M34 phase-06b done 2026-07-19 (approved_after_1). The
+calibration arc (06a+06b) is complete; next is the user's planned metrics &
+reporting deep-dive + the phase-07 keep-or-drop decision — a human/architect
+regroup, not an auto-draft** (see [[post-06b-metrics-reporting-deepdive]]).
+phase-06a done 2026-07-19; phase-05 done 2026-07-19; phase-04 done 2026-07-18.
+
+**M34 phase-06b — done (2026-07-19, approved_after_1; executor
+AEON-7/Qwen3.6-27B-AEON).** Extended `calibrate-governor` to the 4 recoverable
+remaining detectors (identical-repetition, oscillation, verifier-persistence,
+empty-completion); output-flood documented as a data gap (truncated
+`output_preview`). **Bounced once** (bug-06b-1, major, `false_completion`): the 4
+extractors shipped with zero tests. Re-dispatch added 10 tests (>7 required)
+covering all four + negatives; `verifier_persistence_reset_on_decrease`
+mutation-verified at review. All four gates green (536 mcp + 996 executor). Real
+corpus now yields distributions for every reachable detector. **Deferred to the
+metrics pass:** `oscillation_min_distinct` is a lower-is-worse signal but the report
+shows p50/p90/p99 (wrong tail) — a reporting-design fix, captured in bug-06b-1's
+Notes. **All committed M34 phases (01–06b) are now done; only phase-07 (briefing
+quality, reduced scope) remains todo.** Run `/rexymcp:architect` to regroup: decide
+the metrics/reporting deep-dive scope, the phase-07 keep-or-drop, and (at close)
+the retrospective + the README exit-criteria prose still carrying pre-reshape
+numbering.
 
 **📌 phase-06b drafted (2026-07-19).** Extends 06a's calibrate-governor framework
 to the remaining detectors. **Recoverability verified against the log by the
