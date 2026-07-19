@@ -4,7 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M34 phase-04 — Novelty-detector observability (todo, drafted 2026-07-18).**
+**Active phase: none — M34 mid-flight, next step is a talk-through to draft the
+advisory-until-calibrated reshape (see below).** phase-04 done 2026-07-18.
+
+**⚖️ Design decision (2026-07-18, with the user): advisory-until-calibrated
+governor detection.** The phase-04 dispatch hard_failed when the `LowNoveltyStall`
+detector fired on its own author at **turn 104 of a 600-turn budget (82% unused)** —
+concrete evidence that data-free early-kill thresholds pre-empt productive runs deep
+inside budget, contrary to rexyMCP's ethos (no failure modes on arbitrary,
+un-backed thresholds). Decided direction: **demote the novelty (and reconsider the
+raw) stall detectors from terminating to advisory-by-default** — keep emitting the
+measurement (phase-04's `NoveltySample`), let `max_turns` + optional
+`wall_clock_secs` + a high raw backstop be the real, legible terminators — and
+**set thresholds from data** by back-testing against the existing
+`.rexymcp/sessions/` session-log corpus (how often would the detector have fired on
+runs that *succeeded*?). This reshapes M34's tail: phase-05 (briefing quality)
+stays; a **new phase for the advisory-default demotion** + a **calibration
+back-test** are planned. Not yet drafted — it's a governor-behavior + defaults
+change that wants a talk-through and the milestone gate before speccing (per
+[[talk-through-contract-doc-changes]]).
 
 **📌 M34 — Governor Stall Hardening opened (2026-07-18, with the user) to
 formalize direct-executed work.** After M33 closed, three governor-hardening
@@ -38,20 +56,21 @@ rollup were considered and deferred). Roadmap entry: `architecture.md` § Status
   when a `novelty_window` (24) collapses to `<= novelty_distinct_floor` (6)
   distinct targets. Novelty is the early catch; the raw threshold is the 60-turn
   volume backstop. **Defaults 24/6 are untuned — the motivation for phase-04.**
-- **phase-04 — drafted (todo, the active/next executable phase).** Novelty-detector
-  observability: extract `measure_novelty` from `check_low_novelty_stall`
-  (behavior-preserving) and emit a `SessionEvent::NoveltySample { window,
-  distinct_targets }` (deduped on distinct-count change) each full-window
-  measurement, so the floor/window calibrate from real `executor_log_search
-  --event-type novelty_sample` distributions rather than guesses. **Cascade
-  pre-injected leaf-first:** the new variant forces arms in three exhaustive
-  matches (`log_query.rs event_type_str`, `dashboard/transcript.rs` render,
-  `dashboard/filter.rs allows()` → reuses the `metrics` toggle) + the mirrored
-  `agent/tests.rs` helper; `status.rs`/`telemetry.rs` have `_ =>` wildcards (no
-  arm). Routing note in the doc: governor-internal + `SessionEvent`-cascade both
-  argue for direct execution (as 01–03), but the leaf-first order is the
-  dispatch-safe countermeasure. **Dispatch via `/rexymcp:dispatch phase-04`** (or
-  direct-execute). Next-milestone go/no-go stays a human decision.
+- **phase-04 — done (2026-07-18, escalated / session takeover; executor
+  AEON-7/Qwen3.6-27B-AEON + Claude Code direct).** Novelty-detector observability:
+  `measure_novelty` extracted from `check_low_novelty_stall` (behavior-preserving
+  wrapper) + `SessionEvent::NoveltySample { window, distinct_targets }` emitted
+  deduped each full-window measurement, queryable via `executor_log_search
+  --event-type novelty_sample`. Leaf-first cascade landed clean (3 exhaustive-match
+  arms + mirrored `agent/tests.rs` helper). **Dispatch `fc515cd4` hard_failed
+  `LowNoveltyStall {24,6}` at turn 104/600** — the detector fired on its own author
+  while it churned `agent/tests.rs` writing the integration test; AEON had
+  completed the entire cascade + emit site + 3 `measure_novelty` unit tests
+  correctly. Architect took over and added the one missing `MockAiClient`
+  integration test (`novelty_samples_are_emitted_deduped_and_rearm_after_edit`,
+  mutation-resistant `== vec![(3,1),(3,1)]`). All four gates green (517 mcp + 991
+  executor, 2 ignored). **This hard_fail is the calibration evidence behind the
+  advisory-until-calibrated decision above.**
 - **phase-05 — planned stub (todo).** Stall-fire briefing quality: enrich the
   escalation briefing so a fired `LowNoveltyStall`/`NoProgressStall` names the
   churned targets, not just `signal.describe()`. Design fork (carry targets on the

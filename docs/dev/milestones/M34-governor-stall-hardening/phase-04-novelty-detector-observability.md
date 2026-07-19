@@ -1,7 +1,7 @@
 # Phase 04: Novelty-detector observability
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** todo
+**Status:** done
 **Depends on:** phase-03 (the `check_low_novelty_stall` detector this makes observable)
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -384,6 +384,93 @@ build at each checkpoint. The phase doc records the actual executor at review.
 
 ## Update Log
 
-(Filled in by the executor.)
-
 <!-- entries appended below this line -->
+
+### Update — 2026-07-18 (complete)
+
+**Summary:** Shipped novelty-detector observability. `measure_novelty` +
+`NoveltyMeasurement` extracted from `check_low_novelty_stall` (behavior-preserving
+— the latter is now a thin `.filter(|m| distinct <= floor)` wrapper);
+`SessionEvent::NoveltySample { window, distinct_targets }` added and emitted each
+full-window measurement in the turn cycle, deduped on distinct-count change and
+re-armed on a measurement gap. The full leaf-first cascade landed: `event_type_str`
++ round-trip test (`log_query.rs`), render arm (`dashboard/transcript.rs`), filter
+arm reusing the `metrics` toggle (`dashboard/filter.rs`), and the mirrored
+`agent/tests.rs` helper. No new config; no `PhaseRun`/scorecard rollup (out of
+scope). `architecture.md` left untouched (the detector-list wording already covers
+it).
+
+**Execution:** **dispatched** to AEON-7/Qwen3.6-27B-AEON (run
+`fc515cd4`), which correctly completed the entire cascade + emit site + the three
+`measure_novelty` unit tests, then **hard_failed `LowNoveltyStall {window:24,
+distinct_targets:6}` at turn 104/600** — churning read-only calls on
+`agent/tests.rs` while trying to write the required integration test. The detector
+under construction fired on its own author. **Session takeover:** the architect
+(Claude Code, direct) finished the one missing piece — the
+`MockAiClient` integration test — on top of the executor's correct work.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check
+FMT CLEAN  (after `rustfmt executor/src/agent/tests.rs mcp/src/dashboard/transcript.rs`)
+
+cargo build 2>&1 | tail
+Finished `dev` profile — zero warnings
+
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail
+Finished — zero warnings
+
+cargo test 2>&1 | grep "test result:"
+test result: ok. 517 passed; 0 failed  (mcp)
+test result: ok. 991 passed; 0 failed; 2 ignored  (executor)
+```
+
+**End-to-end verification:** the shipped artifact is the queryable event.
+Exercised the real write→persist→read path via the hermetic loop harness
+(`novelty_samples_are_emitted_deduped_and_rearm_after_edit` drives the production
+loop → real JSONL writer → `read_session_log` reader), and confirmed the
+query-tool tag on a real serialized record:
+
+```
+{"event_type":"novelty_sample","window":24,"distinct_targets":6}
+```
+
+so `executor_log_search --event-type novelty_sample` filters these. (Verified via
+the hermetic harness rather than a live serve dispatch — the connected serve
+binary predates this change.)
+
+**Files changed:**
+- `executor/src/store/sessions/event.rs` — `NoveltySample` variant.
+- `executor/src/governor/hard_fail.rs` — `NoveltyMeasurement` + `measure_novelty`;
+  `check_low_novelty_stall` refactored to a wrapper; 3 unit tests.
+- `executor/src/agent/mod.rs` — deduped emit site + `last_novelty_distinct` state.
+- `executor/src/agent/tests.rs` — `event_kind` helper arm + the integration test.
+- `mcp/src/log_query.rs` — `event_type_str` arm + round-trip test record.
+- `mcp/src/dashboard/transcript.rs` — render arm.
+- `mcp/src/dashboard/filter.rs` — `allows()` arm (reuses `metrics` toggle).
+
+**New tests:**
+- `measure_novelty_none_below_window`, `measure_novelty_none_when_window_zero`,
+  `measure_novelty_counts_distinct_targets` in `hard_fail.rs` (executor-authored).
+- `novelty_samples_are_emitted_deduped_and_rearm_after_edit` in `agent/tests.rs`
+  (architect-authored; the single `== vec![(3,1),(3,1)]` assertion is
+  mutation-resistant — no-dedup → ~6 samples, no-rearm → 1, no-emit → 0).
+
+**Notes for review:** existing `novelty_*` tests all pass unchanged, proving the
+`measure_novelty` refactor is behavior-preserving.
+
+### Review verdict — 2026-07-18
+
+- **Verdict:** escalated (dispatch hard_failed on `LowNoveltyStall`; architect
+  session-takeover finished the missing integration test)
+- **Bounces:** 1 (hard_fail — `LowNoveltyStall`, not a correctness defect)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (cascade + unit tests) + Claude Code
+  (direct — integration test)
+- **Scope deviations:** none
+- **Calibration:** the detector firing on its author at turn 104 of a 600-turn
+  budget (82% unused) is live evidence for the **advisory-until-calibrated**
+  redesign now folding into M34 — data-free early-kill thresholds pre-empt
+  productive runs deep inside budget. This run is itself a calibration data point.

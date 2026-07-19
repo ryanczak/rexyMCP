@@ -64,7 +64,7 @@ targets were churned.
 | 01 | No-progress read-only stall detector (FR-2) ([phase-01-no-progress-stall.md](phase-01-no-progress-stall.md)) | done |
 | 02 | Refuse `git stash` self-revert (FR-1) ([phase-02-git-stash-self-revert-guard.md](phase-02-git-stash-self-revert-guard.md)) | done |
 | 03 | Low-novelty churn stall detector (issue #3) ([phase-03-low-novelty-stall.md](phase-03-low-novelty-stall.md)) | done |
-| 04 | Novelty-detector observability ([phase-04-novelty-detector-observability.md](phase-04-novelty-detector-observability.md)) | todo |
+| 04 | Novelty-detector observability ([phase-04-novelty-detector-observability.md](phase-04-novelty-detector-observability.md)) | done |
 | 05 | Stall-fire briefing quality ([phase-05-stall-fire-briefing-quality.md](phase-05-stall-fire-briefing-quality.md)) | todo |
 
 ## Notes
