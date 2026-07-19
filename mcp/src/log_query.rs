@@ -29,6 +29,7 @@ pub fn event_type_str(event: &SessionEvent) -> &'static str {
         SessionEvent::ReadEvicted { .. } => "read_evicted",
         SessionEvent::ReadDeduped { .. } => "read_deduped",
         SessionEvent::TaskUpdate { .. } => "task_update",
+        SessionEvent::NoveltySample { .. } => "novelty_sample",
     }
 }
 
@@ -223,6 +224,13 @@ mod tests {
                 },
                 3,
             ),
+            make_record(
+                SessionEvent::NoveltySample {
+                    window: 24,
+                    distinct_targets: 6,
+                },
+                3,
+            ),
         ]
     }
 
@@ -242,6 +250,7 @@ mod tests {
             "hard_fail",
             "progress",
             "session_end",
+            "novelty_sample",
         ];
         for (i, record) in records.iter().enumerate() {
             assert_eq!(

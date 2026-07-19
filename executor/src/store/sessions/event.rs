@@ -126,4 +126,14 @@ pub enum SessionEvent {
         title: String,
         state: TaskState,
     },
+    /// Emitted each turn the novelty detector takes a full-window measurement of
+    /// the trailing read-only run (M34). `distinct_targets` is how many distinct
+    /// normalized targets the last `window` read-only calls probed — the raw
+    /// signal `novelty_distinct_floor` is compared against. Calibration data: a
+    /// distribution of `distinct_targets` across real runs shows where to set the
+    /// floor. Emitted whether or not the measurement also trips `LowNoveltyStall`.
+    NoveltySample {
+        window: usize,
+        distinct_targets: usize,
+    },
 }

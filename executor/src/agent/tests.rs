@@ -968,6 +968,7 @@ fn event_kind(event: &SessionEvent) -> &'static str {
         SessionEvent::ReadEvicted { .. } => "read_evicted",
         SessionEvent::ReadDeduped { .. } => "read_deduped",
         SessionEvent::TaskUpdate { .. } => "task_update",
+        SessionEvent::NoveltySample { .. } => "novelty_sample",
     }
 }
 
@@ -1380,6 +1381,95 @@ async fn oscillation_across_alternating_reads_trips_hard_fail() {
         result.briefing.unwrap().current_blocker,
         Blocker::HardFail(HardFailSignal::Oscillation { .. })
     ));
+}
+
+// ── M34: novelty-sample observability integration test ──────────────────
+
+/// Drives a read-only churn over one file, a mutating call, then a second
+/// churn — with `novelty_distinct_floor = 0` so the measurement never trips the
+/// stall (the run reaches the turn cap instead of hard-failing). Asserts the
+/// loop emits exactly **two** `NoveltySample` records: one per churn streak.
+/// That single count proves all three behaviors at once — emission (>0), dedup
+/// (a 5-read streak collapses to one sample, not one-per-turn), and re-arm (the
+/// post-edit streak emits again despite the same `distinct_targets`).
+#[tokio::test]
+async fn novelty_samples_are_emitted_deduped_and_rearm_after_edit() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "aaa").unwrap();
+    let path_a = dir.path().join("a.txt").to_string_lossy().to_string();
+    let path_b = dir.path().join("b.txt").to_string_lossy().to_string();
+    let read_a = || native("read_file", json!({ "path": path_a.clone() }));
+    let write_b = || {
+        native(
+            "write_file",
+            json!({ "path": path_b.clone(), "content": "b" }),
+        )
+    };
+    // streak 1 (5 reads) → one sample; edit (re-arm) → no sample; streak 2 (5
+    // reads) → one more sample. 11 turns; the turn cap ends the run.
+    let client = MockAiClientScript::new(vec![
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![write_b()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+        vec![read_a()],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry_over(Scope::new(dir.path()).unwrap()),
+        tools: &[],
+        budget: &Budget::new(1_000_000),
+        max_turns: 11,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig {
+            novelty_window: 3,
+            novelty_distinct_floor: 0, // distinct >= 1 > 0 → never trips; only measures
+            read_only_stall_threshold: 0, // disable the raw backstop
+            oscillation_window: 0,     // disable (read/write distinct=2 would trip)
+            identical_call_threshold: 50, // 5 consecutive identical reads must not trip
+            ..GovernorConfig::default()
+        },
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    execute_phase(&input(), d).await.unwrap();
+
+    let samples: Vec<(usize, usize)> = records(dir.path())
+        .iter()
+        .filter_map(|r| match r.event {
+            SessionEvent::NoveltySample {
+                window,
+                distinct_targets,
+            } => Some((window, distinct_targets)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        samples,
+        vec![(3, 1), (3, 1)],
+        "expected exactly two deduped novelty samples (one per churn streak, re-armed by the edit), got {samples:?}"
+    );
 }
 
 // ── M26 phase-07a: cumulative-output-flood integration test ─────────────

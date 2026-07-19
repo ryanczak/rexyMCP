@@ -319,24 +319,26 @@ fn raw_target(call: &ToolCallSnapshot) -> String {
     format!("{}({})", call.tool, call.arguments)
 }
 
-/// Low-novelty (churn) stall: across the last `window` *read-only* tool calls
-/// the executor probed only `<= distinct_floor` distinct normalized targets
-/// (see `normalize_target`) — it is re-reading/re-grepping a small set of files
-/// rather than covering new ground, with no intervening edit. Unlike
-/// `check_read_only_stall` (raw volume) this keys on *novelty*: a wide
-/// legitimate investigation over many distinct files passes however long it
-/// runs, while tight churn fails fast — below the raw-count backstop. The
-/// trailing read-only run resets on any file-mutating call, so exploration
-/// *between* edits never trips it. `window == 0` disables.
-pub fn check_low_novelty_stall(
+/// The novelty detector's raw reading over a full trailing read-only window:
+/// how many distinct normalized targets (`normalize_target`) the last `window`
+/// read-only calls probed. Present only when the run actually reached `window`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoveltyMeasurement {
+    pub window: usize,
+    pub distinct_targets: usize,
+}
+
+/// Measure target-novelty over the trailing read-only run. Returns `None` when
+/// novelty is disabled (`window == 0`) or the run is shorter than `window`
+/// (measurement not yet meaningful). The trailing run resets on any
+/// file-mutating call, exactly as the stall detector does.
+pub fn measure_novelty(
     recent: &VecDeque<ToolCallSnapshot>,
     window: usize,
-    distinct_floor: usize,
-) -> Option<HardFailSignal> {
+) -> Option<NoveltyMeasurement> {
     if window == 0 {
         return None;
     }
-    // Examine only the trailing read-only run; a mutating call is file progress.
     let mut run: Vec<&ToolCallSnapshot> = Vec::new();
     for call in recent.iter().rev() {
         if crate::tools::mutates_files(&call.tool) {
@@ -357,14 +359,32 @@ pub fn check_low_novelty_stall(
             distinct.push(key);
         }
     }
-    if distinct.len() <= distinct_floor {
-        Some(HardFailSignal::LowNoveltyStall {
-            window,
-            distinct_targets: distinct.len(),
+    Some(NoveltyMeasurement {
+        window,
+        distinct_targets: distinct.len(),
+    })
+}
+
+/// Low-novelty (churn) stall: across the last `window` *read-only* tool calls
+/// the executor probed only `<= distinct_floor` distinct normalized targets
+/// (see `normalize_target`) — it is re-reading/re-grepping a small set of files
+/// rather than covering new ground, with no intervening edit. Unlike
+/// `check_read_only_stall` (raw volume) this keys on *novelty*: a wide
+/// legitimate investigation over many distinct files passes however long it
+/// runs, while tight churn fails fast — below the raw-count backstop. The
+/// trailing read-only run resets on any file-mutating call, so exploration
+/// *between* edits never trips it. `window == 0` disables.
+pub fn check_low_novelty_stall(
+    recent: &VecDeque<ToolCallSnapshot>,
+    window: usize,
+    distinct_floor: usize,
+) -> Option<HardFailSignal> {
+    measure_novelty(recent, window)
+        .filter(|m| m.distinct_targets <= distinct_floor)
+        .map(|m| HardFailSignal::LowNoveltyStall {
+            window: m.window,
+            distinct_targets: m.distinct_targets,
         })
-    } else {
-        None
-    }
 }
 
 /// Cumulative-output flood: the sum of the last `window` tool outputs exceeds
@@ -1089,6 +1109,44 @@ mod tests {
         }
         assert!(check_low_novelty_stall(&recent, 24, 6).is_some());
         assert!(check_read_only_stall(&recent, 60).is_none());
+    }
+
+    #[test]
+    fn measure_novelty_none_below_window() {
+        let mut recent = VecDeque::new();
+        for i in 0..5 {
+            recent.push_back(read("session.rs", i));
+        }
+        // 5 calls < 24 window → None
+        assert_eq!(measure_novelty(&recent, 24), None);
+    }
+
+    #[test]
+    fn measure_novelty_none_when_window_zero() {
+        let mut recent = VecDeque::new();
+        for i in 0..30 {
+            recent.push_back(read("session.rs", i));
+        }
+        // window == 0 disables
+        assert_eq!(measure_novelty(&recent, 0), None);
+    }
+
+    #[test]
+    fn measure_novelty_counts_distinct_targets() {
+        let mut recent = VecDeque::new();
+        // 24 read calls over 3 distinct files
+        for i in 0..8 {
+            recent.push_back(read("session.rs", i));
+        }
+        for i in 0..8 {
+            recent.push_back(read("agent.rs", i));
+        }
+        for i in 0..8 {
+            recent.push_back(read("config.rs", i));
+        }
+        let m = measure_novelty(&recent, 24).expect("should have measurement");
+        assert_eq!(m.window, 24);
+        assert_eq!(m.distinct_targets, 3);
     }
 
     #[test]

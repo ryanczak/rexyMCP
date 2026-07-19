@@ -61,6 +61,7 @@ impl ActivityFilter {
             SessionEvent::ReadEvicted { .. } => self.read_evicted,
             SessionEvent::ReadDeduped { .. } => self.read_deduped,
             SessionEvent::TaskUpdate { .. } => self.task_update,
+            SessionEvent::NoveltySample { .. } => self.metrics,
         }
     }
 

@@ -133,156 +133,166 @@ pub(crate) fn record_lines_with_lang(
     paired: bool,
 ) -> Vec<Line<'static>> {
     // (header_summary, header_color, bold, body_lines)
-    let (summary, color, bold, body): (String, Color, bool, Option<Vec<Line<'static>>>) =
-        match &rec.event {
-            SessionEvent::SessionStart { model, phase, .. } => (
-                format!("session start — phase {phase}, model {model}"),
-                Color::Cyan,
+    let (summary, color, bold, body): (String, Color, bool, Option<Vec<Line<'static>>>) = match &rec
+        .event
+    {
+        SessionEvent::SessionStart { model, phase, .. } => (
+            format!("session start — phase {phase}, model {model}"),
+            Color::Cyan,
+            false,
+            None,
+        ),
+        SessionEvent::Prompt { rendered } => (
+            format!("prompt ({} chars)", rendered.chars().count()),
+            Color::Rgb(200, 200, 200),
+            false,
+            Some(plain_body_lines(rendered, Color::Rgb(200, 200, 200))),
+        ),
+        SessionEvent::Completion { raw } => (
+            "completion:".to_string(),
+            Color::Reset,
+            false,
+            Some(completion_body_lines(raw)),
+        ),
+        SessionEvent::Parsed { tool_call } => {
+            let arg_lines = tool_arg_lines(&tool_call.name, &tool_call.arguments);
+            let body = if arg_lines.is_empty() {
+                None
+            } else {
+                Some(plain_body_lines(
+                    &arg_lines.join("\n"),
+                    Color::Rgb(128, 128, 128),
+                ))
+            };
+            (
+                format!("→ call {}", tool_call.name),
+                Color::Blue,
+                false,
+                body,
+            )
+        }
+        SessionEvent::ParseFailed { failure } => (
+            format!("parse failed: {}", preview(&failure.feedback)),
+            Color::Red,
+            false,
+            None,
+        ),
+        SessionEvent::ToolResult {
+            name,
+            succeeded,
+            output_preview,
+        } => {
+            let status = if *succeeded { "ok" } else { "FAIL" };
+            let color = if *succeeded { Color::Green } else { Color::Red };
+            let summary = if paired {
+                format!("╰ [{status}]")
+            } else {
+                format!("tool {name} [{status}]")
+            };
+            (
+                summary,
+                color,
+                false,
+                Some(match path_hint {
+                    Some(p) => highlighted_body_lines_for(output_preview, Some(p)),
+                    None => highlighted_body_lines(output_preview),
+                }),
+            )
+        }
+        SessionEvent::Verify { diagnostics } => {
+            let color = if diagnostics.is_empty() {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            (
+                format!("verify: {} diagnostic(s)", diagnostics.len()),
+                color,
                 false,
                 None,
-            ),
-            SessionEvent::Prompt { rendered } => (
-                format!("prompt ({} chars)", rendered.chars().count()),
-                Color::Rgb(200, 200, 200),
-                false,
-                Some(plain_body_lines(rendered, Color::Rgb(200, 200, 200))),
-            ),
-            SessionEvent::Completion { raw } => (
-                "completion:".to_string(),
-                Color::Reset,
-                false,
-                Some(completion_body_lines(raw)),
-            ),
-            SessionEvent::Parsed { tool_call } => {
-                let arg_lines = tool_arg_lines(&tool_call.name, &tool_call.arguments);
-                let body = if arg_lines.is_empty() {
-                    None
-                } else {
-                    Some(plain_body_lines(
-                        &arg_lines.join("\n"),
-                        Color::Rgb(128, 128, 128),
-                    ))
-                };
-                (
-                    format!("→ call {}", tool_call.name),
-                    Color::Blue,
-                    false,
-                    body,
-                )
-            }
-            SessionEvent::ParseFailed { failure } => (
-                format!("parse failed: {}", preview(&failure.feedback)),
-                Color::Red,
-                false,
-                None,
-            ),
-            SessionEvent::ToolResult {
-                name,
-                succeeded,
-                output_preview,
-            } => {
-                let status = if *succeeded { "ok" } else { "FAIL" };
-                let color = if *succeeded { Color::Green } else { Color::Red };
-                let summary = if paired {
-                    format!("╰ [{status}]")
-                } else {
-                    format!("tool {name} [{status}]")
-                };
-                (
-                    summary,
-                    color,
-                    false,
-                    Some(match path_hint {
-                        Some(p) => highlighted_body_lines_for(output_preview, Some(p)),
-                        None => highlighted_body_lines(output_preview),
-                    }),
-                )
-            }
-            SessionEvent::Verify { diagnostics } => {
-                let color = if diagnostics.is_empty() {
-                    Color::Green
-                } else {
-                    Color::Red
-                };
-                (
-                    format!("verify: {} diagnostic(s)", diagnostics.len()),
-                    color,
-                    false,
-                    None,
-                )
-            }
-            SessionEvent::HardFail { reason } => {
-                (format!("HARD FAIL: {reason}"), Color::Red, true, None)
-            }
-            SessionEvent::Progress { stage, .. } => (
-                format!("progress: {stage}"),
-                Color::Rgb(200, 200, 200),
-                false,
-                None,
-            ),
-            SessionEvent::SessionEnd { status, turns } => (
-                format!("session end — {status} ({turns} turns)"),
-                Color::Cyan,
-                false,
-                None,
-            ),
-            SessionEvent::Metrics {
-                input_tokens,
-                output_tokens,
-                ..
-            } => (
-                format!("metrics: {input_tokens} in / {output_tokens} out"),
-                Color::Rgb(200, 200, 200),
-                false,
-                None,
-            ),
-            SessionEvent::Compaction {
-                tokens_before,
-                tokens_after,
-                ..
-            } => (
-                format!("compaction: {tokens_before} → {tokens_after} tokens"),
-                Color::Magenta,
-                false,
-                None,
-            ),
-            SessionEvent::OutputFiltered {
-                tokens_before,
-                tokens_after,
-                filter,
-            } => (
-                format!("filtered ({filter}): {tokens_before} → {tokens_after} tokens"),
-                Color::Cyan,
-                false,
-                None,
-            ),
-            SessionEvent::ReadEvicted {
-                reads_evicted,
-                tokens_reclaimed,
-                ..
-            } => (
-                format!("evicted {reads_evicted} stale read(s): -{tokens_reclaimed} tokens"),
-                Color::Cyan,
-                false,
-                None,
-            ),
-            SessionEvent::ReadDeduped {
-                tokens_saved,
-                prior_turn,
-                ..
-            } => (
-                format!("deduped re-read (already read turn {prior_turn}): -{tokens_saved} tokens"),
-                Color::Cyan,
-                false,
-                None,
-            ),
-            SessionEvent::TaskUpdate { id, title, state } => (
-                format!("task {id} [{state:?}]: {title}"),
-                Color::Yellow,
-                false,
-                None,
-            ),
-        };
+            )
+        }
+        SessionEvent::HardFail { reason } => {
+            (format!("HARD FAIL: {reason}"), Color::Red, true, None)
+        }
+        SessionEvent::Progress { stage, .. } => (
+            format!("progress: {stage}"),
+            Color::Rgb(200, 200, 200),
+            false,
+            None,
+        ),
+        SessionEvent::SessionEnd { status, turns } => (
+            format!("session end — {status} ({turns} turns)"),
+            Color::Cyan,
+            false,
+            None,
+        ),
+        SessionEvent::Metrics {
+            input_tokens,
+            output_tokens,
+            ..
+        } => (
+            format!("metrics: {input_tokens} in / {output_tokens} out"),
+            Color::Rgb(200, 200, 200),
+            false,
+            None,
+        ),
+        SessionEvent::Compaction {
+            tokens_before,
+            tokens_after,
+            ..
+        } => (
+            format!("compaction: {tokens_before} → {tokens_after} tokens"),
+            Color::Magenta,
+            false,
+            None,
+        ),
+        SessionEvent::OutputFiltered {
+            tokens_before,
+            tokens_after,
+            filter,
+        } => (
+            format!("filtered ({filter}): {tokens_before} → {tokens_after} tokens"),
+            Color::Cyan,
+            false,
+            None,
+        ),
+        SessionEvent::ReadEvicted {
+            reads_evicted,
+            tokens_reclaimed,
+            ..
+        } => (
+            format!("evicted {reads_evicted} stale read(s): -{tokens_reclaimed} tokens"),
+            Color::Cyan,
+            false,
+            None,
+        ),
+        SessionEvent::ReadDeduped {
+            tokens_saved,
+            prior_turn,
+            ..
+        } => (
+            format!("deduped re-read (already read turn {prior_turn}): -{tokens_saved} tokens"),
+            Color::Cyan,
+            false,
+            None,
+        ),
+        SessionEvent::TaskUpdate { id, title, state } => (
+            format!("task {id} [{state:?}]: {title}"),
+            Color::Yellow,
+            false,
+            None,
+        ),
+        SessionEvent::NoveltySample {
+            window,
+            distinct_targets,
+        } => (
+            format!("novelty: {distinct_targets} distinct target(s) over {window} read-only calls"),
+            Color::Cyan,
+            false,
+            None,
+        ),
+    };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);
     let mut style = Style::new().fg(color);

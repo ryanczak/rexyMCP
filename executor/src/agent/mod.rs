@@ -216,6 +216,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut metrics = RunMetrics::started_at((deps.clock)());
     let loop_started_ms = (deps.clock)();
 
+    // M34: novelty sample dedup state — consecutive identical distinct_targets
+    // emit once; a measurement gap (run shorter than window) rearms.
+    let mut last_novelty_distinct: Option<usize> = None;
+
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
     // logging is a side effect that never changes what the loop returns). The
@@ -1284,6 +1288,29 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         // Step 7 — hard-fail detection (repetition / persistent verifier failure /
         // runaway output / oscillation / cumulative-output flood / no-progress
         // read-only stall). Checked before the turn cap so the specific cause wins.
+
+        // M34: emit novelty sample (deduped) before hard-fail evaluation.
+        match crate::governor::hard_fail::measure_novelty(
+            &recent_tool_calls,
+            deps.governor.novelty_window,
+        ) {
+            Some(m) if Some(m.distinct_targets) != last_novelty_distinct => {
+                log_event(
+                    &log_handle,
+                    &redactor,
+                    deps.clock,
+                    turns,
+                    SessionEvent::NoveltySample {
+                        window: m.window,
+                        distinct_targets: m.distinct_targets,
+                    },
+                );
+                last_novelty_distinct = Some(m.distinct_targets);
+            }
+            None => last_novelty_distinct = None,
+            _ => {}
+        }
+
         let hard_fail_signal = evaluate(
             &recent_tool_calls,
             &recent_verifier_error_counts,
