@@ -79,7 +79,7 @@ added ahead of the (now reduced-scope) briefing-quality phase, renumbered 07.
 | 02 | Refuse `git stash` self-revert (FR-1) ([phase-02-git-stash-self-revert-guard.md](phase-02-git-stash-self-revert-guard.md)) | done |
 | 03 | Low-novelty churn stall detector (issue #3) ([phase-03-low-novelty-stall.md](phase-03-low-novelty-stall.md)) | done |
 | 04 | Novelty-detector observability ([phase-04-novelty-detector-observability.md](phase-04-novelty-detector-observability.md)) | done |
-| 05 | Advisory-demotion of the novelty stall detector ([phase-05-advisory-demotion.md](phase-05-advisory-demotion.md)) | todo |
+| 05 | Advisory-demotion of the novelty stall detector ([phase-05-advisory-demotion.md](phase-05-advisory-demotion.md)) | done |
 | 06 | Threshold calibration & governor metrics overhaul ([phase-06-threshold-calibration-metrics.md](phase-06-threshold-calibration-metrics.md)) | planning |
 | 07 | Stall-fire briefing quality ([phase-07-stall-fire-briefing-quality.md](phase-07-stall-fire-briefing-quality.md)) | todo |
 

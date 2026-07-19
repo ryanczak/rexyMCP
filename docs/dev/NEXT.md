@@ -4,16 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M34 phase-05 — Advisory-demotion of the novelty stall detector
-(todo, drafted 2026-07-18).** phase-04 done 2026-07-18. **Dispatch caution: this
-phase disarms the novelty terminator, but the running `serve` binary still
-supervises with novelty=Terminate — dispatching it risks the same `LowNoveltyStall`
-takedown that killed phase-04's dispatch. Direct execution is the recommended
-routing** (see the phase doc's Notes). **M34 tail reshaped** (2026-07-18) by the
-advisory-until-calibrated decision: 05 advisory-demotion (drafted), 06 threshold
-calibration & metrics overhaul (planning/requirements stub, deferred — full spec
-with the user), 07 stall-fire briefing quality (renumbered from 05, reduced scope
-post-demotion).
+**Active phase: none — M34 mid-flight; phase-05 done 2026-07-19, next is
+phase-06 (metrics/back-test), which is a deferred design task needing a
+talk-through before drafting.** phase-04 done 2026-07-18.
+
+**M34 phase-05 — done (2026-07-19, approved_first_try; Claude Code direct).**
+Advisory-demotion of the novelty stall detector: `[governor] novelty_action`
+enum (`advisory` default / `terminate`) on `GovernorConfig` + `ModelOverride`
+(`#[serde(default)]` → old configs flip to advisory); the loop's
+`check_low_novelty_stall` branch now contributes to `hard_fail_signal` only in
+`Terminate` mode. The raw `NoProgressStall` (60) **stays terminating** as the
+backstop; phase-04's `NoveltySample` emit is the advisory record in both modes.
+`rexymcp init` template + 5 tests (mutation-resistant advisory/terminate pair).
+**Direct-executed** (the running serve governor still had novelty=Terminate, so a
+dispatch risked the same `LowNoveltyStall` takedown that killed phase-04's
+dispatch). All four gates green (517 mcp + 996 executor, 2 ignored); E2E: real
+`rexymcp init` writes `novelty_action = "advisory"`. So the novelty detector no
+longer kills productive runs by default; thresholds get set from data in phase-06.
+**M34 tail:** 06 threshold calibration & metrics overhaul (planning/requirements
+stub — deferred, full spec with the user), 07 stall-fire briefing quality
+(reduced scope post-demotion). Next-milestone go/no-go stays a human decision.
 
 **⚖️ Design decision (2026-07-18, with the user): advisory-until-calibrated
 governor detection.** The phase-04 dispatch hard_failed when the `LowNoveltyStall`

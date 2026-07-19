@@ -1,7 +1,7 @@
 # Phase 05: Advisory-demotion of the novelty stall detector
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** todo
+**Status:** done
 **Depends on:** phase-03 (`check_low_novelty_stall`), phase-04 (the `NoveltySample`
 stream that becomes the advisory record)
 **Estimated diff:** ~140 lines
@@ -292,6 +292,80 @@ threshold/terminator policy from data.
 
 ## Update Log
 
-(Filled in by the executor.)
-
 <!-- entries appended below this line -->
+
+### Update — 2026-07-19 (complete)
+
+**Summary:** `LowNoveltyStall` is now advisory-by-default. Added `NoveltyAction`
+(`advisory` default / `terminate`, serde `rename_all = "lowercase"`) + a
+`novelty_action` field on `GovernorConfig` (`#[serde(default)]` → old configs flip
+to advisory) + the `ModelOverride` field and its `apply` line; gated the
+`check_low_novelty_stall` branch in the turn cycle so it contributes to
+`hard_fail_signal` only in `Terminate` mode. The raw `NoProgressStall` branch and
+phase-04's `measure_novelty` emit are untouched — the `NoveltySample` stream is the
+advisory record in both modes. `rexymcp init` template gained the `novelty_action`
+line. No `architecture.md` change (detector-list wording folds at milestone close,
+per this doc).
+
+**Execution:** Claude Code (direct) — the routing the doc called for: the running
+`serve` binary still supervises with novelty=`Terminate`, so dispatching this fix
+risked the same `LowNoveltyStall` takedown that killed phase-04's dispatch.
+
+**Acceptance criteria:** all met.
+
+**Commands:**
+
+```
+cargo fmt --all --check          → FMT CLEAN
+cargo build                      → Finished, zero warnings
+cargo clippy --all-targets --all-features -- -D warnings → Finished, zero warnings
+cargo test                       → 517 passed (mcp); 996 passed, 2 ignored (executor)
+```
+
+**End-to-end verification:** the real `rexymcp init` binary writes the new default
+into a scaffolded config:
+
+```
+$ rexymcp init --dir <tmp> --force
+wrote rexymcp.toml (project id: …)
+$ grep novelty_action <tmp>/rexymcp.toml
+novelty_action = "advisory"       # "advisory" (default): log low-novelty churn but keep running; "terminate": hard-fail on it
+```
+
+and `Config::load` resolves a missing key to `Advisory`
+(`governor_config_without_novelty_action_key_loads_as_advisory`).
+
+**Files changed:**
+- `executor/src/config.rs` — `NoveltyAction` enum; `GovernorConfig.novelty_action`
+  (+ Default); `ModelOverride.novelty_action` (+ apply); 3 tests.
+- `executor/src/agent/mod.rs` — the terminating branch gated on `novelty_action`.
+- `executor/src/agent/tests.rs` — 2 loop integration tests + shared churn helper.
+- `mcp/src/init.rs` — `[governor] novelty_action` template line.
+- `mcp/src/runner.rs` — `novelty_action: None` on 2 `ModelOverride` test literals
+  (compile-forced; the struct enumerates all fields explicitly).
+
+**New tests:**
+- `governor_novelty_action_defaults_to_advisory`,
+  `governor_config_without_novelty_action_key_loads_as_advisory`,
+  `resolve_for_model_applies_novelty_action_terminate_override` in `config.rs`.
+- `low_novelty_churn_is_advisory_by_default` (→ `BudgetExceeded` + a sub-floor
+  `NoveltySample` present) and `low_novelty_churn_hard_fails_when_action_is_terminate`
+  (→ `HardFail(LowNoveltyStall)`) in `agent/tests.rs`. Mutation-resistant as a
+  pair: revert the gate and the advisory test hard-fails instead.
+
+**Notes for review:** the `[governor]` init template still lacks the
+`read_only_stall_threshold` / `novelty_window` / `novelty_distinct_floor` lines (a
+pre-existing gap from the FR-2/issue-#3 direct commits) — left untouched per the
+phase's Out-of-scope; only `novelty_action` was added. Candidate for a later
+template cleanup.
+
+### Review verdict — 2026-07-19
+
+- **Verdict:** approved_first_try (direct execution, self-reviewed; all four gates
+  green on independent run, mutation-resistant advisory/terminate test pair)
+- **Bounces:** none
+- **Executor:** Claude Code (direct)
+- **Scope deviations:** none (2 `ModelOverride` literal touches in `runner.rs` are
+  compile-forced, not scope widening)
+- **Calibration:** none — this is the corrective half of the advisory-until-calibrated
+  pivot; phase-06 (metrics/back-test) sets the thresholds from data next.
