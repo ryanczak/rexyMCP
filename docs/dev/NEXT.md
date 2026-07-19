@@ -4,6 +4,61 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
+**Active phase: M34 phase-04 — Novelty-detector observability (todo, drafted 2026-07-18).**
+
+**📌 M34 — Governor Stall Hardening opened (2026-07-18, with the user) to
+formalize direct-executed work.** After M33 closed, three governor-hardening
+fixes landed **directly** (Claude Code, outside the phase-doc queue), driven by
+GitHub issues + DaemonEye M4 field reports, and were never captured as a
+milestone — `architecture.md` § Status and NEXT.md were both stale re: this work.
+This milestone formalizes it and plans the two follow-ons. Decided with the user:
+retrospective + plan follow-on; milestone name **M34 — Governor Stall Hardening**;
+follow-on targets **novelty-detector observability** + **stall-fire briefing
+quality** (a "live downstream validation" and a dedicated novelty telemetry
+rollup were considered and deferred). Roadmap entry: `architecture.md` § Status
+#34. Milestone
+[README](milestones/M34-governor-stall-hardening/README.md) holds the design record.
+
+- **phase-01 — done (retrospective; executor Claude Code direct; commit
+  `2a405a7` + docs `dc1155d`).** `NoProgressStall` read-only stall detector (FR-2):
+  N consecutive non-mutating calls fire the stall; `[governor]
+  read_only_stall_threshold` (later demoted 20 → 60 by phase-03). Catches
+  verify-loops of *varied* read-only calls that `IdenticalToolCall`/`Oscillation`
+  miss (DaemonEye 05b/06 ran 529/167 turns to a human `rexymcp stop`).
+- **phase-02 — done (retrospective; executor Claude Code direct; commit
+  `a9399a0` + docs `dc1155d`).** `git stash` push refusal (FR-1): the M22
+  self-revert guard extended from per-path `checkout`/`restore` to the
+  whole-session `stash` form the per-path scan missed (push forms refused when the
+  session has edits; restore/inspect forms allowed). DaemonEye 01/03 wiped their
+  own work via `git stash`/`pop`.
+- **phase-03 — done (retrospective; executor Claude Code direct; commit
+  `1671754`).** `LowNoveltyStall` churn detector (issue #3): `normalize_target`
+  maps each read-only call to the file/scope it probes (line ranges / grep
+  patterns / bash digits stripped, keyed off M33's `tools::mutates_files`); fires
+  when a `novelty_window` (24) collapses to `<= novelty_distinct_floor` (6)
+  distinct targets. Novelty is the early catch; the raw threshold is the 60-turn
+  volume backstop. **Defaults 24/6 are untuned — the motivation for phase-04.**
+- **phase-04 — drafted (todo, the active/next executable phase).** Novelty-detector
+  observability: extract `measure_novelty` from `check_low_novelty_stall`
+  (behavior-preserving) and emit a `SessionEvent::NoveltySample { window,
+  distinct_targets }` (deduped on distinct-count change) each full-window
+  measurement, so the floor/window calibrate from real `executor_log_search
+  --event-type novelty_sample` distributions rather than guesses. **Cascade
+  pre-injected leaf-first:** the new variant forces arms in three exhaustive
+  matches (`log_query.rs event_type_str`, `dashboard/transcript.rs` render,
+  `dashboard/filter.rs allows()` → reuses the `metrics` toggle) + the mirrored
+  `agent/tests.rs` helper; `status.rs`/`telemetry.rs` have `_ =>` wildcards (no
+  arm). Routing note in the doc: governor-internal + `SessionEvent`-cascade both
+  argue for direct execution (as 01–03), but the leaf-first order is the
+  dispatch-safe countermeasure. **Dispatch via `/rexymcp:dispatch phase-04`** (or
+  direct-execute). Next-milestone go/no-go stays a human decision.
+- **phase-05 — planned stub (todo).** Stall-fire briefing quality: enrich the
+  escalation briefing so a fired `LowNoveltyStall`/`NoProgressStall` names the
+  churned targets, not just `signal.describe()`. Design fork (carry targets on the
+  signal vs. recompute in the briefing) recorded in the stub; **full spec drafted
+  on the next `/rexymcp:architect next`** after phase-04 is `done`, per the
+  draft-one-then-stop gate.
+
 **M33 — Governor Mutating-Tool Classifier Unification is closed** (2026-07-16;
 single phase, opened and closed the same day; **executor: Claude Code (direct)**).
 Fixes [issue #2](https://github.com/ryanczak/rexyMCP/issues/2): the router's

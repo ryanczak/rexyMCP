@@ -1232,6 +1232,27 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+34. **M34 — Governor Stall Hardening** *(in-progress; opened 2026-07-18 to
+    formalize direct-executed work)*. Close the small-model self-sabotage gaps a
+    downstream project (DaemonEye M4) surfaced, then make the fixes observable and
+    their briefings actionable. Three phases shipped **directly** ahead of the
+    milestone doc and are formalized here: **01** a `NoProgressStall` detector
+    (FR-2 — N consecutive read-only calls with no edit; `[governor]
+    read_only_stall_threshold`), for verify-loops of *varied* read-only calls that
+    `IdenticalToolCall`/`Oscillation` miss (DaemonEye 05b/06 ran 529/167 turns to a
+    human `rexymcp stop`); **02** a `git stash` push refusal (FR-1 — the M22
+    self-revert guard extended from per-path `checkout`/`restore` to the
+    whole-session `stash` form the per-path scan missed; DaemonEye 01/03 wiped
+    their own work); **03** a `LowNoveltyStall` churn detector (issue #3 —
+    normalize each read-only call to the file/scope it probes and fire when a
+    `novelty_window` collapses to `<= novelty_distinct_floor` distinct targets, so
+    wide exploration passes and tight re-probing fails fast; the raw threshold
+    demoted 20 → 60 to a pure-volume backstop; `normalize_target` reuses M33's
+    `tools::mutates_files`). Two follow-ons remain: **04** emit a `NoveltySample`
+    session-log event on each full-window measurement so `novelty_window`/
+    `novelty_distinct_floor` calibrate from real distributions (untuned defaults
+    24/6) rather than guesses; **05** enrich the escalation briefing so a fired
+    stall names the churned targets, not just the signal string.
 33. **M33 — Governor Mutating-Tool Classifier Unification** *(done 2026-07-16;
     opened the same day; executor Claude Code direct)*. Single-phase cleanup
     fixing [issue #2](https://github.com/ryanczak/rexyMCP/issues/2): the router's
