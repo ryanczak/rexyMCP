@@ -88,6 +88,7 @@ struct ReportRow {
     signal: String,
     model: String,
     outcome: String,
+    runs: usize,
     n: usize,
     p50: usize,
     p90: usize,
@@ -107,11 +108,11 @@ fn format_report(rows: &[ReportRow]) -> String {
             continue;
         }
         lines.push(format!("signal: {}", signal));
-        lines.push("MODEL  OUTCOME  N  P50  P90  P99".to_string());
+        lines.push("MODEL  OUTCOME  RUNS  N  P50  P90  P99".to_string());
         for row in signal_rows {
             lines.push(format!(
-                "{:<8} {:<10} {:>2}  {:>4}  {:>4}  {:>4}",
-                row.model, row.outcome, row.n, row.p50, row.p90, row.p99
+                "{:<8} {:<10} {:>4}  {:>4}  {:>4}  {:>4}  {:>4}",
+                row.model, row.outcome, row.runs, row.n, row.p50, row.p90, row.p99
             ));
         }
         lines.push("".to_string());
@@ -126,6 +127,13 @@ pub struct CalibrateGovernorArgs<'a> {
     pub novelty_window: usize,
     pub min_runs: usize,
     pub json: bool,
+}
+
+/// Accumulator for per-cell aggregation: tracks runs and samples separately.
+#[derive(Default)]
+struct CellAccum {
+    runs: usize,
+    samples: Vec<usize>,
 }
 
 /// Enumerate session logs, replay, aggregate, and return the rendered report.
@@ -165,26 +173,30 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
     // Extract signal samples and aggregate by (model, outcome)
     let mut rows: Vec<ReportRow> = Vec::new();
     for signal in SIGNALS {
-        // Aggregate: collect all samples per (model, outcome)
-        let mut by_model_outcome: HashMap<(String, String), Vec<usize>> = HashMap::new();
+        // Aggregate: collect per-cell data (runs + samples) per (model, outcome)
+        let mut by_model_outcome: HashMap<(String, String), CellAccum> = HashMap::new();
 
         for replay in &all_replays {
             let samples = signal.samples(&replay.tool_calls, novelty_window);
+            if samples.is_empty() {
+                continue;
+            }
             let key = (replay.model.clone(), replay.outcome.clone());
-            by_model_outcome.entry(key).or_default().extend(samples);
+            let cell = by_model_outcome.entry(key).or_default();
+            cell.runs += 1;
+            cell.samples.extend(samples);
         }
 
         // Global rows (all models, by outcome) — compute from by_model_outcome
-        let mut global_by_outcome: HashMap<String, Vec<usize>> = HashMap::new();
-        for ((_, outcome), samples) in &by_model_outcome {
-            global_by_outcome
-                .entry(outcome.clone())
-                .or_default()
-                .extend(samples);
+        let mut global_by_outcome: HashMap<String, CellAccum> = HashMap::new();
+        for ((_, outcome), cell) in &by_model_outcome {
+            let entry = global_by_outcome.entry(outcome.clone()).or_default();
+            entry.runs += cell.runs;
+            entry.samples.extend(&cell.samples);
         }
 
-        for (outcome, samples) in global_by_outcome {
-            let mut sorted = samples;
+        for (outcome, cell) in global_by_outcome {
+            let mut sorted = cell.samples;
             sorted.sort();
             let n = sorted.len();
             if n == 0 {
@@ -194,6 +206,7 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
                 signal: signal.label().to_string(),
                 model: "(all)".to_string(),
                 outcome,
+                runs: cell.runs,
                 n,
                 p50: percentile(&sorted, 0.5),
                 p90: percentile(&sorted, 0.9),
@@ -201,18 +214,19 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
             });
         }
 
-        // Per-model rows (filtered by min_runs)
-        for ((model, outcome), samples) in by_model_outcome {
-            let mut sorted = samples;
-            sorted.sort();
-            let n = sorted.len();
-            if n < min_runs {
+        // Per-model rows (filtered by min_runs on RUN count, not sample count)
+        for ((model, outcome), cell) in by_model_outcome {
+            if cell.runs < min_runs {
                 continue;
             }
+            let mut sorted = cell.samples;
+            sorted.sort();
+            let n = sorted.len();
             rows.push(ReportRow {
                 signal: signal.label().to_string(),
                 model,
                 outcome,
+                runs: cell.runs,
                 n,
                 p50: percentile(&sorted, 0.5),
                 p90: percentile(&sorted, 0.9),
@@ -441,6 +455,42 @@ mod tests {
         assert!(
             !out.contains("model_a") && !out.contains("model_b"),
             "per-model rows should be dropped: {out}"
+        );
+    }
+
+    #[test]
+    fn one_run_many_samples_dropped_by_min_runs() {
+        // A single run with enough calls to produce many novelty samples
+        // should be dropped by --min-runs 3 because it is only 1 run.
+        let tmp = TempDir::new().unwrap();
+        let calls: Vec<(String, serde_json::Value)> = (0..30)
+            .map(|i| {
+                (
+                    "read_file".into(),
+                    serde_json::json!({"path": format!("file{}.rs", i)}),
+                )
+            })
+            .collect();
+        make_session_file(tmp.path(), "big", "model_x", "complete", &calls);
+
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 5,
+            min_runs: 3,
+            json: false,
+        };
+        let out = run(&args);
+        // model_x has 1 run with many novelty samples — should be dropped from per-model
+        // but its samples should still feed the (all) global row
+        assert!(
+            !out.contains("model_x"),
+            "model_x should be dropped (1 run < min_runs=3): {out}"
+        );
+        // The global row should still exist (samples from model_x feed it)
+        assert!(
+            out.contains("(all)"),
+            "global row should include model_x samples: {out}"
         );
     }
 
