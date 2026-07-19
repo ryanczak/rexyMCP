@@ -2,9 +2,11 @@
 
 **Goal:** Close the small-model self-sabotage gaps a downstream project
 (DaemonEye M4) surfaced — verify-loops that evade the governor and whole-session
-self-reverts — by adding novelty-aware stall detection and a git-stash guard,
-then make the new novelty detector *observable* and its escalation briefings
-*actionable*.
+self-reverts — by adding novelty-aware stall detection and a git-stash guard;
+then, having watched the new detector misfire on a productive run, pivot to
+**advisory-until-calibrated** detection: make the novelty measurement
+*observable*, demote the detector to *advisory-by-default* (thresholds must be
+data-backed, not guessed), and set the thresholds from a back-test of real runs.
 
 **Status:** in-progress
 
@@ -42,13 +44,25 @@ targets were churned.
 - A bare `git stash` push is refused when the executor has edited files this
   session; restore/inspect forms stay allowed (Phase 02 — **met**).
 - The novelty detector's per-run measurements are emitted to the session log and
-  readable via the existing log-query tools, so `novelty_window` /
-  `novelty_distinct_floor` can be calibrated from real distributions rather than
-  guessed (Phase 04 — **todo**).
-- When a stall fires, the escalation briefing names the churned targets / the
-  read-only run, so the architect's escalation is actionable and not just the
-  bare signal string (Phase 05 — **todo**).
+  readable via the existing log-query tools (Phase 04 — **met**).
+- The novelty detector is **advisory-by-default** (`[governor] novelty_action`),
+  so an un-calibrated threshold cannot terminate a run the turn budget would still
+  fund; the raw `NoProgressStall` stays as the terminating backstop (Phase 05 —
+  **todo**).
+- Thresholds are set from a back-test of the real session-log corpus, not
+  guessed — the metrics/calibration deliverable (Phase 06 — **planning**).
+- *(Reduced scope, sequenced last)* if any detector still terminates, its
+  escalation briefing names the churned targets (Phase 07 — **todo**).
 - All four gates green.
+
+**The advisory-until-calibrated pivot (2026-07-18).** Phases 01–04 shipped the
+detectors + observability. Phase-04's own dispatch then hard-failed when the
+`LowNoveltyStall` detector fired on its own author at **turn 104 of a 600-turn
+budget (82% unused)** — a data-free early-kill pre-empting a productive run, which
+is contrary to rexyMCP's ethos. Decided with the user: detection becomes
+**advisory until thresholds are data-backed**. This reshaped the tail — Phase 05
+(advisory-demotion) and Phase 06 (calibration back-test / metrics overhaul) were
+added ahead of the (now reduced-scope) briefing-quality phase, renumbered 07.
 
 ## Architecture references
 
@@ -65,7 +79,9 @@ targets were churned.
 | 02 | Refuse `git stash` self-revert (FR-1) ([phase-02-git-stash-self-revert-guard.md](phase-02-git-stash-self-revert-guard.md)) | done |
 | 03 | Low-novelty churn stall detector (issue #3) ([phase-03-low-novelty-stall.md](phase-03-low-novelty-stall.md)) | done |
 | 04 | Novelty-detector observability ([phase-04-novelty-detector-observability.md](phase-04-novelty-detector-observability.md)) | done |
-| 05 | Stall-fire briefing quality ([phase-05-stall-fire-briefing-quality.md](phase-05-stall-fire-briefing-quality.md)) | todo |
+| 05 | Advisory-demotion of the novelty stall detector ([phase-05-advisory-demotion.md](phase-05-advisory-demotion.md)) | todo |
+| 06 | Threshold calibration & governor metrics overhaul ([phase-06-threshold-calibration-metrics.md](phase-06-threshold-calibration-metrics.md)) | planning |
+| 07 | Stall-fire briefing quality ([phase-07-stall-fire-briefing-quality.md](phase-07-stall-fire-briefing-quality.md)) | todo |
 
 ## Notes
 

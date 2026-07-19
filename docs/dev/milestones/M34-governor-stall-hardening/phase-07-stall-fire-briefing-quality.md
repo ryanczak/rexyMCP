@@ -1,17 +1,22 @@
-# Phase 05: Stall-fire briefing quality
+# Phase 07: Stall-fire briefing quality
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** todo (planned — full spec drafted on the next `/rexymcp:architect next`)
-**Depends on:** phase-03 (the `LowNoveltyStall` signal), phase-04 (the
-`measure_novelty`/target-normalization surface it can reuse)
+**Status:** todo (planned — full spec drafted on a later `/rexymcp:architect next`)
+**Depends on:** phase-03 (the stall signals), phase-05 (advisory-demotion, which
+narrows this phase's scope — see below)
 **Estimated diff:** ~120 lines (estimate — firmed at drafting)
 **Tags:** language=rust, kind=feature, size=m
 
-> **Planned stub.** This records the design intent so the M34 phase table link
-> resolves and the boundaries are fixed. It is **not yet a dispatch-ready spec** —
-> the architect fleshes out the pre-injection (worked code, exact render, test
-> names) when the user runs `/rexymcp:architect next` after phase-04 is `done`,
-> per the draft-one-then-stop gate.
+> **Planned stub.** Records the design intent so the phase-table link resolves and
+> the boundaries are fixed. Not yet a dispatch-ready spec.
+>
+> **Scope narrowed by phase-05 (advisory-demotion).** Once `LowNoveltyStall` is
+> advisory-by-default it no longer terminates, so "make the *fired* stall briefing
+> actionable" now applies only to (a) the still-terminating raw `NoProgressStall`
+> backstop and (b) any detector explicitly configured back to `Terminate`. This
+> phase is deliberately sequenced **after** demotion (05) and the metrics/calibration
+> work (06) so its final scope reflects which detectors still terminate. Revisit
+> whether it's still worth doing once 05/06 land.
 
 ## Goal
 
