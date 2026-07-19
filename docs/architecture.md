@@ -1232,6 +1232,37 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+35. **M35 — Metrics & Cost Accounting Overhaul** *(in progress; opened
+    2026-07-19)*. The queued post-M34 metrics & reporting deep-dive: unify the
+    LLM-performance and token/cost accounting stories into one coherent,
+    discoverable CLI surface. The code audit found the recording side healthy
+    but the derivation/presentation layer fragmented: per-run `TokenBreakdown`
+    (incl. cache buckets) recorded but displayed nowhere; executor cost
+    hardcoded $0.00 in the dashboard; quality (scorecard) and cost (Budget
+    panel) never joined; "tokens reclaimed" hand-summed in four places;
+    `verifier_retries`/`repairs_per_call`/`wall_clock_s`/`bugs_filed`/
+    `warnings` computed but never rendered; the model×tag scorecard MCP-only.
+    Four design forks resolved with the user: (1) local models get
+    **configurable $/Mtok rates** (unpriced ⇒ $0), making executor cost math
+    uniform with architect billing; (2) a new **`rexymcp costs`** command is
+    the primary cost surface (Baseline/Executor/Architect/Net ×
+    Session/Milestone/Project), with the dashboard Budget panel re-rendered
+    from the same core plus a `b`-key tokens ⇄ $ toggle; (3) M34's deferred
+    reporting debt (oscillation wrong-tail percentiles,
+    `ToolResult.output_bytes` for output-flood calibration,
+    calibrate-governor surface alignment) folds in; (4) telemetry becomes
+    **on-by-default** at an XDG data dir with an explicit `schema_version`
+    stamped at the write boundary and version-gated readers — backward
+    compatibility deliberately waived (pre-M35 records go dark; session-log
+    corpus unaffected). Supersedes this doc's "`None` disables telemetry"
+    config note and the Budget panel's executor-$0 caveat as phases land.
+    Seven phases: 01 telemetry store foundation (versioned schema, default-on
+    XDG dir, legacy-deserializer + `doc_level` removal); 02 capture gaps
+    (tok/s, `output_bytes`); 03 shared metrics/cost core + `[models]` pricing;
+    04 `runs` columns + `runs show <id>` drill-down; 05 unified
+    `scorecard --by model|tag|settings` + profile tokens/cost-per-approved-
+    phase; 06 `rexymcp costs` + dashboard rewire; 07 reporting debt +
+    discoverability pass.
 34. **M34 — Governor Stall Hardening** *(done 2026-07-19; opened 2026-07-18 to
     formalize direct-executed work)*. Close the small-model self-sabotage gaps a
     downstream project (DaemonEye M4) surfaced, then make the fixes observable and

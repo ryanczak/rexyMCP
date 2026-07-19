@@ -4,12 +4,24 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none — M34 closed 2026-07-19 (7 phases 01–06b done; phase-07
-descoped at close). Next-milestone go/no-go is a human decision.** The user's
-planned **metrics & reporting deep-dive** is the queued follow-up (see
-[[post-06b-metrics-reporting-deepdive]]) — a fresh design pass, not an M34 phase.
-phase-06b done 2026-07-19; phase-06a done 2026-07-19; phase-05 done 2026-07-19;
-phase-04 done 2026-07-18.
+**Active phase:
+[M35 phase-01 — Telemetry store foundation](milestones/M35-metrics-cost-accounting/phase-01-telemetry-store-foundation.md)
+(status: todo — drafted 2026-07-19, awaiting `/rexymcp:dispatch`).**
+
+**M35 — Metrics & Cost Accounting Overhaul opened 2026-07-19** — the queued
+post-M34 metrics & reporting deep-dive, designed with the user (four forks
+resolved: per-model $/Mtok local pricing; a new `rexymcp costs` command +
+dashboard `b`-key tokens ⇄ $ toggle; M34's deferred reporting debt folded in;
+telemetry default-on with a versioned schema, back-compat waived). Seven
+phases planned; 02–07 are titles-only until drafted on demand. See the
+[M35 README](milestones/M35-metrics-cost-accounting/README.md) and
+`architecture.md` § Status #35.
+
+phase-01 drafted 2026-07-19: schema_version stamped at the write boundary
+(NOT a struct field — ~30 `PhaseRun` literals would break; additive JSON
+overlay in `append`), version-gated readers, `[telemetry] enabled` +
+XDG default dir resolved in `Config::load` only, legacy `TokenBreakdown`
+visitor deleted, `doc_level` dropped.
 
 **M34 — Governor Stall Hardening is closed** (2026-07-19). Retrospective in the
 [M34 README](milestones/M34-governor-stall-hardening/README.md#retrospective--2026-07-19);
