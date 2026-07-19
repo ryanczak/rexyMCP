@@ -1,7 +1,7 @@
 # Phase 06b: Extend calibration to the remaining governor detectors
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** in-progress (bounced — see bug-06b-1)
+**Status:** review
 **Depends on:** phase-06a (the replay/aggregate/report framework + `Signal` seam)
 **Estimated diff:** ~280 lines
 **Tags:** language=rust, kind=feature, size=l
@@ -471,3 +471,100 @@ extractor logic — it is correct as shipped; this bounce is purely the missing
 coverage. See the bug for the exact per-test pins (incl. the negative/boundary
 cases). The bug's Notes flag a p50/p90/p99-vs-min-signal reporting observation
 that is **out of scope** here — it belongs to the deferred metrics pass.
+### Update — ts=1784498880439 (complete, server-authored)
+
+**Summary:** All gates pass. Here's the summary:
+
+**Summary:** Added 10 unit tests for the four 06b signal extractors that shipped without test coverage (bug-06b-1). Tests cover `IdenticalRun` (longest consecutive identical calls, including the must-NOT case proving it resets on a differing call, not counting total), `OscillationMinDistinct` (no sample below window size, and correct min-distinct over a tight A,B,A,B window), `VerifierPersistenceRun` (non-decreasing positive streak semantics, reset on decrease, no sample without Verify events), and `EmptyCompletionRun` (consecutive blank counting, think-only counts as empty). Also includes an E2E report integration test that builds a fixture with Verify and Completion events and asserts all four new signal labels appear in the output. The `remaining_signals_appear_in_report` test uses `make_session_file` for base events and appends `SessionRecord` for Verify/Completion to the same JSONL.
+
+**Notes for review:** All 19 calibrate_governor tests pass (9 existing + 10 new). Build, clippy, fmt, and full test suite all green.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+ds ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 996 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `mcp/src/calibrate_governor.rs` — +258 -0
+
+**Commit:** f54edc9e966f4c2c4fb8ed6168b58a603fe8d38e
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
