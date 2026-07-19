@@ -679,4 +679,262 @@ mod tests {
             "expected no samples for short sequence: {samples:?}"
         );
     }
+
+    // --- Tests for the four new signal extractors (06b) ---
+
+    /// Helper: create a RunReplay with Verify and Completion events.
+    fn make_replay_with_verify_and_completion(
+        tool_calls: Vec<ToolCallSnapshot>,
+        verifier_error_counts: Vec<usize>,
+        completion_empty: Vec<bool>,
+    ) -> RunReplay {
+        RunReplay {
+            model: "test".into(),
+            outcome: "complete".into(),
+            tool_calls,
+            verifier_error_counts,
+            completion_empty,
+        }
+    }
+
+    #[test]
+    fn identical_run_counts_longest_consecutive_identical() {
+        // Sequence: read a, read a, read b, read b, read b -> longest run = 3 (the b's)
+        let calls = vec![
+            ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "a.rs"}),
+                succeeded: true,
+            },
+            ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "a.rs"}),
+                succeeded: true,
+            },
+            ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "b.rs"}),
+                succeeded: true,
+            },
+            ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "b.rs"}),
+                succeeded: true,
+            },
+            ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "b.rs"}),
+                succeeded: true,
+            },
+        ];
+        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new());
+        let samples = Signal::IdenticalRun.samples(&run, 24);
+        assert_eq!(samples, vec![3], "expected longest run of 3: {samples:?}");
+    }
+
+    #[test]
+    fn identical_run_returns_no_sample_for_empty_calls() {
+        let run = make_replay_with_verify_and_completion(Vec::new(), Vec::new(), Vec::new());
+        let samples = Signal::IdenticalRun.samples(&run, 24);
+        assert!(
+            samples.is_empty(),
+            "expected no sample for empty calls: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn oscillation_min_distinct_no_sample_below_window() {
+        // A run shorter than OSCILLATION_WINDOW (8) -> no sample
+        let calls = vec![
+            ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "a.rs"}),
+                succeeded: true,
+            },
+            ToolCallSnapshot {
+                tool: "patch".into(),
+                arguments: serde_json::json!({"path": "a.rs"}),
+                succeeded: true,
+            },
+        ];
+        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new());
+        let samples = Signal::OscillationMinDistinct.samples(&run, 24);
+        assert!(
+            samples.is_empty(),
+            "expected no sample for 2 calls < OSCILLATION_WINDOW=8: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn oscillation_min_distinct_finds_tightest_window() {
+        // Build a sequence with an A,B,A,B stretch inside a longer varied run.
+        // We need at least OSCILLATION_WINDOW calls.
+        // Calls: A,B,A,B,A,B,A,B (8 calls, 2 distinct per window)
+        let a = serde_json::json!({"path": "a.rs"});
+        let b = serde_json::json!({"path": "b.rs"});
+        let calls: Vec<ToolCallSnapshot> = (0..8)
+            .map(|i| {
+                let (tool, args) = if i % 2 == 0 {
+                    ("read_file".into(), a.clone())
+                } else {
+                    ("patch".into(), b.clone())
+                };
+                ToolCallSnapshot {
+                    tool,
+                    arguments: args,
+                    succeeded: true,
+                }
+            })
+            .collect();
+        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new());
+        let samples = Signal::OscillationMinDistinct.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![2],
+            "expected min distinct of 2 for A,B,A,B,A,B,A,B: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_persistence_run_matches_detector_semantics() {
+        // Counts [1, 2, 2, 0, 3] -> longest non-decreasing positive streak = 3 (the 1,2,2)
+        let run =
+            make_replay_with_verify_and_completion(Vec::new(), vec![1, 2, 2, 0, 3], Vec::new());
+        let samples = Signal::VerifierPersistenceRun.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![3],
+            "expected longest non-decreasing positive streak of 3: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_persistence_reset_on_decrease() {
+        // Counts [2, 1] -> positive but decreased -> streak resets to 1, not 2
+        let run = make_replay_with_verify_and_completion(Vec::new(), vec![2, 1], Vec::new());
+        let samples = Signal::VerifierPersistenceRun.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![1],
+            "expected streak of 1 for [2, 1] (decrease resets): {samples:?}"
+        );
+    }
+
+    #[test]
+    fn verifier_persistence_no_sample_without_verify_events() {
+        // A run with no Verify events -> no sample
+        let run = make_replay_with_verify_and_completion(
+            vec![ToolCallSnapshot {
+                tool: "read_file".into(),
+                arguments: serde_json::json!({"path": "a.rs"}),
+                succeeded: true,
+            }],
+            Vec::new(),
+            Vec::new(),
+        );
+        let samples = Signal::VerifierPersistenceRun.samples(&run, 24);
+        assert!(
+            samples.is_empty(),
+            "expected no sample without Verify events: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn empty_completion_run_counts_consecutive_blanks() {
+        // Completions ["hi", "", "", "x"] -> longest empty run = 2
+        let run = make_replay_with_verify_and_completion(
+            Vec::new(),
+            Vec::new(),
+            vec![false, true, true, false],
+        );
+        let samples = Signal::EmptyCompletionRun.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![2],
+            "expected longest empty run of 2: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn empty_completion_run_think_only_counts_as_empty() {
+        // A think-only completion should count as empty (strip_think_blocks removes it)
+        let run = make_replay_with_verify_and_completion(Vec::new(), Vec::new(), vec![true]);
+        let samples = Signal::EmptyCompletionRun.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![1],
+            "expected longest empty run of 1 for single think-only: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn remaining_signals_appear_in_report() {
+        // E2E-style: run() over a fixture dir asserts the four new signal labels are present.
+        // Use make_session_file for the base events, then append Verify and Completion
+        // events to the same JSONL file.
+        let tmp = TempDir::new().unwrap();
+        // Create a session with 8 identical calls (triggers identical_run + meets OSCILLATION_WINDOW)
+        let calls: Vec<(String, serde_json::Value)> = (0..8)
+            .map(|_| ("read_file".into(), serde_json::json!({"path": "a.rs"})))
+            .collect();
+        make_session_file(tmp.path(), "e2e", "llama-3", "complete", &calls);
+
+        // Now append Verify and Completion events to the same JSONL file
+        let log_path = tmp.path().join("session-e2e.jsonl");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log_path)
+            .unwrap();
+        // Verify event with empty diagnostics
+        let verify_record = SessionRecord {
+            ts: 1000,
+            turn: 1,
+            event: SessionEvent::Verify {
+                diagnostics: vec![],
+            },
+        };
+        writeln!(file, "{}", serde_json::to_string(&verify_record).unwrap()).unwrap();
+        // Completion event with non-empty raw
+        let completion_record = SessionRecord {
+            ts: 2000,
+            turn: 1,
+            event: SessionEvent::Completion {
+                raw: "hello".into(),
+            },
+        };
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&completion_record).unwrap()
+        )
+        .unwrap();
+        drop(file);
+
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: false,
+        };
+        let out = run(&args);
+
+        // All four new signals should appear in the report
+        assert!(
+            out.contains("identical_run"),
+            "report should contain identical_run: {out}"
+        );
+        assert!(
+            out.contains("oscillation_min_distinct"),
+            "report should contain oscillation_min_distinct: {out}"
+        );
+        assert!(
+            out.contains("verifier_persistence_run"),
+            "report should contain verifier_persistence_run: {out}"
+        );
+        assert!(
+            out.contains("empty_completion_run"),
+            "report should contain empty_completion_run: {out}"
+        );
+    }
 }
