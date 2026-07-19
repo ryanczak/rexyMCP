@@ -1,66 +1,357 @@
 # Phase 06b: Extend calibration to the remaining governor detectors
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** todo (planned — drafted after 06a lands)
+**Status:** todo
 **Depends on:** phase-06a (the replay/aggregate/report framework + `Signal` seam)
-**Estimated diff:** ~250 lines (estimate — firmed at drafting)
-**Tags:** language=rust, kind=feature, size=m
-
-> **Planned stub.** Completes the governor-**wide** scope the user chose: extend
-> 06a's `calibrate-governor` framework to every remaining detector so *all*
-> thresholds are backed by corpus data. Drafted once 06a's `Signal` seam exists to
-> extend against.
+**Estimated diff:** ~280 lines
+**Tags:** language=rust, kind=feature, size=l
 
 ## Goal
 
-Add the remaining detectors' signals to the `Signal` enum + `SIGNALS` list from
-06a, each re-derived from the replayed event stream and reported per-model with
-the same outcome-labeled p50/p90/p99 + N. No framework changes — additive
-variants only.
+Complete the governor-wide calibration goal: extend 06a's `calibrate-governor`
+framework with the remaining detectors' raw signals, so every reachable governor
+threshold is backed by corpus distributions. Four detectors are recoverable from
+the session log and are **in scope**; one (`output-flood`) is **not recoverable**
+from what the log records and is documented as a gap. Additive — 06a's replay /
+aggregation / report framework is unchanged except for two new `RunReplay` fields
+and four new `Signal` variants.
 
-## Signals to add (re-derive via the existing detector primitives)
+## Architecture references
 
-Each must go through the live `hard_fail` primitive where one exists (no
-re-implementation — same anti-drift pin as 06a's novelty signal):
+Read before starting:
 
-- **identical-repetition** — longest run of consecutive byte-identical `(tool,
-  arguments)` calls (vs `identical_call_threshold`, default 6).
-- **oscillation** — min distinct `(tool, arguments)` over the sliding
-  `oscillation_window` (vs `oscillation_distinct_max`, default 2). Needs the
-  `Verify`/tool stream; reuse `check_oscillation`'s window logic.
-- **verifier-persistence** — longest run of consecutive non-decreasing
-  author-attributed verifier-error turns (from `Verify { diagnostics }` events,
-  vs `verifier_persistence_threshold`, default 6). **Requires** pairing the
-  `Verify` event stream into per-turn error counts — 06a only reconstructed
-  `Parsed` tool calls, so this signal adds `Verify` extraction to `replay`.
-- **empty-completion** — longest run of consecutive empty/think-only completions
-  (needs `Completion { raw }` inspection or a dedicated marker — confirm what the
-  log carries; the loop counts these internally).
-- **output-flood** — distribution of single-call output bytes (`runaway_output_bytes`,
-  100 KB) and windowed-sum bytes (`output_window_bytes`, 256 KB). Output byte
-  counts are not directly in the log's `ToolResult { output_preview }` (preview is
-  truncated) — **open question:** does the corpus carry enough to re-derive this,
-  or is it out of reach without a new logged field? Resolve at drafting; if
-  unreachable, document the gap rather than approximate.
+- `docs/architecture.md` § "Model effectiveness metrics & the scorecard" and
+  § Status #34.
+- `docs/dev/milestones/M34-governor-stall-hardening/phase-06a-calibration-framework-and-stall-signals.md`
+  — the framework this extends (the `Signal` seam, `CellAccum` runs/samples split,
+  `percentile`, report). **Read the whole 06a doc + the shipped
+  `mcp/src/calibrate_governor.rs` first.**
 
-## Open questions to resolve at drafting
+## Pre-flight
 
-1. **Verify/Completion extraction.** 06a's `replay` only collected `Parsed`. This
-   phase extends it to `Verify` (per-turn error counts) and possibly `Completion`.
-   Confirm the events carry what each signal needs before speccing.
-2. **Output-flood reachability.** `output_preview` is truncated in the log; the
-   real byte counts may not be recoverable. Decide: re-derive if present, else
-   document as needing a new logged field (a separate, later change).
-3. **Live advisory marker (carried from 06a).** Whether to add a queryable
-   "advisory fired" `SessionEvent` for live dashboard visibility — its own
-   leaf-first cascade (per phase-04). Fold in here or leave to a separate phase.
+1. Read `docs/dev/STANDARDS.md` top to bottom.
+2. Read the architecture references + the shipped `mcp/src/calibrate_governor.rs`.
+3. Read this entire phase doc before touching any code.
+4. Confirm the repo is on a clean branch with no uncommitted changes.
+
+## Recoverability (fixed — verified against the log by the architect)
+
+Each governor threshold and whether its raw signal can be re-derived from the
+session log, and from which event:
+
+| Detector | Threshold knob | Raw signal (per run) | Recoverable? | Source event |
+|---|---|---|---|---|
+| identical-repetition | `identical_call_threshold` | longest run of consecutive identical `(tool, arguments)` | **yes** | `Parsed` |
+| oscillation | `oscillation_distinct_max` | min distinct `(tool, arguments)` over a sliding `oscillation_window` | **yes** | `Parsed` |
+| verifier-persistence | `verifier_persistence_threshold` | longest consecutive non-decreasing all-positive author-error streak | **yes** | `Verify` |
+| empty-completion | `empty_completion_threshold` | longest run of consecutive empty completions | **partial** | `Completion` |
+| output-flood | `output_window_bytes` / `runaway_output_bytes` | single-call + windowed output bytes | **no** | — |
+
+- **verifier-persistence is fully recoverable:** the loop logs the *author-attributed*
+  diagnostics on each `Verify` event (`executor/src/agent/mod.rs:1266` —
+  `SessionEvent::Verify { diagnostics: author.clone() }`), and pushes `author.len()`
+  into the counter it feeds the detector (line 1269). So `Verify.diagnostics.len()`
+  per event **is** the per-turn error count.
+- **empty-completion is partial:** the loop increments its counter on `truncated ||
+  post_think.trim().is_empty()` (`agent/mod.rs:641`). The `Completion { raw }` event
+  lets us re-derive the `strip_think_blocks(raw).trim().is_empty()` half, but the
+  **truncation** half (`finish_reason == length`) is not logged, so the back-test
+  *under-counts* truncation-driven empties. Document this in the code + report; it
+  is still a useful lower bound.
+- **output-flood is out of reach:** `ToolResult` logs a truncated `output_preview`
+  (`agent/mod.rs:1100` — `output_preview(&content)`), not `content.len()`. The real
+  byte counts the detector compares against are gone. See Out of scope.
+
+## Current state (the 06a seam to extend)
+
+`mcp/src/calibrate_governor.rs` (shipped in 06a):
+
+- `struct RunReplay { model, outcome, tool_calls: Vec<ToolCallSnapshot> }` +
+  `fn replay(records) -> RunReplay` (walks records; collects `Parsed` into
+  `tool_calls`).
+- `enum Signal { NoveltyDistinct, MaxReadOnlyRun }` with
+  `fn label(self) -> &'static str` and
+  `fn samples(self, calls: &[ToolCallSnapshot], novelty_window: usize) -> Vec<usize>`,
+  plus `const SIGNALS: &[Signal]`.
+- The aggregation loop (`CellAccum { runs, samples }`, `--min-runs` on runs, `RUNS`
+  column) and `percentile` — **unchanged by this phase**.
+
+Public primitives available: `rexymcp_executor::parser::strip_think_blocks(&str)
+-> String`; `SessionEvent::Verify { diagnostics }` and `SessionEvent::Completion {
+raw }`.
+
+## Spec
+
+Additive. Build leaf-first (Task 6): extend the replay state first (compiles),
+change the `samples` signature (compiles once callers updated), then add variants.
+
+### 1. Extend `RunReplay` + `replay()` to collect verifier + completion data
+
+Add two fields to `RunReplay`:
+
+```rust
+struct RunReplay {
+    model: String,
+    outcome: String,
+    tool_calls: Vec<ToolCallSnapshot>,
+    /// Author-attributed verifier error count per `Verify` event, in order.
+    verifier_error_counts: Vec<usize>,
+    /// Per `Completion` event: whether it was blank/think-only. NOTE: this misses
+    /// truncation-driven empties (`finish_reason == length` is not logged), so it
+    /// is a lower bound on the loop's empty-completion counter.
+    completion_empty: Vec<bool>,
+}
+```
+
+Extend the `replay()` match (new arms; keep the existing ones):
+
+```rust
+SessionEvent::Verify { diagnostics } => verifier_error_counts.push(diagnostics.len()),
+SessionEvent::Completion { raw } => {
+    completion_empty.push(
+        rexymcp_executor::parser::strip_think_blocks(raw).trim().is_empty(),
+    );
+}
+```
+
+### 2. Change the `Signal::samples` signature to take the whole `RunReplay`
+
+The new signals need `verifier_error_counts` / `completion_empty`, not just
+`tool_calls`. Change the seam:
+
+```rust
+fn samples(self, run: &RunReplay, novelty_window: usize) -> Vec<usize>
+```
+
+Update 06a's two existing arms to read `run.tool_calls` (behavior unchanged), and
+update the one call site in the aggregation loop from
+`signal.samples(&replay.tool_calls, novelty_window)` to `signal.samples(replay,
+novelty_window)`.
+
+### 3. Add the four new `Signal` variants + extractors
+
+Extend the enum, `label()`, `samples()`, and `SIGNALS`. Each raw quantity **mirrors
+the detector's semantics** (cited); each is one sample per run (like
+`MaxReadOnlyRun`). Return `vec![]` (not `vec![0]`) when a run carries no data for
+that signal, so the `samples.is_empty()` guard drops it from the run count (the
+bug-06a-1 lesson).
+
+```rust
+// label():
+Signal::IdenticalRun => "identical_run",
+Signal::OscillationMinDistinct => "oscillation_min_distinct",
+Signal::VerifierPersistenceRun => "verifier_persistence_run",
+Signal::EmptyCompletionRun => "empty_completion_run",
+```
+
+**identical-repetition** — longest run of consecutive identical `(tool, arguments)`
+(mirrors `check_identical_repetition`: `c.tool == first.tool && c.arguments ==
+first.arguments`, `executor/src/governor/hard_fail.rs:147`):
+
+```rust
+Signal::IdenticalRun => {
+    let mut max = 0usize;
+    let mut run = 0usize;
+    let mut prev: Option<&ToolCallSnapshot> = None;
+    for c in &run_.tool_calls {
+        let same = prev.is_some_and(|p| p.tool == c.tool && p.arguments == c.arguments);
+        run = if same { run + 1 } else { 1 };
+        max = max.max(run);
+        prev = Some(c);
+    }
+    if run_.tool_calls.is_empty() { vec![] } else { vec![max] }
+}
+```
+
+**oscillation** — min distinct `(tool, arguments)` over any sliding window of
+`OSCILLATION_WINDOW` (define `const OSCILLATION_WINDOW: usize = 8;` — the
+`GovernorConfig` default; a lower min ⇒ more oscillatory). Mirrors
+`check_oscillation` (`hard_fail.rs:238`, distinct `(tool, &arguments)` over the
+window). A run shorter than the window yields no sample:
+
+```rust
+Signal::OscillationMinDistinct => {
+    let calls = &run_.tool_calls;
+    if calls.len() < OSCILLATION_WINDOW {
+        return vec![];
+    }
+    let mut min = usize::MAX;
+    for start in 0..=calls.len() - OSCILLATION_WINDOW {
+        let window = &calls[start..start + OSCILLATION_WINDOW];
+        let mut distinct: Vec<(&str, &serde_json::Value)> = Vec::new();
+        for c in window {
+            let key = (c.tool.as_str(), &c.arguments);
+            if !distinct.iter().any(|(t, a)| *t == key.0 && *a == key.1) {
+                distinct.push(key);
+            }
+        }
+        min = min.min(distinct.len());
+    }
+    vec![min]
+}
+```
+
+**verifier-persistence** — longest streak of consecutive turns whose author-error
+count is `> 0` **and** non-decreasing (mirrors `check_verifier_persistence`: last_n
+all `> 0`, non-decreasing, `hard_fail.rs:159`). No `Verify` events ⇒ no sample:
+
+```rust
+Signal::VerifierPersistenceRun => {
+    if run_.verifier_error_counts.is_empty() {
+        return vec![];
+    }
+    let mut max = 0usize;
+    let mut run = 0usize;
+    let mut prev = 0usize;
+    for &c in &run_.verifier_error_counts {
+        run = if c == 0 {
+            0
+        } else if run == 0 || c >= prev {
+            run + 1
+        } else {
+            1 // positive but decreased → a fresh streak of length 1
+        };
+        max = max.max(run);
+        prev = c;
+    }
+    vec![max]
+}
+```
+
+**empty-completion** — longest run of consecutive empty completions (the
+`completion_empty` flags from Task 1). Every run has completions, so it always
+has a sample:
+
+```rust
+Signal::EmptyCompletionRun => {
+    let mut max = 0usize;
+    let mut run = 0usize;
+    for &empty in &run_.completion_empty {
+        run = if empty { run + 1 } else { 0 };
+        max = max.max(run);
+    }
+    vec![max]
+}
+```
+
+(The parameter is named `run` in this doc's snippets for the signature; the
+existing code uses `run` as a loop variable — rename the extractor's local run
+counter or the parameter to avoid a shadow, e.g. parameter `run_`. Pick whatever
+compiles cleanly; the behavior is what's pinned.)
+
+### 4. `SIGNALS`
+
+```rust
+const SIGNALS: &[Signal] = &[
+    Signal::NoveltyDistinct,
+    Signal::MaxReadOnlyRun,
+    Signal::IdenticalRun,
+    Signal::OscillationMinDistinct,
+    Signal::VerifierPersistenceRun,
+    Signal::EmptyCompletionRun,
+];
+```
+
+### 5. Report header note for empty-completion
+
+Because `empty_completion_run` is a documented **lower bound** (misses truncation),
+add a one-line caveat to the text report near that signal (e.g. a trailing
+`(lower bound — excludes length-truncated turns)` on the signal header line) and,
+for `--json`, this is understood from the docs — no schema change needed.
+
+### 6. Build order (leaf-first; build at each checkpoint)
+
+1. Task 1 (RunReplay fields + replay arms). — **build green.**
+2. Task 2 (samples signature + update the 2 existing arms + the call site). —
+   **build green + 06a's tests still pass.**
+3. Task 3–4 (new variants + extractors + SIGNALS). — **build green.**
+4. Task 5 + tests. — **all four gates green.**
+
+## Acceptance criteria
+
+- [ ] `rexymcp calibrate-governor --repo .` reports `identical_run`,
+      `oscillation_min_distinct`, `verifier_persistence_run`, and
+      `empty_completion_run` signals in addition to the two 06a signals, each with
+      per-model (+ global) `RUNS`/`N`/p50/p90/p99 by outcome.
+- [ ] `verifier_persistence_run` samples come from `Verify` event author-error
+      counts; a run with no `Verify` events contributes no sample.
+- [ ] `oscillation_min_distinct` yields no sample for a run shorter than
+      `OSCILLATION_WINDOW`.
+- [ ] `empty_completion_run` is derived from `strip_think_blocks(raw).is_empty()`
+      and is labeled a lower bound in the report.
+- [ ] 06a's `novelty_distinct_targets` / `max_read_only_run` output is unchanged.
+- [ ] All four gates green.
+
+## Test plan
+
+Hermetic `TempDir` session-log fixtures (extend 06a's `make_session_file` helper —
+it will need to emit `Verify` and `Completion` events for the new signals; add a
+sibling helper or parameters rather than breaking the existing tests).
+
+- `identical_run_counts_longest_consecutive_identical` — a `read a, read a, read
+  b, read b, read b` sequence → 3 (the `b` run), not 5. Pins the reset on a
+  differing call (must-NOT: not the total).
+- `oscillation_min_distinct_no_sample_below_window` — a run shorter than
+  `OSCILLATION_WINDOW` → no sample (boundary).
+- `oscillation_min_distinct_finds_tightest_window` — an A,B,A,B stretch inside a
+  longer varied run → min distinct 2.
+- `verifier_persistence_run_matches_detector_semantics` — counts `[1,2,2,0,3]` →
+  longest non-decreasing positive streak = 3 (the `1,2,2`), reset by the `0`.
+  Include a decrease case (`[2,1]` → streak 1, not 2).
+- `verifier_persistence_no_sample_without_verify_events` — a run with no `Verify`
+  events → no sample.
+- `empty_completion_run_counts_consecutive_blanks` — completions `["hi", "", "",
+  "x"]` → 2; a think-only completion (`<think>…</think>`) counts as empty.
+- `remaining_signals_appear_in_report` — an E2E-style `run()` over a fixture dir
+  asserts the four new signal labels are present.
+
+## End-to-end verification
+
+Run the real subcommand against the corpus and quote the new signals' rows:
+
+```
+rexymcp calibrate-governor --repo . --min-runs 3
+```
+
+Quote, in the completion Update Log, the `identical_run`,
+`oscillation_min_distinct`, `verifier_persistence_run`, and
+`empty_completion_run` distributions split by outcome — the first data on where
+those four thresholds sit versus real runs.
+
+## Authorizations
+
+- [ ] May extend `mcp/src/calibrate_governor.rs` and its tests. No new dependency,
+      no `Cargo.toml` edit, no executor-crate change.
 
 ## Out of scope
 
-- Framework changes (06a owns the replay/aggregate/report; this is additive
-  signal variants).
-- Suggested-threshold output / config mutation (report-only, fixed decision).
+- **output-flood calibration.** Not recoverable: the log stores a truncated
+  `output_preview`, not `content.len()`. Enabling it would require a **new logged
+  field** (e.g. `ToolResult.output_bytes`) in the executor — an executor-side
+  change out of this phase's scope — **and even then, zero existing corpus data**
+  (only runs logged after the field is added would carry it). Recommendation:
+  defer until there is a concrete need; if pursued, it is its own small
+  executor-logging phase, and calibration waits for new runs to accrue. Do **not**
+  add the field or an approximate byte-count signal here.
+- The live "advisory fired" `SessionEvent` marker (still deferred).
+- Any suggested-threshold output or config mutation (report-only, unchanged from 06a).
+- Extracting `measure_*` helpers into `hard_fail.rs` for drift-safety (like
+  `measure_novelty`) — the mirrored extractors here are simple and pinned; a future
+  executor-side refactor could unify them, but it is not required.
+
+## Notes
+
+**Routing — dispatchable.** Like 06a, this is a read-only analysis subcommand in
+the `mcp` crate — no governor-internal or loop code — so it dispatches safely. The
+risk is ordinary additive churn (RunReplay fields + a signature change + four
+extractors + tests); the leaf-first order in Task 6 is the countermeasure.
+
+**Milestone note.** After 06b, only phase-07 (stall-fire briefing quality, reduced
+scope) remains — and whether it is still worth doing given advisory-by-default
+stalls is an open call for the milestone-close review.
 
 ## Update Log
+
+(Filled in by the executor.)
 
 <!-- entries appended below this line -->

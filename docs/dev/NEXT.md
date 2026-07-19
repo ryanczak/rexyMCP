@@ -4,9 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none — M34 phase-06a done 2026-07-19 (approved_after_1). Next is
-phase-06b (remaining detectors) or phase-07 (briefing quality), drafted on demand
-via `/rexymcp:architect next`.** phase-05 done 2026-07-19; phase-04 done 2026-07-18.
+**Active phase: M34 phase-06b — Extend calibration to the remaining detectors
+(todo, drafted 2026-07-19).** phase-06a done 2026-07-19 (approved_after_1);
+phase-05 done 2026-07-19; phase-04 done 2026-07-18.
+
+**📌 phase-06b drafted (2026-07-19).** Extends 06a's calibrate-governor framework
+to the remaining detectors. **Recoverability verified against the log by the
+architect:** identical-repetition + oscillation (from `Parsed`) and
+verifier-persistence (from `Verify` events, which log the *author-attributed*
+error count) are fully recoverable; empty-completion is **partial** (recoverable
+via `Completion.raw` + `strip_think_blocks`, but misses truncation-driven empties —
+`finish_reason=length` isn't logged); **output-flood is NOT recoverable** (the log
+stores a truncated `output_preview`, not `content.len()`) — documented as a gap
+needing a new logged field, deferred (and even if added, no existing corpus data).
+So 06b calibrates 4 of 5 remaining detectors + documents the output-flood gap.
+Additive: 2 new `RunReplay` fields + `samples` takes the whole `RunReplay` + 4 new
+`Signal` variants (each mirrors the detector semantics, cited; one sample/run).
+**Dispatchable** (read-only mcp-side analysis, no governor-internal risk);
+leaf-first order pre-injected. Then only phase-07 (briefing quality, reduced
+scope) remains — whether it's still worth doing is a milestone-close call. Dispatch
+via `/rexymcp:dispatch phase-06b` or direct-execute.
 
 **M34 phase-06a — done (2026-07-19, approved_after_1; executor
 AEON-7/Qwen3.6-27B-AEON).** The `rexymcp calibrate-governor` subcommand: replays
