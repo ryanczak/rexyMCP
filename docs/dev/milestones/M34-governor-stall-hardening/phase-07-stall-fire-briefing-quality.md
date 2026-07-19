@@ -1,7 +1,15 @@
 # Phase 07: Stall-fire briefing quality
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** todo (planned — full spec drafted on a later `/rexymcp:architect next`)
+**Status:** dropped (descoped at M34 close, 2026-07-19 — see below)
+
+> **Descoped at milestone close (2026-07-19, user decision).** With the novelty
+> stall demoted to advisory-by-default (phase-05), a *fired* stall briefing now
+> only applies to the still-terminating raw `NoProgressStall` backstop and to any
+> detector explicitly reconfigured to `Terminate` — a much narrower surface than
+> when this phase was conceived. The user chose to skip it and close M34. If
+> briefing quality for the raw stall becomes a real need later, re-open this stub
+> (or fold it into the planned metrics/reporting pass). Not implemented.
 **Depends on:** phase-03 (the stall signals), phase-05 (advisory-demotion, which
 narrows this phase's scope — see below)
 **Estimated diff:** ~120 lines (estimate — firmed at drafting)

@@ -1232,7 +1232,7 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-34. **M34 — Governor Stall Hardening** *(in-progress; opened 2026-07-18 to
+34. **M34 — Governor Stall Hardening** *(done 2026-07-19; opened 2026-07-18 to
     formalize direct-executed work)*. Close the small-model self-sabotage gaps a
     downstream project (DaemonEye M4) surfaced, then make the fixes observable and
     their briefings actionable. Three phases shipped **directly** ahead of the
@@ -1248,11 +1248,21 @@ The project plan. Each entry becomes a milestone with its own
     `novelty_window` collapses to `<= novelty_distinct_floor` distinct targets, so
     wide exploration passes and tight re-probing fails fast; the raw threshold
     demoted 20 → 60 to a pure-volume backstop; `normalize_target` reuses M33's
-    `tools::mutates_files`). Two follow-ons remain: **04** emit a `NoveltySample`
-    session-log event on each full-window measurement so `novelty_window`/
-    `novelty_distinct_floor` calibrate from real distributions (untuned defaults
-    24/6) rather than guesses; **05** enrich the escalation briefing so a fired
-    stall names the churned targets, not just the signal string.
+    `tools::mutates_files`). Then **04** added a `NoveltySample` session-log event
+    per full-window measurement — and its own dispatch hard-failed when the
+    detector fired on its author at turn 104/600 (82 % budget unused), triggering
+    the milestone's **advisory-until-calibrated** pivot: **05** made
+    `LowNoveltyStall` **advisory-by-default** (`[governor] novelty_action`), leaving
+    the raw 60-call `NoProgressStall` as the terminating backstop, so an
+    un-calibrated threshold can't pre-empt a run the turn budget would still fund;
+    **06a/06b** shipped `rexymcp calibrate-governor`, which replays the session-log
+    corpus and reports per-model + global distributions (by run outcome) for every
+    reachable detector, so thresholds are set from data — successful runs cluster at
+    novelty distinct-target P50 ≈ 15 vs stuck runs ≈ 1, the guessed floor of 6
+    sitting in the gap. output-flood is a documented gap (truncated `output_preview`
+    in the log; needs a new byte-count field). Planned **07** (briefing names the
+    churned targets) was **descoped at close** — advisory-by-default narrowed its
+    surface. A metrics/reporting deep-dive is queued as follow-up.
 33. **M33 — Governor Mutating-Tool Classifier Unification** *(done 2026-07-16;
     opened the same day; executor Claude Code direct)*. Single-phase cleanup
     fixing [issue #2](https://github.com/ryanczak/rexyMCP/issues/2): the router's

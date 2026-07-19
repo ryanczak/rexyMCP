@@ -8,7 +8,7 @@ then, having watched the new detector misfire on a productive run, pivot to
 *observable*, demote the detector to *advisory-by-default* (thresholds must be
 data-backed, not guessed), and set the thresholds from a back-test of real runs.
 
-**Status:** in-progress
+**Status:** done (closed 2026-07-19)
 
 **Depends on:** M33 (the `tools::mutates_files` classifier the new detectors reuse)
 
@@ -48,12 +48,14 @@ targets were churned.
 - The novelty detector is **advisory-by-default** (`[governor] novelty_action`),
   so an un-calibrated threshold cannot terminate a run the turn budget would still
   fund; the raw `NoProgressStall` stays as the terminating backstop (Phase 05 —
-  **todo**).
-- Thresholds are set from a back-test of the real session-log corpus, not
-  guessed — the metrics/calibration deliverable (Phase 06 — **planning**).
-- *(Reduced scope, sequenced last)* if any detector still terminates, its
-  escalation briefing names the churned targets (Phase 07 — **todo**).
-- All four gates green.
+  **met**).
+- Thresholds can be set from a back-test of the real session-log corpus, not
+  guessed — the `rexymcp calibrate-governor` deliverable, per-model + global, for
+  every reachable detector (Phases 06a/06b — **met**).
+- *(Reduced scope)* a fired-stall briefing names the churned targets — **dropped**
+  at close: advisory-by-default made the surface too narrow to be worth it
+  (Phase 07 — **descoped**).
+- All four gates green — **met**.
 
 **The advisory-until-calibrated pivot (2026-07-18).** Phases 01–04 shipped the
 detectors + observability. Phase-04's own dispatch then hard-failed when the
@@ -82,7 +84,7 @@ added ahead of the (now reduced-scope) briefing-quality phase, renumbered 07.
 | 05 | Advisory-demotion of the novelty stall detector ([phase-05-advisory-demotion.md](phase-05-advisory-demotion.md)) | done |
 | 06a | Governor calibration framework + stall-signal report ([phase-06a-calibration-framework-and-stall-signals.md](phase-06a-calibration-framework-and-stall-signals.md)) | done |
 | 06b | Extend calibration to the remaining detectors ([phase-06b-calibration-remaining-detectors.md](phase-06b-calibration-remaining-detectors.md)) | done |
-| 07 | Stall-fire briefing quality ([phase-07-stall-fire-briefing-quality.md](phase-07-stall-fire-briefing-quality.md)) | todo |
+| 07 | Stall-fire briefing quality ([phase-07-stall-fire-briefing-quality.md](phase-07-stall-fire-briefing-quality.md)) | dropped (descoped at close) |
 
 ## Notes
 
@@ -105,4 +107,62 @@ router category so the two classifiers never drift. Both detectors examine only
 the *trailing read-only run* and reset on any file-mutating call, so read-heavy
 exploration *between* edits never trips either.
 
-<!-- retrospective appended at milestone close -->
+## Retrospective — 2026-07-19
+
+**Shipped.** 7 committed phases (01–06b); phase-07 descoped. The milestone
+started as bookkeeping — formalizing three direct-executed governor fixes (FR-1
+git-stash guard, FR-2 `NoProgressStall`, issue-#3 `LowNoveltyStall`) — and turned
+into a genuine design correction.
+
+**The pivot.** phase-04 (novelty observability) was dispatched and the
+`LowNoveltyStall` detector **fired on its own author** at turn 104 of a 600-turn
+budget (82% unused). That one event reframed the whole milestone: an un-calibrated,
+data-free threshold was pre-empting a productive run — contrary to rexyMCP's
+"no failure modes on arbitrary numbers" ethos. Decided with the user:
+**advisory-until-calibrated**. The tail was reshaped on the spot — phase-05
+(demote novelty to advisory-by-default, keep the raw 60-call `NoProgressStall` as
+the real terminating backstop), and phase-06a/06b (build `rexymcp
+calibrate-governor` — replay the session-log corpus, re-derive every reachable
+governor signal, report per-model + global distributions by outcome). The
+detector's misfire became the milestone's best evidence.
+
+**Payoff — data over guesses.** The corpus now shows successful runs cluster at
+novelty distinct-target **P50≈15** while stuck (`budget_exceeded`) runs collapse to
+**P50≈1**, with the guessed `novelty_distinct_floor = 6` sitting in the empty gap
+between. Every reachable detector (novelty, no-progress, identical, oscillation,
+verifier-persistence, empty-completion) now has real distributions behind it. One
+detector — output-flood — is a documented data gap (the log stores a truncated
+`output_preview`, not `content.len()`); closing it needs a new logged field and is
+deferred.
+
+**Verdicts.** 01/02/03 approved_first_try (retrospective, direct); 04 escalated
+(dispatch hard_failed on its own `LowNoveltyStall`, architect takeover finished the
+one integration test); 05 approved_first_try (direct); 06a approved_after_1
+(bug-06a-1, `spec_bug`); 06b approved_after_1 (bug-06b-1, `false_completion`). Two
+of three dispatched phases bounced once each — both caught at review, both clean on
+re-dispatch.
+
+**Calibration data (fold candidates — NOT folded; hold for user sign-off):**
+1. **Runs-vs-samples in aggregation specs** (bug-06a-1, `spec_bug`, 1st occurrence).
+   The 06a spec said "cell with `count < min_runs`" without defining count-as-runs
+   vs count-as-samples; for a multi-sample signal that let one run masquerade as
+   N=253. A spec pinning a per-unit aggregation floor should state the unit and pin
+   the negative (a 1-run/many-sample cell must be dropped). Data, not yet a trend.
+2. **Executor skips the Test plan / ships new code untested** (bug-06b-1,
+   `false_completion`, 1st occurrence *this milestone*). 06b implemented four
+   extractors and wrote **zero** of the seven spec'd tests, self-reporting complete.
+   Possibly a cross-milestone recurrence of the untested-new-code `false_completion`
+   class (cf. M4/M27) — flag to check at the next fold window before touching the
+   contract.
+
+**Deferred to the planned metrics & reporting deep-dive:**
+- `oscillation_min_distinct` is a *lower-is-worse* signal, but the report shows
+  p50/p90/p99 (the high tail) — oscillatory runs don't surface. Min-type signals
+  want the low percentiles. Reporting-design fix.
+- output-flood needs a `ToolResult.output_bytes` logged field (executor-side) to
+  become calibratable — and no corpus data until new runs accrue.
+- Whether `calibrate-governor` should fold into / align with the existing
+  `scorecard`/`runs`/dashboard surfaces.
+
+**No contract-doc folds landed** (STANDARDS/WORKFLOW untouched) — both calibration
+items are 1st-occurrence data awaiting the user's fold decision.

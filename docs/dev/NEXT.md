@@ -4,11 +4,30 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none — M34 phase-06b done 2026-07-19 (approved_after_1). The
-calibration arc (06a+06b) is complete; next is the user's planned metrics &
-reporting deep-dive + the phase-07 keep-or-drop decision — a human/architect
-regroup, not an auto-draft** (see [[post-06b-metrics-reporting-deepdive]]).
-phase-06a done 2026-07-19; phase-05 done 2026-07-19; phase-04 done 2026-07-18.
+**Active phase: none — M34 closed 2026-07-19 (7 phases 01–06b done; phase-07
+descoped at close). Next-milestone go/no-go is a human decision.** The user's
+planned **metrics & reporting deep-dive** is the queued follow-up (see
+[[post-06b-metrics-reporting-deepdive]]) — a fresh design pass, not an M34 phase.
+phase-06b done 2026-07-19; phase-06a done 2026-07-19; phase-05 done 2026-07-19;
+phase-04 done 2026-07-18.
+
+**M34 — Governor Stall Hardening is closed** (2026-07-19). Retrospective in the
+[M34 README](milestones/M34-governor-stall-hardening/README.md#retrospective--2026-07-19);
+`architecture.md` § Status #34 → done. **The arc:** formalized 3 direct-executed
+governor fixes (01–03), then phase-04's dispatch hard-failed when `LowNoveltyStall`
+fired on its own author (turn 104/600, 82% budget unused) → **advisory-until-
+calibrated pivot** → phase-05 demoted novelty to advisory-by-default (raw
+`NoProgressStall` stays the terminating backstop) → phase-06a/06b shipped `rexymcp
+calibrate-governor` (per-model + global corpus distributions for every reachable
+detector; successful-run novelty P50≈15 vs stuck≈1, guessed floor=6 in the gap).
+phase-07 (briefing quality) descoped — advisory-by-default narrowed its surface.
+**Two fold candidates held for user sign-off** (not folded): (1) runs-vs-samples in
+aggregation specs (bug-06a-1, spec_bug); (2) executor skipping the Test plan /
+untested-new-code false_completion (bug-06b-1) — possibly a cross-milestone
+recurrence, flag at the next fold window. **Deferred to the metrics pass:**
+oscillation's p50/p90/p99-vs-min-signal wrong-tail; the output-flood
+`ToolResult.output_bytes` logging field; calibrate-governor vs the existing
+scorecard/runs/dashboard surfaces.
 
 **M34 phase-06b — done (2026-07-19, approved_after_1; executor
 AEON-7/Qwen3.6-27B-AEON).** Extended `calibrate-governor` to the 4 recoverable
