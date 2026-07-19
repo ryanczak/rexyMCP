@@ -1,7 +1,7 @@
 # Phase 06a: Governor calibration framework + stall-signal report
 
 **Milestone:** M34 — Governor Stall Hardening
-**Status:** review
+**Status:** in-progress (bounced — see bug-06a-1)
 **Depends on:** phase-04 (`measure_novelty`), phase-05 (advisory-demotion — so runs
 reach natural length and the corpus reflects real behavior)
 **Estimated diff:** ~400 lines
@@ -460,3 +460,22 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review — 2026-07-19 (bounced → bug-06a-1)
+
+**Verdict:** bounced (1 bug, major). The framework, CLI, tests, and the real
+corpus E2E are otherwise excellent — clean 79-turn first dispatch, all four gates
+green on independent re-run (525 mcp + 996 executor, 2 ignored), no banned
+patterns, mutation-resistant reset/novelty tests.
+
+**Notes for the executor (fix on re-dispatch):** one major defect —
+[bug-06a-1](bugs/bug-06a-1.md). `--min-runs` and the `N` column count **samples,
+not runs**. Because `NoveltyDistinct` emits one sample per window, a single
+276-call `budget_exceeded` run shows up as `novelty_distinct_targets N=253` and
+sails past `--min-runs 3`, while the same run is correctly `max_read_only_run
+N=1`. Fix: track run count per `(signal, model, outcome)` cell separately from
+sample count; filter `--min-runs` on **runs**; add a `RUNS` column (keep `N` =
+samples, since percentiles are over samples); add a negative test that a
+one-run/many-sample cell is dropped by `--min-runs`. See the bug for the exact
+site (`mcp/src/calibrate_governor.rs`, the per-model aggregation loop) and fix.
+Nothing else needs to change.
