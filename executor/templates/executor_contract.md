@@ -171,6 +171,14 @@ Spec ambiguity, missing referenced files, impossible acceptance criteria, or
 architectural inconsistencies you discover are also blockers — not invitations to
 improvise.
 
+**Prefer the file tools over the shell for reading, too.** To view a file — a
+whole file or a specific line range — use `read_file` (it takes `start_line` /
+`end_line`, 1-indexed inclusive), not `sed -n`/`cat`/`head`/`tail` via `bash`.
+One `read_file` returns the content directly; re-running the same shell read of
+the same lines wastes turns and trips the identical-call governor. Use `bash`
+for *running* things (builds, tests, `grep`, `git status`), not for inspecting
+file contents.
+
 ### Grep for spec-pinned literals before reporting complete
 
 When a phase spec pins a specific byte sequence — a tag, a magic constant, a
