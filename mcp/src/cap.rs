@@ -502,4 +502,27 @@ mod tests {
             _ => panic!("expected Prompt"),
         }
     }
+
+    #[test]
+    fn cap_preserves_output_bytes() {
+        let record = make_session_record(
+            SessionEvent::ToolResult {
+                name: "read_file".into(),
+                succeeded: true,
+                output_preview: long_string(60_000),
+                output_bytes: 60_000,
+            },
+            1,
+        );
+        let capped = cap_session_record(record);
+        match capped.event {
+            SessionEvent::ToolResult { output_bytes, .. } => {
+                assert_eq!(
+                    output_bytes, 60_000,
+                    "capping must not zero or shrink output_bytes"
+                );
+            }
+            _ => panic!("expected ToolResult"),
+        }
+    }
 }
