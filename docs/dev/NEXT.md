@@ -4,26 +4,34 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-04b — `runs show <id>` detail](milestones/M35-metrics-cost-accounting/phase-04b-runs-show-detail.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-04b`).**
+**Active phase: none.** M35 phase-05 (aggregate surfaces: unified scorecard +
+profile efficiency) is not yet drafted — run `/rexymcp:architect next` to draft it.
 
-phase-04b drafted 2026-07-20: `rexymcp runs show <id>` drills into one run by its
-04a 8-hex id (or unambiguous prefix) and prints the full record — token
-breakdown incl. cache classes, cost, tok/s, gates, verdict, bounces/bugs/
-warnings, context efficiency, timing. Adds `find_run_by_id` (prefix match; none
-+ ambiguous are pinned negatives, incl. empty-string `""` rejected) +
-`format_run_detail` + the clap `show` subcommand. **The one external-API risk
-(clap nested subcommand — no precedent in the codebase) was de-risked by the
-architect:** the exact `Runs { …list flags…, #[command(subcommand)] command:
-Option<RunsCommand> }` + `RunsCommand::Show { id }` pattern was
-**compile-and-parse-verified against clap 4.6 in a scratch crate** and pinned
-verbatim (config on the parent before the `show` token; no
-`args_conflicts_with_subcommands` needed). Minimal cascade — only the
-`main.rs:517` dispatch arm gains the `command` field (the CLI test already uses
-`..`). Pre-flight reinforces the now-live `sed -i` refusal + read-then-patch
-recovery. size=m (~220 lines). **After 04b:** phase-05 (unified scorecard +
-profile efficiency).
+**M35 phase-04b — done (2026-07-20, approved_after_1; executor
+AEON-7/Qwen3.6-27B-AEON).** `rexymcp runs show <id>` drills into one run by its
+04a 8-hex id (or unambiguous prefix) and prints the full record — all four token
+classes + total, cost, tok/s, gates, verdict, bounces/bugs/warnings, context
+efficiency, timing. `find_run_by_id` (prefix match; none + empty-prefix-ambiguous
+mutation-verified negatives) + `format_run_detail` + the clap `RunsCommand::Show`
+subcommand. **The clap nested-subcommand risk (no codebase precedent) was
+architect-de-risked** — the exact pattern was compile-and-parse-verified in a
+scratch crate against clap 4.6 and pinned verbatim; it landed clean first-try.
+**Dispatch hard_failed** (`IdenticalToolCallRepetition`, 89 turns) with a single
+deleted `}` after adding the CLI tests → **resume** (not takeover; model data
+point preserved) finished it in 27 turns. **First positive data point on the sed
+guard** (live this dispatch): patch-drift on `main.rs` → `sed -i` **refused** →
+no file destruction; the model looped read-only `sed -n` and the identical-call
+governor caught it early — vs 04a's guardless 600-turn / ~300-line cannibalize.
+The guard turned a catastrophe into a one-brace resume. All four gates green (547
+mcp + 1024 executor). **After 04b:** phase-05 (unified scorecard + profile
+efficiency), the first *aggregate* surface for cost/tok-s.
+
+**Between-phase infra (2026-07-20):** sed/read_file editing discipline folded
+(bash refuses `sed -i`/`perl -i`; contract nudges `read_file` over `sed -n` for
+inspection); the WORKFLOW "post-write formatting" fold restored to the
+project-local copy and corrected (the runtime hook has landed — runs `[commands]
+format_fix`/`lint_fix`); and this repo's `rexymcp.toml` now sets `format_fix =
+"cargo fmt --all"` + `lint_fix` so our own dispatches auto-format in-loop.
 
 **M35 phase-04a — done (2026-07-20, escalated / session takeover after a
 dispatch `budget_exceeded`).** First consumer of phase-03's cost core:

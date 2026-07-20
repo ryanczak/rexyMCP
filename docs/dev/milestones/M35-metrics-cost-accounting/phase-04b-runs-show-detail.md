@@ -1,7 +1,7 @@
 # Phase 04b: `runs show <id>` — per-run detail view
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-04a
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -423,4 +423,30 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 472b4d93829c1a319537e2f2510baea1d85703df
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (dispatch `hard_fail` `IdenticalToolCallRepetition` → resolved by a
+  briefing-seeded **resume**, not an architect takeover — so the model data point
+  is preserved)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (dispatch hard_fail at 89 turns → resume
+  complete at 27 turns)
+- **Scope deviations:** none — `find_run_by_id` (prefix match) + `format_run_detail`
+  + the clap `RunsCommand::Show` subcommand + dispatch branch all match the spec;
+  no `runs show --json`, no list-column change.
+- **Calibration:** none to fold. **First positive data point on the sed guard**
+  (shipped 2026-07-20, live this dispatch): the dispatch hit patch-drift on
+  `main.rs` but — `sed -i` now refused — could not cannibalize the file; it used
+  read-only `sed -n` and looped, and the `IdenticalToolCallRepetition` governor
+  stopped it at 89 turns with a single deleted `}`. Contrast 04a (no guard):
+  patch-drift → `sed -i` loop → 600 turns, ~300 lines destroyed. The guard
+  converted a catastrophic failure into a one-brace resume.
+- **Review rigor:** independent gates green (547 mcp + 1024 executor, 2 ignored);
+  `find_run_by_id`'s none-match and ambiguous(empty-prefix) arms both
+  mutation-verified (returning `Ok` instead of `Err` fails the respective test).
+  E2E on a real id: `runs show 865419ed` renders the full detail block (all four
+  token classes + total, cost, tok/s, gates, verdict, timing, context, bugs/
+  warnings/bounces); prefix `8654` resolves to the same run; `zzzz` → "no run
+  matches"; bare `runs` still lists.
 

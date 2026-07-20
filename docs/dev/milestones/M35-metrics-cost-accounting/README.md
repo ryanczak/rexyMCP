@@ -55,7 +55,7 @@ and the executor finally carries a real (configurable) price.
 | 02 | Capture gaps: generation speed + output bytes ([phase-02-capture-gaps-speed-output-bytes.md](phase-02-capture-gaps-speed-output-bytes.md)) | done |
 | 03 | Shared metrics & cost core + `[models]` pricing ([phase-03-shared-metrics-cost-core.md](phase-03-shared-metrics-cost-core.md)) | done |
 | 04a | Run-level surface: `runs` cost/speed columns + run id ([phase-04a-runs-cost-speed-columns.md](phase-04a-runs-cost-speed-columns.md)) | done |
-| 04b | Run-level surface: `runs show <id>` detail ([phase-04b-runs-show-detail.md](phase-04b-runs-show-detail.md)) | review |
+| 04b | Run-level surface: `runs show <id>` detail ([phase-04b-runs-show-detail.md](phase-04b-runs-show-detail.md)) | done |
 | 05 | Aggregate surfaces: unified scorecard + profile efficiency | not drafted |
 | 06 | `rexymcp costs` + dashboard rewire + `b` toggle | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
