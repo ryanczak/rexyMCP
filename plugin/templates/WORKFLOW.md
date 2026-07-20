@@ -665,20 +665,30 @@ run the formatter before `git add`. M1/phase-03 of mp3-player pre-injected
 this instruction explicitly; the executor ran it, then issued another
 `write_file` afterward. A spec instruction cannot prevent a later write.
 
-**The fix is runtime-level:** The rexyMCP runtime should run the project's
-`format` command (and optionally `lint --fix`) as a **post-write,
-pre-verifier hook** after each turn where files were written to disk. This
-makes formatting unconditional and turn-ordering-independent. Filed as a
-runtime feature request against rexyMCP.
+**The fix is runtime-level — and it has since landed:** the rexyMCP runtime
+runs a **post-write, pre-verifier hook** (`run_post_write_hooks`) after every
+turn that wrote files, before the verifier. The hook invokes the project's
+`[commands] format_fix` and `lint_fix` — the **writing** forms of the
+formatter/linter (e.g. `cargo fmt --all`, `ruff format`, `gofmt -w`),
+**distinct from** the verify-only `format`/`lint` **gate** commands. This makes
+formatting unconditional and turn-ordering-independent. The hook is **inert
+unless `format_fix`/`lint_fix` are configured**: with them unset, the
+`format`/`lint` gates stay verify-only and no auto-formatting happens (that is
+the historical "hook is a no-op" state — a config gap, not a code gap).
 
 **For the architect:** Do not add "run the formatter" steps to completion
-checklists in phase specs — proven ineffective for this failure class.
-Apply the formatting fix manually on close-out until the runtime hook lands.
+checklists in phase specs — proven ineffective for this failure class (a later
+`write_file` still undoes it). Instead, ensure `[commands] format_fix` /
+`lint_fix` are set (the writing forms) in the target project's config so the
+hook auto-formats each turn; the `rexymcp init` template scaffolds both as
+commented lines. If they are unset, apply the formatting fix manually on
+close-out.
 
 *(Folded from M1/mp3-player: four phases (01×2, 02, 03) on
 google/gemma-4-12b hit the same ruff formatting verifier halt. Spec
-instruction pre-injected in phase-03 — still failed, confirming the fix
-must be runtime-side.)*
+instruction pre-injected in phase-03 — still failed, confirming the fix must be
+runtime-side. The runtime hook has since landed: `run_post_write_hooks` runs
+`[commands] format_fix`/`lint_fix` post-write, pre-verifier.)*
 
 ### Validation features depend on the target toolchain — verify availability at design time
 
