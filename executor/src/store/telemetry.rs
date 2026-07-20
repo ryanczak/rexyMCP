@@ -458,6 +458,11 @@ impl ArchitectTokens {
     }
 }
 
+/// Per-class USD-per-Mtok rates for **any** model's token cost (executor or
+/// architect). Structurally identical to the architect rate type; aliased so
+/// call sites read as model-neutral.
+pub type ModelRates = ArchitectRates;
+
 /// An append-only record of one architect activity in a `/rexymcp:auto` loop run — the portable loop journal. Appended to `phase_runs.jsonl` alongside `PhaseRun` and `PhaseReview`; the `record` discriminator (`"architect_activity"`) keeps the readers from confusing the line types. Written by the `rexymcp journal` CLI (the loop skill invokes it); the executor never writes one. The `tokens` field defaults to all-zero and is filled by the phase-05b usage harvester on Claude Code; on other clients they stay zero (counts-and-durations, never fabricated).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArchitectActivity {

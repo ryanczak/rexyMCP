@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use rexymcp_executor::config::Config;
+use rexymcp_executor::store::metrics;
 use rexymcp_executor::store::telemetry::PhaseRun;
 
 /// Filter applied to the raw list of `PhaseRun` records before display.
@@ -71,15 +72,7 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
 
         let tags = run.tags.join(",");
 
-        let settings = match (
-            run.generation_params.temperature,
-            run.generation_params.seed,
-        ) {
-            (None, None) => "default".to_string(),
-            (Some(t), None) => format!("temp={t}"),
-            (None, Some(s)) => format!("seed={s}"),
-            (Some(t), Some(s)) => format!("temp={t},seed={s}"),
-        };
+        let settings = metrics::settings_label(&run.generation_params);
 
         let gates = format!(
             "{}{}{}{}",
@@ -116,10 +109,7 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             format!("{:.0}%", eff.peak_context_pct * 100.0)
         };
 
-        let reclaimed_total = eff.output_filtered_tokens
-            + eff.read_evicted_tokens
-            + eff.read_deduped_tokens
-            + eff.compaction_tokens_reclaimed;
+        let reclaimed_total = metrics::reclaimed_total(eff);
         let reclaimed = if reclaimed_total == 0 {
             "—".to_string()
         } else if reclaimed_total >= 1024 {

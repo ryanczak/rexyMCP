@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::Serialize;
 
+use rexymcp_executor::store::metrics;
 use rexymcp_executor::store::telemetry::{Gates, PhaseRun};
 
 /// One row of the model × settings matrix.
@@ -33,19 +34,6 @@ pub struct SettingsScorecardRow {
     /// context-measured runs. `None` when none are context-measured. A measured
     /// run that reclaimed nothing contributes `0.0`, not exclusion.
     pub tokens_reclaimed_mean: Option<f64>,
-}
-
-/// Render the sampling-settings label matching `rexymcp runs`.
-fn settings_label(run: &PhaseRun) -> String {
-    match (
-        run.generation_params.temperature,
-        run.generation_params.seed,
-    ) {
-        (None, None) => "default".to_string(),
-        (Some(t), None) => format!("temp={t}"),
-        (None, Some(s)) => format!("seed={s}"),
-        (Some(t), Some(s)) => format!("temp={t},seed={s}"),
-    }
 }
 
 /// Internal accumulator for a single (model, settings) bucket.
@@ -92,7 +80,10 @@ pub fn aggregate_by_settings(
             continue;
         }
 
-        let key = (run.model.clone(), settings_label(run));
+        let key = (
+            run.model.clone(),
+            metrics::settings_label(&run.generation_params),
+        );
         let acc = buckets.entry(key).or_default();
         acc.n += 1;
 
@@ -130,10 +121,7 @@ pub fn aggregate_by_settings(
         let eff = &run.context_efficiency;
         if eff.peak_context_pct > 0.0 {
             acc.peak_context_pct_sum += eff.peak_context_pct;
-            acc.tokens_reclaimed_sum += (eff.output_filtered_tokens
-                + eff.read_evicted_tokens
-                + eff.read_deduped_tokens
-                + eff.compaction_tokens_reclaimed) as f64;
+            acc.tokens_reclaimed_sum += metrics::reclaimed_total(eff) as f64;
             acc.context_measured_n += 1;
         }
     }
@@ -323,11 +311,7 @@ pub fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardRo
             let eff = &run.context_efficiency;
             if eff.peak_context_pct > 0.0 {
                 acc.peak_context_pct_sum += eff.peak_context_pct;
-                acc.tokens_reclaimed_sum += (eff.output_filtered_tokens
-                    + eff.read_evicted_tokens
-                    + eff.read_deduped_tokens
-                    + eff.compaction_tokens_reclaimed)
-                    as f64;
+                acc.tokens_reclaimed_sum += metrics::reclaimed_total(eff) as f64;
                 acc.context_measured_n += 1;
             }
         }

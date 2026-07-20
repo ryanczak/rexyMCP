@@ -59,6 +59,10 @@ novelty_action = "advisory"       # "advisory" (default): log low-novelty churn 
 # oscillation_distinct_max = 2       # override [governor] oscillation_distinct_max
 # output_window = 8                  # override [governor] output_window
 # output_window_bytes = 524288       # override [governor] output_window_bytes
+# input_per_mtok = 0.0             # M35 executor pricing ($/Mtok); unpriced classes cost $0
+# output_per_mtok = 0.0            # override per-model output pricing
+# cache_read_per_mtok = 0.0        # override per-model cache-read pricing
+# cache_creation_per_mtok = 0.0    # override per-model cache-creation pricing
 
 [commands]
 # format = "cargo fmt --all"

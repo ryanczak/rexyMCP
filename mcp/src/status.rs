@@ -8,6 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
+use rexymcp_executor::store::metrics;
+
 use rexymcp_executor::store::sessions::event::{
     FileNumstat, SessionEvent, SessionRecord, TaskState,
 };
@@ -332,12 +334,16 @@ pub fn format_status(summary: &StatusSummary, now_ms: u64) -> String {
         lines.push(format!("last update: {} ago", humanize_age(age_ms)));
     }
 
-    let reclaimed = summary.output_filtered_tokens
-        + summary.read_evicted_tokens
-        + summary.read_deduped_tokens
-        + summary
-            .compaction_tokens_before
-            .saturating_sub(summary.compaction_tokens_after);
+    let reclaimed =
+        metrics::reclaimed_total(&rexymcp_executor::store::telemetry::ContextEfficiency {
+            output_filtered_tokens: summary.output_filtered_tokens,
+            read_evicted_tokens: summary.read_evicted_tokens,
+            read_deduped_tokens: summary.read_deduped_tokens,
+            compaction_tokens_reclaimed: summary
+                .compaction_tokens_before
+                .saturating_sub(summary.compaction_tokens_after),
+            ..Default::default()
+        });
     if reclaimed > 0 {
         lines.push(format!(
             "reclaimed: {reclaimed} tokens (filter {}, evict {}, dedupe {}, compaction {})",
