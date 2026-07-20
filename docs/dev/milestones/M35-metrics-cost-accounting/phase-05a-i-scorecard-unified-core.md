@@ -1,7 +1,7 @@
 # Phase 05a-i: Unified scorecard aggregation core (behind wrappers)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-04b
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=refactor, size=m
@@ -381,4 +381,34 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 557cac7543697e75c9db99fd0e947e5ce4c90e54
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (96 turns)
+- **Scope deviations:** one — an `#[allow(dead_code)]` on `ScorecardDimension`
+  that the Task 1 code block and acceptance criterion #3 did not authorize.
+  **Forced, not gratuitous** (independently verified at review by removing the
+  attribute): the phase deliberately introduces a `pub Model` variant with no
+  production consumer until 05a-iii, and in the `rexymcp` **binary** crate `pub`
+  does not suppress `dead_code` and test-only construction doesn't count — so
+  `cargo clippy --all-targets -- -D warnings` **fails to compile** without it
+  (`variant Model is never constructed`). The executor satisfied criterion #3's
+  actual intent — `Accumulator` is **deleted**, not masked — and had no in-scope
+  alternative (adding a `Model` consumer is 05a-iii; leaving the gate red fails
+  criterion #4). Accepted.
+- **Calibration:** spec_bug — acceptance criterion #3's blanket "no
+  `#[allow(dead_code)]`" contradicts the phase's own deliberate introduction of an
+  unused `Model` variant in a binary crate. **Action for 05a-iii:** when
+  `scorecard --by model` gives `Model` a production consumer, delete the
+  `#[allow(dead_code)]` (or convert it to `#[expect(dead_code)]` so it
+  self-removes at that point). Held for the M35-close fold.
+
+**Independent re-run at review:** `cargo fmt --all --check` clean; `cargo build`
+zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` 551 mcp + 1024 executor pass, 2 ignored. The 4 new
+`aggregate_scorecard_*` tests are mutation-sensitive (element-for-element wrapper
+equality; tag-explosion with a no-tags negative pin; one-bucket-per-model;
+`min_runs` drop).
 
