@@ -1,7 +1,7 @@
 # Phase 02: Capture gaps — generation speed + output bytes
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress (bounced — bug-02-1, missing `cap_preserves_output_bytes`)
 **Depends on:** phase-01
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=feature, size=m
