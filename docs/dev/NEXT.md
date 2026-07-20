@@ -4,27 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-03 — Shared metrics & cost core + `[models]` pricing](milestones/M35-metrics-cost-accounting/phase-03-shared-metrics-cost-core.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-03`).**
+**Active phase: none.** M35 phase-04 (run-level surface: `runs` columns +
+`runs show`) is not yet drafted — run `/rexymcp:architect next` to draft it.
 
-phase-03 drafted 2026-07-20: new `executor/src/store/metrics.rs` module owning
-the four derived numbers as pure free fns (`reclaimed_total`, `tokens_per_sec`,
-`settings_label`, `token_cost`) + a `ModelRates` alias of the existing
-`ArchitectRates`; routes the four hand-rolled reclaimed sums (scorecard ×2,
-runs, status — the last mapping StatusSummary's `before−after` compaction into
-the struct) and the two settings-label dupes through it; adds per-model
-executor pricing as four `Option<f64>` fields on the **existing** `ModelOverride`
-(`[models]` table — NOT a new section) + `Config::model_rates` (unpriced ⇒ $0,
-no Claude-table fallback) + init template comments. **Behavior-preserving**:
-zero CLI output change (phases 04–06 render cost/tok-s); committed consumers are
-the new fns' own unit tests + phase-04. **Cascade-safe order** (informed by
-phase-01/02): Part A additive module (all green), Part B migrations one file per
-turn (compiler catches misses), Part C pricing with the two `ModelOverride`
-literals pre-adapted via `..Default::default()` before the fields land. Every
-worked example (the `metrics.rs` bodies, the `ArchitectTokens::cost` template,
-the status.rs struct-build, the init.rs:47-62 template block) is quoted inline.
-size=l (~320 lines).
+**M35 phase-03 — done (2026-07-20, approved_first_try; executor
+AEON-7/Qwen3.6-27B-AEON, 206 turns).** Shared metrics/cost core + per-model
+executor pricing. New `executor/src/store/metrics.rs` owns the four derived
+numbers as pure free fns (`reclaimed_total`, `tokens_per_sec`, `settings_label`,
+`token_cost`) + a `ModelRates` alias of `ArchitectRates`; the four hand-rolled
+reclaimed sums (scorecard ×2, runs, status — the last mapping StatusSummary's
+`before−after` compaction into a throwaway `ContextEfficiency`) and both
+settings-label dupes now route through it. Per-model pricing landed as four
+`Option<f64>` fields on the existing `ModelOverride` + `Config::model_rates`
+(unpriced ⇒ $0, no Claude-table fallback) + init-template comments. **Clean
+first-try on a 9-file two-crate change** — all three cascade-shape designs (Part
+A additive-green, Part B one-file-per-turn behavior-preserving migration, Part C
+pre-adapted literals) held with no governor incident, the green-at-every-step
+pattern now proven across three consecutive M35 phases. Behavior-preserving:
+zero CLI output change. All four gates green (537 mcp + 1018 executor);
+`token_cost` + `reclaimed_total` mutation-verified at review. **One nit
+recorded, not bounced:** a duplicated doc-comment line at `config.rs:628-629`
+(`resolve_for_model`) — sweep in the next `config.rs`-touching phase.
+**Stale-serve cleared this session:** serve restarted on the phase-02 binary, so
+`runs`/`status` now show real `gen_time_s`/`reclaimed`/`output_bytes` capture
+(the phase-03 run itself appears in `runs`). Phase-04 will render `token_cost` +
+`tokens_per_sec` (committed consumers of this phase's core).
 
 **M35 phase-02 — done (2026-07-19, approved_after_1; executor
 AEON-7/Qwen3.6-27B-AEON).** Both capture gaps shipped: `PhaseRun.gen_time_s`

@@ -1,7 +1,7 @@
 # Phase 03: Shared metrics & cost core + `[models]` pricing
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -539,4 +539,30 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** b1e4ad7a6469b7bd28464a4654531f8a9e1c2f7e
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (206 turns)
+- **Scope deviations:** none — all 9 tasks implemented, including Task 9
+  (`init.rs` pricing comments) which was present in the feature commit
+  `da70772`.
+- **Calibration:** one **nit** recorded, not bounced — `resolve_for_model`'s
+  doc comment has a duplicated first line at `executor/src/config.rs:628-629`
+  (inserting `model_rates` above it cloned the opening `/// Apply the per-model
+  override …` line). Cosmetic, compiles clean, violates no DoD box; below the
+  phase-02 bounce bar (a real coverage gap). Sweep it in the next phase that
+  touches `config.rs`, or a trivial cleanup. **Data point:** both cascade-shape
+  spec designs (Part A additive module green-at-every-step; Part B one-file-per-
+  turn behavior-preserving migration; Part C pre-adapted `ModelOverride`
+  literals) executed clean first-try on a 9-file two-crate change — the
+  green-at-every-step pattern is now proven across three consecutive M35 phases.
+- **Review rigor:** independent gates green (537 mcp + 1018 executor, 2
+  ignored); `token_cost` (cache_write→cache_creation mapping) and
+  `reclaimed_total` (all-four-terms) both mutation-verified. E2E: `runs` /
+  `scorecard` / `status --repo .` all render behavior-preserving output, and —
+  now that the serve runs the phase-02 binary — the phase-03 run itself appears
+  in `runs` with real `reclaimed`/`peak_cxt` capture, confirming the
+  stale-serve issue is cleared.
 
