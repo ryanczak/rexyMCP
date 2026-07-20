@@ -405,6 +405,66 @@ additions are within the record shapes it already describes.)
 
 <!-- entries appended below this line -->
 
+### Notes for executor — 2026-07-19 ⚠️ BOUNCE FIX — READ THIS FIRST
+
+**The phase was BOUNCED at review (bug-02-1). All four gates are GREEN on the
+current tree — do NOT interpret green gates as "already complete." The
+implementation is done and correct; exactly ONE required test is missing, and
+this re-dispatch exists solely to add it.**
+
+**Do not re-edit any production code. Do not revisit Parts A/B. The single
+remaining task:**
+
+In `mcp/src/cap.rs`, inside the existing `#[cfg(test)] mod tests` block
+(append near `cap_session_record_truncates_tool_result_output_preview`, which
+is the model to imitate), add exactly:
+
+```rust
+#[test]
+fn cap_preserves_output_bytes() {
+    let record = make_session_record(
+        SessionEvent::ToolResult {
+            name: "read_file".into(),
+            succeeded: true,
+            output_preview: long_string(60_000),
+            output_bytes: 60_000,
+        },
+        1,
+    );
+    let capped = cap_session_record(record);
+    match capped.event {
+        SessionEvent::ToolResult { output_bytes, .. } => {
+            assert_eq!(
+                output_bytes, 60_000,
+                "capping must not zero or shrink output_bytes"
+            );
+        }
+        _ => panic!("expected ToolResult"),
+    }
+}
+```
+
+**Why:** review mutation-verified that zeroing the `output_bytes` pass-through
+in `cap_session_record` (`mcp/src/cap.rs:88`) leaves the whole suite green —
+the Test plan's `cap_preserves_output_bytes` pin was skipped. The test above
+is that pin, verbatim from bug-02-1 (`bugs/bug-02-1.md`). `make_session_record`
+and `long_string` already exist in the module.
+
+**Then:** run `cargo test -p rexymcp cap_preserves_output_bytes` once to
+confirm, run the four gates as separate invocations (never `cargo fmt --all`
+— the writing form; use `rustfmt mcp/src/cap.rs` only if fmt-check flags it),
+and complete the phase with an Update Log entry naming the bug fixed.
+
+### Update — 2026-07-19 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** Green bounce (bug-02-1, minor: the Test plan's
+`cap_preserves_output_bytes` was skipped; all four gates pass on the bounced
+tree), so a plain re-dispatch risks the executor self-reporting complete
+without engaging the bug — the folded countermeasure is a refined re-dispatch
+with a loud bounce-fix header carrying the exact test inline (above), which
+has landed clean on every prior green bounce it was applied to.
+
 ### Update — 2026-07-19 (escalation)
 
 **Chosen lever:** resume (`continue_phase`)
