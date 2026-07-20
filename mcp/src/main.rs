@@ -56,6 +56,15 @@ impl From<CalibrateArg> for rexymcp_executor::config::Tier {
 }
 
 #[derive(Subcommand)]
+enum RunsCommand {
+    /// Show one run's full detail by id (8-hex, or an unambiguous prefix)
+    Show {
+        /// Run id from the `ID` column of `rexymcp runs`
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum Commands {
     /// Check connectivity to the configured LLM endpoint
     Health {
@@ -123,7 +132,7 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// List individual PhaseRun records with their per-run statistics
+    /// List individual PhaseRun records, or show one in detail
     Runs {
         /// Path to the config file
         #[arg(long)]
@@ -148,6 +157,10 @@ enum Commands {
         /// Emit JSON instead of a human table
         #[arg(long)]
         json: bool,
+
+        /// Subcommand: `show <id>` drills into one run. Absent = list.
+        #[command(subcommand)]
+        command: Option<RunsCommand>,
     },
     /// Aggregate runs into a model × settings competency matrix
     Scorecard {
@@ -521,7 +534,43 @@ async fn main() -> anyhow::Result<()> {
             limit,
             telemetry_path,
             json,
+            command,
         } => {
+            if let Some(RunsCommand::Show { id }) = command {
+                let filter = runs::RunsFilter {
+                    model: None,
+                    tags: &[],
+                    limit: 0,
+                };
+                let all = match runs::load_runs(&config, telemetry_path.as_deref(), &filter) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(1);
+                    }
+                };
+                match runs::find_run_by_id(&all, &id) {
+                    Ok(run) => {
+                        let cfg = match rexymcp_executor::config::Config::load_with_env(&config) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                eprintln!("failed to load config: {e}");
+                                std::process::exit(1);
+                            }
+                        };
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        println!("{}", runs::format_run_detail(run, now_ms, &cfg));
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(1);
+                    }
+                }
+                return Ok(());
+            }
             let filter = runs::RunsFilter {
                 model: model.as_deref(),
                 tags: &tags,
@@ -1182,5 +1231,36 @@ mod tests {
     fn cli_parse_calibrate_missing_tier_fails() {
         let result = Cli::try_parse_from(["rexymcp", "calibrate"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parse_runs_show_id() {
+        let cli = Cli::try_parse_from([
+            "rexymcp",
+            "runs",
+            "--config",
+            "rexymcp.toml",
+            "show",
+            "a3f9c1e2",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Runs {
+                command: Some(super::RunsCommand::Show { id }),
+                ..
+            }) => {
+                assert_eq!(id, "a3f9c1e2");
+            }
+            _ => panic!("expected runs show"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_bare_runs_is_list() {
+        let cli = Cli::try_parse_from(["rexymcp", "runs", "--config", "rexymcp.toml"]).unwrap();
+        match cli.command {
+            Some(Commands::Runs { command: None, .. }) => {}
+            _ => panic!("expected bare runs list"),
+        }
     }
 }

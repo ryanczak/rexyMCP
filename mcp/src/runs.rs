@@ -82,6 +82,126 @@ fn fmt_tok_per_sec(tps: Option<f64>) -> String {
     }
 }
 
+/// Resolve a run id (a full 8-hex `metrics::run_id` or an unambiguous prefix)
+/// to exactly one run. Errors are user-facing strings: not-found, or ambiguous
+/// (lists the colliding ids).
+pub fn find_run_by_id<'a>(runs: &'a [PhaseRun], id: &str) -> Result<&'a PhaseRun, String> {
+    let matches: Vec<&PhaseRun> = runs
+        .iter()
+        .filter(|r| metrics::run_id(r).starts_with(id))
+        .collect();
+    match matches.as_slice() {
+        [] => Err(format!("no run matches id '{id}'")),
+        [one] => Ok(one),
+        many => Err(format!(
+            "id '{id}' is ambiguous — {} runs match: {}",
+            many.len(),
+            many.iter()
+                .map(|r| metrics::run_id(r))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+/// Full single-run detail. `now_ms` injected for a testable age.
+pub fn format_run_detail(run: &PhaseRun, now_ms: u64, config: &Config) -> String {
+    let id = metrics::run_id(run);
+    let age = humanize_age(now_ms.saturating_sub(run.ts));
+    let rates = config.model_rates(&run.model);
+    let cost = metrics::token_cost(&run.tokens, &rates);
+    let tps = metrics::tokens_per_sec(run.tokens.output_tokens, run.gen_time_s);
+    let reclaimed = metrics::reclaimed_total(&run.context_efficiency);
+
+    let gates = format!(
+        "fmt={} build={} lint={} test={}",
+        gate_char(run.gates.fmt),
+        gate_char(run.gates.build),
+        gate_char(run.gates.lint),
+        gate_char(run.gates.test),
+    );
+
+    let verdict = run.architect_verdict.as_deref().unwrap_or("—");
+    let warnings = run
+        .warnings
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "—".to_string());
+    let bugs = run
+        .bugs_filed
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "—".to_string());
+    let bounces = run
+        .bounces_to_approval
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "—".to_string());
+    let served_model = run.served_model.as_deref().unwrap_or("—");
+    let length_finish_rate = run
+        .length_finish_rate
+        .map(|r| format!("{:.2}%", r * 100.0))
+        .unwrap_or_else(|| "—".to_string());
+    let context_window = run
+        .context_window
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "—".to_string());
+    let peak_context = if run.context_efficiency.peak_context_pct == 0.0 {
+        "—".to_string()
+    } else {
+        format!("{:.1}%", run.context_efficiency.peak_context_pct * 100.0)
+    };
+    let reclaimed_str = if reclaimed == 0 {
+        "—".to_string()
+    } else {
+        reclaimed.to_string()
+    };
+
+    let cost_str = fmt_cost(cost);
+    let tps_str = fmt_tok_per_sec(tps);
+
+    format!(
+        "id: {id}\n\
+         model: {}\n\
+         phase_id: {}\n\
+         age: {age}\n\
+         status: {}\n\
+         escalated: {}\n\
+         architect_verdict: {verdict}\n\
+         gates: {gates}\n\
+         tokens: input={} output={} cache_read={} cache_write={} total={}\n\
+         cost: {cost_str}\n\
+         tok/s: {tps_str}\n\
+         turns: {}\n\
+         wall_clock_s: {:.2}\n\
+         gen_time_s: {:.2}\n\
+         verifier_retries: {}\n\
+         parse_failure_rate: {:.4}\n\
+         repairs_per_call: {:.4}\n\
+         tool_success_rate: {:.4}\n\
+         served_model: {served_model}\n\
+         length_finish_rate: {length_finish_rate}\n\
+         context_window: {context_window}\n\
+         context: peak_context_pct={peak_context} reclaimed={reclaimed_str}\n\
+         bugs_filed: {bugs}\n\
+         warnings: {warnings}\n\
+         bounces_to_approval: {bounces}",
+        run.model,
+        run.phase_id,
+        run.status,
+        run.escalated,
+        run.tokens.input_tokens,
+        run.tokens.output_tokens,
+        run.tokens.cache_read_tokens,
+        run.tokens.cache_write_tokens,
+        run.tokens.total(),
+        run.turns,
+        run.wall_clock_s,
+        run.gen_time_s,
+        run.verifier_retries,
+        run.parse_failure_rate,
+        run.repairs_per_call,
+        run.tool_success_rate,
+    )
+}
+
 /// Format a list of runs as a human-readable table. `now_ms` is the current
 /// unix-millis clock, injected so the age column is testable.
 pub fn format_runs(runs: &[PhaseRun], now_ms: u64, config: &Config) -> String {
@@ -795,5 +915,119 @@ dir = "{}"
             line.trim_end().ends_with('—'),
             "zero gen_time should render TOK/S as em dash: {line}"
         );
+    }
+
+    #[test]
+    fn find_run_by_id_resolves_full_id() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust"], None),
+            make_run(2000, "gemma", &["feature"], None),
+        ];
+        let id1 = metrics::run_id(&runs[0]);
+        let found = find_run_by_id(&runs, &id1).unwrap();
+        assert_eq!(found.ts, 1000);
+    }
+
+    #[test]
+    fn find_run_by_id_resolves_unambiguous_prefix() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust"], None),
+            make_run(2000, "gemma", &["feature"], None),
+        ];
+        let id1 = metrics::run_id(&runs[0]);
+        let prefix = &id1[..4];
+        let found = find_run_by_id(&runs, prefix).unwrap();
+        assert_eq!(found.ts, 1000);
+    }
+
+    #[test]
+    fn find_run_by_id_none_is_error() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust"], None),
+            make_run(2000, "gemma", &["feature"], None),
+        ];
+        let err = find_run_by_id(&runs, "zzzzzzzz").unwrap_err();
+        assert!(
+            err.contains("no run matches"),
+            "expected 'no run matches' in error: {err}"
+        );
+    }
+
+    #[test]
+    fn find_run_by_id_ambiguous_is_error() {
+        let runs = vec![
+            make_run(1000, "qwen", &["rust"], None),
+            make_run(2000, "gemma", &["feature"], None),
+        ];
+        let err = find_run_by_id(&runs, "").unwrap_err();
+        assert!(
+            err.contains("ambiguous"),
+            "expected 'ambiguous' in error for empty prefix: {err}"
+        );
+    }
+
+    #[test]
+    fn format_run_detail_shows_all_key_fields() {
+        use rexymcp_executor::store::telemetry::Gates;
+        let mut run = make_run(1_717_000_000_000, "qwen", &["rust"], None);
+        run.tokens = rexymcp_executor::ai::types::TokenBreakdown {
+            input_tokens: 1000,
+            output_tokens: 500,
+            cache_read_tokens: 200,
+            cache_write_tokens: 100,
+        };
+        run.gen_time_s = 5.0;
+        run.gates = Gates {
+            fmt: Some(true),
+            build: Some(true),
+            lint: Some(true),
+            test: Some(true),
+        };
+        run.architect_verdict = Some("approved_first_try".to_string());
+        run.bugs_filed = Some(0);
+        run.warnings = Some(3);
+        run.bounces_to_approval = Some(1);
+
+        let mut cfg = Config::default();
+        cfg.models.insert(
+            "qwen".to_string(),
+            rexymcp_executor::config::ModelOverride {
+                input_per_mtok: Some(2.0),
+                output_per_mtok: Some(9.0),
+                cache_read_per_mtok: Some(0.5),
+                cache_creation_per_mtok: Some(1.0),
+                ..Default::default()
+            },
+        );
+
+        let out = format_run_detail(&run, 1_717_000_010_000, &cfg);
+
+        let id = metrics::run_id(&run);
+        assert!(out.contains(&id), "expected id in output: {out}");
+        assert!(out.contains("qwen"), "expected model in output: {out}");
+        assert!(out.contains("cache"), "expected cache token label: {out}");
+        assert!(out.contains('$'), "expected cost with $: {out}");
+        assert!(
+            out.contains("100"),
+            "expected tok/s value (500/5=100): {out}"
+        );
+        assert!(
+            out.contains("approved_first_try"),
+            "expected verdict: {out}"
+        );
+        assert!(
+            out.contains("bugs_filed"),
+            "expected bugs_filed label: {out}"
+        );
+        assert!(out.contains("warnings"), "expected warnings label: {out}");
+        assert!(
+            out.contains("bounces_to_approval"),
+            "expected bounces_to_approval label: {out}"
+        );
+        // Gates should be present
+        assert!(out.contains("fmt="), "expected fmt gate: {out}");
+        assert!(out.contains("build="), "expected build gate: {out}");
+        assert!(out.contains("lint="), "expected lint gate: {out}");
+        assert!(out.contains("test="), "expected test gate: {out}");
     }
 }

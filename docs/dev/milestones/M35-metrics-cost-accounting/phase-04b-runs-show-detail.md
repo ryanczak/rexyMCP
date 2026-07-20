@@ -1,7 +1,7 @@
 # Phase 04b: `runs show <id>` — per-run detail view
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-04a
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -305,3 +305,27 @@ None. (No new dependencies; clap is already a dependency. No
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-20 (escalation)
+
+**Chosen lever:** resume (`continue_phase`)
+**Rationale:** `hard_fail` (`IdenticalToolCallRepetition`, 6× identical `sed -n`)
+with the production work **100% landed and correct** — `find_run_by_id` +
+`format_run_detail` in `runs.rs`, the compile-verified clap `RunsCommand::Show`
+subcommand, and the show dispatch branch (`main.rs:539-561`). The **only** break
+is a single missing `}` (250 open braces vs 249 close): the model deleted
+`mod tests`'s closing brace while adding the two CLI tests, then looped
+`read_file`-equivalent `sed -n` reads trying to inspect the fix until the
+identical-call governor stopped it (89 turns). The spec was fine — a resume with
+the exact fix (add the two CLI tests + close the module) preserves the correct
+work; re-dispatch would redo it. **Guard note (for the user's observation "the
+executor still wants sed"):** all 16 sed calls this run were **read-only
+`sed -n`** (inspection) — **zero `sed -i`**, so the M35 destructive-edit guard
+correctly did not fire and the file was **not** cannibalized (contrast 04a's
+~300-line loss). The residual habit is harmless inspection; the resume guidance
+steers it to `read_file`.
+
+### Update — 2026-07-20 19:38 (started)
+
+**Executor:** phase-04b executor
+**Started:** implementing `runs show <id>` — `find_run_by_id`, `format_run_detail`, clap subcommand, dispatch
