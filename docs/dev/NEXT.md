@@ -5,8 +5,44 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-05a-ii — migrate MCP `model_scorecard` onto the core (retire the Tag wrapper)](milestones/M35-metrics-cost-accounting/phase-05a-ii-scorecard-mcp-migration.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05a-ii`).**
+[M35 phase-05a-iii — `scorecard --by model|tag|settings` CLI + dropped columns; retire the Settings wrapper](milestones/M35-metrics-cost-accounting/phase-05a-iii-scorecard-by-cli.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05a-iii`).**
+
+phase-05a-iii drafted 2026-07-20: the CLI-side finish of the scorecard
+unification. Adds `rexymcp scorecard --by model|tag|settings` (clap `ByArg`
+ValueEnum + `From`, mirroring `CalibrateArg` at main.rs:38; default `settings` to
+preserve today's behavior), displays the three dropped columns (repairs-per-call,
+verifier-retries, wall-clock), **retires the last wrapper** (`aggregate_by_settings`
++ `SettingsScorecardRow` deleted; `load_settings_scorecard`/`format_settings_scorecard`
+→ `load_scorecard`/`format_scorecard` on `ScorecardBucket`), and **removes the
+`#[allow(dead_code)]` on `ScorecardDimension`** — `--by model` gives `Model` its
+first production consumer, closing the spec_bug thread carried since 05a-i. Same
+churn-minimizer as 05a-ii: a test-local `aggregate_by_settings` shim keeps the 12
+settings-test call sites byte-identical (only 5 `.settings`→`.key`); the now-
+tautological `aggregate_scorecard_settings_matches_wrapper` (05a-i) is deleted.
+Second-column header adapts to `--by` (SETTINGS/TAG/KEY). Largest of the 05a sub-
+phases; heavily pre-injected (CalibrateArg worked example, current formatter as the
+extend-base, exact new columns + key-header rule). size=m. **After 05a-iii the
+scorecard has one core, one row type (`ScorecardBucket`), no wrappers, no allow.**
+
+**M35 phase-05a-ii — done (2026-07-20, approved_first_try; executor
+AEON-7/Qwen3.6-27B-AEON, 286 turns).** MCP `model_scorecard` migrated onto
+`aggregate_scorecard(_, Tag, _)` (made `pub`); `ModelScorecardOutput.rows` is now
+`Vec<ScorecardBucket>`. **Retired the Tag wrapper** — deleted `aggregate` +
+`ScorecardRow` (~80 lines) with **no new `#[allow]`** (the deletion itself removed
+the dead code — the by-wrapper re-slice worked exactly as designed). The
+pre-injected **test-local `aggregate` shim** held all 24 test call sites
+byte-identical; only 15 `.tag`→`.key` reads changed. Two intended MCP output-JSON
+changes shipped: key field `tag`→`key`, and `length_finish_rate_mean` surfaced
+(was computed-then-dropped). +1 mutation-sensitive server test
+(`model_scorecard_rows_are_buckets_keyed_by_tag`). Clean first-try; **no `sed`
+trouble** (guard unexercised, 2 phases running). All gates green (552 mcp + 1024
+executor). **Calibration (spec_bug, 2nd occurrence, held for M35 close):**
+acceptance criterion #3's blanket `grep allow(dead_code)` is unsatisfiable while
+the carried 05a-i `ScorecardDimension` allow lives on — the executor correctly met
+AC3's intent (no NEW allow). 05a-iii removes that allow (Task 1), closing the
+thread. **Fold candidate:** scope such greps to the phase diff, or exempt a
+known-carried allow.
 
 phase-05a-ii drafted 2026-07-20: point `model_scorecard_inner` at
 `aggregate_scorecard(_, Tag, _)` (now made `pub`), change `ModelScorecardOutput.rows`
