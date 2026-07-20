@@ -107,6 +107,7 @@ mod tests {
             name: "bash".into(),
             succeeded: true,
             output_preview: "ls -la".into(),
+            output_bytes: 999,
         };
         let record = make_record(event, 5);
         let json = serde_json::to_string(&record).unwrap();
@@ -117,10 +118,12 @@ mod tests {
                 name,
                 succeeded,
                 output_preview,
+                output_bytes,
             } => {
                 assert_eq!(name, "bash");
                 assert!(*succeeded);
                 assert_eq!(output_preview, "ls -la");
+                assert_eq!(*output_bytes, 999);
             }
             _ => panic!("expected ToolResult"),
         }
@@ -171,6 +174,7 @@ mod tests {
                 name: "read_file".into(),
                 succeeded: true,
                 output_preview: "fn main()".into(),
+                output_bytes: 0,
             },
             SessionEvent::SessionEnd {
                 status: "success".into(),
@@ -289,6 +293,7 @@ mod tests {
                 name: "bash".into(),
                 succeeded: true,
                 output_preview: "file.txt".into(),
+                output_bytes: 0,
             },
             SessionEvent::Verify {
                 diagnostics: vec![diag.clone()],
@@ -499,5 +504,18 @@ mod tests {
                 rendered: "after poison".into(),
             },
         );
+    }
+
+    #[test]
+    fn tool_result_line_without_output_bytes_parses_default() {
+        // Pre-phase-02 tool_result line: no output_bytes key
+        let line = r#"{"ts":100,"turn":1,"event":{"event_type":"tool_result","name":"read_file","succeeded":true,"output_preview":"content"}}"#;
+        let record: SessionRecord = serde_json::from_str(line).unwrap();
+        match record.event {
+            SessionEvent::ToolResult { output_bytes, .. } => {
+                assert_eq!(output_bytes, 0);
+            }
+            _ => panic!("expected ToolResult"),
+        }
     }
 }

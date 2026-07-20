@@ -409,6 +409,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
         // Drive the chat future concurrently with a heartbeat interval. Each tick
         // re-emits awaiting_model so last_ts stays fresh during a slow prefill.
+        let call_started_ms = (deps.clock)();
         let chat_fut = deps.client.chat(&system, messages.clone(), tx, tools_opt);
         tokio::pin!(chat_fut);
         let mut heartbeat = interval(HEARTBEAT_PERIOD);
@@ -505,6 +506,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 }
             }
         }
+
+        metrics.gen_ms = metrics
+            .gen_ms
+            .saturating_add((deps.clock)().saturating_sub(call_started_ms));
 
         let mut completion = String::new();
         let mut native_call: Option<ToolCall> = None;
@@ -1098,6 +1103,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 name: tool_call.name.clone(),
                 succeeded,
                 output_preview: output_preview(&content),
+                output_bytes: content.len() as u64,
             },
         );
         scorer.record(&tool_call.name, succeeded);

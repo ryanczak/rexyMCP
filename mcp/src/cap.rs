@@ -80,10 +80,12 @@ pub fn cap_session_record(record: SessionRecord) -> SessionRecord {
             name,
             succeeded,
             output_preview,
+            output_bytes,
         } => SessionEvent::ToolResult {
             name,
             succeeded,
             output_preview: cap_string(output_preview),
+            output_bytes,
         },
         SessionEvent::HardFail { reason } => SessionEvent::HardFail {
             reason: cap_string(reason),
@@ -359,6 +361,7 @@ mod tests {
                 name: "read_file".into(),
                 succeeded: true,
                 output_preview: long_string(60_000),
+                output_bytes: 0,
             },
             1,
         );

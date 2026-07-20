@@ -181,6 +181,7 @@ pub(crate) fn record_lines_with_lang(
             name,
             succeeded,
             output_preview,
+            ..
         } => {
             let status = if *succeeded { "ok" } else { "FAIL" };
             let color = if *succeeded { Color::Green } else { Color::Red };
@@ -409,6 +410,7 @@ mod tests {
             name: "read_file".into(),
             succeeded: true,
             output_preview: "file contents".into(),
+            output_bytes: 0,
         };
         let t = record_text(&rec(300, 2, tool_ok));
         assert!(t.contains("[t2] tool read_file [ok]"));
@@ -419,6 +421,7 @@ mod tests {
             name: "bash".into(),
             succeeded: false,
             output_preview: "error output".into(),
+            output_bytes: 0,
         };
         let t = record_text(&rec(400, 3, tool_fail));
         assert!(t.contains("[t3] tool bash [FAIL]"));
@@ -527,6 +530,7 @@ mod tests {
             name: "bash".into(),
             succeeded: false,
             output_preview: "line one\nline two".into(),
+            output_bytes: 0,
         };
         let lines = record_lines(&rec(100, 2, tr));
         // 1 header + 2 body lines.
@@ -973,6 +977,7 @@ mod tests {
                 name: "bash".to_string(),
                 succeeded: true,
                 output_preview: "echo hello".to_string(),
+                output_bytes: 0,
             },
         );
         let lines = record_lines(&rec);
@@ -1012,6 +1017,7 @@ mod tests {
                     name: "read_file".to_string(),
                     succeeded: true,
                     output_preview: "def f():\n    pass".to_string(),
+                    output_bytes: 0,
                 },
             ),
         ];
@@ -1040,6 +1046,7 @@ mod tests {
                 name: "read_file".to_string(),
                 succeeded: true,
                 output_preview: "def f():\n    pass".to_string(),
+                output_bytes: 0,
             },
         )];
         // Should not panic — falls back to content detection
@@ -1071,6 +1078,7 @@ mod tests {
                     name: "read_file".into(),
                     succeeded: true,
                     output_preview: "fn x(){}".into(),
+                    output_bytes: 0,
                 },
             ),
         ];
@@ -1107,6 +1115,7 @@ mod tests {
                 name: "read_file".into(),
                 succeeded: true,
                 output_preview: "content".into(),
+                output_bytes: 0,
             },
         )];
         let lines = transcript_lines(&records, &ActivityFilter::default());
@@ -1143,6 +1152,7 @@ mod tests {
                     name: "bash".into(),
                     succeeded: false,
                     output_preview: "error".into(),
+                    output_bytes: 0,
                 },
             ),
         ];
@@ -1168,6 +1178,7 @@ mod tests {
                 name: "bash".into(),
                 succeeded: false,
                 output_preview: "error".into(),
+                output_bytes: 0,
             },
         );
         let lines = record_lines(&rec);

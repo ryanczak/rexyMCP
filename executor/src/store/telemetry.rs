@@ -117,7 +117,7 @@ pub struct TierTelemetry {
 /// One per-phase metrics row. Objective fields are filled by the executor; the
 /// supervision fields are filled by the architect at review (M7).
 /// (No `PartialEq` — `TokenBreakdown` doesn't implement it; compare via JSON.)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PhaseRun {
     pub ts: u64,
     // identity
@@ -142,6 +142,11 @@ pub struct PhaseRun {
     // efficiency (objective)
     pub turns: usize,
     pub wall_clock_s: f64,
+    /// Total wall time spent awaiting model generation across all calls,
+    /// in seconds. tok/s derives as `tokens.output_tokens / gen_time_s`
+    /// (guard zero). `0.0` for v1 records written before this field existed.
+    #[serde(default)]
+    pub gen_time_s: f64,
     pub tokens: TokenBreakdown,
     // supervision (architect-filled at review — M7)
     pub warnings: Option<u32>,
@@ -826,6 +831,7 @@ mod tests {
             project_id: None,
             milestone_id: None,
             tier_telemetry: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -1487,5 +1493,17 @@ mod tests {
         let activities = read_architect_activities(&path).unwrap();
         assert_eq!(activities.len(), 1);
         assert_eq!(activities[0].tokens, ArchitectTokens::default());
+    }
+
+    #[test]
+    fn phase_run_line_without_gen_time_s_parses_default() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        // Pre-phase-02 line: has schema_version:1 but no gen_time_s
+        let line = r#"{"schema_version":1,"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":["rust"],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{},"warnings":null,"bugs_filed":null}"#;
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        let results = read(&path).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].gen_time_s, 0.0);
     }
 }

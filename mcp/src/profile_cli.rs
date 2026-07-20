@@ -144,6 +144,7 @@ mod tests {
             project_id: None,
             milestone_id: None,
             tier_telemetry: Default::default(),
+            ..Default::default()
         }
     }
 

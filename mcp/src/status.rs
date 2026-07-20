@@ -472,6 +472,7 @@ mod tests {
             name: name.into(),
             succeeded,
             output_preview: String::new(),
+            output_bytes: 0,
         }
     }
 

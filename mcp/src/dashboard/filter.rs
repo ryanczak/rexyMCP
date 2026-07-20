@@ -227,6 +227,7 @@ mod tests {
             name: "read_file".into(),
             succeeded: true,
             output_preview: "content".into(),
+            output_bytes: 0,
         };
 
         // With tool_call off, both Parsed and ToolResult are hidden

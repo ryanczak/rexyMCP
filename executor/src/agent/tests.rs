@@ -274,6 +274,52 @@ async fn tool_call_then_no_tool_call_completes() {
 }
 
 #[tokio::test]
+async fn tool_result_records_full_output_bytes_not_preview_len() {
+    let dir = TempDir::new().unwrap();
+    let large_content = "A".repeat(750);
+    std::fs::write(dir.path().join("big.txt"), &large_content).unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let path = dir.path().join("big.txt").to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![token("done")],
+    ]);
+    let budget = Budget::new(1_000_000);
+
+    let result = execute_phase(&input(), deps(&client, &registry, &budget, 8, dir.path()))
+        .await
+        .unwrap();
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let records = records(dir.path());
+    let tool_result = records
+        .iter()
+        .find(|r| matches!(&r.event, SessionEvent::ToolResult { .. }))
+        .expect("should have at least one ToolResult");
+    match &tool_result.event {
+        SessionEvent::ToolResult {
+            output_bytes,
+            output_preview,
+            ..
+        } => {
+            assert!(
+                *output_bytes >= 700,
+                "output_bytes ({}) should be >= 700",
+                output_bytes
+            );
+            assert!(
+                *output_bytes > output_preview.chars().count() as u64,
+                "output_bytes ({}) should be > preview chars ({})",
+                output_bytes,
+                output_preview.chars().count()
+            );
+        }
+        _ => panic!("expected ToolResult"),
+    }
+}
+
+#[tokio::test]
 async fn completes_without_flipping_status_now_that_gate_is_gone() {
     let dir = TempDir::new().unwrap();
     let scope = Scope::new(dir.path()).unwrap();
@@ -5323,4 +5369,54 @@ async fn loop_returns_cancelled_when_signal_flipped_mid_stream() {
     assert_eq!(result.status, PhaseStatus::Cancelled);
     let c = result.cancellation.as_ref().unwrap();
     assert_eq!(c.stage, "awaiting_model");
+}
+
+#[tokio::test]
+async fn gen_time_recorded_with_advancing_clock() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    fn clock_advancing() -> u64 {
+        static T: AtomicU64 = AtomicU64::new(0);
+        T.fetch_add(250, Ordering::SeqCst)
+    }
+    let dir = TempDir::new().unwrap();
+    let telem = dir.path().join("telem");
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let client = MockAiClientScript::new(vec![vec![token("done")]]);
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 8,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_advancing,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: Some(&telem),
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+
+    execute_phase(&input(), d).await.unwrap();
+
+    let runs = read_runs(&telem);
+    assert_eq!(runs.len(), 1);
+    assert!(runs[0].gen_time_s > 0.0, "gen_time_s should be > 0");
+    assert!(
+        runs[0].gen_time_s <= runs[0].wall_clock_s,
+        "gen_time_s ({}) should be <= wall_clock_s ({})",
+        runs[0].gen_time_s,
+        runs[0].wall_clock_s,
+    );
 }

@@ -16,6 +16,7 @@ pub(super) struct RunMetrics {
     pub(super) served_model: Option<String>,
     pub(super) length_finishes: usize,
     pub(super) total_finishes: usize,
+    pub(super) gen_ms: u64,
 }
 
 impl RunMetrics {
@@ -31,6 +32,7 @@ impl RunMetrics {
             served_model: None,
             length_finishes: 0,
             total_finishes: 0,
+            gen_ms: 0,
         }
     }
 
@@ -117,6 +119,7 @@ pub(super) fn emit_phase_run(
         tool_success_rate,
         turns,
         wall_clock_s,
+        gen_time_s: metrics.gen_ms as f64 / 1000.0,
         tokens: metrics.tokens.clone(),
         warnings: None,
         bugs_filed: None,

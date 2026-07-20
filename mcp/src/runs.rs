@@ -218,6 +218,7 @@ mod tests {
             project_id: None,
             milestone_id: None,
             tier_telemetry: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -261,6 +262,7 @@ mod tests {
             project_id: None,
             milestone_id: None,
             tier_telemetry: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -670,6 +672,7 @@ dir = "{}"
             project_id: Some("test-proj".to_string()),
             milestone_id: None,
             tier_telemetry: Default::default(),
+            ..Default::default()
         };
         append(&telemetry_dir, &run).unwrap();
 

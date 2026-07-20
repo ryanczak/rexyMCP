@@ -51,6 +51,11 @@ pub enum SessionEvent {
         name: String,
         succeeded: bool,
         output_preview: String,
+        /// Full byte length (`content.len()`) of the tool output **before**
+        /// `output_preview` truncation. `0` for records written before this field
+        /// existed. The output-flood calibration signal reads this.
+        #[serde(default)]
+        output_bytes: u64,
     },
     Verify {
         diagnostics: Vec<crate::governor::verifier::Diagnostic>,

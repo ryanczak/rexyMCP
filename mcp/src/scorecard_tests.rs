@@ -38,6 +38,7 @@ fn make_run(
         project_id: None,
         milestone_id: None,
         tier_telemetry: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -428,6 +429,7 @@ fn make_run_with_settings(
         project_id: None,
         milestone_id: None,
         tier_telemetry: Default::default(),
+        ..Default::default()
     }
 }
 

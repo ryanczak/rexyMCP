@@ -1,7 +1,7 @@
 # Phase 02: Capture gaps — generation speed + output bytes
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -404,3 +404,32 @@ additions are within the record shapes it already describes.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-19 (escalation)
+
+**Chosen lever:** resume (`continue_phase`)
+**Rationale:** First escalation on this phase, and the textbook resume shape —
+242 steps produced 51 clean patches across all 16 planned files with
+**1007/1009 executor tests green**; both cascade designs (Part A
+green-at-every-step, Part B leaf-first) executed without governor incident.
+The `Oscillation {2,8}` hard-fail was a last-mile debug loop on the two
+hand-written-JSON compat-pin fixtures, both now root-caused by the architect:
+(1) `tool_result_line_without_output_bytes_parses_default` uses
+`"type":"tool_result"` but `SessionEvent`'s tag is `event_type`
+(event.rs:31) — serde error `missing field \`event_type\``; (2)
+`phase_run_line_without_gen_time_s_parses_default` writes
+`"context_efficiency":{}` — the explicit empty object forces deserializing
+`ContextEfficiency`, whose fields carry no serde defaults (only `PhaseRun`'s
+field-level `#[serde(default)]` covers an **omitted** key), so the line is
+silently dropped by `read`'s `filter_map` and the test sees `len 0`. The
+resume guidance carries both corrected fixture lines verbatim, leaving purely
+mechanical patching plus the gate suite and E2E — squarely inside the
+executor's demonstrated ability this run.
+
+### Update — 2026-07-20 01:48 (started)
+
+**Executor:** continuing from prior run
+**Progress:** Applied architect-guided fixes for the two malformed test fixtures:
+(1) corrected `event_type` tag in `tool_result_line_without_output_bytes_parses_default`
+(2) removed explicit empty `context_efficiency`/`tier_telemetry` objects from
+`phase_run_line_without_gen_time_s_parses_default`. Both tests now pass.
