@@ -1,7 +1,7 @@
 # Phase 05a-ii: Migrate MCP `model_scorecard` onto the core (retire the Tag wrapper)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-05a-i
 **Estimated diff:** ~170 lines (mostly deletions + mechanical test edits)
 **Tags:** language=rust, kind=refactor, size=m

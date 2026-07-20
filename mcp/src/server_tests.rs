@@ -796,6 +796,36 @@ fn model_scorecard_folds_review() {
     );
 }
 
+// --- model_scorecard migration test ---
+
+#[test]
+fn model_scorecard_rows_are_buckets_keyed_by_tag() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_config_with_telemetry(&temp_dir);
+    write_telemetry_fixture(&temp_dir);
+
+    let params = ModelScorecardParams {
+        tags: None,
+        model: None,
+        min_runs: None,
+        telemetry_path: None,
+    };
+    let result = model_scorecard_inner(&config_path, &params).unwrap();
+
+    // All rows must have a non-empty key (Tag dimension never produces empty keys).
+    assert!(
+        result.rows.iter().all(|r| !r.key.is_empty()),
+        "all Tag-dimension rows must have a non-empty key"
+    );
+
+    // The fixture tags are "rust", "feature", "bugfix" — assert at least one
+    // row has key == "rust" (both fixture runs carry that tag).
+    assert!(
+        result.rows.iter().any(|r| r.key == "rust"),
+        "expected a row with key == \"rust\" from the fixture"
+    );
+}
+
 // --- model_profile tests ---
 
 #[test]

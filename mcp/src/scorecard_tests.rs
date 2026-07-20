@@ -1,10 +1,17 @@
 use super::{
-    Gates, ScorecardDimension, ScorecardFilter, aggregate, aggregate_by_settings,
+    Gates, ScorecardBucket, ScorecardDimension, ScorecardFilter, aggregate_by_settings,
     aggregate_scorecard,
 };
 use rexymcp_executor::ai::types::TokenBreakdown;
 use rexymcp_executor::store::telemetry::PhaseRun;
 use rexymcp_executor::store::telemetry::{ContextEfficiency, GenerationParams};
+
+/// Test convenience: the model×tag aggregation is now `aggregate_scorecard`
+/// with the `Tag` dimension (the old `aggregate` wrapper was retired in
+/// phase-05a-ii). Returns `ScorecardBucket` (key field is `key`, not `tag`).
+fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardBucket> {
+    aggregate_scorecard(runs, ScorecardDimension::Tag, filter)
+}
 
 fn make_run(
     model: &str,
@@ -129,8 +136,8 @@ fn tags_and_filter_only_runs_containing_all_tags() {
     };
     let rows = aggregate(&runs, &filter);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].tag, "feature");
-    assert_eq!(rows[1].tag, "rust");
+    assert_eq!(rows[0].key, "feature");
+    assert_eq!(rows[1].key, "rust");
     assert_eq!(rows[0].n_runs, 2);
     assert_eq!(rows[1].n_runs, 2);
 }
@@ -178,8 +185,8 @@ fn empty_filter_every_run_tag_contributes() {
     )];
     let rows = aggregate(&runs, &ScorecardFilter::default());
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].tag, "a");
-    assert_eq!(rows[1].tag, "b");
+    assert_eq!(rows[0].key, "a");
+    assert_eq!(rows[1].key, "b");
 }
 
 #[test]
@@ -371,7 +378,7 @@ fn min_runs_drops_low_sample_buckets() {
     };
     let rows = aggregate(&runs, &filter);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].tag, "common");
+    assert_eq!(rows[0].key, "common");
     assert_eq!(rows[0].n_runs, 2);
 }
 
@@ -384,16 +391,16 @@ fn sort_order_tag_asc_n_runs_desc_model_asc() {
     ];
     let rows = aggregate(&runs, &ScorecardFilter::default());
     assert_eq!(rows.len(), 4);
-    assert_eq!(rows[0].tag, "a");
+    assert_eq!(rows[0].key, "a");
     assert_eq!(rows[0].model, "alpha");
     assert_eq!(rows[0].n_runs, 1);
-    assert_eq!(rows[1].tag, "a");
+    assert_eq!(rows[1].key, "a");
     assert_eq!(rows[1].model, "beta");
     assert_eq!(rows[1].n_runs, 1);
-    assert_eq!(rows[2].tag, "z");
+    assert_eq!(rows[2].key, "z");
     assert_eq!(rows[2].model, "alpha");
     assert_eq!(rows[2].n_runs, 2);
-    assert_eq!(rows[3].tag, "z");
+    assert_eq!(rows[3].key, "z");
     assert_eq!(rows[3].model, "beta");
     assert_eq!(rows[3].n_runs, 1);
 }
@@ -531,7 +538,7 @@ fn scorecard_peak_context_pct_mean_averages_measured_runs() {
         },
     ];
     let rows = aggregate(&runs, &ScorecardFilter::default());
-    let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+    let row = &rows.iter().find(|r| r.key == "rust").unwrap();
     assert!(row.peak_context_pct_mean.is_some());
     assert!((row.peak_context_pct_mean.unwrap() - 0.7).abs() < f64::EPSILON);
 }
@@ -552,7 +559,7 @@ fn scorecard_tokens_reclaimed_mean_sums_all_four_sources() {
         r
     }];
     let rows = aggregate(&runs, &ScorecardFilter::default());
-    let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+    let row = &rows.iter().find(|r| r.key == "rust").unwrap();
     assert!(row.tokens_reclaimed_mean.is_some());
     assert!((row.tokens_reclaimed_mean.unwrap() - 200.0).abs() < f64::EPSILON);
 }
@@ -568,7 +575,7 @@ fn scorecard_context_efficiency_none_when_all_legacy() {
         None,
     )];
     let rows = aggregate(&runs, &ScorecardFilter::default());
-    let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+    let row = &rows.iter().find(|r| r.key == "rust").unwrap();
     assert!(row.peak_context_pct_mean.is_none());
     assert!(row.tokens_reclaimed_mean.is_none());
 }
@@ -592,7 +599,7 @@ fn scorecard_context_measured_excludes_legacy_runs() {
         make_run("m1", &["rust"], all_pass_gates(), false, None, None), // legacy: all zeros
     ];
     let rows = aggregate(&runs, &ScorecardFilter::default());
-    let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+    let row = &rows.iter().find(|r| r.key == "rust").unwrap();
     assert!((row.peak_context_pct_mean.unwrap() - 0.5).abs() < f64::EPSILON);
     assert!((row.tokens_reclaimed_mean.unwrap() - 400.0).abs() < f64::EPSILON);
 }
@@ -613,7 +620,7 @@ fn scorecard_measured_run_with_zero_reclaim_contributes() {
         r
     }];
     let rows = aggregate(&runs, &ScorecardFilter::default());
-    let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+    let row = &rows.iter().find(|r| r.key == "rust").unwrap();
     assert!(row.tokens_reclaimed_mean.is_some());
     assert!((row.tokens_reclaimed_mean.unwrap() - 0.0).abs() < f64::EPSILON);
 }
@@ -764,7 +771,7 @@ fn scorecard_row_serializes_context_efficiency_means() {
         r
     }];
     let rows = aggregate(&runs, &ScorecardFilter::default());
-    let row = &rows.iter().find(|r| r.tag == "rust").unwrap();
+    let row = &rows.iter().find(|r| r.key == "rust").unwrap();
     let json = serde_json::to_string(row).unwrap();
     assert!(json.contains(r#""peak_context_pct_mean""#));
     assert!(json.contains(r#""tokens_reclaimed_mean""#));

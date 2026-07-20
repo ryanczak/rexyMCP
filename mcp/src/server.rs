@@ -426,7 +426,7 @@ pub struct ModelScorecardParams {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ModelScorecardOutput {
-    pub rows: Vec<scorecard::ScorecardRow>,
+    pub rows: Vec<scorecard::ScorecardBucket>,
     pub total_runs_considered: usize,
     /// True iff the row count was clipped by `MAX_ROWS`.
     pub truncated: bool,
@@ -484,7 +484,8 @@ pub(crate) fn model_scorecard_inner(
         min_runs: params.min_runs.unwrap_or(0),
     };
 
-    let mut rows = scorecard::aggregate(&runs, &filter);
+    let mut rows =
+        scorecard::aggregate_scorecard(&runs, scorecard::ScorecardDimension::Tag, &filter);
 
     let truncated = rows.len() > scorecard::MAX_ROWS;
     if truncated {

@@ -47,9 +47,10 @@ pub enum ScorecardDimension {
     Settings,
 }
 
-/// One aggregated bucket — the dimension-neutral superset of `ScorecardRow` and
-/// `SettingsScorecardRow`. `key` is the secondary-dimension label (`""` for
-/// `Model`, the tag for `Tag`, the settings label for `Settings`).
+/// One aggregated bucket — the dimension-neutral superset row returned by
+/// [`aggregate_scorecard`] (and mapped by the `aggregate_by_settings` wrapper
+/// into `SettingsScorecardRow`). `key` is the secondary-dimension label (`""`
+/// for `Model`, the tag for `Tag`, the settings label for `Settings`).
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ScorecardBucket {
     pub model: String,
@@ -102,7 +103,7 @@ struct SettingsAccumulator {
 /// - `Settings` — one bucket per (model, settings label).
 ///
 /// The `filter` is applied per-run before bucketing.
-fn aggregate_scorecard(
+pub fn aggregate_scorecard(
     runs: &[PhaseRun],
     dimension: ScorecardDimension,
     filter: &ScorecardFilter,
@@ -265,41 +266,6 @@ pub fn aggregate_by_settings(
         .collect()
 }
 
-/// One row of the model × tag matrix.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct ScorecardRow {
-    pub model: String,
-    pub tag: String,
-    pub n_runs: usize,
-    /// Fraction of runs where every configured gate (fmt/build/lint/test)
-    /// reported `Some(true)`. A `None` gate counts as a non-pass.
-    pub gates_pass_rate: f64,
-    pub parse_failure_rate_mean: f64,
-    pub repairs_per_call_mean: f64,
-    pub tool_success_rate_mean: f64,
-    pub verifier_retries_mean: f64,
-    pub turns_mean: f64,
-    pub wall_clock_s_mean: f64,
-    /// Fraction of runs with `escalated == true`.
-    pub escalation_rate: f64,
-    /// Number of runs in this bucket that have `architect_verdict` set.
-    pub n_with_verdict: usize,
-    /// Fraction of verdict-present runs that were `approved_first_try`.
-    /// `None` when `n_with_verdict == 0`.
-    pub approved_first_try_rate: Option<f64>,
-    /// Mean of `bounces_to_approval` over runs where it is `Some`.
-    /// `None` when no such runs.
-    pub bounces_to_approval_mean: Option<f64>,
-    /// Mean peak context-window utilization (a FRACTION in [0.0, 1.0]) over the
-    /// runs in this bucket that carry context telemetry (`peak_context_pct >
-    /// 0.0`). `None` when no run in the bucket is context-measured.
-    pub peak_context_pct_mean: Option<f64>,
-    /// Mean total tokens reclaimed (sum of all four M10 sources) over the same
-    /// context-measured runs. `None` when none are context-measured. A measured
-    /// run that reclaimed nothing contributes `0.0`, not exclusion.
-    pub tokens_reclaimed_mean: Option<f64>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct ScorecardFilter<'a> {
     /// Restrict runs to those whose `tags` contains **all** of these tags.
@@ -319,30 +285,6 @@ fn gates_all_pass(gates: &Gates) -> bool {
         && gates.lint == Some(true)
         && gates.test == Some(true)
 }
-pub fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardRow> {
-    aggregate_scorecard(runs, ScorecardDimension::Tag, filter)
-        .into_iter()
-        .map(|b| ScorecardRow {
-            model: b.model,
-            tag: b.key,
-            n_runs: b.n_runs,
-            gates_pass_rate: b.gates_pass_rate,
-            parse_failure_rate_mean: b.parse_failure_rate_mean,
-            repairs_per_call_mean: b.repairs_per_call_mean,
-            tool_success_rate_mean: b.tool_success_rate_mean,
-            verifier_retries_mean: b.verifier_retries_mean,
-            turns_mean: b.turns_mean,
-            wall_clock_s_mean: b.wall_clock_s_mean,
-            escalation_rate: b.escalation_rate,
-            n_with_verdict: b.n_with_verdict,
-            approved_first_try_rate: b.approved_first_try_rate,
-            bounces_to_approval_mean: b.bounces_to_approval_mean,
-            peak_context_pct_mean: b.peak_context_pct_mean,
-            tokens_reclaimed_mean: b.tokens_reclaimed_mean,
-        })
-        .collect()
-}
-
 #[cfg(test)]
 #[path = "scorecard_tests.rs"]
 mod tests;
