@@ -5,8 +5,47 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-05a-i — unified scorecard aggregation core](milestones/M35-metrics-cost-accounting/phase-05a-i-scorecard-unified-core.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05a-i`).**
+[M35 phase-05a-ii — migrate MCP `model_scorecard` onto the core (retire the Tag wrapper)](milestones/M35-metrics-cost-accounting/phase-05a-ii-scorecard-mcp-migration.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05a-ii`).**
+
+phase-05a-ii drafted 2026-07-20: point `model_scorecard_inner` at
+`aggregate_scorecard(_, Tag, _)` (now made `pub`), change `ModelScorecardOutput.rows`
+to `Vec<ScorecardBucket>`, and **retire the Tag wrapper** — delete `aggregate` +
+`ScorecardRow`, migrate their ~24 test call sites + ~14 `.tag` reads. **Re-slice
+vs. the original plan** (which put all wrapper deletion in 05a-iii): the Tag
+wrapper's only production caller is `model_scorecard_inner`, so migrating it makes
+`aggregate` production-dead → in a binary crate `pub fn`+test-only-use is
+`dead_code` → clippy fails (the exact mechanism behind 05a-i's forced
+`#[allow(dead_code)]`). So "migrate last consumer" + "delete wrapper + migrate its
+tests" is one inseparable, dead-code-free unit. **Churn-minimizer pre-injected:** a
+**test-local `aggregate` shim** wrapping `aggregate_scorecard(Tag)` keeps all 24
+call sites byte-identical, so only `.tag`→`.key` reads change. Two intended MCP
+output-JSON changes pinned: key field `tag`→`key`, and `length_finish_rate_mean`
+now exposed (was computed-then-dropped). 05a-iii then retires the Settings wrapper
+(`aggregate_by_settings`/`SettingsScorecardRow`) alongside the `--by` CLI +
+dropped columns. size=m.
+
+**M35 phase-05a-i — done (2026-07-20, approved_first_try; executor
+AEON-7/Qwen3.6-27B-AEON, 96 turns).** Unified scorecard aggregation core:
+`aggregate_scorecard(runs, ScorecardDimension{Model,Tag,Settings}, filter) ->
+Vec<ScorecardBucket>` (superset accumulator, per-dimension key selection, sort by
+`(key, -n_runs, model)`); `aggregate_by_settings` and `aggregate` reduced to thin
+mapping wrappers with unchanged signatures; the duplicate `Accumulator` struct
+deleted. Full existing suite (551 mcp + 1024 executor) passes unchanged — the
+behavior-preservation proof; +4 mutation-sensitive core tests (wrapper-equality,
+tag-explosion + no-tags negative pin, one-bucket-per-model, min_runs). **Clean
+first-try dispatch** — no governor incident, **no `sed` trouble** (the guard
+wasn't even exercised). **One forced scope deviation accepted, not bounced:** an
+`#[allow(dead_code)]` on `ScorecardDimension`, mechanically required because the
+`pub Model` variant has no production consumer until 05a-iii and the `rexymcp`
+binary crate warns `dead_code` on test-only-constructed variants — verified at
+review by removing it (clippy `-D warnings` fails to compile). The executor met
+criterion #3's real intent (`Accumulator` **deleted**, not masked) and had no
+in-scope alternative. **Calibration held for M35-close (spec_bug):** acceptance
+criterion #3's blanket "no `#[allow(dead_code)]`" contradicted the phase's own
+introduction of an unused `Model` variant; **05a-iii action:** when `--by model`
+gives `Model` a production consumer, delete the allow (or convert to
+`#[expect(dead_code)]` so it self-removes then).
 
 **phase-05 (aggregate surfaces) split — design fork resolved with the user
 (2026-07-20).** The exit criterion "`scorecard --by model|tag|settings` unifies
