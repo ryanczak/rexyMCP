@@ -4,9 +4,38 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-02 — Capture gaps: generation speed + output bytes](milestones/M35-metrics-cost-accounting/phase-02-capture-gaps-speed-output-bytes.md)
-(status: todo — drafted 2026-07-19, awaiting `/rexymcp:dispatch phase-02`).**
+**Active phase: none.** M35 phase-03 (shared metrics & cost core + `[models]`
+pricing) is not yet drafted — run `/rexymcp:architect next` to draft it.
+
+**M35 phase-02 — done (2026-07-19, approved_after_1; executor
+AEON-7/Qwen3.6-27B-AEON).** Both capture gaps shipped: `PhaseRun.gen_time_s`
+(per-call generation wall time bracketing `chat_fut` off the injected clock;
+the tok/s ingredient for phases 03/04) and
+`SessionEvent::ToolResult.output_bytes` (`content.len()` before preview
+truncation; the M34-deferred output-flood calibration field), both
+`#[serde(default)]` with old-line compat pins. **First dispatch hard_failed**
+(`Oscillation{2,8}`) at the last mile — 242 steps / 51 clean patches / all 16
+files / 1007 of 1009 tests green, then a debug loop on two malformed
+hand-written JSON fixtures (`"type"` vs the `event_type` serde tag; an
+explicit `"context_efficiency":{}` whose default-free fields error and get
+silently dropped by `read`'s filter_map). Architect root-caused both; a
+briefing-seeded **resume** with the corrected lines verbatim landed clean in
+43 turns. **Bounced once at review** (bug-02-1, minor, `false_completion`):
+the Test plan's `cap_preserves_output_bytes` was skipped — review
+mutation-proved zeroing the cap pass-through left the whole suite green. The
+loud bounce-fix-header refined re-dispatch (green-bounce countermeasure, now
+4-for-4) added exactly the one test in 31 turns; review re-ran the mutation
+and the new test kills it. All four gates green (537 mcp + 1009 executor).
+**Both cascade-risk spec designs worked first-try** (Part A
+green-at-every-step via `Default`+FRU pre-adaptation of test literals; Part B
+leaf-first strictly-decreasing order, safe because `check_verifier_persistence`
+only fires on non-decreasing streaks) — no governor incident on a 16-file
+two-crate change; reusable shapes. **Calibration (2nd occurrence, hold):**
+executor debugs hand-written JSON fixtures poorly — consider giving fixture
+JSON verbatim in Test plans if it recurs. **Live-serve note:** the connected
+serve predates this binary — live logs carry `output_bytes` only after
+`cargo install --force` + serve restart
+([[stale-rexymcp-serve-after-rebuild]]).
 
 phase-02 drafted 2026-07-19: `PhaseRun.gen_time_s` (per-call generation wall
 time summed off the injected clock around `chat_fut`; tok/s ingredient for

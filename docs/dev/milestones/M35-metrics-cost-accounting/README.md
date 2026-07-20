@@ -52,7 +52,7 @@ and the executor finally carries a real (configurable) price.
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Telemetry store foundation ([phase-01-telemetry-store-foundation.md](phase-01-telemetry-store-foundation.md)) | done |
-| 02 | Capture gaps: generation speed + output bytes ([phase-02-capture-gaps-speed-output-bytes.md](phase-02-capture-gaps-speed-output-bytes.md)) | review |
+| 02 | Capture gaps: generation speed + output bytes ([phase-02-capture-gaps-speed-output-bytes.md](phase-02-capture-gaps-speed-output-bytes.md)) | done |
 | 03 | Shared metrics & cost core + `[models]` pricing | not drafted |
 | 04 | Run-level surface: `runs` columns + `runs show` | not drafted |
 | 05 | Aggregate surfaces: unified scorecard + profile efficiency | not drafted |

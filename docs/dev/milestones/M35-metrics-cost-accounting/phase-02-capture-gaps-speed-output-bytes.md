@@ -1,7 +1,7 @@
 # Phase 02: Capture gaps — generation speed + output bytes
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-01
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -679,4 +679,33 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 2a872cce5cd20e216a43a4d134c7aba3da64f60b
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-19
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bugs: bug-02-1 — minor)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** none (bounce-fix diff was exactly the one required
+  test, +23 lines)
+- **Calibration:** none filed. Data points recorded: (1) the green-bounce
+  loud-header refined re-dispatch landed clean again — the folded
+  countermeasure is now 4-for-4; (2) both cascade-risk spec designs (Part A
+  green-at-every-step via Default+FRU pre-adaptation; Part B leaf-first
+  strictly-decreasing order) executed without a single governor incident on
+  the first dispatch — reusable shapes for future wide-blast-radius phases;
+  (3) the first dispatch's hard_fail was a fixture-debug oscillation
+  (hand-written JSON vs. serde tag/nested-default semantics) — 2nd occurrence
+  of executor-debugs-hand-written-JSON-poorly (phase-01's resume had the same
+  shape); hold for a possible spec-discipline fold (give fixture JSON
+  verbatim in Test plans) if it recurs.
+- **Review rigor notes:** all three shipped behaviors mutation-verified at
+  review (preview-length mutation fails the output_bytes test; dropped
+  accumulation fails the gen_time test; zeroed cap pass-through fails
+  `cap_preserves_output_bytes` — the exact mutation that was suite-green at
+  the bounce). Independent gate re-runs green (537 mcp + 1009 executor, 2
+  ignored). E2E: `runs` correctly retires the pre-M35 store; `status --repo .`
+  parses old + new session logs cleanly. **Live-serve note:** the connected
+  serve still runs the pre-phase-02 binary, so live session logs won't carry
+  `output_bytes` until the usual `cargo install --force` + serve restart
+  ([[stale-rexymcp-serve-after-rebuild]]).
 
