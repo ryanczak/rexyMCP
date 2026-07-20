@@ -1,7 +1,7 @@
 # Phase 01: Telemetry store foundation
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~350 lines
 **Tags:** language=rust, kind=refactor, size=m
@@ -347,3 +347,123 @@ None. (No new dependencies — the XDG paths come from `std::env::var`, the
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-19 (escalation)
+
+**Chosen lever:** resume (`continue_phase`)
+**Rationale:** Production Tasks 1–5 are complete, compiling, and clippy-clean
+(verified: `doc_level` and the legacy `impl<'de> Deserialize` both grep-empty,
+`schema_version` stamped, config XDG default wired) and the types.rs tests plus
+the five telemetry test *bodies* are already written — worth preserving rather
+than re-dispatching from scratch. The `NoProgressStall {60}` hard-fail was a
+purely mechanical wall: the new telemetry `#[test]` fns landed at file scope
+(≈lines 571–704) **outside** the `#[cfg(test)] mod tests {` block (line 719), so
+they cannot see helpers like `sample()`, and the executor spent its final 60
+turns fruitlessly slicing the file with `sed`/`head`/`tail` trying to relocate
+them. The five `config.rs` tests were never written and `cargo test` was never
+run. A briefing-seeded resume with an explicit "read once, single edit per file,
+then run cargo test" hint targets exactly that wall while keeping the correct
+work. Note: the prior run also invoked `cargo fmt --all` (writing form), which
+REXYMCP forbids — the resume guidance re-pins `rustfmt <file>` on touched files
+only (git status shows no out-of-scope files were reformatted, so no cleanup is
+owed).
+
+### Update — 2026-07-19 (escalation)
+
+**Chosen lever:** session takeover
+**Rationale:** The resumed run hard-failed a second time (`Oscillation
+{distinct_calls:2, window:8}`) on the **same class of failure** — it added the
+5 config tests into `telemetry.rs` at file scope (still calling
+`default_telemetry_dir`/`Config`, private to `config.rs`, so they couldn't
+compile) alongside the 4 already-duplicated telemetry tests, then oscillated
+re-grepping brace positions (`grep -n "^}" ... | grep -E "7[0-9]{2}" | head -3`
+repeated verbatim 5+ times) trying to untangle it. Two attempts at the same
+mechanical wall (navigating/restructuring a ~1700-line test module) signal a
+genuine capability limit, not a spec gap — the decision table's trigger for
+takeover. Status flipped to `in-progress (architect takeover)`.
+
+### Update — 2026-07-19 (completion, session takeover)
+
+**Executor:** Claude (direct)
+**Verdict:** escalated
+
+Took over with the production code (Tasks 1–5) already correct and compiling
+— confirmed via `grep -rn "doc_level" executor/src mcp/src` (empty) and
+`grep -n "impl<'de> Deserialize" executor/src/ai/types.rs` (empty) before
+touching anything further. Fixed the two remaining test-code defects left by
+the two prior attempts:
+
+1. **Deleted the duplicate file-scope test block** in
+   `executor/src/store/telemetry.rs` (the 9 `#[test]` fns both attempts had
+   left outside `mod tests`, all shadowing correct copies already inside it).
+2. **Moved the 5 `config.rs`-scoped tests out of `telemetry.rs`** (where they
+   couldn't compile — `default_telemetry_dir`/`Config` are private to
+   `config.rs`) into `config.rs`'s own `mod tests`, adapting `TempDir::new()`
+   to the file's `tempfile::tempdir()` convention.
+3. Fixed a pre-existing bug uncovered by `cargo test` (never run by either
+   prior attempt): `read_skips_records_without_current_schema_version`'s
+   `old_version` fixture used `format!(r#"{{...}}"#)` with literal empty-object
+   braces (`{}`) that Rust read as 3 positional format args with none
+   supplied — a compile error. Replaced with a plain (non-`format!`) raw
+   string, matching the sibling `pre_m35` line's style.
+4. Fixed a clippy `needless_update` regression: Task 5 dropping `doc_level`
+   left `TierTelemetry` with a single field, so
+   `emit_phase_run`'s (`agent/metrics.rs:132`) `TierTelemetry { tier: ..,
+   ..Default::default() }` became a no-op struct-update under `-D warnings`.
+   Collapsed to `TierTelemetry { tier: input.tier }`.
+5. **mcp-crate test fallout from the version gate + default-on** (18 failures
+   on first `cargo test`, none anticipated in the phase's Out-of-scope list):
+   hand-written `PhaseRun`/`PhaseReview`/`ArchitectActivity` JSONL fixtures in
+   `server_tests.rs` and `dashboard/mod.rs` had no `schema_version` and were
+   now correctly excluded by Task 2's read-side gate — stamped
+   `"schema_version":1` into each (6 raw fixtures in `server_tests.rs`, 2 in
+   `dashboard/mod.rs`, plus 3 more built via `serde_json::to_string` in
+   `runs.rs`/`profile_cli.rs`/`scorecard_cli.rs`, stamped via a `.replacen('{',
+   ..)` prefix). 5 `*_telemetry_disabled_*` tests built a bare config
+   expecting the old "no dir ⇒ disabled" default; added `[telemetry]\nenabled
+   = false` to each (NOT to the shared `make_test_config` helper used by
+   unrelated passing tests — out of scope).
+6. **Two executor-crate tests whose premise Tasks 2/3 intentionally overturn:**
+   `telemetry_absent_section_is_none` (asserted `dir == None` with no
+   `[telemetry]` section — exactly the pre-phase behavior Task 3 replaces)
+   renamed to `telemetry_absent_section_resolves_xdg_default` and rewritten to
+   assert the new default-on resolution; `legacy_activity_line_without_tokens_defaults_zero`
+   (an unversioned legacy line — now excluded outright by the version gate,
+   already covered by `read_architect_activities_version_gates`) renamed to
+   `current_activity_line_without_tokens_defaults_zero` and re-fixtured as a
+   *current* (`schema_version`-stamped) record missing the optional `tokens`
+   object, to keep covering the real surviving behavior.
+
+All four gates green: `cargo fmt --all --check`, `cargo build`,
+`cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
+(1005 executor + all mcp tests, 2 ignored). Acceptance-criteria greps both
+empty. `rustfmt` run only on the two files a stray edit touched
+(`executor/src/config.rs`, `executor/src/store/telemetry.rs`) — never the
+writing `cargo fmt --all`.
+
+**End-to-end verification** (read-only against the real XDG store):
+
+```
+$ printf '[executor]\nprovider = "openai"\nmodel = "m"\nbase_url = "http://localhost:9/v1"\n' > /tmp/m35p1.toml
+$ cargo run -p rexymcp -- runs --config /tmp/m35p1.toml
+AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED
+22s     test-model language=rust,kind=test,size=s default      ✗✗✗✗  2      complete  —           —             —       —       18%        —
+[... 10 rows total, pre-existing real data in the XDG store — no "telemetry disabled" error]
+```
+
+```
+$ printf '[telemetry]\nenabled = false\n' >> /tmp/m35p1.toml
+$ cargo run -p rexymcp -- runs --config /tmp/m35p1.toml
+telemetry disabled: cfg.telemetry.dir not set and no --telemetry-path provided
+```
+
+Both match the phase doc's expected outcomes exactly: default-on resolves the
+XDG store with no error; `enabled = false` hits the disabled-path error.
+`/tmp/m35p1.toml` removed after the check; no writes made to the real store
+(`runs` is read-only).
+
+**Cost note:** two model dispatch attempts (hard_fail, hard_fail) preceded
+this takeover — both burned real turns on the test-module restructuring wall
+without landing it. `model_scorecard`/`model_profile` will show this phase as
+`escalated`, not an `approved_*` verdict — expected per the takeover
+telemetry-gap tradeoff.

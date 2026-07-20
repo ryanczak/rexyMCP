@@ -51,7 +51,7 @@ and the executor finally carries a real (configurable) price.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Telemetry store foundation ([phase-01-telemetry-store-foundation.md](phase-01-telemetry-store-foundation.md)) | todo |
+| 01 | Telemetry store foundation ([phase-01-telemetry-store-foundation.md](phase-01-telemetry-store-foundation.md)) | done |
 | 02 | Capture gaps: generation speed + output bytes | not drafted |
 | 03 | Shared metrics & cost core + `[models]` pricing | not drafted |
 | 04 | Run-level surface: `runs` columns + `runs show` | not drafted |

@@ -4,9 +4,41 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-01 — Telemetry store foundation](milestones/M35-metrics-cost-accounting/phase-01-telemetry-store-foundation.md)
-(status: todo — drafted 2026-07-19, awaiting `/rexymcp:dispatch`).**
+**Active phase: none.** M35 phase-02 (capture gaps: generation speed + output
+bytes) is not yet drafted — run `/rexymcp:architect next` to draft it.
+
+**M35 phase-01 — done** (2026-07-19, **escalated / session takeover** after 2
+executor hard_fails; executor AEON-7/Qwen3.6-27B-AEON). Telemetry store
+schema-version foundation: `TELEMETRY_SCHEMA_VERSION` stamped at the write
+boundary in all three writers (`append`/`append_review`/
+`append_architect_activity`), all three readers version-gated (pre-M35
+records now retired by design), `TelemetryConfig.enabled` (default `true`) +
+XDG-default-dir resolution in `Config::load`, the legacy `TokenBreakdown`
+`Deserialize` impl deleted, `TierTelemetry.doc_level` dropped. **Two
+hard_fails, both the same mechanical wall:** dispatch hard_failed
+`NoProgressStall{60}` — new telemetry tests landed at file scope outside
+`mod tests`, and the executor spent its last 60 turns fruitlessly
+`sed`-slicing the file trying to relocate them; a resume (with an explicit
+"read once, single edit, then `cargo test`" hint) hard_failed again,
+`Oscillation{2,8}` — it added the 5 `config.rs` tests into `telemetry.rs` at
+file scope too (couldn't compile — `default_telemetry_dir`/`Config` are
+private to `config.rs`) and then oscillated re-grepping brace positions.
+Same-class failure after one refinement → **session takeover**: deleted the
+duplicate test block, moved the config tests to `config.rs`, fixed a
+`format!`-with-empty-braces compile error and a clippy `needless_update`
+regression from dropping `doc_level`, then (unanticipated by the phase's
+Out-of-scope list) migrated **18 mcp-crate test fixtures/configs** that
+either lacked `schema_version` (now correctly excluded) or assumed the old
+"no dir ⇒ disabled" default, plus updated 2 executor-crate tests whose
+premise Tasks 2/3 intentionally overturn. All four gates green (1005
+executor + full mcp suite); acceptance-criteria greps empty; E2E `runs`
+check confirmed both default-on (no error) and `enabled = false`
+(disabled-path error) against the real XDG store, read-only. Full detail in
+the [phase doc](milestones/M35-metrics-cost-accounting/phase-01-telemetry-store-foundation.md)
+Update Log. **Calibration flag:** a test-module-restructuring wall
+(misplaced `#[test]` fns relative to `mod tests`) recurred identically
+across both hard_fails — a candidate for a WORKFLOW fold ("append new tests
+inside the existing `mod tests` block, never beside it") if it recurs again.
 
 **M35 — Metrics & Cost Accounting Overhaul opened 2026-07-19** — the queued
 post-M34 metrics & reporting deep-dive, designed with the user (four forks

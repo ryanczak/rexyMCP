@@ -4,6 +4,11 @@
 //! (`milestone × phase`). The executor fills the objective fields at phase end;
 //! the architect's review fills the supervision fields (`bugs_filed`,
 //! `bounces_to_approval`, `architect_verdict`, `warnings`) later.
+//!
+//! **Versioning.** Every record is stamped with `schema_version` at the write
+//! boundary. Readers skip records whose `schema_version` is missing or not
+//! equal to the current version (`TELEMETRY_SCHEMA_VERSION`). This is how
+//! pre-M35 records are retired — they simply have no version field.
 
 use std::path::{Path, PathBuf};
 
@@ -100,17 +105,13 @@ pub fn aggregate_context_efficiency(records: &[SessionRecord]) -> ContextEfficie
 /// `#[serde(default)]` field so legacy records and every struct literal need
 /// only `Default` (the `ContextEfficiency` precedent). Only `tier` is
 /// populated by the executor — the configured executor tier from
-/// `[executor] tier`. `doc_level` defaults to `None`. Architect token
-/// accounting has moved to `ArchitectActivity.tokens`; this struct no longer
-/// carries architect fields. Assist *counts* are derived from `assist`
+/// `[executor] tier`. Assist *counts* are derived from `assist`
 /// `ArchitectActivity` journal records, not stored here.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TierTelemetry {
     /// Configured executor capability tier (`[executor] tier`); `None` when
     /// the project has not run `rexymcp calibrate`.
     pub tier: Option<Tier>,
-    /// Phase-doc detail level (1/2/3). `None` until doc levels are wired.
-    pub doc_level: Option<u8>,
 }
 
 /// One per-phase metrics row. Objective fields are filled by the executor; the
@@ -173,20 +174,27 @@ pub struct PhaseRun {
     #[serde(default)]
     pub milestone_id: Option<String>,
 
-    /// M20 tier/cost instrumentation (tier, doc_level, escalation cost). Default
-    /// for legacy records and non-escalating runs.
+    /// M20 tier/cost instrumentation. Default when the project has not run
+    /// `rexymcp calibrate`.
     #[serde(default)]
     pub tier_telemetry: TierTelemetry,
 }
 
+/// Version stamped on every record this build writes; readers ignore records
+/// at any other version (including pre-M35 records, which have none).
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 1;
+
 /// Append one `PhaseRun` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`,
-/// creating the directory if needed. Returns the file path.
+/// creating the directory if needed. Stamps `schema_version` at the write
+/// boundary so readers can version-gate. Returns the file path.
 pub fn append(telemetry_dir: &Path, run: &PhaseRun) -> std::io::Result<PathBuf> {
     use std::io::Write;
 
     std::fs::create_dir_all(telemetry_dir)?;
     let path = telemetry_dir.join("phase_runs.jsonl");
-    let line = serde_json::to_string(run).map_err(std::io::Error::other)?;
+    let mut value = serde_json::to_value(run).map_err(std::io::Error::other)?;
+    value["schema_version"] = TELEMETRY_SCHEMA_VERSION.into();
+    let line = serde_json::to_string(&value).map_err(std::io::Error::other)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -196,7 +204,8 @@ pub fn append(telemetry_dir: &Path, run: &PhaseRun) -> std::io::Result<PathBuf> 
     Ok(path)
 }
 
-/// Read all `PhaseRun` records from a store file (skips blank/corrupt lines).
+/// Read all `PhaseRun` records from a store file. Records with a missing or
+/// non-current `schema_version` are skipped (pre-M35 retirement).
 pub fn read(path: &Path) -> std::io::Result<Vec<PhaseRun>> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -206,7 +215,12 @@ pub fn read(path: &Path) -> std::io::Result<Vec<PhaseRun>> {
     Ok(content
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<PhaseRun>(l).ok())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| {
+            v.get("schema_version").and_then(serde_json::Value::as_u64)
+                == Some(TELEMETRY_SCHEMA_VERSION as u64)
+        })
+        .filter_map(|v| serde_json::from_value::<PhaseRun>(v).ok())
         .collect())
 }
 
@@ -354,13 +368,16 @@ pub struct PhaseReview {
 pub const REVIEW_RECORD_TAG: &str = "review";
 
 /// Append one `PhaseReview` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`
-/// (the same store as `PhaseRun`). Returns the file path.
+/// (the same store as `PhaseRun`). Stamps `schema_version` at the write
+/// boundary. Returns the file path.
 pub fn append_review(telemetry_dir: &Path, review: &PhaseReview) -> std::io::Result<PathBuf> {
     use std::io::Write;
 
     std::fs::create_dir_all(telemetry_dir)?;
     let path = telemetry_dir.join("phase_runs.jsonl");
-    let line = serde_json::to_string(review).map_err(std::io::Error::other)?;
+    let mut value = serde_json::to_value(review).map_err(std::io::Error::other)?;
+    value["schema_version"] = TELEMETRY_SCHEMA_VERSION.into();
+    let line = serde_json::to_string(&value).map_err(std::io::Error::other)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -370,8 +387,9 @@ pub fn append_review(telemetry_dir: &Path, review: &PhaseReview) -> std::io::Res
     Ok(path)
 }
 
-/// Read all `PhaseReview` records from a store file. Lines that are `PhaseRun`
-/// records (or anything without `record == "review"`) are skipped.
+/// Read all `PhaseReview` records from a store file. Lines with a missing or
+/// non-current `schema_version` are skipped, as are lines without
+/// `record == "review"`.
 pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -381,7 +399,12 @@ pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
     Ok(content
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<PhaseReview>(l).ok())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| {
+            v.get("schema_version").and_then(serde_json::Value::as_u64)
+                == Some(TELEMETRY_SCHEMA_VERSION as u64)
+        })
+        .filter_map(|v| serde_json::from_value::<PhaseReview>(v).ok())
         .filter(|r| r.record == REVIEW_RECORD_TAG)
         .collect())
 }
@@ -501,7 +524,8 @@ pub fn fold_activities(activities: Vec<ArchitectActivity>) -> Vec<ArchitectActiv
     out
 }
 
-/// Append one `ArchitectActivity` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`. Returns the file path.
+/// Append one `ArchitectActivity` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`.
+/// Stamps `schema_version` at the write boundary. Returns the file path.
 pub fn append_architect_activity(
     telemetry_dir: &Path,
     activity: &ArchitectActivity,
@@ -510,7 +534,9 @@ pub fn append_architect_activity(
 
     std::fs::create_dir_all(telemetry_dir)?;
     let path = telemetry_dir.join("phase_runs.jsonl");
-    let line = serde_json::to_string(activity).map_err(std::io::Error::other)?;
+    let mut value = serde_json::to_value(activity).map_err(std::io::Error::other)?;
+    value["schema_version"] = TELEMETRY_SCHEMA_VERSION.into();
+    let line = serde_json::to_string(&value).map_err(std::io::Error::other)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -520,7 +546,9 @@ pub fn append_architect_activity(
     Ok(path)
 }
 
-/// Read all `ArchitectActivity` records from a store file. Lines that are `PhaseRun` or `PhaseReview` records (or anything without `record == "architect_activity"`) are skipped.
+/// Read all `ArchitectActivity` records from a store file. Lines with a missing
+/// or non-current `schema_version` are skipped, as are lines without
+/// `record == "architect_activity"`.
 pub fn read_architect_activities(path: &Path) -> std::io::Result<Vec<ArchitectActivity>> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
@@ -530,7 +558,12 @@ pub fn read_architect_activities(path: &Path) -> std::io::Result<Vec<ArchitectAc
     Ok(content
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<ArchitectActivity>(l).ok())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| {
+            v.get("schema_version").and_then(serde_json::Value::as_u64)
+                == Some(TELEMETRY_SCHEMA_VERSION as u64)
+        })
+        .filter_map(|v| serde_json::from_value::<ArchitectActivity>(v).ok())
         .filter(|a| a.record == ARCHITECT_ACTIVITY_RECORD_TAG)
         .collect())
 }
@@ -540,6 +573,76 @@ mod tests {
     use super::*;
     use crate::store::sessions::event::{SessionEvent, SessionRecord};
     use tempfile::TempDir;
+
+    #[test]
+    fn append_stamps_schema_version() {
+        let dir = TempDir::new().unwrap();
+        let run = sample();
+        append(dir.path(), &run).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("phase_runs.jsonl")).unwrap();
+        assert!(
+            content.contains("\"schema_version\":1"),
+            "appended line should contain schema_version:1"
+        );
+    }
+
+    #[test]
+    fn read_skips_records_without_current_schema_version() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let pre_m35 = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let old_version = r#"{"schema_version":999,"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let mut file = std::fs::File::create(&path).unwrap();
+        use std::io::Write;
+        file.write_all(pre_m35.as_bytes()).unwrap();
+        file.write_all(b"\n").unwrap();
+        file.write_all(old_version.as_bytes()).unwrap();
+        file.write_all(b"\n").unwrap();
+        let run = sample();
+        append(dir.path(), &run).unwrap();
+        let results = read(&path).unwrap();
+        assert_eq!(
+            results.len(),
+            1,
+            "only the current-version record should be returned"
+        );
+    }
+
+    #[test]
+    fn read_reviews_version_gates_and_keeps_record_tag_filter() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let legacy_review = r#"{"record":"review","ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let mut file = std::fs::File::create(&path).unwrap();
+        use std::io::Write;
+        file.write_all(legacy_review.as_bytes()).unwrap();
+        file.write_all(b"\n").unwrap();
+        let run = sample();
+        append(dir.path(), &run).unwrap();
+        let results = read_reviews(&path).unwrap();
+        assert_eq!(
+            results.len(),
+            0,
+            "no reviews should survive version gate + record tag filter"
+        );
+    }
+
+    #[test]
+    fn read_architect_activities_version_gates() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("phase_runs.jsonl");
+        let legacy_activity = r#"{"record":"architect_activity","ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let mut file = std::fs::File::create(&path).unwrap();
+        use std::io::Write;
+        file.write_all(legacy_activity.as_bytes()).unwrap();
+        file.write_all(b"\n").unwrap();
+        let results = read_architect_activities(&path).unwrap();
+        assert_eq!(
+            results.len(),
+            0,
+            "no activities should survive version gate"
+        );
+    }
 
     fn make_metrics(context_pct: f64) -> SessionRecord {
         SessionRecord {
@@ -1044,11 +1147,10 @@ mod tests {
     }
 
     #[test]
-    fn phase_run_tier_telemetry_round_trips() {
+    fn tier_telemetry_current_shape_roundtrips() {
         let mut run = sample();
         run.tier_telemetry = TierTelemetry {
             tier: Some(Tier::Medium),
-            doc_level: Some(2),
         };
         let json = serde_json::to_string(&run).unwrap();
         let back: PhaseRun = serde_json::from_str(&json).unwrap();
@@ -1068,7 +1170,7 @@ mod tests {
     fn phase_run_ignores_retired_escalation_count_key() {
         // Legacy tier_telemetry keys (escalation_count, architect_*_tokens) are
         // silently ignored — serde drops unknown fields.
-        let json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{},"tier_telemetry":{"tier":"MEDIUM","doc_level":2,"escalation_count":3,"architect_input_tokens":1000,"architect_output_tokens":200}}"#;
+        let json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{},"tier_telemetry":{"tier":"MEDIUM","escalation_count":3,"architect_input_tokens":1000,"architect_output_tokens":200}}"#;
         let run: PhaseRun = serde_json::from_str(json).unwrap();
         assert_eq!(run.tier_telemetry.tier, Some(Tier::Medium));
     }
@@ -1372,11 +1474,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_activity_line_without_tokens_defaults_zero() {
-        // A JSON line with the old flat architect_input_tokens/architect_output_tokens
-        // keys (and no `tokens` object) deserializes with tokens == default.
+    fn current_activity_line_without_tokens_defaults_zero() {
+        // M35: a legacy (unversioned) line is now excluded entirely by the
+        // schema_version gate — read_architect_activities_version_gates pins
+        // that. This test instead covers the surviving behavior: a *current*
+        // (schema_version-stamped) record that omits the optional `tokens`
+        // object still deserializes, defaulting tokens to zero.
         let dir = TempDir::new().unwrap();
-        let line = r#"{"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":null,"milestone_id":null,"activity":"assist","outcome":null,"model":null,"architect_input_tokens":1500,"architect_output_tokens":300}"#;
+        let line = r#"{"schema_version":1,"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":null,"milestone_id":null,"activity":"assist","outcome":null,"model":null}"#;
         std::fs::write(dir.path().join("phase_runs.jsonl"), format!("{line}\n")).unwrap();
         let path = dir.path().join("phase_runs.jsonl");
         let activities = read_architect_activities(&path).unwrap();

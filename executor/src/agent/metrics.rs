@@ -129,10 +129,7 @@ pub(super) fn emit_phase_run(
         context_efficiency,
         project_id: input.project_id.clone(),
         milestone_id: input.milestone_id.clone(),
-        tier_telemetry: telemetry::TierTelemetry {
-            tier: input.tier,
-            ..Default::default()
-        },
+        tier_telemetry: telemetry::TierTelemetry { tier: input.tier },
     };
     let _ = telemetry::append(dir, &run);
 }

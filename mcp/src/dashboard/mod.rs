@@ -498,7 +498,7 @@ mod tests {
         std::fs::create_dir_all(&telemetry_dir).unwrap();
         // An ArchitectActivity with tokens.input=1_000_000, tokens.output=500_000.
         let activity = format!(
-            r#"{{"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":"{pid}","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{{"input":1000000,"cache_creation":200000,"cache_read":100000,"output":500000}}}}"#
+            r#"{{"schema_version":1,"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":"{pid}","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{{"input":1000000,"cache_creation":200000,"cache_read":100000,"output":500000}}}}"#
         );
         std::fs::write(
             telemetry_dir.join("phase_runs.jsonl"),
@@ -524,7 +524,7 @@ mod tests {
             "architect output tokens must be summed from ArchitectActivity"
         );
         // Negative: an activity with a different project_id contributes nothing.
-        let activity_other = r#"{"record":"architect_activity","ts":2,"phase_doc_path":null,"phase_id":"p1","project_id":"other-project","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{"input":999999,"cache_creation":0,"cache_read":0,"output":0}}"#.to_string();
+        let activity_other = r#"{"schema_version":1,"record":"architect_activity","ts":2,"phase_doc_path":null,"phase_id":"p1","project_id":"other-project","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{"input":999999,"cache_creation":0,"cache_read":0,"output":0}}"#.to_string();
         std::fs::write(
             telemetry_dir.join("phase_runs.jsonl"),
             format!("{activity}\n{activity_other}\n"),
@@ -548,13 +548,13 @@ mod tests {
         // 2 matching assists + 1 non-assist (same project) + 1 assist (other
         // project). Only the 2 matching assists count.
         let lines = concat!(
-            r#"{"record":"architect_activity","ts":1,"phase_id":"p1","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"assist"}"#,
+            r#"{"schema_version":1,"record":"architect_activity","ts":1,"phase_id":"p1","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"assist"}"#,
             "\n",
-            r#"{"record":"architect_activity","ts":2,"phase_id":"p1","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"assist"}"#,
+            r#"{"schema_version":1,"record":"architect_activity","ts":2,"phase_id":"p1","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"assist"}"#,
             "\n",
-            r#"{"record":"architect_activity","ts":3,"phase_id":"p2","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"draft"}"#,
+            r#"{"schema_version":1,"record":"architect_activity","ts":3,"phase_id":"p2","project_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","activity":"draft"}"#,
             "\n",
-            r#"{"record":"architect_activity","ts":4,"phase_id":"p1","project_id":"ffffffff-0000-0000-0000-000000000000","activity":"assist"}"#,
+            r#"{"schema_version":1,"record":"architect_activity","ts":4,"phase_id":"p1","project_id":"ffffffff-0000-0000-0000-000000000000","activity":"assist"}"#,
             "\n",
         );
         std::fs::write(telemetry_dir.join("phase_runs.jsonl"), lines).unwrap();

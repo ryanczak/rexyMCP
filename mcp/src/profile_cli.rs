@@ -177,8 +177,12 @@ mod tests {
             &file,
             format!(
                 "{}\n{}\n",
-                serde_json::to_string(&run).unwrap(),
-                serde_json::to_string(&review).unwrap(),
+                serde_json::to_string(&run)
+                    .unwrap()
+                    .replacen('{', "{\"schema_version\":1,", 1),
+                serde_json::to_string(&review)
+                    .unwrap()
+                    .replacen('{', "{\"schema_version\":1,", 1),
             ),
         )
         .unwrap();
@@ -209,6 +213,9 @@ mod tests {
 provider = "openai"
 base_url = "http://localhost:8000/v1"
 model = "qwen"
+
+[telemetry]
+enabled = false
 "#,
         )
         .unwrap();

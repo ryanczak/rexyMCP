@@ -348,10 +348,23 @@ pub struct Config {
     pub architect: ArchitectConfig,
 }
 
-/// Cross-project telemetry store. `None` disables telemetry emission.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Cross-project telemetry store. On by default: when `dir` is unset it
+/// resolves to `$XDG_DATA_HOME/rexymcp` (else `$HOME/.local/share/rexymcp`).
+/// `enabled = false` turns recording and reading off entirely.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TelemetryConfig {
     pub dir: Option<PathBuf>,
+    pub enabled: bool,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            dir: None,
+            enabled: true,
+        }
+    }
 }
 
 /// The local LLM the executor drives.
@@ -525,6 +538,24 @@ fn expand_tilde(path: PathBuf) -> PathBuf {
     path
 }
 
+/// Default telemetry dir when `[telemetry] dir` is unset:
+/// `$XDG_DATA_HOME/rexymcp`, else `$HOME/.local/share/rexymcp`, else `None`
+/// (no home ⇒ telemetry silently off, matching today's no-dir behavior).
+fn default_telemetry_dir(get: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    if let Some(xdg) = get("XDG_DATA_HOME") {
+        return Some(PathBuf::from(xdg).join("rexymcp"));
+    }
+    if let Some(home) = get("HOME") {
+        return Some(
+            PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("rexymcp"),
+        );
+    }
+    None
+}
+
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let mut config = Config::default();
@@ -536,7 +567,13 @@ impl Config {
             config = loaded;
         }
 
-        config.telemetry.dir = config.telemetry.dir.map(expand_tilde);
+        if !config.telemetry.enabled {
+            config.telemetry.dir = None;
+        } else if config.telemetry.dir.is_none() {
+            config.telemetry.dir = default_telemetry_dir(|k| std::env::var(k).ok());
+        } else {
+            config.telemetry.dir = config.telemetry.dir.map(expand_tilde);
+        }
 
         Ok(config)
     }
@@ -745,7 +782,9 @@ max_turns = 40
     }
 
     #[test]
-    fn telemetry_absent_section_is_none() {
+    fn telemetry_absent_section_resolves_xdg_default() {
+        // M35: telemetry is on by default, so an absent [telemetry] section no
+        // longer means `dir == None` — it resolves to the XDG data dir.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(
@@ -766,7 +805,15 @@ max_turns = 40
         .unwrap();
 
         let cfg = Config::load(&path).unwrap();
-        assert_eq!(cfg.telemetry.dir, None);
+        assert!(cfg.telemetry.enabled);
+        let resolved = cfg
+            .telemetry
+            .dir
+            .expect("default-on telemetry should resolve a dir");
+        assert!(
+            resolved.ends_with("rexymcp"),
+            "expected an XDG-or-HOME rexymcp dir, got {resolved:?}"
+        );
     }
 
     #[test]
@@ -2089,5 +2136,67 @@ model = "claude-opus-4-8"
         // Unset role models are None — they do NOT fall back to [architect] model
         assert!(cfg.architect.dispatch_model.is_none());
         assert!(cfg.architect.review_model.is_none());
+    }
+
+    #[test]
+    fn default_telemetry_dir_prefers_xdg_data_home() {
+        let dir = default_telemetry_dir(|k| {
+            if k == "XDG_DATA_HOME" {
+                Some("/x".to_string())
+            } else if k == "HOME" {
+                Some("/h".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(dir, Some(PathBuf::from("/x/rexymcp")));
+    }
+
+    #[test]
+    fn default_telemetry_dir_falls_back_to_home() {
+        let dir = default_telemetry_dir(|k| {
+            if k == "HOME" {
+                Some("/h".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(dir, Some(PathBuf::from("/h/.local/share/rexymcp")));
+    }
+
+    #[test]
+    fn default_telemetry_dir_none_without_home() {
+        let dir = default_telemetry_dir(|_k| None);
+        assert_eq!(dir, None);
+    }
+
+    #[test]
+    fn telemetry_disabled_clears_dir_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "[executor]\nprovider = \"openai\"\nmodel = \"m\"\nbase_url = \"http://localhost:9/v1\"\n[telemetry]\nenabled = false\ndir = \"/explicit\"\n",
+        )
+        .unwrap();
+        let config = Config::load(&config_path).unwrap();
+        assert!(!config.telemetry.enabled);
+        assert_eq!(
+            config.telemetry.dir, None,
+            "explicit dir should be cleared when enabled=false"
+        );
+    }
+
+    #[test]
+    fn explicit_telemetry_dir_survives_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "[executor]\nprovider = \"openai\"\nmodel = \"m\"\nbase_url = \"http://localhost:9/v1\"\n[telemetry]\ndir = \"/explicit\"\n",
+        )
+        .unwrap();
+        let config = Config::load(&config_path).unwrap();
+        assert_eq!(config.telemetry.dir, Some(PathBuf::from("/explicit")));
     }
 }

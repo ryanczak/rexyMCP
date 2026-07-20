@@ -367,8 +367,8 @@ fn write_telemetry_fixture(temp_dir: &TempDir) -> PathBuf {
     std::fs::create_dir_all(&telemetry_dir).unwrap();
     let path = telemetry_dir.join("phase_runs.jsonl");
     let lines = [
-        r#"{"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust","feature"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#,
-        r#"{"ts":1717000001000,"model":"m2","generation_params":{"temperature":null,"seed":null},"phase_id":"p2","tags":["rust","bugfix"],"status":"complete","escalated":true,"gates":{"fmt":true,"build":true,"lint":false,"test":true},"parse_failure_rate":0.2,"repairs_per_call":1.0,"verifier_retries":3,"tool_success_rate":0.8,"turns":10,"wall_clock_s":20.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":1,"architect_verdict":"rejected"}"#,
+        r#"{"schema_version":1,"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust","feature"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#,
+        r#"{"schema_version":1,"ts":1717000001000,"model":"m2","generation_params":{"temperature":null,"seed":null},"phase_id":"p2","tags":["rust","bugfix"],"status":"complete","escalated":true,"gates":{"fmt":true,"build":true,"lint":false,"test":true},"parse_failure_rate":0.2,"repairs_per_call":1.0,"verifier_retries":3,"tool_success_rate":0.8,"turns":10,"wall_clock_s":20.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":1,"architect_verdict":"rejected"}"#,
     ];
     std::fs::write(&path, lines.join("\n") + "\n").unwrap();
     path
@@ -420,7 +420,7 @@ fn model_scorecard_telemetry_path_override_takes_precedence() {
     let alt_dir = temp_dir.path().join("alt_telemetry");
     std::fs::create_dir_all(&alt_dir).unwrap();
     let alt_path = alt_dir.join("phase_runs.jsonl");
-    let line = r#"{"ts":1717000002000,"model":"m3","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["go"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+    let line = r#"{"schema_version":1,"ts":1717000002000,"model":"m3","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["go"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
     std::fs::write(&alt_path, format!("{}\n", line)).unwrap();
 
     let params = ModelScorecardParams {
@@ -452,6 +452,9 @@ base_url = "http://127.0.0.1:1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
+
+[telemetry]
+enabled = false
 "#,
     )
     .unwrap();
@@ -494,7 +497,7 @@ fn model_scorecard_malformed_jsonl_survivors_contribute() {
     let telemetry_dir = temp_dir.path().join("telemetry");
     std::fs::create_dir_all(&telemetry_dir).unwrap();
     let path = telemetry_dir.join("phase_runs.jsonl");
-    let good_line = r#"{"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+    let good_line = r#"{"schema_version":1,"ts":1717000000000,"model":"m1","generation_params":{"temperature":null,"seed":null},"phase_id":"p1","tags":["rust"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.1,"repairs_per_call":0.5,"verifier_retries":2,"tool_success_rate":0.9,"turns":7,"wall_clock_s":12.5,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
     std::fs::write(&path, format!("GARBAGE LINE\n{}\n", good_line)).unwrap();
 
     let params = ModelScorecardParams {
@@ -522,7 +525,7 @@ fn model_scorecard_truncated_flag_when_over_max_rows() {
     for i in 0..scorecard::MAX_ROWS + 10 {
         let tag = format!("tag{}", i);
         lines.push(format!(
-                r#"{{"ts":1717000000000,"model":"m1","generation_params":{{"temperature":null,"seed":null}},"phase_id":"p{}","tags":["{}"],"status":"complete","escalated":false,"gates":{{"fmt":true,"build":true,"lint":true,"test":true}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"prompt":0,"completion":0,"total":0}},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}}"#,
+                r#"{{"schema_version":1,"ts":1717000000000,"model":"m1","generation_params":{{"temperature":null,"seed":null}},"phase_id":"p{}","tags":["{}"],"status":"complete","escalated":false,"gates":{{"fmt":true,"build":true,"lint":true,"test":true}},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{{"prompt":0,"completion":0,"total":0}},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}}"#,
                 i, tag
             ));
     }
@@ -823,7 +826,7 @@ fn model_profile_telemetry_path_override_takes_precedence() {
     let alt_dir = temp_dir.path().join("alt_telemetry");
     std::fs::create_dir_all(&alt_dir).unwrap();
     let alt_path = alt_dir.join("phase_runs.jsonl");
-    let line = r#"{"ts":1717000002000,"model":"m3","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["go"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
+    let line = r#"{"schema_version":1,"ts":1717000002000,"model":"m3","generation_params":{"temperature":null,"seed":null},"phase_id":"p3","tags":["go"],"status":"complete","escalated":false,"gates":{"fmt":true,"build":true,"lint":true,"test":true},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{"prompt":0,"completion":0,"total":0},"warnings":null,"bugs_filed":null,"bounces_to_approval":null,"architect_verdict":null}"#;
     std::fs::write(&alt_path, format!("{}\n", line)).unwrap();
 
     let params = ModelProfileParams {
@@ -855,6 +858,9 @@ base_url = "http://127.0.0.1:1"
 context_length = 32768
 max_context_pct = 70
 max_turns = 40
+
+[telemetry]
+enabled = false
 "#,
     )
     .unwrap();
