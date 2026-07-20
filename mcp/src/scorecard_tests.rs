@@ -1,5 +1,9 @@
-use super::*;
+use super::{
+    Gates, ScorecardDimension, ScorecardFilter, aggregate, aggregate_by_settings,
+    aggregate_scorecard,
+};
 use rexymcp_executor::ai::types::TokenBreakdown;
+use rexymcp_executor::store::telemetry::PhaseRun;
 use rexymcp_executor::store::telemetry::{ContextEfficiency, GenerationParams};
 
 fn make_run(
@@ -766,4 +770,100 @@ fn scorecard_row_serializes_context_efficiency_means() {
     assert!(json.contains(r#""tokens_reclaimed_mean""#));
     assert!(json.contains(r#""peak_context_pct_mean":0.7"#));
     assert!(json.contains(r#""tokens_reclaimed_mean":12288.0"#));
+}
+
+// --- Unified scorecard aggregation tests (phase 05a-i) ---
+
+#[test]
+fn aggregate_scorecard_settings_matches_wrapper() {
+    let runs = vec![
+        make_run_with_settings("m1", &["t"], Some(0.2), None, None),
+        make_run_with_settings("m1", &["t"], Some(0.7), None, None),
+        make_run_with_settings("m1", &["t"], Some(0.2), None, None),
+    ];
+    let filter = ScorecardFilter::default();
+    let unified = aggregate_scorecard(&runs, ScorecardDimension::Settings, &filter);
+    let wrapped = aggregate_by_settings(&runs, &filter);
+    assert_eq!(unified.len(), wrapped.len());
+    for (u, w) in unified.iter().zip(wrapped.iter()) {
+        assert_eq!(&u.model, &w.model);
+        assert_eq!(&u.key, &w.settings);
+        assert_eq!(u.n_runs, w.n_runs);
+        assert!((u.gates_pass_rate - w.gates_pass_rate).abs() < f64::EPSILON);
+        assert!((u.parse_failure_rate_mean - w.parse_failure_rate_mean).abs() < f64::EPSILON);
+        assert_eq!(u.length_finish_rate_mean, w.length_finish_rate_mean);
+        assert!((u.repairs_per_call_mean - w.repairs_per_call_mean).abs() < f64::EPSILON);
+        assert!((u.tool_success_rate_mean - w.tool_success_rate_mean).abs() < f64::EPSILON);
+        assert!((u.verifier_retries_mean - w.verifier_retries_mean).abs() < f64::EPSILON);
+        assert!((u.turns_mean - w.turns_mean).abs() < f64::EPSILON);
+        assert!((u.wall_clock_s_mean - w.wall_clock_s_mean).abs() < f64::EPSILON);
+        assert!((u.escalation_rate - w.escalation_rate).abs() < f64::EPSILON);
+        assert_eq!(u.n_with_verdict, w.n_with_verdict);
+        assert_eq!(u.approved_first_try_rate, w.approved_first_try_rate);
+        assert_eq!(u.bounces_to_approval_mean, w.bounces_to_approval_mean);
+        assert_eq!(u.peak_context_pct_mean, w.peak_context_pct_mean);
+        assert_eq!(u.tokens_reclaimed_mean, w.tokens_reclaimed_mean);
+    }
+}
+
+#[test]
+fn aggregate_scorecard_tag_explodes_runs_across_tags() {
+    let runs = vec![make_run(
+        "m1",
+        &["rust", "feature"],
+        all_pass_gates(),
+        false,
+        None,
+        None,
+    )];
+    let result = aggregate_scorecard(&runs, ScorecardDimension::Tag, &ScorecardFilter::default());
+    assert_eq!(result.len(), 2);
+    assert!(result.iter().any(|b| b.key == "rust" && b.n_runs == 1));
+    assert!(result.iter().any(|b| b.key == "feature" && b.n_runs == 1));
+
+    // Negative pin: a run with no tags contributes no Tag bucket
+    let runs_no_tags = vec![make_run("m1", &[], all_pass_gates(), false, None, None)];
+    let result_empty = aggregate_scorecard(
+        &runs_no_tags,
+        ScorecardDimension::Tag,
+        &ScorecardFilter::default(),
+    );
+    assert!(result_empty.is_empty());
+}
+
+#[test]
+fn aggregate_scorecard_model_dimension_one_bucket_per_model() {
+    let runs = vec![
+        make_run_with_settings("m1", &["a"], Some(0.2), None, None),
+        make_run_with_settings("m1", &["b"], Some(0.7), None, None),
+        make_run_with_settings("m2", &["c"], None, None, None),
+    ];
+    let result = aggregate_scorecard(
+        &runs,
+        ScorecardDimension::Model,
+        &ScorecardFilter::default(),
+    );
+    assert_eq!(result.len(), 2);
+    assert!(result.iter().all(|b| b.key.is_empty()));
+    let m1 = result.iter().find(|b| b.model == "m1").unwrap();
+    assert_eq!(m1.n_runs, 2);
+    let m2 = result.iter().find(|b| b.model == "m2").unwrap();
+    assert_eq!(m2.n_runs, 1);
+}
+
+#[test]
+fn aggregate_scorecard_respects_min_runs() {
+    let runs = vec![
+        make_run_with_settings("m1", &["t"], Some(0.2), None, None),
+        make_run_with_settings("m1", &["t"], Some(0.7), None, None),
+        make_run_with_settings("m1", &["t"], Some(0.7), None, None),
+    ];
+    let filter = ScorecardFilter {
+        min_runs: 2,
+        ..Default::default()
+    };
+    let result = aggregate_scorecard(&runs, ScorecardDimension::Settings, &filter);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].key, "temp=0.7");
+    assert_eq!(result[0].n_runs, 2);
 }
