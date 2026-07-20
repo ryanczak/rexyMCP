@@ -4,8 +4,32 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M35 phase-05 (aggregate surfaces: unified scorecard +
-profile efficiency) is not yet drafted — run `/rexymcp:architect next` to draft it.
+**Active phase:
+[M35 phase-05a-i — unified scorecard aggregation core](milestones/M35-metrics-cost-accounting/phase-05a-i-scorecard-unified-core.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05a-i`).**
+
+**phase-05 (aggregate surfaces) split — design fork resolved with the user
+(2026-07-20).** The exit criterion "`scorecard --by model|tag|settings` unifies
+the CLI and MCP aggregations" reads two ways (full internal merge vs CLI-surface
+routing); the user chose the **full internal merge, split into cascade-safe
+sub-phases** so no single dispatch carries the whole blast radius (the
+large-refactor shape has hard-failed 3× this milestone). Sequence: **05a-i**
+add the unified `aggregate_scorecard(runs, dim, filter)` core + `ScorecardBucket`
++ `ScorecardDimension{Model,Tag,Settings}`, reduce the two existing aggregations
+to thin wrappers (all green); **05a-ii** migrate the MCP `model_scorecard` tool
+onto the core; **05a-iii** add the `scorecard --by` CLI + the dropped columns
+(wall-clock, verifier-retries, repairs) and delete the wrappers/old structs;
+**05b** `profile` tokens & cost per approved phase (separate surface).
+
+phase-05a-i drafted 2026-07-20: **behavior-preserving additive refactor.** The
+two aggregations (`aggregate_by_settings` model×settings, `aggregate` model×tag)
+are character-identical except the bucket key (settings=1/run; tag=explode over
+`run.tags`) and one metric (settings tracks `length_finish`); both sort by
+`(key, -n_runs, model)`. So the unified core — superset accumulator, key selected
+per dimension, sort by `key` — reproduces **both** wrappers byte-for-byte, and
+every existing scorecard test passes unchanged (that's the E2E: it ships no
+runtime surface yet). size=m. Both wrapper mappings + the per-dim key selection
++ tag-explosion + the exact sort are quoted inline.
 
 **M35 phase-04b — done (2026-07-20, approved_after_1; executor
 AEON-7/Qwen3.6-27B-AEON).** `rexymcp runs show <id>` drills into one run by its
