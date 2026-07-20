@@ -56,7 +56,7 @@ and the executor finally carries a real (configurable) price.
 | 03 | Shared metrics & cost core + `[models]` pricing ([phase-03-shared-metrics-cost-core.md](phase-03-shared-metrics-cost-core.md)) | done |
 | 04a | Run-level surface: `runs` cost/speed columns + run id ([phase-04a-runs-cost-speed-columns.md](phase-04a-runs-cost-speed-columns.md)) | done |
 | 04b | Run-level surface: `runs show <id>` detail ([phase-04b-runs-show-detail.md](phase-04b-runs-show-detail.md)) | done |
-| 05a-i | Scorecard: unified `aggregate_scorecard` core behind wrappers ([phase-05a-i-scorecard-unified-core.md](phase-05a-i-scorecard-unified-core.md)) | todo |
+| 05a-i | Scorecard: unified `aggregate_scorecard` core behind wrappers ([phase-05a-i-scorecard-unified-core.md](phase-05a-i-scorecard-unified-core.md)) | review |
 | 05a-ii | Scorecard: migrate MCP `model_scorecard` onto the core | not drafted |
 | 05a-iii | Scorecard: `--by model\|tag\|settings` CLI + dropped columns; drop wrappers | not drafted |
 | 05b | `profile` tokens & cost per approved phase | not drafted |
