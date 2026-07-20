@@ -1,7 +1,7 @@
 # Phase 03: Shared metrics & cost core + `[models]` pricing
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
