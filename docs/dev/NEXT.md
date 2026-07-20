@@ -4,8 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M35 phase-04b (`runs show <id>` detail subcommand) is
-not yet drafted — run `/rexymcp:architect next` to draft it.
+**Active phase:
+[M35 phase-04b — `runs show <id>` detail](milestones/M35-metrics-cost-accounting/phase-04b-runs-show-detail.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-04b`).**
+
+phase-04b drafted 2026-07-20: `rexymcp runs show <id>` drills into one run by its
+04a 8-hex id (or unambiguous prefix) and prints the full record — token
+breakdown incl. cache classes, cost, tok/s, gates, verdict, bounces/bugs/
+warnings, context efficiency, timing. Adds `find_run_by_id` (prefix match; none
++ ambiguous are pinned negatives, incl. empty-string `""` rejected) +
+`format_run_detail` + the clap `show` subcommand. **The one external-API risk
+(clap nested subcommand — no precedent in the codebase) was de-risked by the
+architect:** the exact `Runs { …list flags…, #[command(subcommand)] command:
+Option<RunsCommand> }` + `RunsCommand::Show { id }` pattern was
+**compile-and-parse-verified against clap 4.6 in a scratch crate** and pinned
+verbatim (config on the parent before the `show` token; no
+`args_conflicts_with_subcommands` needed). Minimal cascade — only the
+`main.rs:517` dispatch arm gains the `command` field (the CLI test already uses
+`..`). Pre-flight reinforces the now-live `sed -i` refusal + read-then-patch
+recovery. size=m (~220 lines). **After 04b:** phase-05 (unified scorecard +
+profile efficiency).
 
 **M35 phase-04a — done (2026-07-20, escalated / session takeover after a
 dispatch `budget_exceeded`).** First consumer of phase-03's cost core:
