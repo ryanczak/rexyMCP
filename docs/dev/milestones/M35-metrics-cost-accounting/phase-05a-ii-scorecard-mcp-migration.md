@@ -1,7 +1,7 @@
 # Phase 05a-ii: Migrate MCP `model_scorecard` onto the core (retire the Tag wrapper)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-05a-i
 **Estimated diff:** ~170 lines (mostly deletions + mechanical test edits)
 **Tags:** language=rust, kind=refactor, size=m
@@ -382,4 +382,35 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** e4297a6cb6ef2772d399902e1bfa1c2a53cecab9
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (286 turns)
+- **Scope deviations:** none. The one `#[allow(dead_code)]` in `scorecard.rs`
+  (line 43, on `ScorecardDimension`) is the **pre-existing 05a-i** allow, carried
+  forward **unchanged** (the phase's diff never touches it) and still load-bearing
+  (`Model` has no production consumer until 05a-iii). The executor added **no new**
+  allow — the deletion of `aggregate`/`ScorecardRow` itself removed the dead code,
+  exactly as specified.
+- **Calibration:** spec_bug (**2nd occurrence**) — acceptance criterion #3 as
+  written (`grep -rn "allow(dead_code)" mcp/src/scorecard.rs mcp/src/server.rs`
+  returns nothing) is **unsatisfiable** while the deliberately-carried 05a-i
+  `ScorecardDimension` allow lives in `scorecard.rs`; the executor correctly met
+  AC3's *intent* (no NEW allow for the deletion). This is the same architect
+  mistake as 05a-i's criterion #3 — a blanket repo-file "no `#[allow(dead_code)]`"
+  grep colliding with a deliberately-carried allow. **Fold candidate for M35
+  close:** scope such greps to the phase's own diff, or explicitly exempt the
+  known-carried `ScorecardDimension` allow, until 05a-iii retires it.
+
+**Independent re-run at review:** `cargo fmt --all --check` clean; `cargo build`
+zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` 552 mcp (+1 new) + 1024 executor pass, 2 ignored. Verified:
+`fn aggregate` / `struct ScorecardRow` are gone (grep empty); `ScorecardBucket`
+serializes `key` + `length_finish_rate_mean` (the two intended MCP output-JSON
+changes); the new `model_scorecard_rows_are_buckets_keyed_by_tag` is
+mutation-sensitive (reads `.key` — a revert to `ScorecardRow.tag` won't compile —
+and the fixture genuinely carries `"rust"` on both runs, so the `key == "rust"`
+assertion is non-vacuous).
 
