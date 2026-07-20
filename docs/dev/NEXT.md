@@ -4,8 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M35 phase-02 (capture gaps: generation speed + output
-bytes) is not yet drafted — run `/rexymcp:architect next` to draft it.
+**Active phase:
+[M35 phase-02 — Capture gaps: generation speed + output bytes](milestones/M35-metrics-cost-accounting/phase-02-capture-gaps-speed-output-bytes.md)
+(status: todo — drafted 2026-07-19, awaiting `/rexymcp:dispatch phase-02`).**
+
+phase-02 drafted 2026-07-19: `PhaseRun.gen_time_s` (per-call generation wall
+time summed off the injected clock around `chat_fut`; tok/s ingredient for
+phase-03/04) + `SessionEvent::ToolResult.output_bytes` (`content.len()` before
+preview truncation; the M34-deferred output-flood calibration field). Both
+`#[serde(default)]` with old-line compat pins (a telemetry fixture **must**
+carry `schema_version:1` or the version gate eats it). **Cascade-risk design,
+informed by phase-01's two hard-fails:** Part A is green-at-every-step —
+`#[derive(Default)]` on `PhaseRun`, then `..Default::default()` appended to
+the ~11 full test literals while green (8 `..sample()` literals need nothing),
+so the field addition breaks only `agent/metrics.rs` (1-turn red window;
+clippy `needless_update` transiently expected between those tasks — clippy
+only at the end). Part B is a leaf-first ordered list (executor crate → mcp,
+one file per turn, strictly-shrinking error count — safe because
+`check_verifier_persistence` only fires on **non-decreasing** streaks,
+hard_fail.rs:159). Pre-flight pins the tests-inside-`mod tests` placement rule
+that killed both phase-01 dispatches.
 
 **M35 phase-01 — done** (2026-07-19, **escalated / session takeover** after 2
 executor hard_fails; executor AEON-7/Qwen3.6-27B-AEON). Telemetry store
