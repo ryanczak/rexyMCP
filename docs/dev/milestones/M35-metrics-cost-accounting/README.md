@@ -94,3 +94,23 @@ comment); "tokens reclaimed" is hand-summed in four places
 `compaction_count` are computed or folded but never rendered;
 `tier_telemetry.doc_level` has never been populated; the model×tag scorecard
 is MCP-only with no CLI path.
+
+**Calibration fold — in-place shell edits (2026-07-20, user-approved mid-milestone).**
+Three M35 phases hard-failed to the same mechanism: after a series of
+`patch`/`patch_lines` edits shifted a file's lines, the model's next `patch`
+failed (`0 matches for old_str` / `it changed on disk since you read it`) and it
+escaped to `sed -i`, which edits by raw line number and bypasses both the
+`old_str`-match and read-before-edit guards — so on the drifted file it corrupted
+things (phase-04a: a `sed -i '178,179d'` loop cannibalized ~300 lines of
+`runs.rs`). Root cause = *tooling escape hatch*, not a model preference (it used
+the edit tools correctly until they refused on drift). **Fixed two ways:** (1) a
+**hard guard** — the `bash` classifier now returns `Severity::RefuseInPlaceEdit`
+for `sed -i`/`perl -i` (matched case-sensitively so perl's include `-I` is not
+conflated), and the tool refuses with an advisory that steers to
+`write_file`/`patch`/`patch_lines` and pins the *re-read-then-patch* recovery on
+a drift failure; (2) a **contract Hard Rule** in
+`executor/templates/executor_contract.md` saying the same. Read-only `sed`
+(`sed -n …p`) is unaffected. **Also surfaced (deferred to phase-07):** the
+Oscillation detector missed the 3-distinct-command sed loop (its window needs ≤2
+distinct calls), so the run burned the full 600-turn budget — a real
+oscillation-calibration data point.

@@ -106,16 +106,34 @@ impl Tool for Bash {
             });
         }
 
-        if classify(&parsed.command) == Severity::Block {
-            return Ok(ToolResult {
-                output: String::new(),
-                error: Some(
-                    "refused: command matches a blocked-command pattern \
-                     (rm -rf, sudo, git push, curl | sh, …) — rephrase or narrow the operation"
-                        .to_string(),
-                ),
-                metadata: None,
-            });
+        match classify(&parsed.command) {
+            Severity::Allow => {}
+            Severity::Block => {
+                return Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(
+                        "refused: command matches a blocked-command pattern \
+                         (rm -rf, sudo, git push, curl | sh, …) — rephrase or narrow the operation"
+                            .to_string(),
+                    ),
+                    metadata: None,
+                });
+            }
+            Severity::RefuseInPlaceEdit => {
+                return Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(
+                        "refused: in-place shell edits of files (sed -i, perl -i, …) are not \
+                         allowed — they bypass the edit tools' safety guards and corrupt files \
+                         when line numbers or content have drifted. Use write_file / patch / \
+                         patch_lines instead. If a patch fails with \"0 matches for old_str\" or \
+                         \"it changed on disk\", the file drifted: re-read it with read_file, then \
+                         patch again."
+                            .to_string(),
+                    ),
+                    metadata: None,
+                });
+            }
         }
 
         let mut cmd = Command::new("sh");
@@ -499,6 +517,31 @@ mod tests {
         assert!(
             !test_file.exists(),
             "blocked command must not have been executed"
+        );
+    }
+
+    #[tokio::test]
+    async fn in_place_edit_is_refused_and_not_executed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), "line1\nline2\n").unwrap();
+        let tool = make_bash(dir.path(), 30);
+        let result = tool
+            .execute(json!({ "command": "sed -i '1d' f.txt" }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_some());
+        let err = result.error.as_ref().unwrap();
+        assert!(err.contains("refused"), "expected a refusal: {err}");
+        // The advisory must steer to the edit tools + the re-read recovery.
+        assert!(err.contains("write_file") && err.contains("patch"), "{err}");
+        assert!(err.contains("read_file"), "{err}");
+
+        // The file must be untouched — the edit did not run.
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+            "line1\nline2\n",
+            "in-place edit must not have executed"
         );
     }
 

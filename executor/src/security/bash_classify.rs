@@ -11,7 +11,16 @@ use std::sync::LazyLock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Allow,
+    /// A catastrophic / irreversible shell shape (rm -rf, mkfs, publish, …).
     Block,
+    /// An in-place shell edit of a file (`sed -i`, `perl -i`). Refused not
+    /// because it is dangerous but because it bypasses the edit tools' safety
+    /// rails (`old_str` matching + read-before-edit staleness guard) — the very
+    /// guards that catch stale-content drift. The executor has `patch` /
+    /// `patch_lines` / `write_file` for edits; an in-place shell edit on a
+    /// drifted file corrupts it (M35: a `sed -i '178,179d'` loop cannibalized
+    /// ~300 lines). The refusal message steers back to the edit tools.
+    RefuseInPlaceEdit,
 }
 
 static RM_RF_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -49,6 +58,15 @@ static GIT_RESET_HARD_RE: LazyLock<Regex> =
 
 static PIP_UPLOAD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"pip[0-9]*\s+.*\bupload\b").unwrap());
+
+/// In-place shell edits: `sed`/`perl` invoked with an in-place flag (a `-`
+/// cluster ending in a lowercase `i` — `-i`, `-i.bak`, `-pi`, `-ni`), before a
+/// shell separator. Matched **case-sensitively on the original command** so
+/// perl's in-place `-i` stays distinct from its include `-I` (which lowercasing
+/// would conflate). Read-only `sed` (`sed -n '1,5p' f`, `sed 's/a/b/' f`) has no
+/// `-…i` flag and is unaffected.
+static INPLACE_EDIT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(?:sed|perl)\b[^|;&]*\s-[a-z]*i").unwrap());
 
 /// Matches dangerous commands only when they appear at command position:
 /// start of string or after a shell separator (`;`, `&`, `|`, `(`, newline).
@@ -125,6 +143,12 @@ pub fn classify(command: &str) -> Severity {
     }
     if DANGEROUS_CMD_RE.is_match(&normalized) {
         return Severity::Block;
+    }
+
+    // In-place edits are matched on the ORIGINAL command (case preserved) so
+    // perl's in-place `-i` is not conflated with its include `-I`.
+    if INPLACE_EDIT_RE.is_match(command) {
+        return Severity::RefuseInPlaceEdit;
     }
 
     Severity::Allow
@@ -354,5 +378,53 @@ mod tests {
         assert_eq!(classify("RM   -RF  /"), Severity::Block);
         assert_eq!(classify("  SUDO   rm  x  "), Severity::Block);
         assert_eq!(classify("Git    Push"), Severity::Block);
+    }
+
+    #[test]
+    fn refuses_in_place_source_edits() {
+        // The M35 failure shape and its relatives.
+        assert_eq!(
+            classify("sed -i '178,179d' mcp/src/runs.rs"),
+            Severity::RefuseInPlaceEdit
+        );
+        assert_eq!(
+            classify("sed -i.bak 's/a/b/' file.rs"),
+            Severity::RefuseInPlaceEdit
+        );
+        assert_eq!(classify("sed -ni 'p' file"), Severity::RefuseInPlaceEdit);
+        assert_eq!(
+            classify("sed --posix -i 's/x/y/' f"),
+            Severity::RefuseInPlaceEdit
+        );
+        assert_eq!(
+            classify("perl -i -pe 's/a/b/' file"),
+            Severity::RefuseInPlaceEdit
+        );
+        assert_eq!(
+            classify("perl -pi.bak -e 's/x/y/g' src/main.rs"),
+            Severity::RefuseInPlaceEdit
+        );
+        // Also refused after a pipe (command position not required for this shape).
+        assert_eq!(
+            classify("echo x | sed -i 's/a/b/' f"),
+            Severity::RefuseInPlaceEdit
+        );
+    }
+
+    #[test]
+    fn allows_read_only_sed_and_perl_and_include_flag() {
+        // Read/transform sed writing to stdout — no in-place flag.
+        assert_eq!(
+            classify("sed -n '175,180p' mcp/src/runs.rs"),
+            Severity::Allow
+        );
+        assert_eq!(classify("sed 's/a/b/' file.rs"), Severity::Allow);
+        assert_eq!(classify("sed -e 's/a/b/' -e 's/c/d/' f"), Severity::Allow);
+        // perl one-liner with no in-place flag.
+        assert_eq!(classify("perl -ne 'print if /todo/' file"), Severity::Allow);
+        // perl INCLUDE dir `-I` must NOT be confused with in-place `-i`
+        // (the reason we match case-sensitively on the original command).
+        assert_eq!(classify("perl -Ilib -e 'print 1' "), Severity::Allow);
+        assert_eq!(classify("perl -I lib script.pl"), Severity::Allow);
     }
 }

@@ -157,6 +157,15 @@ These are **stop-and-file-a-blocker** triggers. Do not improvise around any.
   referencing the follow-up phase.
 - **Do not add lint-silencing directives** (`#[allow(...)]`, `#[ignore]`, or
   equivalents) to mask a failing diagnostic. Fix the cause or file a blocker.
+- **Do not edit files with in-place shell commands** (`sed -i`, `perl -i`, or a
+  `>`/`tee` redirect into a source file). Edit only through `write_file`,
+  `patch`, and `patch_lines` — the shell forms bypass the read-before-edit and
+  `old_str`-match guards, so on a file whose lines have drifted they silently
+  corrupt it (`bash` refuses `sed -i`/`perl -i` for this reason). **When a
+  `patch` fails** with `0 matches for old_str` or `it changed on disk since you
+  read it`, the file drifted out from under your last read — **`read_file` it
+  again, then re-issue the `patch`/`write_file`**. Never escape to the shell to
+  force an edit through.
 
 Spec ambiguity, missing referenced files, impossible acceptance criteria, or
 architectural inconsistencies you discover are also blockers — not invitations to
