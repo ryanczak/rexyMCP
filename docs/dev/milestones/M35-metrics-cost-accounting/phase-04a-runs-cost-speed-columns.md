@@ -1,7 +1,7 @@
 # Phase 04a: `runs` cost/speed columns + stable run id
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** done
 **Depends on:** phase-03
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -263,3 +263,89 @@ imported in runs.rs. No `docs/architecture.md` edit.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-20 (escalation)
+
+**Chosen lever:** session takeover
+**Rationale:** `budget_exceeded` (600/600 turns) via a destructive `sed -i
+'178,179d'` loop that cannibalized ~300 lines of `mcp/src/runs.rs` — the entire
+`#[cfg(test)] mod tests` block (opener, `use super::*`, the `make_run`/
+`make_run_with_params` helpers, most tests) is gone, so resume would face a
+half-destroyed tree needing ~300 lines of reconstruction by the same model that
+just thrashed on this exact file. The **production** work is correct and intact
+on disk (`metrics::run_id` compiles + is tested; the whole `format_runs` rewrite
+— three helpers, `&Config` signature, exact new header, `run_id` in the loop —
+landed), so the salvage is mechanical: preserve the model's production code,
+restore the test module from the committed baseline, update its `format_runs`
+call sites for the new signature, and add the phase-04a Test-plan tests. This is
+the **3rd M35 occurrence** of the sed-destructive-structural-edit failure class
+(phase-01 NoProgressStall sed-slice; phase-02 Oscillation sed-debug; this
+budget_exceeded sed-cannibalize) — a `bash`-editing tooling limitation, past the
+one-is-data/two-is-trend/three-is-fix threshold; flagged for a WORKFLOW/tooling
+fold at milestone close (user sign-off).
+
+### Update — 2026-07-20 (completion, session takeover)
+
+**Executor:** Claude (direct)
+**Verdict:** escalated
+
+Salvaged the model's correct production work and repaired the collateral damage:
+
+1. **Restored `mcp/src/runs.rs` from the committed baseline** and re-applied the
+   phase's production diff — spliced the model's three helpers (`fmt_tokens` /
+   `fmt_cost` / `fmt_tok_per_sec`) + its rewritten `format_runs` (3-arg `&Config`
+   signature, ID/TOKENS/COST/TOK-S columns, `run_id` in the loop) onto the intact
+   baseline (which still had `load_runs` and the whole test module the sed-loop
+   had eaten), then updated every test call site to the 3-arg signature and added
+   the three phase-04a Test-plan tests.
+2. **Fixed two latent bugs in the model's own code** that the brace corruption
+   had masked from the compiler:
+   - `format_runs`'s row `format!` had **16 placeholders for 17 args** (the
+     `TOK/S`/`tps_cell` column lost its placeholder) — a compile error. Added the
+     17th placeholder.
+   - `main.rs`'s `runs` handler passed `&config` (a `PathBuf`) to `format_runs`,
+     which needs `&Config`. Loaded it via `Config::load_with_env` in the display
+     branch (exactly the fallback Task 3 anticipated).
+   - the model's `run_id_is_eight_hex_chars` test asserted
+     `c.is_ascii_hexdigit() && c.is_lowercase()` — but numeric hex digits (`0-9`)
+     are **not** `is_lowercase`, so any id with a digit failed. `run_id` itself is
+     correct (`{:08x}`); fixed the assertion to `!c.is_ascii_uppercase()`.
+3. `executor/src/store/metrics.rs` (`run_id` + its other two tests) landed intact
+   from the model and was kept as-is.
+
+All four gates green: `cargo fmt --all --check`, `cargo build`,
+`cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
+(540 mcp + 1021 executor, 2 ignored). `rustfmt` run only on the touched files
+(`metrics.rs`, `runs.rs`, `main.rs`) — never the writing `cargo fmt --all`.
+
+**End-to-end verification** — the live `runs` table now carries the four columns:
+
+```
+$ cargo run -p rexymcp -- runs --config rexymcp.toml
+ID        AGE  MODEL                    ... RECLAIMED  TOKENS  COST  TOK/S
+c1929e89  1h   AEON-7/Qwen3.6-27B-AEON  ... 14k        35960k  —     13
+680b452e  2h   AEON-7/Qwen3.6-27B-AEON  ... 14k        6840k   —     16
+```
+
+8-hex `ID`, `k`-style `TOKENS`, `COST` = `—` (executor unpriced in
+`rexymcp.toml`), and a numeric `TOK/S` (real per-run throughput, live now that the
+serve runs the phase-02 binary). All acceptance criteria met.
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** escalated (session takeover)
+- **Bounces:** 0 dispatch bounces; 1 dispatch `budget_exceeded` → takeover
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (dispatch, `budget_exceeded`) → Claude (direct, takeover)
+- **Scope deviations:** none — the shipped feature matches the spec (ID + TOKENS
+  + COST + TOK/S columns, `run_id` helper). No JSON change, no `runs show` (that
+  is 04b).
+- **Calibration:** **3rd M35 occurrence of the sed-destructive-structural-edit
+  failure** (phase-01 NoProgressStall sed-slice → phase-02 Oscillation sed-debug →
+  this budget_exceeded sed-cannibalize that deleted ~300 lines). Past the
+  three-strikes threshold — a real fold candidate for milestone close: either a
+  STANDARDS/WORKFLOW note steering the executor away from `sed -i` for source
+  edits (use `write_file`/`patch`), or a governor/tooling guard. **Also flag:** the
+  Oscillation detector did **not** fire on the 3-distinct-command sed loop (window
+  8, distinct ≤2 needs ≤2 distinct calls; this cycled 3), so it ran to the full
+  600-turn budget — direct evidence for the M35 oscillation-calibration work
+  (phase-07). Held for user sign-off, not folded here.

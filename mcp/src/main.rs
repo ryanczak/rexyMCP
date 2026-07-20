@@ -548,7 +548,14 @@ async fn main() -> anyhow::Result<()> {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
-                println!("{}", runs::format_runs(&selected, now_ms));
+                let cfg = match rexymcp_executor::config::Config::load_with_env(&config) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("failed to load config: {e}");
+                        std::process::exit(1);
+                    }
+                };
+                println!("{}", runs::format_runs(&selected, now_ms, &cfg));
             }
             Ok(())
         }

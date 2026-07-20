@@ -55,19 +55,47 @@ fn gate_char(v: Option<bool>) -> char {
     if v == Some(true) { '✓' } else { '✗' }
 }
 
+fn fmt_tokens(total: u32) -> String {
+    if total == 0 {
+        "—".to_string()
+    } else if total >= 1024 {
+        format!("{}k", total / 1024)
+    } else {
+        format!("{total}")
+    }
+}
+
+/// Cost cell: `—` when unpriced/zero, else `$` with 4 decimals.
+fn fmt_cost(cost: f64) -> String {
+    if cost == 0.0 {
+        "—".to_string()
+    } else {
+        format!("${cost:.4}")
+    }
+}
+
+/// Throughput cell: `—` when unmeasured, else whole tok/s.
+fn fmt_tok_per_sec(tps: Option<f64>) -> String {
+    match tps {
+        Some(v) => format!("{v:.0}"),
+        None => "—".to_string(),
+    }
+}
+
 /// Format a list of runs as a human-readable table. `now_ms` is the current
 /// unix-millis clock, injected so the age column is testable.
-pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
+pub fn format_runs(runs: &[PhaseRun], now_ms: u64, config: &Config) -> String {
     if runs.is_empty() {
         return "(no runs)".to_string();
     }
 
     let mut lines = Vec::new();
     lines.push(
-        "AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED".to_string(),
+        "ID        AGE     MODEL  TAGS           SETTINGS     GATES  TURNS  STATUS    VERDICT  SERVED_MODEL  TRUNC  CXT_WIN  PEAK_CXT  RECLAIMED  TOKENS  COST      TOK/S".to_string(),
     );
 
     for run in runs {
+        let id = metrics::run_id(run);
         let age = humanize_age(now_ms.saturating_sub(run.ts));
 
         let tags = run.tags.join(",");
@@ -118,8 +146,17 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             format!("{}", reclaimed_total)
         };
 
+        let tokens_cell = fmt_tokens(run.tokens.total());
+        let rates = config.model_rates(&run.model);
+        let cost_cell = fmt_cost(metrics::token_cost(&run.tokens, &rates));
+        let tps_cell = fmt_tok_per_sec(metrics::tokens_per_sec(
+            run.tokens.output_tokens,
+            run.gen_time_s,
+        ));
+
         lines.push(format!(
-            "{:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {:<7} {:<7} {:<10} {}",
+            "{:<9} {:<7} {:<6} {:<14} {:<12} {}  {:<6} {:<9} {:<11} {:<13} {:<7} {:<7} {:<10} {:<7} {:<9} {:<6} {:<6}",
+            id,
             age,
             run.model,
             tags,
@@ -132,7 +169,10 @@ pub fn format_runs(runs: &[PhaseRun], now_ms: u64) -> String {
             trunc,
             cxt_win,
             peak_cxt,
-            reclaimed
+            reclaimed,
+            tokens_cell,
+            cost_cell,
+            tps_cell,
         ));
     }
 
@@ -337,7 +377,7 @@ mod tests {
             make_run(1000, "qwen", &["rust"], Some("approved_first_try")),
             make_run(2000, "gemma", &["feature"], None),
         ];
-        let out = format_runs(&runs, 5000);
+        let out = format_runs(&runs, 5000, &Config::default());
         assert!(out.contains("qwen"));
         assert!(out.contains("approved_first_try"));
         assert!(out.contains("gemma"));
@@ -350,7 +390,7 @@ mod tests {
             make_run_with_params(1000, "qwen", &[], None, None),
             make_run_with_params(2000, "gemma", &[], Some(0.2), None),
         ];
-        let out = format_runs(&runs, 5000);
+        let out = format_runs(&runs, 5000, &Config::default());
         assert!(
             out.contains("default"),
             "expected 'default' in output: {out}"
@@ -360,7 +400,7 @@ mod tests {
 
     #[test]
     fn format_runs_empty_is_no_runs_line() {
-        let out = format_runs(&[], 5000);
+        let out = format_runs(&[], 5000, &Config::default());
         assert!(out.contains("(no runs)"));
     }
 
@@ -447,7 +487,7 @@ enabled = false
         let run_without_provenance = make_run(2000, "gemma", &["feature"], None);
 
         let runs = vec![run_with_provenance, run_without_provenance];
-        let out = format_runs(&runs, 5000);
+        let out = format_runs(&runs, 5000, &Config::default());
 
         // Run with provenance: served model and truncation rate appear
         assert!(
@@ -481,7 +521,7 @@ enabled = false
         let run_without_cxt = make_run(2000, "gemma", &["feature"], None);
 
         let runs = vec![run_with_cxt, run_without_cxt];
-        let out = format_runs(&runs, 5000);
+        let out = format_runs(&runs, 5000, &Config::default());
 
         // Run with context window: compact form appears (262144 / 1024 = 256k)
         assert!(
@@ -514,7 +554,7 @@ enabled = false
             read_deduped_tokens: 288,
         };
 
-        let out = format_runs(&[run], 5000);
+        let out = format_runs(&[run], 5000, &Config::default());
 
         // Header contains both new column names
         assert!(
@@ -555,7 +595,7 @@ enabled = false
             read_deduped_tokens: 30,
         };
 
-        let out = format_runs(&[run], 5000);
+        let out = format_runs(&[run], 5000, &Config::default());
 
         // Sum = 100 + 50 + 30 + 20 = 200 (sub-1024, renders as "200")
         let qwen_line = out
@@ -573,7 +613,7 @@ enabled = false
         // make_run already defaults context_efficiency to all-zeros
         let run = make_run(1000, "qwen", &["rust"], None);
 
-        let out = format_runs(&[run], 5000);
+        let out = format_runs(&[run], 5000, &Config::default());
 
         let qwen_line = out
             .lines()
@@ -692,6 +732,68 @@ dir = "{}"
         assert_eq!(
             runs[0].architect_verdict,
             Some("approved_first_try".to_string())
+        );
+    }
+
+    #[test]
+    fn format_runs_shows_id_tokens_cost_speed_columns() {
+        let mut run = make_run(1_717_000_000_000, "qwen", &["rust"], None);
+        run.tokens = rexymcp_executor::ai::types::TokenBreakdown {
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+        };
+        run.gen_time_s = 5.0;
+
+        let mut cfg = Config::default();
+        cfg.models.insert(
+            "qwen".to_string(),
+            rexymcp_executor::config::ModelOverride {
+                input_per_mtok: Some(2.0),
+                output_per_mtok: Some(9.0),
+                ..Default::default()
+            },
+        );
+
+        let out = format_runs(&[run], 5_000, &cfg);
+        assert!(out.contains("TOKENS"), "expected TOKENS header: {out}");
+        assert!(out.contains("COST"), "expected COST header: {out}");
+        assert!(out.contains("TOK/S"), "expected TOK/S header: {out}");
+        assert!(out.contains('$'), "expected a $ cost cell: {out}");
+        assert!(out.contains("100000"), "expected 100000 tok/s: {out}");
+    }
+
+    #[test]
+    fn format_runs_unpriced_cost_is_dash() {
+        let mut run = make_run(1_717_000_000_000, "qwen", &["rust"], None);
+        run.tokens = rexymcp_executor::ai::types::TokenBreakdown {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+        };
+        let out = format_runs(&[run], 5_000, &Config::default());
+        let line = out.lines().find(|l| l.contains("qwen")).expect("qwen line");
+        assert!(
+            !line.contains('$'),
+            "unpriced run must not show a $ cost: {line}"
+        );
+        assert!(
+            line.contains('—'),
+            "unpriced cost should render em dash: {line}"
+        );
+    }
+
+    #[test]
+    fn format_runs_zero_gen_time_speed_is_dash() {
+        let mut run = make_run(1_717_000_000_000, "qwen", &["rust"], None);
+        run.gen_time_s = 0.0;
+        let out = format_runs(&[run], 5_000, &Config::default());
+        let line = out.lines().find(|l| l.contains("qwen")).expect("qwen line");
+        assert!(
+            line.trim_end().ends_with('—'),
+            "zero gen_time should render TOK/S as em dash: {line}"
         );
     }
 }

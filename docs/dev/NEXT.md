@@ -4,25 +4,35 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-04a — `runs` cost/speed columns + run id](milestones/M35-metrics-cost-accounting/phase-04a-runs-cost-speed-columns.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-04a`).**
+**Active phase: none.** M35 phase-04b (`runs show <id>` detail subcommand) is
+not yet drafted — run `/rexymcp:architect next` to draft it.
 
-phase-04a drafted 2026-07-20: first consumer of phase-03's cost core. Adds
-`metrics::run_id(&PhaseRun)` — a stable git-sha-style 8-hex handle (hand-rolled
-FNV-1a/32 over `ts|model|phase_id`, no dep, platform-stable) — and four columns
-to the `rexymcp runs` table: ID (leftmost), TOKENS, COST (`token_cost` via
-`config.model_rates`; `—` when unpriced), TOK/S (`tokens_per_sec` from
-phase-02's `gen_time_s`; `—` when unmeasured). **Design fork resolved with the
-user (2026-07-20):** `runs show <id>` addressing = short hash id (git-sha style,
-chosen over raw ts / row index) — that's why 04a mints the id column first.
-**phase-04 was split:** 04a = the list columns (this) + `run_id`; **04b** = the
-`runs show <id>` detail subcommand, deferred so its clap-subcommand
-restructuring (external-API-shaped) stays isolated. size=m (~180 lines). One
-cascade window flagged: threading `&Config` into `format_runs` breaks 9 call
-sites at once (all in 2 files, identical `&Config::default()` / `&config` fix);
-the existing tests use `contains()` so no assertion churn. Every helper + the
-exact new header + the FNV code quoted inline.
+**M35 phase-04a — done (2026-07-20, escalated / session takeover after a
+dispatch `budget_exceeded`).** First consumer of phase-03's cost core:
+`metrics::run_id(&PhaseRun)` (stable git-sha-style 8-hex handle, hand-rolled
+FNV-1a/32 over `ts|model|phase_id`) + four `rexymcp runs` columns — ID
+(leftmost), TOKENS, COST (`token_cost` via `config.model_rates`; `—` unpriced),
+TOK/S (`tokens_per_sec` from phase-02's `gen_time_s`; `—` unmeasured). **Design
+fork resolved with the user:** `runs show <id>` addressing = short hash id.
+**Dispatch `budget_exceeded` (600/600 turns)** via a destructive `sed -i
+'178,179d'` loop that cannibalized ~300 lines of `mcp/src/runs.rs` (the whole
+test module). The production work was correct on disk, so **session takeover**
+(resume was a non-starter — half-destroyed tree): restored runs.rs from
+baseline + re-applied the model's `format_runs`/helpers, fixed two model bugs
+the brace corruption had masked (a 16-placeholder-for-17-args `format!`; a
+`main.rs` `&PathBuf`-not-`&Config`), and a buggy `run_id` test
+(`is_lowercase()` rejects numeric hex digits). All four gates green (540 mcp +
+1021 executor); E2E live table shows all four columns with real TOK/S capture.
+**⚠️ Calibration — 3rd M35 occurrence of the sed-destructive-structural-edit
+failure** (phase-01 NoProgressStall sed-slice → phase-02 Oscillation sed-debug →
+this sed-cannibalize) — **past the three-strikes threshold; a real fold
+candidate for milestone close** (steer the executor off `sed -i` for source
+edits, or a tooling guard). Also: the Oscillation detector did **not** catch the
+3-distinct-command sed loop (needs ≤2 distinct), so it burned the full budget —
+concrete input for the phase-07 oscillation-calibration work. Both held for user
+sign-off. **phase-04 was split:** 04a = list columns (this); **04b** = the `runs
+show <id>` detail subcommand (clap-subcommand restructuring, external-API-shaped
+— kept isolated).
 
 **M35 phase-03 — done (2026-07-20, approved_first_try; executor
 AEON-7/Qwen3.6-27B-AEON, 206 turns).** Shared metrics/cost core + per-model
