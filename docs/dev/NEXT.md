@@ -5,7 +5,32 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase: none pending `/rexymcp:architect next` — phase-06b-ii is `done`;
-only phase-07 (reporting debt) remains todo in M35.**
+next up is the 06c architect-ledger arc (06c-i → 06c-ii → 06c-iii), then phase-07
+(reporting debt) closes M35.**
+
+**Architect-ledger design pass (2026-07-21, with the user — the 06c arc, inserted
+before phase-07).** Post-06b-ii audit: the architect side of the accounting is
+structurally inaccurate. `rexymcp harvest` attributes Claude Code transcript usage
+to `ArchitectActivity` journal time-windows (post-boundary messages *dropped*),
+discards `message.model` (a four-model corpus priced at one
+`effective_architect_rates()`), destroys per-skill/per-session detail at ingest,
+and only runs in the `/rexymcp:auto` loop — the interactive workflow never
+harvests, and Claude Code prunes transcripts (~30 days), so unharvested history
+evaporates. The transcripts themselves carry direct `attributionSkill`
+(`rexymcp:dispatch` ×1840, `review` ×926, `architect` ×777, `escalate` ×172,
+`auto` ×120, none ×1144), `sessionId`, `message.model`, and a 5m/1h
+`cache_creation` split; dedup by `message.id` is mandatory (4,387 duplicate
+records — resume/compaction rewrites). Corpus: 4,979 messages; 531k in / 43.1M
+cache-create / 1.507B cache-read / 3.55M out across opus-4-8/sonnet-5/fable-5/
+sonnet-4-6. **Four forks resolved with the user:** (1) transcript-native ledger
+keyed (sessionId × model × attributionSkill), idempotent last-wins fold; window
+enrichment deleted (compat break approved); (2) ALL project usage counts —
+non-skill messages bucketed `other`; (3) built-in Claude price table +
+config override, 5m/1h cache-write rates split (token record splits
+`cache_creation` accordingly); (4) sequenced **before** phase-07 as
+06c-i (ledger core) → 06c-ii (per-model pricing) → 06c-iii (surfaces:
+costs/dashboard/profile + per-skill breakdown + harvest freshness). Details in
+the [M35 README](milestones/M35-metrics-cost-accounting/README.md) Notes.
 
 **M35 phase-06b-ii — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
 143 turns).** The dashboard `b`-key tokens⇄currency toggle: `BudgetDisplay{Dollars,Tokens}`

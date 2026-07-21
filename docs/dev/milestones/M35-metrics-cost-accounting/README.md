@@ -35,6 +35,14 @@ and the executor finally carries a real (configurable) price.
   Session × Milestone × Project; the dashboard Budget panel renders from the
   same core, no longer ignores cache token buckets, and gains a `b`-key
   tokens ⇄ currency toggle (the event panel's `f`-key pattern).
+- Architect usage is a **transcript-native ledger** (added mid-milestone,
+  2026-07-21): harvest reads the Claude Code project transcripts directly,
+  dedups by `message.id`, persists records keyed (session × model × skill)
+  with **all** project usage counted (non-skill messages bucketed `other`),
+  and prices per architect model from a built-in Claude price table
+  (config-overridable, 5m/1h cache-write rates distinguished). The
+  time-window `ArchitectActivity` enrichment and single-`ArchitectRates`
+  pricing are gone (compat break user-approved).
 - Oscillation calibration reports low percentiles for its lower-is-worse
   signal; `calibrate-governor` output aligns with the shared rendering.
 - All four gates green.
@@ -63,6 +71,9 @@ and the executor finally carries a real (configurable) price.
 | 06a | `rexymcp costs` CLI + shared cost-report core ([phase-06a-costs-cli-core.md](phase-06a-costs-cli-core.md)) | done |
 | 06b-i | Dashboard Budget panel → `costs` core + cache buckets; de-dup the copied aggregation ([phase-06b-i-dashboard-rewire-cache.md](phase-06b-i-dashboard-rewire-cache.md)) | done |
 | 06b-ii | Dashboard `b`-key tokens⇄currency toggle ([phase-06b-ii-budget-tokens-toggle.md](phase-06b-ii-budget-tokens-toggle.md)) | done |
+| 06c-i | Architect ledger core: transcript-native harvest rewrite (keyed session×model×skill; window enrichment deleted) | not drafted |
+| 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split | not drafted |
+| 06c-iii | Ledger surfaces: costs/dashboard/profile consume the ledger; per-skill breakdown; harvest freshness | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect
@@ -119,3 +130,26 @@ a drift failure; (2) a **contract Hard Rule** in
 Oscillation detector missed the 3-distinct-command sed loop (its window needs ≤2
 distinct calls), so the run burned the full 600-turn budget — a real
 oscillation-calibration data point.
+**Architect-ledger design pass (2026-07-21, with the user — the 06c arc).**
+Post-06b-ii audit found the architect side of the accounting structurally
+inaccurate: `rexymcp harvest` (mcp/src/harvest.rs) attributes transcript usage
+to `ArchitectActivity` journal time-windows (messages after the last boundary
+are *dropped*), discards `message.model` (a four-model corpus — opus-4-8 ×3780,
+sonnet-5 ×659, fable-5 ×423, sonnet-4-6 ×115 — priced at one
+`effective_architect_rates()`), destroys per-skill/per-session detail at
+ingest, and only runs in the `/rexymcp:auto` loop (the interactive workflow
+never harvests; Claude Code prunes transcripts ~30 days, so unharvested
+history evaporates). Meanwhile the transcripts themselves carry direct
+`attributionSkill` (`rexymcp:dispatch` etc.), `sessionId`, `message.model`,
+and a 5m/1h `cache_creation` split. Measured corpus (59 files, deduped by
+`message.id` — 4,387 duplicate records from resume/compaction rewrites):
+4,979 messages; 531k in / 43.1M cache-create / 1.507B cache-read / 3.55M out.
+**Four forks resolved with the user:** (1) **transcript-native ledger** —
+new record keyed (sessionId × model × attributionSkill), idempotent re-harvest
+folds last-wins; the window-enrichment path is deleted (compat break
+approved); (2) **all project usage counts** — non-skill messages (1,144)
+bucketed as `other`, not dropped; (3) **built-in Claude price table +
+config override**, with 5m and 1h cache-write rates distinguished (the token
+record splits `cache_creation` into 5m/1h buckets); (4) **sequenced before
+phase-07** as 06c-i/ii/iii — accounting correctness first, then 07's
+reporting polish lands on accurate numbers.
