@@ -578,6 +578,118 @@ pub fn read_architect_activities(path: &Path) -> std::io::Result<Vec<ArchitectAc
         .collect())
 }
 
+/// The literal value of `ArchitectLedger.record`. Single-sources the discriminator.
+pub const ARCHITECT_LEDGER_RECORD_TAG: &str = "architect_ledger";
+
+/// One harvested architect-usage bucket: the token totals for a single
+/// `(project_id, session_id, model, skill)` slice of a project's Claude Code
+/// transcripts. Written by `rexymcp harvest`; the executor never writes one.
+/// Coexists with `PhaseRun` / `PhaseReview` / `ArchitectActivity` in
+/// `phase_runs.jsonl`, discriminated by `record`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArchitectLedger {
+    /// Literal discriminator. Always `"architect_ledger"`. `#[serde(default)]`
+    /// so a line of another record type deserializes with `record == ""` here
+    /// and is filtered out by `read_architect_ledger`.
+    #[serde(default)]
+    pub record: String,
+    /// Project identity (from `[project].id` or `--project-id`). `None` if unset.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Claude Code session identity — the transcript file stem (== the file's
+    /// `sessionId`). Since all `message.id` duplicates are within one file,
+    /// dedup makes this unambiguous.
+    pub session_id: String,
+    /// The architect model that produced these tokens (`message.model`).
+    pub model: String,
+    /// The skill/slash-command the tokens were attributed to
+    /// (`attributionSkill`), or `"other"` when the message carried none.
+    pub skill: String,
+    /// Summed four-class token usage over the deduped messages in this slice.
+    pub tokens: ArchitectTokens,
+    /// 5-minute-TTL share of `tokens.cache_creation`
+    /// (`usage.cache_creation.ephemeral_5m_input_tokens`, summed).
+    #[serde(default)]
+    pub cache_creation_5m: u64,
+    /// 1-hour-TTL share of `tokens.cache_creation`
+    /// (`usage.cache_creation.ephemeral_1h_input_tokens`, summed).
+    #[serde(default)]
+    pub cache_creation_1h: u64,
+    /// Count of deduped messages folded into this slice.
+    pub messages: u64,
+    /// Epoch-ms of the latest message in this slice (harvest freshness signal).
+    pub last_ts: u64,
+}
+
+/// Fold `ArchitectLedger` records: keep the **last** occurrence per
+/// `(project_id, session_id, model, skill)` key, preserving input order.
+/// This is what makes re-harvest idempotent: a second harvest appends fresh
+/// full-sum records that replace the prior ones per key.
+pub fn fold_ledger(ledgers: Vec<ArchitectLedger>) -> Vec<ArchitectLedger> {
+    use std::collections::HashMap;
+    let mut latest: HashMap<(Option<String>, String, String, String), usize> = HashMap::new();
+    let mut out: Vec<ArchitectLedger> = Vec::new();
+    for l in ledgers {
+        let key = (
+            l.project_id.clone(),
+            l.session_id.clone(),
+            l.model.clone(),
+            l.skill.clone(),
+        );
+        if let Some(&idx) = latest.get(&key) {
+            out[idx] = l;
+        } else {
+            latest.insert(key, out.len());
+            out.push(l);
+        }
+    }
+    out
+}
+
+/// Append one `ArchitectLedger` as a JSON line to `<telemetry_dir>/phase_runs.jsonl`.
+/// Stamps `schema_version` at the write boundary. Returns the file path.
+pub fn append_architect_ledger(
+    telemetry_dir: &Path,
+    ledger: &ArchitectLedger,
+) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+
+    std::fs::create_dir_all(telemetry_dir)?;
+    let path = telemetry_dir.join("phase_runs.jsonl");
+    let mut value = serde_json::to_value(ledger).map_err(std::io::Error::other)?;
+    value["schema_version"] = TELEMETRY_SCHEMA_VERSION.into();
+    let line = serde_json::to_string(&value).map_err(std::io::Error::other)?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    file.write_all(line.as_bytes())?;
+    file.write_all(b"\n")?;
+    Ok(path)
+}
+
+/// Read all `ArchitectLedger` records from a store file. Lines with a missing
+/// or non-current `schema_version` are skipped, as are lines without
+/// `record == "architect_ledger"`.
+pub fn read_architect_ledger(path: &Path) -> std::io::Result<Vec<ArchitectLedger>> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    Ok(content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| {
+            v.get("schema_version").and_then(serde_json::Value::as_u64)
+                == Some(TELEMETRY_SCHEMA_VERSION as u64)
+        })
+        .filter_map(|v| serde_json::from_value::<ArchitectLedger>(v).ok())
+        .filter(|l| l.record == ARCHITECT_LEDGER_RECORD_TAG)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1510,5 +1622,156 @@ mod tests {
         let results = read(&path).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].gen_time_s, 0.0);
+    }
+
+    // ---- ArchitectLedger roundtrip ----
+
+    #[test]
+    fn architect_ledger_roundtrips_through_store() {
+        let dir = TempDir::new().unwrap();
+        let telemetry_dir = dir.path().join("telemetry");
+        let ledger = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "session-1".to_string(),
+            model: "claude-opus-4-8".to_string(),
+            skill: "rexymcp:dispatch".to_string(),
+            tokens: ArchitectTokens {
+                input: 1000,
+                cache_creation: 2000,
+                cache_read: 3000,
+                output: 400,
+            },
+            cache_creation_5m: 500,
+            cache_creation_1h: 1500,
+            messages: 3,
+            last_ts: 1_717_000_000_000,
+        };
+        append_architect_ledger(&telemetry_dir, &ledger).unwrap();
+        let path = telemetry_dir.join("phase_runs.jsonl");
+        let results = read_architect_ledger(&path).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], ledger);
+    }
+
+    #[test]
+    fn read_ledger_ignores_other_record_types() {
+        let dir = TempDir::new().unwrap();
+        let telemetry_dir = dir.path().join("telemetry");
+
+        // Write a PhaseRun (via sample)
+        let sample = sample();
+        append(&telemetry_dir, &sample).unwrap();
+
+        // Write an ArchitectActivity
+        let activity = ArchitectActivity {
+            record: ARCHITECT_ACTIVITY_RECORD_TAG.to_string(),
+            ts: 1_717_000_000_000,
+            phase_doc_path: None,
+            phase_id: "p1".to_string(),
+            project_id: Some("proj".to_string()),
+            milestone_id: None,
+            activity: "review".to_string(),
+            outcome: None,
+            model: None,
+            tokens: ArchitectTokens::default(),
+        };
+        append_architect_activity(&telemetry_dir, &activity).unwrap();
+
+        // Write an ArchitectLedger
+        let ledger = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "s1".to_string(),
+            model: "claude-opus-4-8".to_string(),
+            skill: "dispatch".to_string(),
+            tokens: ArchitectTokens {
+                input: 100,
+                cache_creation: 200,
+                cache_read: 300,
+                output: 400,
+            },
+            cache_creation_5m: 100,
+            cache_creation_1h: 100,
+            messages: 1,
+            last_ts: 1_717_000_000_000,
+        };
+        append_architect_ledger(&telemetry_dir, &ledger).unwrap();
+
+        let path = telemetry_dir.join("phase_runs.jsonl");
+
+        // read_architect_ledger returns exactly the one ledger
+        let ledgers = read_architect_ledger(&path).unwrap();
+        assert_eq!(ledgers.len(), 1);
+        assert_eq!(ledgers[0], ledger);
+
+        // read_architect_activities still returns exactly the one activity
+        let activities = read_architect_activities(&path).unwrap();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0], activity);
+    }
+
+    #[test]
+    fn fold_ledger_keeps_last_per_key() {
+        let l1 = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "s1".to_string(),
+            model: "m1".to_string(),
+            skill: "skill_a".to_string(),
+            tokens: ArchitectTokens {
+                input: 100,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            messages: 1,
+            last_ts: 100,
+        };
+        let l2 = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "s1".to_string(),
+            model: "m1".to_string(),
+            skill: "skill_a".to_string(),
+            tokens: ArchitectTokens {
+                input: 200,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            messages: 2,
+            last_ts: 200,
+        };
+        let l3 = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "s1".to_string(),
+            model: "m1".to_string(),
+            skill: "skill_b".to_string(),
+            tokens: ArchitectTokens {
+                input: 300,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            messages: 3,
+            last_ts: 300,
+        };
+
+        let folded = fold_ledger(vec![l1, l2, l3]);
+        assert_eq!(folded.len(), 2);
+        // l2 (last for skill_a) replaces l1
+        assert_eq!(folded[0].tokens.input, 200);
+        assert_eq!(folded[0].skill, "skill_a");
+        // l3 stays separate
+        assert_eq!(folded[1].tokens.input, 300);
+        assert_eq!(folded[1].skill, "skill_b");
     }
 }
