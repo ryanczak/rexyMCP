@@ -1,7 +1,7 @@
 # Phase 06b-i: Dashboard Budget panel → `costs` core + cache-bucket inclusion (de-dup the copied aggregation)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress (bounced — see bug-06b-i-1)
 **Depends on:** phase-06a
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=refactor, size=m
