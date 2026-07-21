@@ -5,8 +5,50 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-05b — `profile --cost` tokens & cost to ship, per approved phase](milestones/M35-metrics-cost-accounting/phase-05b-profile-phase-cost.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05b`).**
+[M35 phase-06a — `rexymcp costs` CLI + shared cost-report core](milestones/M35-metrics-cost-accounting/phase-06a-costs-cli-core.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-06a`).**
+
+phase-06a drafted 2026-07-20: `rexymcp costs` — a CLI table of Baseline/Executor/
+Architect/Net across Session/Milestone/Project, on a new shared core `mcp/src/costs.rs`.
+**Two design forks resolved with the user (2026-07-20):** (1) phase-06 **split into
+two** — 06a = cost-core fn + `costs` CLI; 06b = dashboard Budget rewire onto the core
++ `b`-key tokens⇄currency toggle + cache-bucket inclusion; (2) `costs` **mirrors the
+dashboard's 3-scope** data model — Session from the live session log
+(`StatusSummary.last_{input,output}_tokens`), Milestone/Project from the telemetry
+store (`phase_runs.jsonl` + folded `ArchitectActivity`). **The headline fix:** executor
+cost is computed via the phase-03 core (`config.model_rates`), retiring the dashboard's
+hardcoded `$0.00` stub — unpriced AEON-7 still $0 but *derived*. 06a is **self-contained**
+(no dashboard edit): it builds a parallel authoritative core (report types + pure
+`scope_report` + store aggregation + `load_cost_report` + `format_costs` + the `Costs`
+clap command), duplicating a small store-aggregation that **06b de-duplicates** when it
+rewires the dashboard. Milestone resolved store-natively (latest run's `milestone_id`).
+Heavily pre-injected (the BudgetRates-from-config shape at main.rs:809, the load_data
+store-fold shape, sum_architect_tokens, savings_lines' cost math + `—`/`$0.00`
+conventions, u64-safe formula avoiding the u32 TokenBreakdown). size=m. **Held-for-later:**
+the phase-05b `LatestRun`-struct follow-up (drop the `#[allow(clippy::type_complexity)]`)
+— neither 06a nor 06b touches profile.rs, so it lands in a later profile-touching change
+or phase-07.
+
+**M35 phase-05b — done (2026-07-20, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON,
+first dispatch 187 turns + bounce fix 93 turns).** `rexymcp profile --cost` — a
+cost-to-ship-per-phase report (one row per shipped phase — `approved_*`/`escalated` —
+summing tokens+cost across every dispatch attempt sharing the phase identity). Reuses
+the cost core + `runs.rs` `fmt_tokens`/`fmt_cost` (made `pub(crate)`) + `profile.rs`
+identity machinery; bare `profile` capability table unchanged. **Bounced once
+(bug-05b-1, major):** (A) the PHASE column rendered the coarse recorded `phase_id`
+(`phase-05` for all 05* sub-phases) → indistinguishable rows; grouping was correct
+(by `phase_doc_path`) but the label dropped the identity — fixed to show the doc-path
+stem. (B) the token-summation test used zero-token runs → mutation-proven uncovered at
+review (`saturating_add(0)` survived); fixed to assert the non-zero element-wise sum.
+Both fixes **verified at review** (live E2E shows distinct labels + correct per-phase
+accounting: 04a `escalated`, 04b `approved_after_1`/`attempts=2`; the summation mutation
+now fails the test). **One minor deviation accepted:** the first production clippy-allow
+(`#[allow(clippy::type_complexity)]` on a local 5-tuple accumulator) — masks a style
+lint only; follow-up (named `LatestRun` struct) held for a later profile-touching phase.
+**Also forced+accepted:** `JsonSchema` on `TokenBreakdown` (my over-spec of
+`#[derive(JsonSchema)]` on `PhaseCost`; minimal, kept). Gates green (567 mcp + 1024
+executor). **This closes the whole phase-05 arc** (scorecard unified + profile cost-to-
+ship).
 
 phase-05b drafted 2026-07-20: adds `rexymcp profile --cost` — a **cost-to-ship-
 per-phase** report (one row per shipped phase — verdict `approved_*`/`escalated` —
