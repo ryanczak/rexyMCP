@@ -1,7 +1,7 @@
 # Bug 1 on phase-05b: `profile --cost` rows are indistinguishable + token summation untested
 
 **Severity:** major
-**Status:** open
+**Status:** resolved (2026-07-20, re-dispatch `da5b9fe`; verified at review)
 **Filed:** 2026-07-20
 
 ## What's wrong

@@ -59,7 +59,7 @@ and the executor finally carries a real (configurable) price.
 | 05a-i | Scorecard: unified `aggregate_scorecard` core behind wrappers ([phase-05a-i-scorecard-unified-core.md](phase-05a-i-scorecard-unified-core.md)) | done |
 | 05a-ii | Scorecard: migrate MCP `model_scorecard` onto the core; retire the Tag wrapper (`aggregate`/`ScorecardRow`) ([phase-05a-ii-scorecard-mcp-migration.md](phase-05a-ii-scorecard-mcp-migration.md)) | done |
 | 05a-iii | Scorecard: `--by model\|tag\|settings` CLI + dropped columns; retire the Settings wrapper (`aggregate_by_settings`/`SettingsScorecardRow`) ([phase-05a-iii-scorecard-by-cli.md](phase-05a-iii-scorecard-by-cli.md)) | done |
-| 05b | `profile --cost` tokens & cost to ship, per approved phase ([phase-05b-profile-phase-cost.md](phase-05b-profile-phase-cost.md)) | review |
+| 05b | `profile --cost` tokens & cost to ship, per approved phase ([phase-05b-profile-phase-cost.md](phase-05b-profile-phase-cost.md)) | done |
 | 06 | `rexymcp costs` + dashboard rewire + `b` toggle | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
