@@ -76,7 +76,8 @@ fn scope_costs(
     let exec: ScopeCosts = runs
         .iter()
         .filter(|r| {
-            r.project_id.as_deref() == Some(project_id) && r.milestone_id.as_deref() == milestone_id
+            r.project_id.as_deref() == Some(project_id)
+                && (milestone_id.is_none() || r.milestone_id.as_deref() == milestone_id)
         })
         .fold(ScopeCosts::default(), |mut c, r| {
             c.executor_in = c.executor_in.saturating_add(r.tokens.input_tokens as u64);
@@ -102,7 +103,8 @@ fn sum_architect_tokens(
     activities
         .iter()
         .filter(|a| {
-            a.project_id.as_deref() == project_id && a.milestone_id.as_deref() == milestone_id
+            a.project_id.as_deref() == project_id
+                && (milestone_id.is_none() || a.milestone_id.as_deref() == milestone_id)
         })
         .fold(ArchitectTokens::default(), |mut acc, a| {
             acc.input = acc.input.saturating_add(a.tokens.input);
@@ -444,5 +446,64 @@ saved_output_per_mtok = 0.0
             err.contains("telemetry disabled"),
             "expected telemetry disabled error: {err}"
         );
+    }
+
+    #[test]
+    fn scope_costs_none_sums_all_milestones() {
+        use rexymcp_executor::ai::types::TokenBreakdown;
+        use rexymcp_executor::store::telemetry::{Gates, GenerationParams, PhaseRun};
+        let run = |proj: &str, mile: &str, inp: u32, outp: u32| PhaseRun {
+            ts: 1,
+            model: "m".into(),
+            generation_params: GenerationParams::default(),
+            phase_id: "p".into(),
+            phase_doc_path: None,
+            tags: vec![],
+            status: "complete".into(),
+            escalated: false,
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            parse_failure_rate: 0.0,
+            repairs_per_call: 0.0,
+            verifier_retries: 0,
+            tool_success_rate: 1.0,
+            turns: 1,
+            wall_clock_s: 1.0,
+            tokens: TokenBreakdown {
+                input_tokens: inp,
+                output_tokens: outp,
+                ..Default::default()
+            },
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: None,
+            served_model: None,
+            length_finish_rate: None,
+            context_window: None,
+            context_efficiency: Default::default(),
+            project_id: Some(proj.into()),
+            milestone_id: Some(mile.into()),
+            tier_telemetry: Default::default(),
+            ..Default::default()
+        };
+        let runs = vec![
+            run("P", "mA", 100, 10),
+            run("P", "mB", 200, 20),
+            run("OTHER", "mA", 999, 999), // different project — must be excluded
+        ];
+        // None = all milestones of project P: 100+200 input, 10+20 output.
+        let all = scope_costs(&runs, &[], "P", None);
+        assert_eq!(all.executor_in, 300);
+        assert_eq!(all.executor_out, 30);
+        // Some("mA") = only that milestone.
+        let just_a = scope_costs(&runs, &[], "P", Some("mA"));
+        assert_eq!(just_a.executor_in, 100);
+        // Superset: project (None) >= milestone (Some).
+        assert!(all.executor_in >= just_a.executor_in);
     }
 }
