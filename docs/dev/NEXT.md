@@ -5,8 +5,45 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-06a — `rexymcp costs` CLI + shared cost-report core](milestones/M35-metrics-cost-accounting/phase-06a-costs-cli-core.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-06a`).**
+[M35 phase-06b-i — dashboard Budget panel → `costs` core + cache buckets](milestones/M35-metrics-cost-accounting/phase-06b-i-dashboard-rewire-cache.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-06b-i`).**
+
+phase-06b-i drafted 2026-07-20: rewire the dashboard Budget panel's `savings_lines`
+onto `costs::scope_report` (kill the hardcoded `$0.00` executor stub — cost now
+derived), add cache-bucket inclusion (extend `ScopeCosts` with executor
+cache-read/write + include them in `scope_report`'s executor cost; cache-write priced
+at `cache_creation_per_mtok`), and de-dup the store aggregation (point `load_data` at
+`costs::scope_costs`/`sum_architect_tokens`, now `pub(crate)`; delete the dashboard's
+copied `sum_architect_tokens`). **Design fork resolved with the user (2026-07-20):**
+phase-06b split into **06b-i** (this — pure/testable rewire + cache + de-dup) and
+**06b-ii** (the interactive `b`-key tokens⇄currency toggle, isolated so a toggle bug
+can't mask a rewire regression). Behavior-preserving for the unpriced executor (the
+existing `savings_lines` tests are the net); adds `executor: ModelRates` to
+`BudgetRates` (threaded from main.rs `cfg.model_rates`). Cascade pinned green-at-every-
+step (both structs derive `Default` → append fields + `..Default::default()` on
+literals). size=m. Baseline stays input+output (no cache baseline rate); only the
+executor cost gains cache.
+
+**M35 phase-06a — done (2026-07-20, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON;
+first dispatch 132 turns + a green-bounce no-op + refined re-dispatch 37 turns).**
+`rexymcp costs` — a Baseline/Executor/Architect/Net × Session/Milestone/Project CLI
+table on a new `mcp/src/costs.rs` core, computing executor cost via the phase-03 core
+(`config.model_rates`), retiring the dashboard's hardcoded `$0.00` stub (AEON-7
+unpriced → $0 but *derived*). Session from the live log; Milestone/Project from the
+store (milestone = latest run's `milestone_id`). Dashboard untouched (06b-i rewires
+it). **Bounced once (bug-06a-1, major, `false_completion`):** `scope_costs` filtered
+`r.milestone_id == milestone_id`, so the Project scope (`None`) matched only the 2
+null-milestone runs → `Project $0 < Milestone $415` (impossible, Milestone ⊂ Project);
+the `None` case must mean "no milestone constraint." **Two calibration lessons held for
+M35 close:** (1) the **green-bounce no-op recurred** — the plain re-dispatch of the
+bounced-but-green phase changed nothing (empty diff); the loud `🛑 BOUNCE FIX`
+Notes-for-executor header ([[plain-redispatch-noops-on-green-bounce]]) then landed it.
+(2) **my pre-injection seeded the bug** — the `/* && milestone match */` placeholder
+comment in the code skeleton was implemented as unconditional `== milestone_id`; a
+pre-injected skeleton must *encode* the tricky case, not gesture at it. Both fixes
+verified at review (live E2E `Project $419.56 == Milestone`; the new
+`scope_costs_none_sums_all_milestones` mutation-fails under the old filter). Gates green
+(575 mcp + 1024 executor).
 
 phase-06a drafted 2026-07-20: `rexymcp costs` — a CLI table of Baseline/Executor/
 Architect/Net across Session/Milestone/Project, on a new shared core `mcp/src/costs.rs`.
