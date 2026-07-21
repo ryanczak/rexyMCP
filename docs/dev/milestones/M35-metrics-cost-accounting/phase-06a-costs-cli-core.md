@@ -1,7 +1,7 @@
 # Phase 06a: `rexymcp costs` — the cost-report core + CLI (Baseline/Executor/Architect/Net × Session/Milestone/Project)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress (bounce fix required — see the loud Notes-for-executor at the Update Log; bug-06a-1 is OPEN)
 **Depends on:** phase-05b
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -88,7 +88,11 @@ Read before starting:
 
   ```rust
   let exec: ScopeCosts = phase_runs.iter()
-      .filter(|r| r.project_id.as_deref() == Some(pid) /* && milestone match */)
+      // milestone_id: None means "no milestone constraint" (ALL project runs);
+      // Some(mid) means "only that milestone". Do NOT write `== milestone_id`
+      // unconditionally — that makes None match only null-milestone runs (bug-06a-1).
+      .filter(|r| r.project_id.as_deref() == Some(pid)
+          && (milestone_id.is_none() || r.milestone_id.as_deref() == milestone_id))
       .fold(ScopeCosts::default(), |mut c, r| {
           c.executor_in  = c.executor_in.saturating_add(r.tokens.input_tokens as u64);
           c.executor_out = c.executor_out.saturating_add(r.tokens.output_tokens as u64);
@@ -354,7 +358,94 @@ surface. No `STANDARDS.md`/`WORKFLOW.md` edit. No dashboard edit (06b owns that)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
-### Update — ts=1784601901411 (complete, server-authored)
+
+### 🛑 Notes for executor — 2026-07-20 (BOUNCE FIX — the phase is NOT done; do not stop early)
+
+**This phase was bounced (bug-06a-1) and the previous re-dispatch was a NO-OP — it
+changed nothing and the bug is still live.** The code compiles and tests pass, but
+that is exactly the trap: `rexymcp costs` reports a **wrong number**. You MUST edit
+`mcp/src/costs.rs`. If your first instinct is "already implemented, nothing to do,"
+that is wrong — read the failing behavior below and make the edits.
+
+**The live bug (verified):** `Project $0.00` while `Milestone $415.22`. Impossible —
+Milestone is a subset of Project, so Project must be ≥ Milestone. Cause:
+`scope_costs` filters `r.milestone_id.as_deref() == milestone_id`, so the Project
+call (`milestone_id = None`) matches only runs whose milestone_id is **null** (2 of
+hundreds) instead of ALL project runs.
+
+**Make these THREE edits in `mcp/src/costs.rs`, then re-run the gates + the live
+`cargo run -p rexymcp -- costs --config rexymcp.toml --repo .`:**
+
+1. **`scope_costs` run filter** — change the `.filter(|r| …)` closure so the
+   milestone condition is conditional on `Some`:
+
+   ```rust
+   .filter(|r| {
+       r.project_id.as_deref() == Some(project_id)
+           && (milestone_id.is_none() || r.milestone_id.as_deref() == milestone_id)
+   })
+   ```
+
+2. **`sum_architect_tokens` activity filter** — same shape:
+
+   ```rust
+   .filter(|a| {
+       a.project_id.as_deref() == project_id
+           && (milestone_id.is_none() || a.milestone_id.as_deref() == milestone_id)
+   })
+   ```
+
+3. **Add a NEW `#[test]` `scope_costs_none_sums_all_milestones` inside
+   `mcp/src/costs.rs` `mod tests`** that FAILS under the old unconditional
+   `== milestone_id` filter. Build runs for one `project_id` across TWO milestones
+   with distinct non-zero tokens (and one run for a *different* project to prove
+   exclusion):
+
+   ```rust
+   #[test]
+   fn scope_costs_none_sums_all_milestones() {
+       use rexymcp_executor::store::telemetry::{Gates, GenerationParams, PhaseRun, TokenBreakdown};
+       // helper: a PhaseRun for (project, milestone) with given input/output tokens.
+       let run = |proj: &str, mile: &str, inp: u32, outp: u32| PhaseRun {
+           ts: 1, model: "m".into(), generation_params: GenerationParams::default(),
+           phase_id: "p".into(), phase_doc_path: None, tags: vec![],
+           status: "complete".into(), escalated: false,
+           gates: Gates { fmt: Some(true), build: Some(true), lint: Some(true), test: Some(true) },
+           parse_failure_rate: 0.0, repairs_per_call: 0.0, verifier_retries: 0,
+           tool_success_rate: 1.0, turns: 1, wall_clock_s: 1.0,
+           tokens: TokenBreakdown { input_tokens: inp, output_tokens: outp, ..Default::default() },
+           warnings: None, bugs_filed: None, bounces_to_approval: None, architect_verdict: None,
+           served_model: None, length_finish_rate: None, context_window: None,
+           context_efficiency: Default::default(),
+           project_id: Some(proj.into()), milestone_id: Some(mile.into()),
+           tier_telemetry: Default::default(), ..Default::default()
+       };
+       let runs = vec![
+           run("P", "mA", 100, 10),
+           run("P", "mB", 200, 20),
+           run("OTHER", "mA", 999, 999), // different project — must be excluded
+       ];
+       // None = all milestones of project P: 100+200 input, 10+20 output.
+       let all = scope_costs(&runs, &[], "P", None);
+       assert_eq!(all.executor_in, 300);
+       assert_eq!(all.executor_out, 30);
+       // Some("mA") = only that milestone.
+       let just_a = scope_costs(&runs, &[], "P", Some("mA"));
+       assert_eq!(just_a.executor_in, 100);
+       // Superset: project (None) >= milestone (Some).
+       assert!(all.executor_in >= just_a.executor_in);
+   }
+   ```
+
+   (Adjust the `PhaseRun` literal to the real field set if it differs — the point is
+   two milestones under one project, summed by `None`, filtered by `Some`. Confirm
+   the test **fails** if you revert edit 1 to `== milestone_id`.)
+
+**Do not** touch the dashboard, and **do not** change
+`read_architect_activities(...).unwrap_or_default()` (that is correct). When done,
+the live `costs` run must show `Project ≥ Milestone` (Project no longer `$0`).
+
+### Update — ts=1784601901411 (complete, server-authored) [SUPERSEDED — this was the NO-OP re-dispatch; ignore its "complete" claim]
 
 **Summary:** All tasks complete. Here's the summary:
 
@@ -559,4 +650,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 808d292d3e35139a2aedeeb1bee62ab26d87aca8
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Update — 2026-07-20 (escalation)
+
+**Chosen lever:** refined re-dispatch (green-bounce countermeasure)
+**Rationale:** the plain re-dispatch of the bounced-but-green phase no-op'd (empty
+diff — the executor saw compiling code + passing gates and declared it done without
+fixing bug-06a-1). Per [[plain-redispatch-noops-on-green-bounce]] the fix is a loud
+bounce-fix header inlining the exact edits (added at the top of this Update Log), not
+takeover — the fix is tiny and precise and the executor can reach it once told loudly
+that work remains. Also corrected the misleading `/* && milestone match */` comment in
+the Current-state store-aggregation shape that seeded the wrong unconditional-equality
+filter.
 
