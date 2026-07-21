@@ -1,7 +1,7 @@
 # Bug 1 on phase-06b-i: cache pricing + derived-executor rendering are untested (headline feature uncovered)
 
 **Severity:** major
-**Status:** open
+**Status:** resolved (2026-07-21, fix dispatch 77d0490; both tests mutation-verified at review)
 **Filed:** 2026-07-21
 
 ## What's wrong

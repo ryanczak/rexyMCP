@@ -1,7 +1,7 @@
 # Phase 06b-i: Dashboard Budget panel → `costs` core + cache-bucket inclusion (de-dup the copied aggregation)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-06a
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=refactor, size=m
@@ -585,4 +585,47 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 77d04902d784855bb32ddfe8f6eee72ba818ba05
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-06b-i-1, major, `false_completion` — untested cache pricing +
+  untested derived-executor rendering)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON — first dispatch stalled (~100 no-op turns) →
+  `stop_phase` → **resume** (`continue_phase`, the tool-call itself timed out
+  client-side at 1800s but the run finished server-side and committed `719cbf3`) →
+  review bounce → fix dispatch 88 turns (`77d0490`).
+- **Scope deviations:** none material. `sum_architect_tokens` reverted from
+  `pub(crate)` (06a) to private `fn` — correct, since only same-module `scope_costs`
+  calls it (the dashboard de-dup goes through `scope_costs`, not it directly); more
+  correct than the spec's `pub(crate)`.
+- **Calibration (two lessons, held for M35 close):**
+  1. **Untested-headline-behavior — 3rd occurrence** (05b summation, 06a `scope_costs`,
+     06b-i cache pricing). Each shipped green with the phase's central new behavior
+     mutation-uncovered; each caught only by a review mutation check. **Three
+     occurrences = a fix candidate:** consider a STANDARDS/WORKFLOW fold requiring a
+     mutation-sensitive test for each phase's headline computation (or an executor
+     contract nudge), pending user sign-off.
+  2. **Process: the stall + `continue_phase` timeout.** The first dispatch stalled
+     (~100 no-op `awaiting_model` turns, frozen diff) and had to be `stop_phase`ped;
+     the resume then exceeded the client's MCP idle timeout because `continue_phase`
+     is **blocking** (unlike async `execute_phase`). Follow-on candidates: a governor
+     no-progress detector that catches a frozen-diff/awaiting-model spin sooner, and
+     making `continue_phase` async like `execute_phase` (M30-shaped) — or at minimum a
+     per-server MCP `timeout`.
+
+**Bug-06b-i-1 fixes verified at review (both mutation-sensitive):**
+- Zeroing the `scope_report` cache rates makes `scope_report_includes_executor_cache`
+  **fail** (it survived this mutation pre-fix).
+- Zeroing `scope_report`'s executor input rate makes
+  `savings_lines_priced_executor_shows_non_zero` **fail** (`$7.50` vs the pinned
+  `$12.50`) — the derived Executor row is guarded through the full `savings_lines →
+  scope_report` path, proving the `$0.00` stub cannot silently return.
+
+**Independent re-run at review:** `cargo fmt --all --check` clean; `cargo build`
+zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` 578 mcp + 1024 executor pass, 2 ignored. The `load_data` de-dup
+(project + milestone both fed real `folded_activities`, assists restored, the
+unreachable `None`-arm `&[]` call removed) and the `savings_lines` rewire onto
+`costs::scope_report` (no `$0.00` stub) are confirmed correct.
 
