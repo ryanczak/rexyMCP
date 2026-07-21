@@ -254,6 +254,9 @@ pub fn aggregate_profiles(
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct PhaseCost {
     pub phase_id: String,
+    /// The phase's `phase_doc_path` (from the latest attempt), when recorded.
+    /// Its file stem is the human phase label; falls back to `phase_id`.
+    pub phase_doc_path: Option<String>,
     pub milestone_id: Option<String>,
     /// Executor model of the latest attempt. rexyMCP dispatches a phase to one
     /// configured executor, so a phase's attempts share this model; cost uses it.
@@ -273,10 +276,12 @@ fn is_shipped_verdict(v: &str) -> bool {
     v.starts_with("approved") || v == "escalated"
 }
 
+#[allow(clippy::type_complexity)]
 struct PhaseCostAccumulator {
     tokens: TokenBreakdown,
     attempts: usize,
-    latest_run: Option<(u64, String, String, Option<String>)>,
+    /// (ts, phase_id, model, milestone_id, phase_doc_path)
+    latest_run: Option<(u64, String, String, Option<String>, Option<String>)>,
 }
 
 pub fn aggregate_phase_costs(
@@ -338,14 +343,16 @@ pub fn aggregate_phase_costs(
                     run.phase_id.clone(),
                     run.model.clone(),
                     run.milestone_id.clone(),
+                    run.phase_doc_path.clone(),
                 ));
             }
-            Some((ts, _, _, _)) if run.ts > *ts => {
+            Some((ts, _, _, _, _)) if run.ts > *ts => {
                 acc.latest_run = Some((
                     run.ts,
                     run.phase_id.clone(),
                     run.model.clone(),
                     run.milestone_id.clone(),
+                    run.phase_doc_path.clone(),
                 ));
             }
             _ => {}
@@ -356,8 +363,8 @@ pub fn aggregate_phase_costs(
     let mut rows: Vec<PhaseCost> = groups
         .into_iter()
         .filter_map(|(key, acc)| {
-            let (phase_id, model, milestone_id) = match acc.latest_run {
-                Some((_, pid, mdl, mid)) => (pid, mdl, mid),
+            let (phase_id, model, milestone_id, phase_doc_path) = match acc.latest_run {
+                Some((_, pid, mdl, mid, pdp)) => (pid, mdl, mid, pdp),
                 None => return None,
             };
             // Look up the latest review for this key
@@ -370,6 +377,7 @@ pub fn aggregate_phase_costs(
             }
             Some(PhaseCost {
                 phase_id,
+                phase_doc_path,
                 milestone_id,
                 model,
                 attempts: acc.attempts,
@@ -715,10 +723,20 @@ mod tests {
 
     #[test]
     fn phase_costs_sum_tokens_across_attempts() {
-        let runs = vec![
-            make_run_with_path(100, "claude", &[], "phase-01", None),
-            make_run_with_path(200, "claude", &[], "phase-01", None),
-        ];
+        let mut run1 = make_run_with_path(100, "claude", &[], "phase-01", None);
+        run1.tokens = TokenBreakdown {
+            input_tokens: 100,
+            output_tokens: 10,
+            cache_read_tokens: 5,
+            cache_write_tokens: 1,
+        };
+        let mut run2 = make_run_with_path(200, "claude", &[], "phase-01", None);
+        run2.tokens = TokenBreakdown {
+            input_tokens: 200,
+            output_tokens: 20,
+            cache_read_tokens: 7,
+            cache_write_tokens: 3,
+        };
         let reviews = vec![make_review(
             300,
             Some("phase-01"),
@@ -731,14 +749,16 @@ mod tests {
             min_runs: 0,
         };
 
-        let costs = aggregate_phase_costs(&runs, &reviews, &filter);
+        let costs = aggregate_phase_costs(&[run1, run2], &reviews, &filter);
 
         assert_eq!(costs.len(), 1);
         assert_eq!(costs[0].attempts, 2);
         assert_eq!(costs[0].verdict, "approved_first_try");
-        // Tokens are summed from both runs (each defaults to zero)
-        assert_eq!(costs[0].tokens.input_tokens, 0);
-        assert_eq!(costs[0].tokens.output_tokens, 0);
+        // Tokens must be the element-wise sum across both attempts
+        assert_eq!(costs[0].tokens.input_tokens, 300);
+        assert_eq!(costs[0].tokens.output_tokens, 30);
+        assert_eq!(costs[0].tokens.cache_read_tokens, 12);
+        assert_eq!(costs[0].tokens.cache_write_tokens, 4);
     }
     #[test]
     fn phase_costs_only_shipped_phases() {

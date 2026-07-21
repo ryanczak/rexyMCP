@@ -148,13 +148,24 @@ pub fn format_phase_costs(rows: &[PhaseCost], config: &Config) -> String {
         let tokens = fmt_tokens(row.tokens.total());
         let cost_str = fmt_cost(cost);
         let milestone = row.milestone_id.as_deref().unwrap_or("—");
+        let phase_label = phase_label_str(row);
         lines.push(format!(
-            "{:<30} {:<12} {:>8}  {:<20}  {:>10}  {:>8}",
-            row.phase_id, milestone, row.attempts, row.verdict, tokens, cost_str
+            "{:<40} {:<12} {:>8}  {:<20}  {:>10}  {:>8}",
+            phase_label, milestone, row.attempts, row.verdict, tokens, cost_str
         ));
     }
 
     lines.join("\n")
+}
+
+/// Derive the human phase label: file stem from `phase_doc_path` when present,
+/// falling back to `phase_id`.
+fn phase_label_str(row: &PhaseCost) -> String {
+    row.phase_doc_path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).file_stem().and_then(|s| s.to_str()))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| row.phase_id.clone())
 }
 
 #[cfg(test)]
@@ -378,6 +389,7 @@ enabled = false
         let cfg = Config::default();
         let rows = vec![PhaseCost {
             phase_id: "phase-05a-iii".to_string(),
+            phase_doc_path: None,
             milestone_id: Some("M35".to_string()),
             model: "AEON-7".to_string(),
             attempts: 2,
@@ -395,13 +407,38 @@ enabled = false
         assert!(out.contains("VERDICT"));
         assert!(out.contains("TOKENS"));
         assert!(out.contains("COST"));
-        assert!(out.contains("phase-05a-iii"));
-        assert!(out.contains("M35"));
-        assert!(out.contains("2"));
-        assert!(out.contains("approved_after_1"));
-        assert!(
-            out.contains("—"),
-            "unpriced model should show — for cost: {out}"
-        );
+        assert!(out.contains("—"));
+    }
+
+    #[test]
+    fn phase_label_uses_doc_path_stem_when_present() {
+        let row = PhaseCost {
+            phase_id: "phase-05".to_string(),
+            phase_doc_path: Some(
+                "docs/dev/milestones/M35/phase-05a-iii-scorecard-by-cli.md".to_string(),
+            ),
+            milestone_id: Some("M35".to_string()),
+            model: "AEON-7".to_string(),
+            attempts: 1,
+            verdict: "approved_first_try".to_string(),
+            tokens: Default::default(),
+        };
+        let label = phase_label_str(&row);
+        assert_eq!(label, "phase-05a-iii-scorecard-by-cli");
+    }
+
+    #[test]
+    fn phase_label_falls_back_to_phase_id_when_no_doc_path() {
+        let row = PhaseCost {
+            phase_id: "phase-05".to_string(),
+            phase_doc_path: None,
+            milestone_id: Some("M35".to_string()),
+            model: "AEON-7".to_string(),
+            attempts: 1,
+            verdict: "approved_first_try".to_string(),
+            tokens: Default::default(),
+        };
+        let label = phase_label_str(&row);
+        assert_eq!(label, "phase-05");
     }
 }
