@@ -1,7 +1,7 @@
 # Phase 06a: `rexymcp costs` — the cost-report core + CLI (Baseline/Executor/Architect/Net × Session/Milestone/Project)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress (bounced — see bug-06a-1)
 **Depends on:** phase-05b
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
