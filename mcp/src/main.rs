@@ -236,6 +236,11 @@ enum Commands {
         /// Emit JSON instead of a human table
         #[arg(long)]
         json: bool,
+
+        /// Report tokens & cost to ship, per approved phase, instead of the
+        /// model×tag capability table.
+        #[arg(long)]
+        cost: bool,
     },
     /// Scaffold rexymcp.toml in the target directory
     Init {
@@ -680,7 +685,45 @@ async fn main() -> anyhow::Result<()> {
             min_runs,
             telemetry_path,
             json,
+            cost,
         } => {
+            if cost {
+                let filter = scorecard::ScorecardFilter {
+                    model: model.as_deref(),
+                    tags: &tags,
+                    min_runs,
+                };
+                let rows = match profile_cli::load_phase_costs(
+                    &config,
+                    telemetry_path.as_deref(),
+                    &filter,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(1);
+                    }
+                };
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&rows).unwrap_or_else(|e| {
+                            format!("{{\"error\": \"failed to serialize phase costs: {}\"}}", e)
+                        })
+                    );
+                } else {
+                    let cfg = match rexymcp_executor::config::Config::load_with_env(&config) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("failed to load config: {e}");
+                            std::process::exit(1);
+                        }
+                    };
+                    println!("{}", profile_cli::format_phase_costs(&rows, &cfg));
+                }
+                return Ok(());
+            }
+
             let filter = scorecard::ScorecardFilter {
                 model: model.as_deref(),
                 tags: &tags,
@@ -1157,6 +1200,31 @@ mod tests {
                 assert_eq!(tags, ["rust", "feature"]);
                 assert_eq!(min_runs, 3);
                 assert!(json);
+            }
+            _ => panic!("expected Profile"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_profile_cost_sets_cost_flag() {
+        let cli = Cli::try_parse_from(["rexymcp", "profile", "--config", "rexymcp.toml", "--cost"])
+            .unwrap();
+
+        match cli.command {
+            Some(Commands::Profile { cost, .. }) => {
+                assert!(cost);
+            }
+            _ => panic!("expected Profile"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_profile_without_cost_flag() {
+        let cli = Cli::try_parse_from(["rexymcp", "profile", "--config", "rexymcp.toml"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Profile { cost, .. }) => {
+                assert!(!cost);
             }
             _ => panic!("expected Profile"),
         }

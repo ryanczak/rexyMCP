@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use schemars::JsonSchema;
 use serde::Serialize;
 
+use rexymcp_executor::ai::types::TokenBreakdown;
 use rexymcp_executor::store::telemetry::{Gates, PhaseReview, PhaseRun, fold_reviews};
 
 use crate::scorecard::ScorecardFilter;
@@ -241,6 +242,147 @@ pub fn aggregate_profiles(
             .cmp(&b.tag)
             .then(b.n_runs.cmp(&a.n_runs))
             .then(a.model.cmp(&b.model))
+    });
+
+    rows
+}
+
+/// Cost-to-ship for one shipped phase: tokens summed across EVERY dispatch
+/// attempt (bounces, hard-fails, and the run that landed) sharing the phase
+/// identity, plus the shipping verdict. Cost is derived at render time from the
+/// summed per-class tokens + the model's rates.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct PhaseCost {
+    pub phase_id: String,
+    pub milestone_id: Option<String>,
+    /// Executor model of the latest attempt. rexyMCP dispatches a phase to one
+    /// configured executor, so a phase's attempts share this model; cost uses it.
+    pub model: String,
+    /// Number of `PhaseRun` records sharing this phase identity (all attempts).
+    pub attempts: usize,
+    /// The shipping verdict: `approved_first_try` | `approved_after_N` | `escalated`.
+    pub verdict: String,
+    /// Per-class token totals summed across all attempts.
+    pub tokens: TokenBreakdown,
+}
+
+/// True for verdicts that mean the phase shipped: any `approved_*` (first-try or
+/// after-N bounces) or `escalated` (a takeover that landed the phase). False for
+/// `bounced` and for phases with no verdict.
+fn is_shipped_verdict(v: &str) -> bool {
+    v.starts_with("approved") || v == "escalated"
+}
+
+struct PhaseCostAccumulator {
+    tokens: TokenBreakdown,
+    attempts: usize,
+    latest_run: Option<(u64, String, String, Option<String>)>,
+}
+
+pub fn aggregate_phase_costs(
+    runs: &[PhaseRun],
+    reviews: &[PhaseReview],
+    filter: &ScorecardFilter,
+) -> Vec<PhaseCost> {
+    // Build latest-review-per-key map
+    let mut latest_review: HashMap<Key, &PhaseReview> = HashMap::new();
+    for rev in reviews {
+        let k = key_for_review(rev);
+        latest_review
+            .entry(k)
+            .and_modify(|existing| {
+                if rev.ts > existing.ts {
+                    *existing = rev;
+                }
+            })
+            .or_insert(rev);
+    }
+
+    // Group raw runs by key, summing tokens and tracking the latest run
+    let mut groups: HashMap<Key, PhaseCostAccumulator> = HashMap::new();
+    for run in runs {
+        // Apply model filter
+        if let Some(m) = filter.model
+            && run.model != m
+        {
+            continue;
+        }
+        let k = key_for_run(run);
+        let acc = groups.entry(k).or_insert_with(|| PhaseCostAccumulator {
+            tokens: Default::default(),
+            attempts: 0,
+            latest_run: None,
+        });
+        acc.tokens.input_tokens = acc
+            .tokens
+            .input_tokens
+            .saturating_add(run.tokens.input_tokens);
+        acc.tokens.output_tokens = acc
+            .tokens
+            .output_tokens
+            .saturating_add(run.tokens.output_tokens);
+        acc.tokens.cache_read_tokens = acc
+            .tokens
+            .cache_read_tokens
+            .saturating_add(run.tokens.cache_read_tokens);
+        acc.tokens.cache_write_tokens = acc
+            .tokens
+            .cache_write_tokens
+            .saturating_add(run.tokens.cache_write_tokens);
+        acc.attempts += 1;
+        // Track latest run for metadata
+        match &acc.latest_run {
+            None => {
+                acc.latest_run = Some((
+                    run.ts,
+                    run.phase_id.clone(),
+                    run.model.clone(),
+                    run.milestone_id.clone(),
+                ));
+            }
+            Some((ts, _, _, _)) if run.ts > *ts => {
+                acc.latest_run = Some((
+                    run.ts,
+                    run.phase_id.clone(),
+                    run.model.clone(),
+                    run.milestone_id.clone(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    // Emit PhaseCost for keys whose latest review verdict is shipped
+    let mut rows: Vec<PhaseCost> = groups
+        .into_iter()
+        .filter_map(|(key, acc)| {
+            let (phase_id, model, milestone_id) = match acc.latest_run {
+                Some((_, pid, mdl, mid)) => (pid, mdl, mid),
+                None => return None,
+            };
+            // Look up the latest review for this key
+            let rev = match latest_review.get(&key) {
+                Some(r) => r,
+                None => return None,
+            };
+            if !is_shipped_verdict(&rev.architect_verdict) {
+                return None;
+            }
+            Some(PhaseCost {
+                phase_id,
+                milestone_id,
+                model,
+                attempts: acc.attempts,
+                verdict: rev.architect_verdict.clone(),
+                tokens: acc.tokens,
+            })
+        })
+        .collect();
+
+    rows.sort_by(|a, b| {
+        a.milestone_id
+            .cmp(&b.milestone_id)
+            .then(a.phase_id.cmp(&b.phase_id))
     });
 
     rows
@@ -552,5 +694,108 @@ mod tests {
         let profiles = aggregate_profiles(&runs, &reviews, &filter);
 
         assert!(profiles.is_empty());
+    }
+
+    #[test]
+    fn is_shipped_verdict_approved_true() {
+        assert!(is_shipped_verdict("approved_first_try"));
+        assert!(is_shipped_verdict("approved_after_1"));
+        assert!(is_shipped_verdict("approved_after_3"));
+    }
+
+    #[test]
+    fn is_shipped_verdict_escalated_true() {
+        assert!(is_shipped_verdict("escalated"));
+    }
+
+    #[test]
+    fn is_shipped_verdict_bounced_false() {
+        assert!(!is_shipped_verdict("bounced"));
+    }
+
+    #[test]
+    fn phase_costs_sum_tokens_across_attempts() {
+        let runs = vec![
+            make_run_with_path(100, "claude", &[], "phase-01", None),
+            make_run_with_path(200, "claude", &[], "phase-01", None),
+        ];
+        let reviews = vec![make_review(
+            300,
+            Some("phase-01"),
+            "approved_first_try",
+            &[],
+        )];
+        let filter = ScorecardFilter {
+            tags: &[],
+            model: None,
+            min_runs: 0,
+        };
+
+        let costs = aggregate_phase_costs(&runs, &reviews, &filter);
+
+        assert_eq!(costs.len(), 1);
+        assert_eq!(costs[0].attempts, 2);
+        assert_eq!(costs[0].verdict, "approved_first_try");
+        // Tokens are summed from both runs (each defaults to zero)
+        assert_eq!(costs[0].tokens.input_tokens, 0);
+        assert_eq!(costs[0].tokens.output_tokens, 0);
+    }
+    #[test]
+    fn phase_costs_only_shipped_phases() {
+        let runs = vec![
+            make_run_with_path(100, "claude", &[], "phase-01", None),
+            make_run_with_path(100, "claude", &[], "phase-02", None),
+            make_run_with_path(100, "claude", &[], "phase-03", None),
+        ];
+        let reviews = vec![
+            make_review(200, Some("phase-01"), "approved_first_try", &[]),
+            make_review(200, Some("phase-02"), "bounced", &[]),
+            // phase-03 has no review
+        ];
+        let filter = ScorecardFilter {
+            tags: &[],
+            model: None,
+            min_runs: 0,
+        };
+
+        let costs = aggregate_phase_costs(&runs, &reviews, &filter);
+
+        assert_eq!(costs.len(), 1);
+        assert_eq!(costs[0].verdict, "approved_first_try");
+    }
+
+    #[test]
+    fn phase_costs_escalated_counts_as_shipped() {
+        let runs = vec![make_run_with_path(100, "claude", &[], "phase-01", None)];
+        let reviews = vec![make_review(200, Some("phase-01"), "escalated", &[])];
+        let filter = ScorecardFilter {
+            tags: &[],
+            model: None,
+            min_runs: 0,
+        };
+
+        let costs = aggregate_phase_costs(&runs, &reviews, &filter);
+
+        assert_eq!(costs.len(), 1);
+        assert_eq!(costs[0].verdict, "escalated");
+    }
+
+    #[test]
+    fn phase_costs_latest_review_verdict_wins() {
+        let runs = vec![make_run_with_path(100, "claude", &[], "phase-01", None)];
+        let reviews = vec![
+            make_review(200, Some("phase-01"), "bounced", &[]),
+            make_review(300, Some("phase-01"), "approved_after_1", &[]),
+        ];
+        let filter = ScorecardFilter {
+            tags: &[],
+            model: None,
+            min_runs: 0,
+        };
+
+        let costs = aggregate_phase_costs(&runs, &reviews, &filter);
+
+        assert_eq!(costs.len(), 1);
+        assert_eq!(costs[0].verdict, "approved_after_1");
     }
 }

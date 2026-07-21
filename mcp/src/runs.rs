@@ -55,7 +55,7 @@ fn gate_char(v: Option<bool>) -> char {
     if v == Some(true) { '✓' } else { '✗' }
 }
 
-fn fmt_tokens(total: u32) -> String {
+pub(crate) fn fmt_tokens(total: u32) -> String {
     if total == 0 {
         "—".to_string()
     } else if total >= 1024 {
@@ -66,7 +66,7 @@ fn fmt_tokens(total: u32) -> String {
 }
 
 /// Cost cell: `—` when unpriced/zero, else `$` with 4 decimals.
-fn fmt_cost(cost: f64) -> String {
+pub(crate) fn fmt_cost(cost: f64) -> String {
     if cost == 0.0 {
         "—".to_string()
     } else {

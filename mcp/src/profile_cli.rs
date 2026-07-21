@@ -5,7 +5,8 @@ use std::path::Path;
 use rexymcp_executor::config::Config;
 use rexymcp_executor::store::telemetry::PhaseRun;
 
-use crate::profile::{self, FailureClassCount, ModelProfile};
+use crate::profile::{self, FailureClassCount, ModelProfile, PhaseCost};
+use crate::runs::{fmt_cost, fmt_tokens};
 use crate::scorecard::ScorecardFilter;
 
 /// Resolve the telemetry store path from config, read, aggregate into profiles,
@@ -35,6 +36,34 @@ pub fn load_profiles(
         .map_err(|e| e.to_string())?;
     // aggregate_profiles folds internally — pass raw runs + reviews (no fold_reviews).
     Ok(profile::aggregate_profiles(&runs, &reviews, filter))
+}
+
+/// Resolve the telemetry store path from config, read, aggregate into phase costs,
+/// and return them.
+pub fn load_phase_costs(
+    config_path: &Path,
+    telemetry_path: Option<&Path>,
+    filter: &ScorecardFilter,
+) -> Result<Vec<PhaseCost>, String> {
+    let cfg =
+        Config::load_with_env(config_path).map_err(|e| format!("failed to load config: {}", e))?;
+
+    let telemetry_file = if let Some(p) = telemetry_path {
+        p.to_path_buf()
+    } else if let Some(ref dir) = cfg.telemetry.dir {
+        dir.join("phase_runs.jsonl")
+    } else {
+        return Err(
+            "telemetry disabled: cfg.telemetry.dir not set and no --telemetry-path provided"
+                .to_string(),
+        );
+    };
+
+    let runs: Vec<PhaseRun> =
+        rexymcp_executor::store::telemetry::read(&telemetry_file).map_err(|e| e.to_string())?;
+    let reviews = rexymcp_executor::store::telemetry::read_reviews(&telemetry_file)
+        .map_err(|e| e.to_string())?;
+    Ok(profile::aggregate_phase_costs(&runs, &reviews, filter))
 }
 
 /// Format a list of model profiles as a human-readable table.
@@ -100,6 +129,32 @@ fn format_weaknesses(classes: &[FailureClassCount]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Format phase cost-to-ship rows as a human-readable table.
+pub fn format_phase_costs(rows: &[PhaseCost], config: &Config) -> String {
+    if rows.is_empty() {
+        return "(no shipped phases)".to_string();
+    }
+
+    let mut lines = Vec::new();
+    lines.push("PHASE  MILESTONE  ATTEMPTS  VERDICT  TOKENS  COST".to_string());
+
+    for row in rows {
+        let cost = rexymcp_executor::store::metrics::token_cost(
+            &row.tokens,
+            &config.model_rates(&row.model),
+        );
+        let tokens = fmt_tokens(row.tokens.total());
+        let cost_str = fmt_cost(cost);
+        let milestone = row.milestone_id.as_deref().unwrap_or("—");
+        lines.push(format!(
+            "{:<30} {:<12} {:>8}  {:<20}  {:>10}  {:>8}",
+            row.phase_id, milestone, row.attempts, row.verdict, tokens, cost_str
+        ));
+    }
+
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -309,5 +364,44 @@ enabled = false
     fn format_profiles_empty_is_no_profiles() {
         let out = format_profiles(&[]);
         assert!(out.contains("(no profiles)"));
+    }
+
+    #[test]
+    fn format_phase_costs_empty_is_no_shipped_phases() {
+        let cfg = Config::default();
+        let out = format_phase_costs(&[], &cfg);
+        assert!(out.contains("(no shipped phases)"));
+    }
+
+    #[test]
+    fn format_phase_costs_renders_columns() {
+        let cfg = Config::default();
+        let rows = vec![PhaseCost {
+            phase_id: "phase-05a-iii".to_string(),
+            milestone_id: Some("M35".to_string()),
+            model: "AEON-7".to_string(),
+            attempts: 2,
+            verdict: "approved_after_1".to_string(),
+            tokens: rexymcp_executor::ai::types::TokenBreakdown {
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 200,
+                cache_write_tokens: 100,
+            },
+        }];
+        let out = format_phase_costs(&rows, &cfg);
+        assert!(out.contains("PHASE"));
+        assert!(out.contains("ATTEMPTS"));
+        assert!(out.contains("VERDICT"));
+        assert!(out.contains("TOKENS"));
+        assert!(out.contains("COST"));
+        assert!(out.contains("phase-05a-iii"));
+        assert!(out.contains("M35"));
+        assert!(out.contains("2"));
+        assert!(out.contains("approved_after_1"));
+        assert!(
+            out.contains("—"),
+            "unpriced model should show — for cost: {out}"
+        );
     }
 }

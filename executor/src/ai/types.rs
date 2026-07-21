@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +40,7 @@ pub struct Message {
 }
 
 /// Four-bucket token breakdown for a single AI call.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct TokenBreakdown {
     #[serde(default)]
     pub input_tokens: u32,
