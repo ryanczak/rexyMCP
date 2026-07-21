@@ -2005,4 +2005,48 @@ mod tests {
         };
         assert_eq!(d.effective_rates(), (1.0, 2.0));
     }
+
+    #[test]
+    fn savings_lines_priced_executor_shows_non_zero() {
+        // With a priced executor, the Executor row must show a non-$0.00 value.
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+            architect: ArchitectRates::default(),
+            executor: ModelRates {
+                input_per_mtok: 5.0,
+                output_per_mtok: 15.0,
+                cache_read_per_mtok: 2.0,
+                cache_creation_per_mtok: 8.0,
+            },
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 500_000,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
+            architect: Default::default(),
+        };
+        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let exec_line = texts
+            .iter()
+            .find(|s| s.contains("Executor:"))
+            .expect("Executor row must be present with priced executor");
+        // executor cost = 1M*5 + 0.5M*15 = $12.50
+        assert!(
+            exec_line.contains("$12.50"),
+            "Executor row should show $12.50, got: {exec_line}"
+        );
+        // Must NOT be $0.00 (proving the stub is gone).
+        assert!(
+            !exec_line.contains("$0.00"),
+            "Executor row should not be $0.00 with priced executor: {exec_line}"
+        );
+    }
 }

@@ -520,4 +520,81 @@ saved_output_per_mtok = 0.0
         // Superset: project (None) >= milestone (Some).
         assert!(all.executor_in >= just_a.executor_in);
     }
+
+    #[test]
+    fn scope_report_includes_executor_cache() {
+        let costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 500_000,
+            executor_cache_read: 200_000,
+            executor_cache_write: 100_000,
+            architect: Default::default(),
+        };
+        let exec_rates = priced_exec_rates();
+        let baseline = BudgetRates {
+            input_per_mtok: 0.0,
+            output_per_mtok: 0.0,
+            architect: ArchitectRates::default(),
+            executor: telemetry::ModelRates::default(),
+        };
+        let r = scope_report(&costs, &exec_rates, &baseline);
+
+        // executor = 1M*5 + 0.5M*15 + 0.2M*2 + 0.1M*8 = 5 + 7.5 + 0.4 + 0.8 = $13.70
+        assert!((r.executor - 13.7).abs() < 1e-6);
+        // Baseline is None (no baseline rate configured).
+        assert_eq!(r.baseline, None);
+        assert_eq!(r.net, None);
+    }
+
+    #[test]
+    fn scope_costs_sums_cache_buckets() {
+        use rexymcp_executor::ai::types::TokenBreakdown;
+        use rexymcp_executor::store::telemetry::{Gates, GenerationParams, PhaseRun};
+        let run = |proj: &str, inp: u32, outp: u32, cache_read: u32, cache_write: u32| PhaseRun {
+            ts: 1,
+            model: "m".into(),
+            generation_params: GenerationParams::default(),
+            phase_id: "p".into(),
+            phase_doc_path: None,
+            tags: vec![],
+            status: "complete".into(),
+            escalated: false,
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            parse_failure_rate: 0.0,
+            repairs_per_call: 0.0,
+            verifier_retries: 0,
+            tool_success_rate: 1.0,
+            turns: 1,
+            wall_clock_s: 1.0,
+            tokens: TokenBreakdown {
+                input_tokens: inp,
+                output_tokens: outp,
+                cache_read_tokens: cache_read,
+                cache_write_tokens: cache_write,
+            },
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: None,
+            served_model: None,
+            length_finish_rate: None,
+            context_window: None,
+            context_efficiency: Default::default(),
+            project_id: Some(proj.into()),
+            milestone_id: None,
+            tier_telemetry: Default::default(),
+            ..Default::default()
+        };
+        let runs = vec![run("P", 100, 10, 50, 30), run("P", 200, 20, 100, 70)];
+        let all = scope_costs(&runs, &[], "P", None);
+        assert_eq!(all.executor_in, 300);
+        assert_eq!(all.executor_out, 30);
+        assert_eq!(all.executor_cache_read, 150);
+        assert_eq!(all.executor_cache_write, 100);
+    }
 }

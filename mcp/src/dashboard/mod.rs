@@ -98,37 +98,40 @@ pub fn load_data(
                 },
             }
         }
-        None => match status::load_records(repo, session) {
-            Ok(records) => {
-                let summary = status::summarize(&records);
-                let milestone = resolve_milestone(repo, summary.phase.as_deref());
-                let milestone_costs = resolve_milestone_dir(repo, summary.phase.as_deref())
-                    .zip(project_id)
-                    .map(|(milestone_dir, pid)| {
-                        costs::scope_costs(&phase_runs, &[], pid, Some(&milestone_dir))
-                    });
-                DashboardData {
-                    summary,
-                    records,
-                    error: None,
-                    milestone,
-                    milestone_costs,
-                    project_costs: ScopeCosts::default(),
-                    project_escalation_count: 0,
+        None => {
+            let _folded_activities: Vec<rexymcp_executor::store::telemetry::ArchitectActivity> =
+                Vec::new();
+            let project_costs = ScopeCosts::default();
+            let project_escalation_count = 0;
+            match status::load_records(repo, session) {
+                Ok(records) => {
+                    let summary = status::summarize(&records);
+                    let milestone = resolve_milestone(repo, summary.phase.as_deref());
+                    DashboardData {
+                        summary,
+                        records,
+                        error: None,
+                        milestone,
+                        milestone_costs: None,
+                        project_costs,
+                        project_escalation_count,
+                    }
                 }
+                Err(e) => DashboardData {
+                    summary: StatusSummary::default(),
+                    records: Vec::new(),
+                    error: Some(e),
+                    milestone: None,
+                    milestone_costs: None,
+                    project_costs,
+                    project_escalation_count,
+                },
             }
-            Err(e) => DashboardData {
-                summary: StatusSummary::default(),
-                records: Vec::new(),
-                error: Some(e),
-                milestone: None,
-                milestone_costs: None,
-                project_costs: ScopeCosts::default(),
-                project_escalation_count: 0,
-            },
-        },
+        }
     }
 }
+
+/// Run the dashboard event loop.
 pub fn run_dashboard(
     repo: &Path,
     session: Option<&str>,
