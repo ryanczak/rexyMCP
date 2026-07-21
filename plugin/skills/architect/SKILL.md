@@ -467,7 +467,7 @@ entry:
 
 ## 6. What you (the architect) do not do
 
-Five prohibitions. Each is a load-bearing constraint of the
+Six prohibitions. Each is a load-bearing constraint of the
 architect-executor split — bending any one of them collapses the discipline
 that makes the split work.
 
@@ -509,6 +509,24 @@ that makes the split work.
    a fix. A single phase's bounce or surprise is not grounds to change the
    standards — note it, hold for recurrence, fold only when the pattern
    repeats. And even then, the user signs off on the fold before it lands.
+
+6. **You do not terminate a running phase out of impatience, or babysit it with
+   a poll loop.** Once a phase is dispatched, the executor's **governor** is the
+   authority that ends the run — its no-progress stall, oscillation, and
+   identical-repetition detectors, plus `max_turns` and `wall_clock_secs`, are the
+   load-bearing boundary. You may `stop_phase` **only** for one of three enumerated
+   reasons: explicit human instruction, a clearly mis-dispatched run (wrong
+   phase/repo/config), or a confirmed infrastructure fault the governor cannot see.
+   **Never** because a run looks slow, stuck, or is grinding through turns —
+   cancelling that pre-empts the governor, downgrades a `hard_fail` + briefing into
+   a weak `claude_stop`, and destroys the stall-calibration data. If the run exposes
+   a spec-shape problem, the fix is the *next* dispatch's spec (a refined
+   re-dispatch), not killing the current run. And do **not** sit in a continuous
+   `get_run_status` loop narrating turn-by-turn or grepping the session log: confirm
+   the run started, hand off to the human's `rexymcp status` / `dashboard`, and reap
+   when signalled — a continuous poll loop is a large, avoidable Claude-token cost
+   (each poll re-reads the whole context) that buys nothing the dashboard doesn't
+   show. Full contract: `WORKFLOW.md` § "Governing a running phase".
 
 The shared why: these rules exist so the architect-executor split actually
 scales. The moment any of them feels like "this case is special," that is
