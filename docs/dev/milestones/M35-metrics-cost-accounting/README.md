@@ -62,7 +62,7 @@ and the executor finally carries a real (configurable) price.
 | 05b | `profile --cost` tokens & cost to ship, per approved phase ([phase-05b-profile-phase-cost.md](phase-05b-profile-phase-cost.md)) | done |
 | 06a | `rexymcp costs` CLI + shared cost-report core ([phase-06a-costs-cli-core.md](phase-06a-costs-cli-core.md)) | done |
 | 06b-i | Dashboard Budget panel → `costs` core + cache buckets; de-dup the copied aggregation ([phase-06b-i-dashboard-rewire-cache.md](phase-06b-i-dashboard-rewire-cache.md)) | done |
-| 06b-ii | Dashboard `b`-key tokens⇄currency toggle ([phase-06b-ii-budget-tokens-toggle.md](phase-06b-ii-budget-tokens-toggle.md)) | review |
+| 06b-ii | Dashboard `b`-key tokens⇄currency toggle ([phase-06b-ii-budget-tokens-toggle.md](phase-06b-ii-budget-tokens-toggle.md)) | done |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect

@@ -4,9 +4,27 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06b-ii — dashboard `b`-key tokens⇄currency toggle](milestones/M35-metrics-cost-accounting/phase-06b-ii-budget-tokens-toggle.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06b-ii`).**
+**Active phase: none pending `/rexymcp:architect next` — phase-06b-ii is `done`;
+only phase-07 (reporting debt) remains todo in M35.**
+
+**M35 phase-06b-ii — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
+143 turns).** The dashboard `b`-key tokens⇄currency toggle: `BudgetDisplay{Dollars,Tokens}`
+enum (default Dollars), a `ViewState.budget_display` field threaded into `savings_lines`,
+and a `b` handler in `run_loop` mirroring the `f`-key pattern. Tokens mode keeps the same
+4 rows — Executor = 4 executor buckets summed, Architect = 4 architect buckets summed,
+Baseline = executor in+out, Net = `—` — via a compact `fmt_tokens` (0→`—`, ≥1M→`{:.1}M`,
+≥1k→`{:.1}k`). Dollars mode byte-for-byte unchanged (06b-i behavior). **Clean first-try —
+and the first M35 headline-behavior phase to ship with its headline computation already
+covered** (breaking the untested-headline pattern that bounced 05b/06a/06b-i). Both new
+tokens-mode tests mutation-verified at review (disabling the tokens branch → test fails;
+dropping a cache bucket from the executor sum → `1.7M`≠`2.0M`). **One minor scope deviation
+accepted:** a deleted `assert_eq!(lines.len(), 4)` in an existing dollars test — coverage
+preserved by the positional row asserts. Gates green (568 mcp + 1024 executor). The
+`b`-key handler itself isn't hermetically tested (TUI loop; noted in spec). **After 06b-ii
+the whole cost surface is one core** — runs/scorecard/profile/costs/dashboard all render
+Baseline/Executor/Architect/Net from `costs::scope_report`, cache priced, the `$0.00` stub
+retired, tokens⇄$ toggle live. **Only phase-07 (reporting debt: oscillation wrong-tail,
+calibrate-governor alignment, discoverability) remains in M35.**
 
 phase-06b-ii drafted 2026-07-21: the isolated interactive piece of 06b — a `b`-key
 that flips the Budget savings block between currency ($ Baseline/Executor/Architect/

@@ -1,7 +1,7 @@
 # Phase 06b-ii: Dashboard `b`-key tokens ⇄ currency toggle for the Budget savings block
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-06b-i
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -346,4 +346,25 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 539e5e91c996bef1afb9a7f0c23bf9f2db6e2c93
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** one minor, accepted (not bounced): the existing dollars-mode
+  test `savings_lines_omits_zero_debit_rows` had its `assert_eq!(lines.len(), 4, …)`
+  line deleted (the phase spec said existing-test assertions stay unchanged bar the
+  new trailing arg). Not a coverage hole — the remaining positional asserts still pin
+  the exact 4-row structure (`texts[1]`=Baseline, `texts[2]`=Net, `texts[3]`=Assists,
+  and no `Executor:`/`Architect:` row anywhere); the only case no longer caught is a
+  hypothetical 5th duplicate row, which nothing in this rendering-only phase can
+  introduce in dollars mode.
+- **Calibration:** none. **Notably the first M35 headline-behavior phase that landed
+  clean first-try with the headline computation already covered** — breaking the
+  untested-headline pattern that bounced 05b/06a/06b-i. Mutation-verified at review:
+  (1) disabling the tokens branch (`if false && …`) → `savings_lines_tokens_mode_shows_token_counts`
+  fails ("Executor row missing"); (2) dropping `executor_cache_write` from the project
+  executor sum → same test fails (`1.7M` ≠ `2.0M`). Both revert clean; all four gates
+  green on independent re-run (fmt/build/clippy clean; 1024 executor + 568 mcp tests).
 
