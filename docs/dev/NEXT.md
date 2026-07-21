@@ -5,8 +5,37 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-06b-i — dashboard Budget panel → `costs` core + cache buckets](milestones/M35-metrics-cost-accounting/phase-06b-i-dashboard-rewire-cache.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-06b-i`).**
+[M35 phase-06b-ii — dashboard `b`-key tokens⇄currency toggle](milestones/M35-metrics-cost-accounting/phase-06b-ii-budget-tokens-toggle.md)
+(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06b-ii`).**
+
+phase-06b-ii drafted 2026-07-21: the isolated interactive piece of 06b — a `b`-key
+that flips the Budget savings block between currency ($ Baseline/Executor/Architect/
+Net, unchanged) and tokens. **Tokens-mode fork resolved with the user (2026-07-20):**
+keep the same 4 rows; tokens-mode cells show token counts where meaningful — Executor
+= 4 executor buckets summed, Architect = 4 architect buckets summed, Baseline =
+executor in+out (the tokens the baseline is priced over), Net = `—`. Plumbing mirrors
+the `f`-key pattern: `BudgetDisplay{Dollars,Tokens}` enum, a `ViewState.budget_display`
+field, a `b` handler in `run_loop`, threaded into `savings_lines` via a new final
+param. Testable surface = the `savings_lines` tokens-mode rendering + the enum default;
+the TUI keypress itself is not hermetically tested (noted in spec). size=s. **After
+06b-ii the whole cost surface is one core** (runs/scorecard/profile/costs/dashboard),
+cache priced, $0.00 stub retired — only phase-07 (reporting debt) remains in M35.
+
+**M35 phase-06b-i — done (2026-07-21, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
+Dashboard Budget `savings_lines` rewired onto `costs::scope_report` (the `$0.00`
+executor stub retired — cost now derived), cache buckets included in `ScopeCosts` +
+`scope_report`, and `load_data`'s aggregation de-duplicated onto `costs::scope_costs`
+(the dashboard's copied `sum_architect_tokens` deleted). **Hardest arc of the milestone:**
+first dispatch **stalled** (~100 no-op `awaiting_model` turns, frozen diff) → `stop_phase`
+→ **resume** (`continue_phase`; its tool-call timed out client-side at 1800s but the run
+finished server-side, committed `719cbf3`) → **review bounce** (bug-06b-i-1: cache pricing
++ derived-executor rendering untested — mutation-proven) → fix dispatch (88 turns,
+`77d0490`) → approved. Both gaps mutation-verified at review. **Two calibration lessons
+held for M35 close:** (1) **untested-headline-behavior is now 3× (05b/06a/06b-i)** — a
+"3=fix" candidate: a STANDARDS/WORKFLOW fold requiring a mutation-sensitive test for each
+phase's headline computation, pending user sign-off; (2) **process:** the no-progress
+stall (governor should catch a frozen-diff spin sooner) + the blocking `continue_phase`
+timeout (make it async like `execute_phase`, M30-shaped, or set a per-server MCP timeout).
 
 phase-06b-i drafted 2026-07-20: rewire the dashboard Budget panel's `savings_lines`
 onto `costs::scope_report` (kill the hardcoded `$0.00` executor stub — cost now
