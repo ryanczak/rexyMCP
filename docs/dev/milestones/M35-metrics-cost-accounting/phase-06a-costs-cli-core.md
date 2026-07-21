@@ -1,7 +1,7 @@
 # Phase 06a: `rexymcp costs` — the cost-report core + CLI (Baseline/Executor/Architect/Net × Session/Milestone/Project)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-05b
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -759,4 +759,42 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** f788dacb669197f81d2c7387b2a28be5be49b4b6
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-06a-1, major, `false_completion`)
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (first dispatch 132 turns; re-dispatch
+  no-op'd; refined re-dispatch 37 turns landed the fix)
+- **Scope deviations:** none.
+- **Calibration (2 lessons, held):**
+  1. **Green-bounce no-op recurrence.** The first re-dispatch of the bounced-but-
+     green phase changed nothing (empty diff — the executor saw compiling code +
+     passing gates and self-reported "complete"). Resolved by the documented
+     countermeasure: a loud `🛑 BOUNCE FIX` Notes-for-executor header inlining the
+     exact edits ([[plain-redispatch-noops-on-green-bounce]]). The refined
+     re-dispatch then landed the fix in 37 turns. Countermeasure now N-for-N.
+  2. **Architect pre-injection seeded the bug.** The original spec's Current-state
+     store-aggregation skeleton used a placeholder comment `/* && milestone match */`
+     for the milestone condition; the executor implemented it as an *unconditional*
+     `== milestone_id`, which broke the Project (`None`) scope. **Lesson (my own):**
+     a pre-injected code skeleton must *encode* the tricky case (here the `None`-
+     means-all semantics), not gesture at it in a comment. The comment is now the
+     correct conditional form with a bug-06a-1 warning.
+
+**Bug-06a-1 fix verified at review:**
+- **Live E2E** — `rexymcp costs --config rexymcp.toml --repo .` now shows
+  `Project $419.56 == Milestone $419.56` (invariant `Project ≥ Milestone` holds;
+  equal because this project's runs are all in the active milestone — older
+  M1–M34 runs predate the current `[project] id` and are correctly excluded).
+  Before the fix: `Project $0.00 < Milestone $415.22`.
+- **Mutation-verified** — reverting the run filter to `== milestone_id` makes
+  `scope_costs_none_sums_all_milestones` **fail** (`left: 0, right: 300`); it
+  passes with the `is_none() ||` guard. Both filter sites (run + architect) fixed.
+
+**Independent re-run at review:** `cargo fmt --all --check` clean; `cargo build`
+zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` 575 mcp + 1024 executor pass, 2 ignored. Dashboard untouched; no
+production `unwrap`/`allow`/`dbg` (the `unwrap_or_default` on the activities read
+is the accepted best-effort pattern; the test-module `unwrap` is exempt).
 

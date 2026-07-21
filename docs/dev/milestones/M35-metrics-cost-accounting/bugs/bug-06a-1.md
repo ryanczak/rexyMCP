@@ -1,7 +1,7 @@
 # Bug 1 on phase-06a: `costs` Project scope under-reports (milestone `None` filter is wrong) + `scope_costs` untested
 
 **Severity:** major
-**Status:** open
+**Status:** resolved (2026-07-20, re-dispatch `f788dac` after a green-bounce no-op + refined re-dispatch; mutation-verified at review)
 **Filed:** 2026-07-20
 
 ## What's wrong
