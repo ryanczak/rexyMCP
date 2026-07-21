@@ -1,7 +1,7 @@
 # Phase 05a-iii: `scorecard --by model|tag|settings` CLI + dropped columns; retire the Settings wrapper
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-05a-ii
 **Estimated diff:** ~200 lines (deletions + a clap flag + a formatter rewrite)
 **Tags:** language=rust, kind=feature, size=m
@@ -445,4 +445,31 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 748819c2e13244e32deaed4ed215680f265ef5c4
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-20
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (92 turns)
+- **Scope deviations:** none. The `#[allow(dead_code)]` on `ScorecardDimension`
+  was **removed** as specified (Task 1) — `--by model` now constructs
+  `ScorecardDimension::Model` in production (via `From<ByArg>`), so the variant is
+  live. The remaining `aggregate_by_settings` references are the spec'd private
+  **test-local shim** (not the deleted `pub fn`); `SettingsScorecardRow` is fully
+  gone.
+- **Calibration:** none — and the spec_bug thread carried since 05a-i (the
+  `ScorecardDimension` `#[allow(dead_code)]` and the two unsatisfiable "no
+  allow(dead_code)" acceptance criteria) is now **closed**: the allow is deleted
+  and `grep -rn "allow(dead_code)" mcp/src/scorecard.rs` returns nothing.
+
+**Independent re-run at review:** `cargo fmt --all --check` clean; `cargo build`
+zero warnings; `cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` 554 mcp + 1024 executor pass, 2 ignored. **Live E2E** against the
+real telemetry store confirmed all three dimensions render with the new
+`REPAIRS`/`VERIF_RET`/`WALL_S` columns and the dimension-driven second-column
+header: `--by settings` → `SETTINGS`; `--by tag` → `TAG` (tag-exploded buckets);
+`--by model` → `KEY` with `—` cells, one row per model. The 3 new tests are
+mutation-sensitive (distinct header labels + negatives; dropped-column values;
+per-dimension bucket counts and key-emptiness). **After this phase the scorecard
+has one core, one row type (`ScorecardBucket`), no wrappers, no `#[allow]`.**
 
