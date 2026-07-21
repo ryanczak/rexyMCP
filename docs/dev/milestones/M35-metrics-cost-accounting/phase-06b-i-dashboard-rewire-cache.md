@@ -1,7 +1,7 @@
 # Phase 06b-i: Dashboard Budget panel → `costs` core + cache-bucket inclusion (de-dup the copied aggregation)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress (resume after a `claude_stop` stall — see the Notes-for-executor punch-list at the Update Log)
 **Depends on:** phase-06a
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=refactor, size=m
@@ -281,3 +281,74 @@ and `mcp/src/main.rs` is in scope for this phase.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-20 (escalation)
+
+**Chosen lever:** resume (`continue_phase`)
+**Rationale:** the first dispatch did most of the work (panels.rs rewire ✓, cache
+summing ✓, `pub(crate)` ✓, main.rs rate ✓) then **stalled** (~100 no-op
+`awaiting_model` turns, frozen diff) and was `claude_stop`ped at turn 363. The
+partial work is good but has a few concrete defects + litter; resume from the dirty
+tree with the punch-list below. Two defects trace to spec gaps (activities threading
++ assists preservation in `load_data`), so a resume can bridge them.
+
+### 🛑 Notes for executor — 2026-07-20 (RESUME PUNCH-LIST — finish these exact items, then gates)
+
+The tree is dirty with your partial work. **Do NOT restart from scratch** — apply
+these fixes on top of what's there, then run all four gates until green.
+
+1. **DELETE the two scratch files** you created —
+   `mcp/src/dashboard/mod_new.rs` and `mcp/src/dashboard/mod_new2.rs`. They are
+   leftover rewrite scratch; the real code lives in `mod.rs`. `git status` / a
+   directory read must show them gone. (`use delete_file`.)
+
+2. **`mcp/src/dashboard/mod.rs` — you introduced a regression: fix it.** Your
+   de-dup calls `crate::costs::scope_costs(&phase_runs, **&[]**, pid, …)` with an
+   **empty** activities slice, so the dashboard's **Architect cost is now always
+   $0**, and you hardcoded `project_escalation_count: 0` (dropping the Assists
+   count). **Restore both:**
+   - Re-add the folded activities read that the original had (do not pass `&[]`):
+     ```rust
+     let folded_activities = match (project_id, telemetry_dir) {
+         (Some(_), Some(dir)) => rexymcp_executor::store::telemetry::fold_activities(
+             rexymcp_executor::store::telemetry::read_architect_activities(
+                 &dir.join("phase_runs.jsonl"),
+             ).unwrap_or_default(),
+         ),
+         _ => Vec::new(),
+     };
+     ```
+   - Pass `&folded_activities` (NOT `&[]`) to **both** `costs::scope_costs` calls
+     (project scope with `None`, milestone scope with `Some(&milestone_dir)`).
+   - Restore `project_escalation_count`: `folded_activities.iter().filter(|a|
+     a.project_id.as_deref() == Some(pid) && a.activity == "assist").count() as u32`
+     (its original computation) and pass it in **both** `DashboardData { … }` arms —
+     not a hardcoded `0`.
+   - Also: you left `}pub fn run_dashboard(` jammed on one line and deleted the
+     `/// Run the dashboard event loop.` doc comment — restore the newline + that
+     doc comment.
+
+3. **`mcp/src/costs.rs` — Task 3 was NOT done.** `scope_report` still prices only
+   input+output; add the two executor **cache** terms so summed cache is actually
+   priced:
+   ```rust
+   let executor = per_m(costs.executor_in, exec_rates.input_per_mtok)
+       + per_m(costs.executor_out, exec_rates.output_per_mtok)
+       + per_m(costs.executor_cache_read, exec_rates.cache_read_per_mtok)
+       + per_m(costs.executor_cache_write, exec_rates.cache_creation_per_mtok);
+   ```
+   (baseline stays input+output only — do not add a cache baseline term.)
+
+4. **Test literals.** Every `ScopeCosts { … }` and `BudgetRates { … }` literal
+   (in `panels.rs` tests ~line 1768+, `costs.rs` tests, anywhere) must set the new
+   fields or use `..Default::default()` / `executor: ModelRates::default()`. The
+   crate must compile.
+
+5. **Add the cache tests** the Test plan names: a `scope_report` case with non-zero
+   `executor_cache_read`/`executor_cache_write` + priced `exec_rates` asserting the
+   cache is priced (cache-write at `cache_creation_per_mtok`), and a priced-executor
+   `savings_lines` test asserting the Executor row is **non-`$0.00`**.
+
+6. **Gates:** `cargo fmt --all --check`, `cargo build`, `cargo clippy --all-targets
+   --all-features -- -D warnings`, `cargo test` all green; `grep -rn "mod_new"
+   mcp/src` returns nothing.
