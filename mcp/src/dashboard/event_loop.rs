@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::filter::{FILTER_ITEM_COUNT, FilterState};
-use super::panels::BudgetRates;
+use super::panels::{BudgetDisplay, BudgetRates};
 use super::render::{ViewState, clamp_scroll, render_dashboard};
 use crate::dashboard::load_data;
 
@@ -20,6 +20,7 @@ pub(crate) fn run_loop(
     let mut follow = true;
     let mut spinner_tick: usize = 0;
     let mut filter_state = FilterState::default();
+    let mut budget_display = BudgetDisplay::Dollars;
     // Track record count so we can re-enable follow whenever new content arrives,
     // regardless of whether the user previously scrolled away from the bottom.
     let mut prev_record_count: usize = 0;
@@ -50,6 +51,7 @@ pub(crate) fn run_loop(
             follow,
             spinner,
             filter: filter_state.clone(),
+            budget_display,
         };
         let mut total_wrapped = 0usize;
         terminal.draw(|frame| {
@@ -82,6 +84,12 @@ pub(crate) fn run_loop(
                     KeyCode::Char('f') => {
                         filter_state.open = true;
                         filter_state.cursor = 0;
+                    }
+                    KeyCode::Char('b') => {
+                        budget_display = match budget_display {
+                            BudgetDisplay::Dollars => BudgetDisplay::Tokens,
+                            BudgetDisplay::Tokens => BudgetDisplay::Dollars,
+                        };
                     }
                     KeyCode::Up => {
                         follow = false;

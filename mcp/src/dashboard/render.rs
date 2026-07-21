@@ -8,8 +8,8 @@ use ratatui::{
 
 use super::filter::{ActivityFilter, FILTER_ITEM_COUNT, FilterState};
 use super::panels::{
-    BudgetRates, budget_lines, files_lines, milestone_line, panel, reclaim_lines, savings_lines,
-    session_lines, spinner_line, tasks_lines,
+    BudgetDisplay, BudgetRates, budget_lines, files_lines, milestone_line, panel, reclaim_lines,
+    savings_lines, session_lines, spinner_line, tasks_lines,
 };
 use super::transcript::transcript_lines;
 use crate::dashboard::DashboardData;
@@ -20,6 +20,7 @@ pub(crate) struct ViewState {
     pub(crate) follow: bool,
     pub(crate) spinner: Option<usize>,
     pub(crate) filter: FilterState,
+    pub(crate) budget_display: BudgetDisplay,
 }
 
 /// Clamp a scroll offset so it can't run past the last line.
@@ -221,6 +222,7 @@ pub(crate) fn render_dashboard(
         data.milestone_costs,
         data.project_costs,
         data.project_escalation_count,
+        state.budget_display,
     ));
     frame.render_widget(panel(" Budget ", budget), budget_area);
     frame.render_widget(

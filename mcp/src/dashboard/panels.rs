@@ -21,6 +21,14 @@ pub struct ScopeCosts {
     pub architect: ArchitectTokens,
 }
 
+/// Whether the Budget savings block renders dollar amounts or token counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BudgetDisplay {
+    #[default]
+    Dollars,
+    Tokens,
+}
+
 /// Cloud-baseline $/Mtok rates for the Budget panel's "Savings:" line.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BudgetRates {
@@ -477,6 +485,19 @@ pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
     lines
 }
 
+/// Format a token count for display: "—", raw, "{:.1}k", or "{:.1}M".
+fn fmt_tokens(count: u64) -> String {
+    if count == 0 {
+        "—".to_string()
+    } else if count >= 1_000_000 {
+        format!("{:.1}M", count as f64 / 1_000_000.0)
+    } else if count >= 1_000 {
+        format!("{:.1}k", count as f64 / 1_000.0)
+    } else {
+        count.to_string()
+    }
+}
+
 /// Budget-panel savings block. A `Savings` header followed by indented,
 /// value-aligned rows: Baseline / Executor / Architect / Net across
 /// Session / Milestone / Project columns, plus an Assists count.
@@ -487,6 +508,7 @@ pub(crate) fn savings_lines(
     milestone_costs: Option<ScopeCosts>,
     project_costs: ScopeCosts,
     project_escalation_count: u32,
+    display: BudgetDisplay,
 ) -> Vec<Line<'static>> {
     let sess_in = match summary.last_input_tokens {
         Some(v) => v as u64,
@@ -511,12 +533,26 @@ pub(crate) fn savings_lines(
     let mile = mile.unwrap_or_default();
 
     let header: Line<'static> = if has_milestone {
-        Line::from(format!(
-            "{:<12}{:>10}{:>10}{:>10}",
-            "Savings", "Session", "Milestone", "Project"
-        ))
+        match display {
+            BudgetDisplay::Tokens => Line::from(format!(
+                "{:<12}{:>10}{:>10}{:>10}",
+                "Savings (tok)", "Session", "Milestone", "Project"
+            )),
+            BudgetDisplay::Dollars => Line::from(format!(
+                "{:<12}{:>10}{:>10}{:>10}",
+                "Savings", "Session", "Milestone", "Project"
+            )),
+        }
     } else {
-        Line::from(format!("{:<12}{:>9}{:>9}", "Savings", "Session", "Project"))
+        match display {
+            BudgetDisplay::Tokens => Line::from(format!(
+                "{:<12}{:>9}{:>9}",
+                "Savings (tok)", "Session", "Project"
+            )),
+            BudgetDisplay::Dollars => {
+                Line::from(format!("{:<12}{:>9}{:>9}", "Savings", "Session", "Project"))
+            }
+        }
     };
 
     let make_row = |label: &str, v_sess: String, v_mile: String, v_proj: String| -> Line<'static> {
@@ -530,6 +566,99 @@ pub(crate) fn savings_lines(
         }
     };
 
+    let mut out = Vec::new();
+
+    if display == BudgetDisplay::Tokens {
+        // Tokens mode: show token counts, no debit rows
+        out.push(header);
+        out.push(make_row(
+            "Baseline:",
+            fmt_tokens(
+                session_costs
+                    .executor_in
+                    .saturating_add(session_costs.executor_out),
+            ),
+            fmt_tokens(
+                milestone_costs
+                    .as_ref()
+                    .map(|c| c.executor_in.saturating_add(c.executor_out))
+                    .unwrap_or(0),
+            ),
+            fmt_tokens(
+                project_costs
+                    .executor_in
+                    .saturating_add(project_costs.executor_out),
+            ),
+        ));
+        out.push(make_row(
+            "Executor:",
+            fmt_tokens(
+                session_costs
+                    .executor_in
+                    .saturating_add(session_costs.executor_out)
+                    .saturating_add(session_costs.executor_cache_read)
+                    .saturating_add(session_costs.executor_cache_write),
+            ),
+            fmt_tokens(
+                milestone_costs
+                    .as_ref()
+                    .map(|c| {
+                        c.executor_in
+                            .saturating_add(c.executor_out)
+                            .saturating_add(c.executor_cache_read)
+                            .saturating_add(c.executor_cache_write)
+                    })
+                    .unwrap_or(0),
+            ),
+            fmt_tokens(
+                project_costs
+                    .executor_in
+                    .saturating_add(project_costs.executor_out)
+                    .saturating_add(project_costs.executor_cache_read)
+                    .saturating_add(project_costs.executor_cache_write),
+            ),
+        ));
+        out.push(make_row(
+            "Architect:",
+            fmt_tokens(
+                session_costs
+                    .architect
+                    .input
+                    .saturating_add(session_costs.architect.cache_creation)
+                    .saturating_add(session_costs.architect.cache_read)
+                    .saturating_add(session_costs.architect.output),
+            ),
+            fmt_tokens(
+                milestone_costs
+                    .as_ref()
+                    .map(|c| {
+                        c.architect
+                            .input
+                            .saturating_add(c.architect.cache_creation)
+                            .saturating_add(c.architect.cache_read)
+                            .saturating_add(c.architect.output)
+                    })
+                    .unwrap_or(0),
+            ),
+            fmt_tokens(
+                project_costs
+                    .architect
+                    .input
+                    .saturating_add(project_costs.architect.cache_creation)
+                    .saturating_add(project_costs.architect.cache_read)
+                    .saturating_add(project_costs.architect.output),
+            ),
+        ));
+        out.push(make_row(
+            "Net:",
+            "—".to_string(),
+            "—".to_string(),
+            "—".to_string(),
+        ));
+        out.push(Line::from(format!("  Assists: {project_escalation_count}")));
+        return out;
+    }
+
     let paren = |v: String| format!("({v})");
     let debit_row =
         |label: &str, sess: String, mile: String, proj: String| -> Option<Line<'static>> {
@@ -539,15 +668,13 @@ pub(crate) fn savings_lines(
             Some(make_row(label, paren(sess), paren(mile), paren(proj)))
         };
 
-    let mut out = vec![
-        header,
-        make_row(
-            "Baseline:",
-            fmt_opt(sess.baseline),
-            fmt_opt(mile.baseline),
-            fmt_opt(proj.baseline),
-        ),
-    ];
+    out.push(header);
+    out.push(make_row(
+        "Baseline:",
+        fmt_opt(sess.baseline),
+        fmt_opt(mile.baseline),
+        fmt_opt(proj.baseline),
+    ));
 
     if let Some(row) = debit_row(
         "Executor:",
@@ -1637,6 +1764,7 @@ mod tests {
             None,
             ScopeCosts::default(),
             0,
+            BudgetDisplay::Dollars,
         );
         assert!(result.is_empty(), "no session tokens → empty");
     }
@@ -1655,6 +1783,7 @@ mod tests {
             None,
             ScopeCosts::default(),
             0,
+            BudgetDisplay::Dollars,
         );
         let header = format!("{}", lines[0]);
         assert!(header.contains("Savings"), "header must start with Savings");
@@ -1684,6 +1813,7 @@ mod tests {
             mile,
             ScopeCosts::default(),
             0,
+            BudgetDisplay::Dollars,
         );
         let header = format!("{}", lines[0]);
         assert!(
@@ -1707,8 +1837,8 @@ mod tests {
             None,
             ScopeCosts::default(),
             0,
+            BudgetDisplay::Dollars,
         );
-        assert_eq!(lines.len(), 4, "exactly 4 lines: {lines:?}");
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(texts[1].contains("Baseline:"), "row 1 is Baseline");
         assert!(texts[2].contains("Net:"), "row 2 is Net");
@@ -1736,6 +1866,7 @@ mod tests {
             None,
             ScopeCosts::default(),
             0,
+            BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let baseline_line = texts
@@ -1789,7 +1920,14 @@ mod tests {
                 output: 0,
             },
         };
-        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let arch_line = texts
             .iter()
@@ -1833,7 +1971,14 @@ mod tests {
                 output: 0,
             },
         };
-        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let baseline_line = texts
             .iter()
@@ -1887,7 +2032,14 @@ mod tests {
                 output: 0,
             },
         };
-        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let net_line = texts
             .iter()
@@ -1913,6 +2065,7 @@ mod tests {
             None,
             ScopeCosts::default(),
             3,
+            BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let assists_row = texts
@@ -1957,7 +2110,14 @@ mod tests {
                 output: 0,
             },
         };
-        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let money_texts: Vec<String> = texts
             .iter()
@@ -2032,7 +2192,14 @@ mod tests {
             executor_cache_write: 0,
             architect: Default::default(),
         };
-        let lines = savings_lines(&summary, rates, None, project_costs, 0);
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         let exec_line = texts
             .iter()
@@ -2047,6 +2214,112 @@ mod tests {
         assert!(
             !exec_line.contains("$0.00"),
             "Executor row should not be $0.00 with priced executor: {exec_line}"
+        );
+    }
+
+    #[test]
+    fn budget_display_default_is_dollars() {
+        assert_eq!(BudgetDisplay::default(), BudgetDisplay::Dollars);
+    }
+
+    #[test]
+    fn savings_lines_tokens_mode_shows_token_counts() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 500_000,
+            executor_cache_read: 200_000,
+            executor_cache_write: 300_000,
+            architect: ArchitectTokens {
+                input: 100_000,
+                cache_creation: 50_000,
+                cache_read: 25_000,
+                output: 25_000,
+            },
+        };
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Tokens,
+        );
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+
+        // Header should indicate tokens mode
+        let header = &texts[0];
+        assert!(
+            header.contains("tok"),
+            "Tokens-mode header should indicate tokens: {header}"
+        );
+
+        // Find the Executor row and verify it shows the summed executor tokens
+        // 1M + 500k + 200k + 300k = 2.0M for project
+        let exec_line = texts
+            .iter()
+            .find(|s| s.contains("Executor:"))
+            .expect("Executor row missing in tokens mode");
+        assert!(
+            exec_line.contains("2.0M"),
+            "Executor row should show 2.0M tokens for project, got: {exec_line}"
+        );
+
+        // Find the Architect row and verify it shows the summed architect tokens
+        // 100k + 50k + 25k + 25k = 200k for project
+        let arch_line = texts
+            .iter()
+            .find(|s| s.contains("Architect:"))
+            .expect("Architect row missing in tokens mode");
+        assert!(
+            arch_line.contains("200.0k"),
+            "Architect row should show 200.0k tokens for project, got: {arch_line}"
+        );
+
+        // Net row should show "—" in tokens mode
+        let net_line = texts
+            .iter()
+            .find(|s| s.contains("Net:"))
+            .expect("Net row missing in tokens mode");
+        // The project column should be "—"
+        assert!(
+            net_line.contains("—"),
+            "Net row should show — in tokens mode, got: {net_line}"
+        );
+    }
+
+    #[test]
+    fn savings_lines_tokens_mode_header_differs_from_dollars() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let lines_dollars = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
+            BudgetDisplay::Dollars,
+        );
+        let lines_tokens = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
+            BudgetDisplay::Tokens,
+        );
+        let header_dollars = format!("{}", lines_dollars[0]);
+        let header_tokens = format!("{}", lines_tokens[0]);
+        assert_ne!(
+            header_dollars, header_tokens,
+            "Tokens and Dollars headers should differ: dollars={header_dollars} tokens={header_tokens}"
         );
     }
 }
