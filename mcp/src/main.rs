@@ -6,6 +6,7 @@ use std::path::PathBuf;
 mod calibrate;
 mod calibrate_governor;
 mod cap;
+mod costs;
 mod dashboard;
 mod doctor;
 mod finalize;
@@ -264,6 +265,25 @@ enum Commands {
         /// Path to the config file
         #[arg(long)]
         config: Option<PathBuf>,
+    },
+    /// Report token cost (Baseline/Executor/Architect/Net) across
+    /// Session / Milestone / Project.
+    Costs {
+        /// Path to the config file
+        #[arg(long, default_value = "rexymcp.toml")]
+        config: PathBuf,
+        /// Repo whose session log + project telemetry to report on
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Session id (default: latest)
+        #[arg(long)]
+        session: Option<String>,
+        /// Override the telemetry phase_runs.jsonl path
+        #[arg(long)]
+        telemetry_path: Option<PathBuf>,
+        /// Emit JSON instead of a human table
+        #[arg(long)]
+        json: bool,
     },
     /// Report whether the configured toolchain + verifier enhancers are on PATH
     Doctor {
@@ -823,6 +843,33 @@ async fn main() -> anyhow::Result<()> {
                 });
             Ok(())
         }
+        Commands::Costs {
+            config,
+            repo,
+            session,
+            telemetry_path,
+            json,
+        } => {
+            match costs::load_cost_report(
+                &config,
+                &repo,
+                session.as_deref(),
+                telemetry_path.as_deref(),
+            ) {
+                Ok(report) => {
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+                    } else {
+                        println!("{}", costs::format_costs(&report));
+                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("costs error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::Doctor { config, json } => {
             let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
             let cfg = Config::load_with_env(&config_path)?;
@@ -1356,6 +1403,18 @@ mod tests {
         match cli.command {
             Some(Commands::Runs { command: None, .. }) => {}
             _ => panic!("expected bare runs list"),
+        }
+    }
+
+    #[test]
+    fn cli_parse_costs_with_defaults() {
+        let cli = Cli::try_parse_from(["rexymcp", "costs", "--config", "rexymcp.toml"]).unwrap();
+        match cli.command {
+            Some(Commands::Costs { repo, json, .. }) => {
+                assert_eq!(repo, PathBuf::from("."));
+                assert!(!json);
+            }
+            _ => panic!("expected Costs"),
         }
     }
 }
