@@ -4,9 +4,29 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none pending `/rexymcp:architect next` — phase-06b-ii is `done`;
-next up is the 06c architect-ledger arc (06c-i → 06c-ii → 06c-iii), then phase-07
-(reporting debt) closes M35.**
+**Active phase:
+[M35 phase-06c-i — architect ledger core (transcript-native harvest rewrite)](milestones/M35-metrics-cost-accounting/phase-06c-i-architect-ledger-core.md)
+(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-i`).**
+
+phase-06c-i drafted 2026-07-21: the first phase of the 06c architect-ledger arc.
+Adds a new telemetry record `ArchitectLedger` keyed `(project_id × session_id ×
+model × skill)` + its `append/read/fold` trio (mirroring the `ArchitectActivity`
+trio exactly — quoted inline as the worked example), and **rewrites `rexymcp
+harvest`** to emit it: dedup by `message.id` (all dups are within-file, verified
+on the 59-file corpus → session attribution is exact), count ALL usage (no
+`attributionSkill` → `"other"` bucket, never dropped), carry real `message.model`,
+and split `cache_creation` into 5m/1h buckets (`ephemeral_{5m,1h}_input_tokens`;
+authoritative when present, flat-field fallback → all-5m, invariant `5m+1h==
+cache_creation` pinned). The old time-window `attribute()` enrichment is deleted.
+**Nearly additive + cascade-safe** (leaf-first: telemetry.rs additive-green, then
+harvest.rs rewrite, then the main.rs output line) — chosen deliberately given this
+executor hard-failed 3× on big M35 cascades. **Scoped tight:** pricing is 06c-ii,
+surface rewiring (`costs`/dashboard/`profile` onto the ledger, retire
+`ArchitectActivity.tokens`) is 06c-iii; `costs.rs` is explicitly untouched here
+(the ledger sits unused by surfaces for one phase — flagged, no new regression).
+size=m (~320 lines). **Open, deferred to 06c-iii:** transcripts carry no milestone
+id, so the ledger has none — milestone-scope architect-cost presentation is a
+06c-iii decision.
 
 **Architect-ledger design pass (2026-07-21, with the user — the 06c arc, inserted
 before phase-07).** Post-06b-ii audit: the architect side of the accounting is

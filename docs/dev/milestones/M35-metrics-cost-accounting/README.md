@@ -71,7 +71,7 @@ and the executor finally carries a real (configurable) price.
 | 06a | `rexymcp costs` CLI + shared cost-report core ([phase-06a-costs-cli-core.md](phase-06a-costs-cli-core.md)) | done |
 | 06b-i | Dashboard Budget panel → `costs` core + cache buckets; de-dup the copied aggregation ([phase-06b-i-dashboard-rewire-cache.md](phase-06b-i-dashboard-rewire-cache.md)) | done |
 | 06b-ii | Dashboard `b`-key tokens⇄currency toggle ([phase-06b-ii-budget-tokens-toggle.md](phase-06b-ii-budget-tokens-toggle.md)) | done |
-| 06c-i | Architect ledger core: transcript-native harvest rewrite (keyed session×model×skill; window enrichment deleted) | not drafted |
+| 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | todo |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split | not drafted |
 | 06c-iii | Ledger surfaces: costs/dashboard/profile consume the ledger; per-skill breakdown; harvest freshness | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
