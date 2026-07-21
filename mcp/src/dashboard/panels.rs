@@ -16,6 +16,8 @@ use rexymcp_executor::store::telemetry::{ArchitectRates, ArchitectTokens};
 pub struct ScopeCosts {
     pub executor_in: u64,
     pub executor_out: u64,
+    pub executor_cache_read: u64,
+    pub executor_cache_write: u64,
     pub architect: ArchitectTokens,
 }
 
@@ -25,6 +27,8 @@ pub struct BudgetRates {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
     pub architect: ArchitectRates,
+    /// The executor model's $/Mtok (from `cfg.model_rates`), for the Executor row.
+    pub executor: rexymcp_executor::store::telemetry::ModelRates,
 }
 
 /// Wall-clock session duration in ms.
@@ -490,39 +494,22 @@ pub(crate) fn savings_lines(
     };
     let sess_out = summary.last_output_tokens.unwrap_or(0) as u64;
 
-    let cost = |in_toks: u64, out_toks: u64, in_rate: f64, out_rate: f64| -> f64 {
-        (in_toks as f64 / 1_000_000.0) * in_rate + (out_toks as f64 / 1_000_000.0) * out_rate
+    let session_costs = ScopeCosts {
+        executor_in: sess_in,
+        executor_out: sess_out,
+        ..Default::default()
     };
+    let sess = crate::costs::scope_report(&session_costs, &rates.executor, &rates);
+    let mile = milestone_costs.map(|c| crate::costs::scope_report(&c, &rates.executor, &rates));
+    let proj = crate::costs::scope_report(&project_costs, &rates.executor, &rates);
+
+    let fmt_opt =
+        |v: Option<f64>| -> String { v.map_or("—".to_string(), |x| format!("${x:.2}")) };
     let fmt_dollars = |v: f64| format!("${v:.2}");
-    let no_baseline = rates.input_per_mtok == 0.0 && rates.output_per_mtok == 0.0;
-    let baseline_val = |in_toks: u64, out_toks: u64| -> String {
-        if no_baseline {
-            "—".to_string()
-        } else {
-            fmt_dollars(cost(
-                in_toks,
-                out_toks,
-                rates.input_per_mtok,
-                rates.output_per_mtok,
-            ))
-        }
-    };
-    let executor_val = |_in: u64, _out: u64| -> String { "$0.00".to_string() };
-    let architect_val = |t: ArchitectTokens| -> String { fmt_dollars(t.cost(&rates.architect)) };
-    let net_val = |b_in: u64, b_out: u64, a: ArchitectTokens| -> String {
-        if no_baseline {
-            return "—".to_string();
-        }
-        let baseline = cost(b_in, b_out, rates.input_per_mtok, rates.output_per_mtok);
-        fmt_dollars(baseline - a.cost(&rates.architect))
-    };
 
-    let has_milestone = milestone_costs.is_some();
-    let mile = milestone_costs.unwrap_or_default();
+    let has_milestone = mile.is_some();
+    let mile = mile.unwrap_or_default();
 
-    // Numeric columns are 10 wide in the 3-scope layout so the 9-char "Milestone"
-    // header keeps a leading space and doesn't abut "Session"; the 2-scope layout
-    // has no such collision and stays at 9.
     let header: Line<'static> = if has_milestone {
         Line::from(format!(
             "{:<12}{:>10}{:>10}{:>10}",
@@ -556,39 +543,35 @@ pub(crate) fn savings_lines(
         header,
         make_row(
             "Baseline:",
-            baseline_val(sess_in, sess_out),
-            baseline_val(mile.executor_in, mile.executor_out),
-            baseline_val(project_costs.executor_in, project_costs.executor_out),
+            fmt_opt(sess.baseline),
+            fmt_opt(mile.baseline),
+            fmt_opt(proj.baseline),
         ),
     ];
 
     if let Some(row) = debit_row(
         "Executor:",
-        executor_val(sess_in, sess_out),
-        executor_val(mile.executor_in, mile.executor_out),
-        executor_val(project_costs.executor_in, project_costs.executor_out),
+        fmt_dollars(sess.executor),
+        fmt_dollars(mile.executor),
+        fmt_dollars(proj.executor),
     ) {
         out.push(row);
     }
 
     if let Some(row) = debit_row(
         "Architect:",
-        architect_val(ArchitectTokens::default()),
-        architect_val(mile.architect),
-        architect_val(project_costs.architect),
+        fmt_dollars(sess.architect),
+        fmt_dollars(mile.architect),
+        fmt_dollars(proj.architect),
     ) {
         out.push(row);
     }
 
     out.push(make_row(
         "Net:",
-        net_val(sess_in, sess_out, ArchitectTokens::default()),
-        net_val(mile.executor_in, mile.executor_out, mile.architect),
-        net_val(
-            project_costs.executor_in,
-            project_costs.executor_out,
-            project_costs.architect,
-        ),
+        fmt_opt(sess.net),
+        fmt_opt(mile.net),
+        fmt_opt(proj.net),
     ));
     out.push(Line::from(format!("  Assists: {project_escalation_count}")));
     out
@@ -604,6 +587,7 @@ mod tests {
     use super::*;
     use rexymcp_executor::config::DashboardConfig;
     use rexymcp_executor::store::sessions::event::FileNumstat;
+    use rexymcp_executor::store::telemetry::ModelRates;
 
     // --- session_lines tests ---
 
@@ -1791,10 +1775,13 @@ mod tests {
                 cache_read_per_mtok: 0.5,
                 output_per_mtok: 25.0,
             },
+            executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 0,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
             architect: ArchitectTokens {
                 input: 1_000_000,
                 cache_creation: 0,
@@ -1832,10 +1819,13 @@ mod tests {
                 cache_read_per_mtok: 0.1,
                 output_per_mtok: 5.0,
             },
+            executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 0,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
             architect: ArchitectTokens {
                 input: 1_000_000,
                 cache_creation: 0,
@@ -1883,10 +1873,13 @@ mod tests {
                 cache_read_per_mtok: 0.1,
                 output_per_mtok: 5.0,
             },
+            executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 0,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
             architect: ArchitectTokens {
                 input: 1_000_000,
                 cache_creation: 0,
@@ -1950,10 +1943,13 @@ mod tests {
                 cache_read_per_mtok: 0.5,
                 output_per_mtok: 25.0,
             },
+            executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
             executor_in: 5_000_000,
-            executor_out: 2_000_000,
+            executor_out: 0,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
             architect: ArchitectTokens {
                 input: 1_000_000,
                 cache_creation: 0,

@@ -15,7 +15,7 @@ use crate::status;
 /// One scope's four cost lines, in dollars. `baseline`/`net` are `None` when no
 /// baseline rate is configured (rendered `—`); `executor`/`architect` are always
 /// present (`0.0` when unpriced).
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize)]
 pub struct ScopeReport {
     pub baseline: Option<f64>,
     pub executor: f64,
@@ -46,7 +46,12 @@ pub fn scope_report(
     let no_baseline = baseline.input_per_mtok == 0.0 && baseline.output_per_mtok == 0.0;
 
     let executor = per_m(costs.executor_in, exec_rates.input_per_mtok)
-        + per_m(costs.executor_out, exec_rates.output_per_mtok);
+        + per_m(costs.executor_out, exec_rates.output_per_mtok)
+        + per_m(costs.executor_cache_read, exec_rates.cache_read_per_mtok)
+        + per_m(
+            costs.executor_cache_write,
+            exec_rates.cache_creation_per_mtok,
+        );
     let architect = costs.architect.cost(&baseline.architect);
     let baseline_cost = if no_baseline {
         None
@@ -67,7 +72,7 @@ pub fn scope_report(
 }
 
 /// Sum executor tokens over project runs, optionally scoped to one milestone_id.
-fn scope_costs(
+pub(crate) fn scope_costs(
     runs: &[PhaseRun],
     activities: &[telemetry::ArchitectActivity],
     project_id: &str,
@@ -82,6 +87,12 @@ fn scope_costs(
         .fold(ScopeCosts::default(), |mut c, r| {
             c.executor_in = c.executor_in.saturating_add(r.tokens.input_tokens as u64);
             c.executor_out = c.executor_out.saturating_add(r.tokens.output_tokens as u64);
+            c.executor_cache_read = c
+                .executor_cache_read
+                .saturating_add(r.tokens.cache_read_tokens as u64);
+            c.executor_cache_write = c
+                .executor_cache_write
+                .saturating_add(r.tokens.cache_write_tokens as u64);
             c
         });
 
@@ -90,6 +101,8 @@ fn scope_costs(
     ScopeCosts {
         executor_in: exec.executor_in,
         executor_out: exec.executor_out,
+        executor_cache_read: exec.executor_cache_read,
+        executor_cache_write: exec.executor_cache_write,
         architect: arch,
     }
 }
@@ -140,6 +153,7 @@ pub fn load_cost_report(
         input_per_mtok: cfg.dashboard.effective_rates().0,
         output_per_mtok: cfg.dashboard.effective_rates().1,
         architect: cfg.architect.effective_architect_rates(),
+        executor: telemetry::ModelRates::default(),
     };
     let exec_rates = cfg.model_rates(&cfg.executor.model);
 
@@ -150,7 +164,7 @@ pub fn load_cost_report(
             ScopeCosts {
                 executor_in: summary.last_input_tokens.unwrap_or(0) as u64,
                 executor_out: summary.last_output_tokens.unwrap_or(0) as u64,
-                architect: ArchitectTokens::default(),
+                ..Default::default()
             }
         }
         Err(_) => ScopeCosts::default(),
@@ -255,6 +269,7 @@ mod tests {
             input_per_mtok: 0.0,
             output_per_mtok: 0.0,
             architect: ArchitectRates::default(),
+            executor: telemetry::ModelRates::default(),
         }
     }
 
@@ -277,6 +292,7 @@ mod tests {
                 cache_read_per_mtok: 2.0,
                 cache_creation_per_mtok: 8.0,
             },
+            executor: telemetry::ModelRates::default(),
         }
     }
 
@@ -285,6 +301,8 @@ mod tests {
         let costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 1_000_000,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
             architect: ArchitectTokens {
                 input: 500_000,
                 cache_creation: 100_000,
@@ -311,13 +329,14 @@ mod tests {
         let costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 1_000_000,
-            architect: ArchitectTokens::default(),
+            ..Default::default()
         };
         let zero_exec = telemetry::ModelRates::default();
         let baseline = BudgetRates {
             input_per_mtok: 15.0,
             output_per_mtok: 75.0,
             architect: ArchitectRates::default(),
+            executor: telemetry::ModelRates::default(),
         };
         let r = scope_report(&costs, &zero_exec, &baseline);
 
@@ -333,12 +352,7 @@ mod tests {
         let costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 1_000_000,
-            architect: ArchitectTokens {
-                input: 100_000,
-                cache_creation: 0,
-                cache_read: 0,
-                output: 100_000,
-            },
+            ..Default::default()
         };
         let exec = priced_exec_rates();
         let zero = zero_rates();

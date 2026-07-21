@@ -6,8 +6,9 @@
 use std::path::Path;
 
 use rexymcp_executor::store::sessions::event::SessionRecord;
-use rexymcp_executor::store::telemetry::{self, ArchitectTokens, PhaseRun};
+use rexymcp_executor::store::telemetry::{self, PhaseRun};
 
+use crate::costs;
 use crate::status::{self, StatusSummary};
 
 mod event_loop;
@@ -39,141 +40,95 @@ pub struct DashboardData {
 /// Load the latest session data. Pure, testable.
 /// `project_id` is the UUID from the watched repo's `[project] id`; filters
 /// telemetry to runs belonging to this project. `None` → project savings is `(0,0)`.
-/// Sum architect tokens from a filtered set of folded `ArchitectActivity` records.
-fn sum_architect_tokens(
-    activities: &[telemetry::ArchitectActivity],
-    project_id: Option<&str>,
-    milestone_id: Option<&str>,
-) -> ArchitectTokens {
-    activities
-        .iter()
-        .filter(|a| {
-            a.project_id.as_deref() == project_id && a.milestone_id.as_deref() == milestone_id
-        })
-        .fold(ArchitectTokens::default(), |mut acc, a| {
-            acc.input = acc.input.saturating_add(a.tokens.input);
-            acc.cache_creation = acc.cache_creation.saturating_add(a.tokens.cache_creation);
-            acc.cache_read = acc.cache_read.saturating_add(a.tokens.cache_read);
-            acc.output = acc.output.saturating_add(a.tokens.output);
-            acc
-        })
-}
-
 pub fn load_data(
     repo: &Path,
     session: Option<&str>,
     telemetry_dir: Option<&Path>,
     project_id: Option<&str>,
 ) -> DashboardData {
-    // Phase runs are independent of session records — read them before the match
-    // so project_costs is always computed even when session loading fails.
     let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
-    // project_costs: executor tokens + architect tokens across all project runs.
-    // Read + fold architect activities once (last-write-wins by identity key).
-    let folded_activities = match (project_id, telemetry_dir) {
-        (Some(_), Some(dir)) => telemetry::fold_activities(
-            telemetry::read_architect_activities(&dir.join("phase_runs.jsonl")).unwrap_or_default(),
-        ),
-        _ => Vec::new(),
-    };
 
-    let project_costs = match project_id {
+    match project_id {
         Some(pid) => {
-            let exec_costs: ScopeCosts = phase_runs
+            let folded_activities = match telemetry_dir {
+                Some(dir) => telemetry::fold_activities(
+                    telemetry::read_architect_activities(&dir.join("phase_runs.jsonl"))
+                        .unwrap_or_default(),
+                ),
+                _ => Vec::new(),
+            };
+            let project_costs = costs::scope_costs(&phase_runs, &folded_activities, pid, None);
+            let project_escalation_count = folded_activities
                 .iter()
-                .filter(|r| r.project_id.as_deref() == Some(pid))
-                .fold(ScopeCosts::default(), |mut costs, r| {
-                    costs.executor_in = costs
-                        .executor_in
-                        .saturating_add(r.tokens.input_tokens as u64);
-                    costs.executor_out = costs
-                        .executor_out
-                        .saturating_add(r.tokens.output_tokens as u64);
-                    costs
-                });
-            let arch = sum_architect_tokens(&folded_activities, Some(pid), None);
-            ScopeCosts {
-                executor_in: exec_costs.executor_in,
-                executor_out: exec_costs.executor_out,
-                architect: arch,
-            }
-        }
-        None => ScopeCosts::default(),
-    };
-    // Assists: count `assist` architect-activity journal records for this
-    // project (retired tier_telemetry.escalation_count — the executor never
-    // wrote it; assists are journaled architect-side by `rexymcp journal`).
-    let project_escalation_count = match (project_id, telemetry_dir) {
-        (Some(pid), Some(_)) => folded_activities
-            .iter()
-            .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
-            .count() as u32,
-        _ => 0,
-    };
+                .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
+                .count() as u32;
 
-    match status::load_records(repo, session) {
-        Ok(records) => {
-            let summary = status::summarize(&records);
-            let milestone = resolve_milestone(repo, summary.phase.as_deref());
-            // Milestone savings requires the active milestone dir from session data.
-            // Filter by both project_id and milestone_id for accurate scoping.
-            let milestone_costs = resolve_milestone_dir(repo, summary.phase.as_deref())
-                .zip(project_id)
-                .map(|(milestone_dir, pid)| {
-                    let exec_costs: ScopeCosts = phase_runs
-                        .iter()
-                        .filter(|r| {
-                            r.project_id.as_deref() == Some(pid)
-                                && r.milestone_id.as_deref() == Some(milestone_dir.as_str())
-                        })
-                        .fold(ScopeCosts::default(), |mut costs, r| {
-                            costs.executor_in = costs
-                                .executor_in
-                                .saturating_add(r.tokens.input_tokens as u64);
-                            costs.executor_out = costs
-                                .executor_out
-                                .saturating_add(r.tokens.output_tokens as u64);
-                            costs
+            match status::load_records(repo, session) {
+                Ok(records) => {
+                    let summary = status::summarize(&records);
+                    let milestone = resolve_milestone(repo, summary.phase.as_deref());
+                    let milestone_costs = resolve_milestone_dir(repo, summary.phase.as_deref())
+                        .zip(project_id)
+                        .map(|(milestone_dir, pid)| {
+                            costs::scope_costs(
+                                &phase_runs,
+                                &folded_activities,
+                                pid,
+                                Some(&milestone_dir),
+                            )
                         });
-                    let arch =
-                        sum_architect_tokens(&folded_activities, Some(pid), Some(&milestone_dir));
-                    ScopeCosts {
-                        executor_in: exec_costs.executor_in,
-                        executor_out: exec_costs.executor_out,
-                        architect: arch,
+                    DashboardData {
+                        summary,
+                        records,
+                        error: None,
+                        milestone,
+                        milestone_costs,
+                        project_costs,
+                        project_escalation_count,
                     }
-                })
-                .filter(|c| {
-                    c.executor_in > 0
-                        || c.executor_out > 0
-                        || c.architect.input > 0
-                        || c.architect.cache_creation > 0
-                        || c.architect.cache_read > 0
-                        || c.architect.output > 0
-                });
-            DashboardData {
-                summary,
-                records,
-                error: None,
-                milestone,
-                milestone_costs,
-                project_costs,
-                project_escalation_count,
+                }
+                Err(e) => DashboardData {
+                    summary: StatusSummary::default(),
+                    records: Vec::new(),
+                    error: Some(e),
+                    milestone: None,
+                    milestone_costs: None,
+                    project_costs,
+                    project_escalation_count,
+                },
             }
         }
-        Err(e) => DashboardData {
-            summary: StatusSummary::default(),
-            records: Vec::new(),
-            error: Some(e),
-            milestone: None,
-            milestone_costs: None,
-            project_costs,
-            project_escalation_count,
+        None => match status::load_records(repo, session) {
+            Ok(records) => {
+                let summary = status::summarize(&records);
+                let milestone = resolve_milestone(repo, summary.phase.as_deref());
+                let milestone_costs = resolve_milestone_dir(repo, summary.phase.as_deref())
+                    .zip(project_id)
+                    .map(|(milestone_dir, pid)| {
+                        costs::scope_costs(&phase_runs, &[], pid, Some(&milestone_dir))
+                    });
+                DashboardData {
+                    summary,
+                    records,
+                    error: None,
+                    milestone,
+                    milestone_costs,
+                    project_costs: ScopeCosts::default(),
+                    project_escalation_count: 0,
+                }
+            }
+            Err(e) => DashboardData {
+                summary: StatusSummary::default(),
+                records: Vec::new(),
+                error: Some(e),
+                milestone: None,
+                milestone_costs: None,
+                project_costs: ScopeCosts::default(),
+                project_escalation_count: 0,
+            },
         },
     }
 }
-
-/// Run the dashboard event loop. Called by `main.rs`.
 pub fn run_dashboard(
     repo: &Path,
     session: Option<&str>,
@@ -416,12 +371,11 @@ mod tests {
 
         let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
         assert_eq!(
-            data.project_costs,
-            ScopeCosts {
-                executor_in: 3000,
-                executor_out: 1300,
-                architect: ArchitectTokens::default(),
-            },
+            data.project_costs.executor_in, 3000,
+            "project costs must sum phase runs with matching project_id"
+        );
+        assert_eq!(
+            data.project_costs.executor_out, 1300,
             "project costs must sum phase runs with matching project_id"
         );
         // No session phase id → no milestone match.
@@ -453,12 +407,11 @@ mod tests {
 
         let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(this_pid));
         assert_eq!(
-            data.project_costs,
-            ScopeCosts {
-                executor_in: 1000,
-                executor_out: 500,
-                architect: ArchitectTokens::default(),
-            },
+            data.project_costs.executor_in, 1000,
+            "project costs must exclude runs from other project UUIDs and legacy records"
+        );
+        assert_eq!(
+            data.project_costs.executor_out, 500,
             "project costs must exclude runs from other project UUIDs and legacy records"
         );
     }

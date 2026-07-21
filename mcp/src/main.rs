@@ -831,6 +831,7 @@ async fn main() -> anyhow::Result<()> {
                 input_per_mtok: i,
                 output_per_mtok: o,
                 architect: cfg.architect.effective_architect_rates(),
+                executor: cfg.model_rates(&cfg.executor.model),
             };
             let telemetry_dir = cfg.telemetry.dir.as_deref();
             let project_id = rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
