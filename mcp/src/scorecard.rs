@@ -6,41 +6,10 @@ use serde::Serialize;
 use rexymcp_executor::store::metrics;
 use rexymcp_executor::store::telemetry::{Gates, PhaseRun};
 
-/// One row of the model × settings matrix.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct SettingsScorecardRow {
-    pub model: String,
-    /// Sampling-settings label, e.g. "temp=0.2,seed=42" or "default".
-    pub settings: String,
-    pub n_runs: usize,
-    pub gates_pass_rate: f64,
-    pub parse_failure_rate_mean: f64,
-    /// Mean of `length_finish_rate` over runs where it is `Some`. `None` when none.
-    pub length_finish_rate_mean: Option<f64>,
-    pub repairs_per_call_mean: f64,
-    pub tool_success_rate_mean: f64,
-    pub verifier_retries_mean: f64,
-    pub turns_mean: f64,
-    pub wall_clock_s_mean: f64,
-    pub escalation_rate: f64,
-    pub n_with_verdict: usize,
-    pub approved_first_try_rate: Option<f64>,
-    pub bounces_to_approval_mean: Option<f64>,
-    /// Mean peak context-window utilization (a FRACTION in [0.0, 1.0]) over the
-    /// runs in this bucket that carry context telemetry (`peak_context_pct >
-    /// 0.0`). `None` when no run in the bucket is context-measured.
-    pub peak_context_pct_mean: Option<f64>,
-    /// Mean total tokens reclaimed (sum of all four M10 sources) over the same
-    /// context-measured runs. `None` when none are context-measured. A measured
-    /// run that reclaimed nothing contributes `0.0`, not exclusion.
-    pub tokens_reclaimed_mean: Option<f64>,
-}
-
 /// Which secondary dimension the scorecard buckets by (model is always the
 /// primary key). `Model` = no secondary (one row per model); `Tag` = one row per
 /// (model, tag) with tag-explosion; `Settings` = one row per (model, settings).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum ScorecardDimension {
     Model,
     Tag,
@@ -48,8 +17,7 @@ pub enum ScorecardDimension {
 }
 
 /// One aggregated bucket — the dimension-neutral superset row returned by
-/// [`aggregate_scorecard`] (and mapped by the `aggregate_by_settings` wrapper
-/// into `SettingsScorecardRow`). `key` is the secondary-dimension label (`""`
+/// [`aggregate_scorecard`]. `key` is the secondary-dimension label (`""`
 /// for `Model`, the tag for `Tag`, the settings label for `Settings`).
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ScorecardBucket {
@@ -232,38 +200,6 @@ pub fn aggregate_scorecard(
     });
 
     rows
-}
-
-/// Aggregate runs into a **model × settings** competency matrix.
-///
-/// Unlike [`aggregate`] (model × tag, which explodes per tag), each run
-/// contributes to exactly one (model, settings) bucket.
-pub fn aggregate_by_settings(
-    runs: &[PhaseRun],
-    filter: &ScorecardFilter,
-) -> Vec<SettingsScorecardRow> {
-    aggregate_scorecard(runs, ScorecardDimension::Settings, filter)
-        .into_iter()
-        .map(|b| SettingsScorecardRow {
-            model: b.model,
-            settings: b.key,
-            n_runs: b.n_runs,
-            gates_pass_rate: b.gates_pass_rate,
-            parse_failure_rate_mean: b.parse_failure_rate_mean,
-            length_finish_rate_mean: b.length_finish_rate_mean,
-            repairs_per_call_mean: b.repairs_per_call_mean,
-            tool_success_rate_mean: b.tool_success_rate_mean,
-            verifier_retries_mean: b.verifier_retries_mean,
-            turns_mean: b.turns_mean,
-            wall_clock_s_mean: b.wall_clock_s_mean,
-            escalation_rate: b.escalation_rate,
-            n_with_verdict: b.n_with_verdict,
-            approved_first_try_rate: b.approved_first_try_rate,
-            bounces_to_approval_mean: b.bounces_to_approval_mean,
-            peak_context_pct_mean: b.peak_context_pct_mean,
-            tokens_reclaimed_mean: b.tokens_reclaimed_mean,
-        })
-        .collect()
 }
 
 #[derive(Debug, Clone, Default)]

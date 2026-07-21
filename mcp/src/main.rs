@@ -55,6 +55,26 @@ impl From<CalibrateArg> for rexymcp_executor::config::Tier {
     }
 }
 
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum ByArg {
+    #[value(name = "model")]
+    Model,
+    #[value(name = "tag")]
+    Tag,
+    #[value(name = "settings")]
+    Settings,
+}
+
+impl From<ByArg> for scorecard::ScorecardDimension {
+    fn from(a: ByArg) -> Self {
+        match a {
+            ByArg::Model => Self::Model,
+            ByArg::Tag => Self::Tag,
+            ByArg::Settings => Self::Settings,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum RunsCommand {
     /// Show one run's full detail by id (8-hex, or an unambiguous prefix)
@@ -187,8 +207,11 @@ enum Commands {
         /// Emit JSON instead of a human table
         #[arg(long)]
         json: bool,
+
+        /// Bucket by this dimension (model | tag | settings)
+        #[arg(long, value_enum, default_value = "settings")]
+        by: ByArg,
     },
-    /// Aggregate folded runs into a per-(model, tag) capability profile
     Profile {
         /// Path to the config file
         #[arg(long)]
@@ -615,6 +638,7 @@ async fn main() -> anyhow::Result<()> {
             min_runs,
             telemetry_path,
             json,
+            by,
         } => {
             let filter = scorecard::ScorecardFilter {
                 model: model.as_deref(),
@@ -622,9 +646,12 @@ async fn main() -> anyhow::Result<()> {
                 min_runs,
             };
 
-            let rows = match scorecard_cli::load_settings_scorecard(
+            let dimension: scorecard::ScorecardDimension = by.into();
+
+            let rows = match scorecard_cli::load_scorecard(
                 &config,
                 telemetry_path.as_deref(),
+                dimension,
                 &filter,
             ) {
                 Ok(r) => r,
@@ -642,7 +669,7 @@ async fn main() -> anyhow::Result<()> {
                     })
                 );
             } else {
-                println!("{}", scorecard_cli::format_settings_scorecard(&rows));
+                println!("{}", scorecard_cli::format_scorecard(&rows, dimension));
             }
             Ok(())
         }

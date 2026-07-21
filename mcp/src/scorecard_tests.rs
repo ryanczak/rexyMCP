@@ -1,7 +1,4 @@
-use super::{
-    Gates, ScorecardBucket, ScorecardDimension, ScorecardFilter, aggregate_by_settings,
-    aggregate_scorecard,
-};
+use super::{Gates, ScorecardBucket, ScorecardDimension, ScorecardFilter, aggregate_scorecard};
 use rexymcp_executor::ai::types::TokenBreakdown;
 use rexymcp_executor::store::telemetry::PhaseRun;
 use rexymcp_executor::store::telemetry::{ContextEfficiency, GenerationParams};
@@ -11,6 +8,13 @@ use rexymcp_executor::store::telemetry::{ContextEfficiency, GenerationParams};
 /// phase-05a-ii). Returns `ScorecardBucket` (key field is `key`, not `tag`).
 fn aggregate(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardBucket> {
     aggregate_scorecard(runs, ScorecardDimension::Tag, filter)
+}
+
+/// Test convenience: the model×settings aggregation is now `aggregate_scorecard`
+/// with the `Settings` dimension (the `aggregate_by_settings` wrapper was retired
+/// in phase-05a-iii). Returns `ScorecardBucket` (key field is `key`).
+fn aggregate_by_settings(runs: &[PhaseRun], filter: &ScorecardFilter) -> Vec<ScorecardBucket> {
+    aggregate_scorecard(runs, ScorecardDimension::Settings, filter)
 }
 
 fn make_run(
@@ -453,8 +457,8 @@ fn by_settings_buckets_distinct_settings() {
     ];
     let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
     assert_eq!(rows.len(), 2);
-    let row_02 = rows.iter().find(|r| r.settings == "temp=0.2").unwrap();
-    let row_07 = rows.iter().find(|r| r.settings == "temp=0.7").unwrap();
+    let row_02 = rows.iter().find(|r| r.key == "temp=0.2").unwrap();
+    let row_07 = rows.iter().find(|r| r.key == "temp=0.7").unwrap();
     assert_eq!(row_02.n_runs, 2);
     assert_eq!(row_07.n_runs, 1);
 }
@@ -464,7 +468,7 @@ fn by_settings_default_label_for_none() {
     let runs = vec![make_run_with_settings("m1", &["t"], None, None, None)];
     let rows = aggregate_by_settings(&runs, &ScorecardFilter::default());
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].settings, "default");
+    assert_eq!(rows[0].key, "default");
 }
 
 #[test]
@@ -513,7 +517,7 @@ fn by_settings_min_runs_drops_low_sample() {
     };
     let rows = aggregate_by_settings(&runs, &filter);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].settings, "temp=0.7");
+    assert_eq!(rows[0].key, "temp=0.7");
     assert_eq!(rows[0].n_runs, 2);
 }
 
@@ -780,38 +784,6 @@ fn scorecard_row_serializes_context_efficiency_means() {
 }
 
 // --- Unified scorecard aggregation tests (phase 05a-i) ---
-
-#[test]
-fn aggregate_scorecard_settings_matches_wrapper() {
-    let runs = vec![
-        make_run_with_settings("m1", &["t"], Some(0.2), None, None),
-        make_run_with_settings("m1", &["t"], Some(0.7), None, None),
-        make_run_with_settings("m1", &["t"], Some(0.2), None, None),
-    ];
-    let filter = ScorecardFilter::default();
-    let unified = aggregate_scorecard(&runs, ScorecardDimension::Settings, &filter);
-    let wrapped = aggregate_by_settings(&runs, &filter);
-    assert_eq!(unified.len(), wrapped.len());
-    for (u, w) in unified.iter().zip(wrapped.iter()) {
-        assert_eq!(&u.model, &w.model);
-        assert_eq!(&u.key, &w.settings);
-        assert_eq!(u.n_runs, w.n_runs);
-        assert!((u.gates_pass_rate - w.gates_pass_rate).abs() < f64::EPSILON);
-        assert!((u.parse_failure_rate_mean - w.parse_failure_rate_mean).abs() < f64::EPSILON);
-        assert_eq!(u.length_finish_rate_mean, w.length_finish_rate_mean);
-        assert!((u.repairs_per_call_mean - w.repairs_per_call_mean).abs() < f64::EPSILON);
-        assert!((u.tool_success_rate_mean - w.tool_success_rate_mean).abs() < f64::EPSILON);
-        assert!((u.verifier_retries_mean - w.verifier_retries_mean).abs() < f64::EPSILON);
-        assert!((u.turns_mean - w.turns_mean).abs() < f64::EPSILON);
-        assert!((u.wall_clock_s_mean - w.wall_clock_s_mean).abs() < f64::EPSILON);
-        assert!((u.escalation_rate - w.escalation_rate).abs() < f64::EPSILON);
-        assert_eq!(u.n_with_verdict, w.n_with_verdict);
-        assert_eq!(u.approved_first_try_rate, w.approved_first_try_rate);
-        assert_eq!(u.bounces_to_approval_mean, w.bounces_to_approval_mean);
-        assert_eq!(u.peak_context_pct_mean, w.peak_context_pct_mean);
-        assert_eq!(u.tokens_reclaimed_mean, w.tokens_reclaimed_mean);
-    }
-}
 
 #[test]
 fn aggregate_scorecard_tag_explodes_runs_across_tags() {
