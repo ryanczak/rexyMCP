@@ -1,7 +1,7 @@
 # Phase 06c-i: Architect ledger core — transcript-native harvest rewrite
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-06b-ii
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m

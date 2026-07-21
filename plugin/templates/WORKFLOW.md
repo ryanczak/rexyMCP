@@ -434,6 +434,46 @@ predictable bounce — not everything you could say.
 
 ---
 
+## Governing a running phase — the governor terminates, not the architect
+
+Once a phase is dispatched, **the executor's governor is the authority that ends
+the run.** Its terminators — the no-progress stall, the oscillation and
+identical-repetition detectors, `max_turns`, and `wall_clock_secs` — are the
+load-bearing boundary of the executor loop. A run that looks slow, stuck, or is
+grinding through many turns is the governor's call, not the architect's. Letting it
+run is *how* a real stall becomes a `hard_fail` + briefing (the input to
+`/rexymcp:escalate`) and *how* the stall detectors accumulate the data that
+calibrates them; pre-empting the governor destroys both.
+
+**When the architect may cancel a run (`stop_phase`)** — only for one of these
+three enumerated reasons, **never** because a run "looks slow" or "looks stuck":
+
+1. **Explicit human instruction** to stop.
+2. **A clearly mis-dispatched run** — wrong phase, wrong repo, or wrong config.
+3. **A confirmed infrastructure fault the governor cannot see** (e.g. the endpoint
+   died) — not a slow or long-running generation.
+
+A long generation, a repeated tool-call fumble, a frozen diff — all are handled by
+*waiting for the governor*. If the run exposes a spec-shape problem (a too-large
+edit, a missing worked example), the fix is the **next** dispatch's spec — a refined
+re-dispatch via `/rexymcp:escalate` — not killing the current run. The human's
+`rexymcp stop` is always available as a deliberate signal; the architect's
+`stop_phase` is bound by the list above.
+
+**Monitoring an in-flight run — hand off, don't hover.** Claude Code sends no MCP
+progressToken, so the human's `rexymcp status` / `rexymcp dashboard` is the live
+view. In an **interactive** dispatch, the architect confirms the run started, then
+**stops active polling** and hands off — the human watches and signals when to reap,
+or the architect reaps the terminal result on its next turn. A continuous
+`get_run_status` poll loop, with turn-by-turn narration or repeated session-log
+`grep`/`tail`, is a large and avoidable Claude-token cost (each poll re-reads the
+whole context) that buys nothing the dashboard doesn't already show. The
+**autonomous** `/rexymcp:auto` loop has no human to hand off to, so it reaps by
+polling — but minimally, without narration, and it never cancels for slow/stuck
+either.
+
+---
+
 ## What Executors Never Decide
 
 - Whether something belongs in core vs. a plugin.

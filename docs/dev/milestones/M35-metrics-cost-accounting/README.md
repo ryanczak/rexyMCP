@@ -71,7 +71,7 @@ and the executor finally carries a real (configurable) price.
 | 06a | `rexymcp costs` CLI + shared cost-report core ([phase-06a-costs-cli-core.md](phase-06a-costs-cli-core.md)) | done |
 | 06b-i | Dashboard Budget panel → `costs` core + cache buckets; de-dup the copied aggregation ([phase-06b-i-dashboard-rewire-cache.md](phase-06b-i-dashboard-rewire-cache.md)) | done |
 | 06b-ii | Dashboard `b`-key tokens⇄currency toggle ([phase-06b-ii-budget-tokens-toggle.md](phase-06b-ii-budget-tokens-toggle.md)) | done |
-| 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | todo |
+| 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | in-progress |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split | not drafted |
 | 06c-iii | Ledger surfaces: costs/dashboard/profile consume the ledger; per-skill breakdown; harvest freshness | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
@@ -153,3 +153,36 @@ config override**, with 5m and 1h cache-write rates distinguished (the token
 record splits `cache_creation` into 5m/1h buckets); (4) **sequenced before
 phase-07** as 06c-i/ii/iii — accounting correctness first, then 07's
 reporting polish lands on accurate numbers.
+
+**M35-close contract folds (design decisions with the user, 2026-07-21; folds 1–2
+LANDED 2026-07-21 at the user's direction, ahead of the retrospective).**
+Two folds, both surfaced by the 06c-i dispatch episode (architect cancelled two runs
+that looked stuck; the next run pushed through the same step unaided — and the
+monitoring poll-loop burned heavy Claude-Code tokens). Landed in
+`plugin/templates/WORKFLOW.md` + `docs/dev/WORKFLOW.md` (new section "Governing a
+running phase — the governor terminates, not the architect") and
+`plugin/skills/dispatch/SKILL.md` (§2 reap protocol, the Stopping-a-phase policy,
+and §7):
+
+1. **Architect cancellation policy (WORKFLOW + dispatch/architect skills).** Sharpen
+   "stopping is a deliberate act" into an **enumerated** allow-list: the architect
+   may `stop_phase` **only** for (a) explicit human instruction, (b) a clearly
+   mis-dispatched run (wrong phase/repo/config), or (c) a confirmed infra fault the
+   governor can't see. **Never** for "slow"/"stuck"/"long generation" — those belong
+   to the governor's terminators (no-progress stall, oscillation, identical-
+   repetition, `max_turns`, `wall_clock_secs`). Rationale: cancelling out of
+   impatience pre-empts the governor, downgrades a `hard_fail`+briefing into a weak
+   `claude_stop`, and destroys stall-calibration evidence.
+2. **Token-efficient monitoring protocol (dispatch skill).** Replace "keep polling
+   until terminal" with **dispatch → confirm started → stop active polling → human
+   watches `rexymcp status`/dashboard → reap when signalled/next turn.** No 15s poll
+   loop, no turn-by-turn narration, no repeated session-jsonl `tail`/`grep`. Claude
+   Code sends no MCP progressToken, so the human is already the live watcher.
+
+**Token deep-dive (quantify now from raw transcripts, user decision 2026-07-21).**
+Measure Claude-Code token cost in two use cases — (i) per rexymcp skill invocation
+(the full SKILL.md loads on every call) and (ii) in-flight monitoring (the poll/parse
+loop) — directly from `~/.claude/projects/-home-matt-src-rexyMCP/*.jsonl` (dedup by
+`message.id`), independent of the 06c ledger. Goal: cut both cost centers hard
+without impairing review rigor or governor-calibration signal. Feeds folds 1–2 and
+informs whether the skills themselves need trimming.

@@ -60,12 +60,19 @@ Call the `execute_phase` MCP tool with these arguments:
 serve process and returns immediately, before the phase finishes. **Detect and
 adapt** on what it returns:
 
-- **`{ run_id }` present** → the run is in flight; reap it by **polling**
-  `get_run_status(run_id)`. Call it, and while the returned `state == "running"`,
-  **call it again** — each call bounded-long-polls (~15s) server-side, so this is
-  efficient, not a busy spin. Keep polling until the state leaves `running`. There
-  is **no** skill-level poll cap: the run is bounded by its own terminators
-  (`max_turns`, `wall_clock_secs`, the governor). On the terminal state:
+- **`{ run_id }` present** → the run is in flight. **Confirm it started** with a
+  single `get_run_status(run_id)` (expect `running`), then **stop polling and hand
+  off**: tell the user the run is live and that they watch it via `rexymcp status` /
+  `rexymcp dashboard`. **Reap** the terminal `PhaseResult` when the user signals the
+  run finished (or on your next turn) with one more `get_run_status(run_id)`. Do
+  **not** sit in a continuous poll loop, do **not** narrate turn-by-turn, and do
+  **not** `grep`/`tail` the session log for progress — each poll re-reads the whole
+  context (a large, avoidable Claude-token cost; see WORKFLOW.md "Governing a running
+  phase") and the dashboard already shows live progress. The run is bounded by its
+  own terminators (`max_turns`, `wall_clock_secs`, the governor); it does not need
+  you watching. (In an **autonomous** `/rexymcp:auto` run there is no human to hand
+  off to — reap by polling, but minimally: no narration, no log-grep, never cancel
+  for slow/stuck.) When you reap, branch on the terminal state:
   - `state == "done"` → `result` is the `PhaseResult`; branch on `result.status`
     per §3–§6.
   - `state == "failed"` → an **infrastructure** error (config load / scope / IO),
@@ -90,12 +97,20 @@ While a phase is in flight it can be stopped — the M30 interrupt path:
 
 - **Human, second terminal:** `rexymcp stop` writes the `.rexymcp/stop` sentinel;
   the serve-side watcher cancels every live run in that repo (global stop-all).
-- **Architect, between polls:** call `stop_phase(run_id)` — you are free to issue
-  it precisely because you are polling, not blocked inside one long call.
+- **Architect:** call `stop_phase(run_id)` — but **only** for one of the three
+  enumerated reasons in WORKFLOW.md "Governing a running phase": (1) explicit human
+  instruction, (2) a clearly mis-dispatched run (wrong phase/repo/config), or (3) a
+  confirmed infrastructure fault the governor cannot see. **Never** cancel because a
+  run looks slow, stuck, long-running, or is fumbling a tool call — those are the
+  governor's terminators to fire, and cancelling them destroys the `hard_fail` +
+  briefing and the stall-calibration signal. A spec-shape problem (a too-large edit,
+  a missing example) is fixed by the **next** dispatch's spec via `/rexymcp:escalate`,
+  not by killing the current run.
 
 Either way the run comes back terminal with `status: "cancelled"` (§6): a partial
 diff, a `cancellation.reason`, and the working tree left dirty. Stopping is a
-**deliberate** act — the skill never fires it on its own.
+**deliberate, enumerated** act — the skill never fires it on its own, and neither
+does the architect out of impatience.
 
 ## 3. On return: complete
 
@@ -159,8 +174,13 @@ cancel as a failure to escalate on your own.
 - You do **not** review the executor's work. That is `/rexymcp:review`.
 - You do **not** decide escalation levers. That is `/rexymcp:escalate`.
 - You do **not** re-dispatch automatically. The user gates each step.
-- You do **not** stop a running phase on your own — stopping is a deliberate
-  human/architect act (`rexymcp stop` / `stop_phase`), never a skill decision.
+- You do **not** stop a running phase on your own, and you do **not** cancel a run
+  because it looks slow or stuck. `stop_phase` is bound to the three enumerated
+  reasons (human instruction / mis-dispatch / infra fault) in WORKFLOW.md "Governing
+  a running phase"; everything else waits for the governor.
+- You do **not** babysit an in-flight run with a continuous poll loop or turn-by-turn
+  narration — confirm it started, hand off to the human's `rexymcp status` /
+  `dashboard`, and reap when signalled (§2).
 - You do **not** flip phase status. Status management belongs to the
   architect (on dispatch) and the review skill (on approval).
 - You do **not** auto-advance to review or escalate. The user advances
