@@ -1,7 +1,7 @@
 # Phase 05b: `rexymcp profile --cost` — tokens & cost to ship, per approved phase
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress (bounced — see bug-05b-1)
 **Depends on:** phase-05a-iii
 **Estimated diff:** ~190 lines
 **Tags:** language=rust, kind=feature, size=m
