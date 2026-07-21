@@ -5,8 +5,40 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-05a-iii — `scorecard --by model|tag|settings` CLI + dropped columns; retire the Settings wrapper](milestones/M35-metrics-cost-accounting/phase-05a-iii-scorecard-by-cli.md)
-(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05a-iii`).**
+[M35 phase-05b — `profile --cost` tokens & cost to ship, per approved phase](milestones/M35-metrics-cost-accounting/phase-05b-profile-phase-cost.md)
+(status: todo — drafted 2026-07-20, awaiting `/rexymcp:dispatch phase-05b`).**
+
+phase-05b drafted 2026-07-20: adds `rexymcp profile --cost` — a **cost-to-ship-
+per-phase** report (one row per shipped phase — verdict `approved_*`/`escalated` —
+summing tokens+cost across **every** dispatch attempt sharing the phase identity:
+bounces, hard-fails, the landing run). **Design fork resolved with the user
+(2026-07-20):** of three readings of "profile reports tokens & cost per approved
+phase," the user chose the cost-to-ship report (vs. cost columns on the model×tag
+table, vs. a per-approved-run listing). Bare `profile` (capability table) is
+unchanged; `--cost` selects the new mode. Reuses the cost core (`metrics::token_cost`
++ `config.model_rates`), makes `runs.rs`'s `fmt_tokens`/`fmt_cost` `pub(crate)` to
+single-source rendering, and reuses `profile.rs`'s identity-`Key` + latest-review-map
+machinery to group attempts by phase. New `PhaseCost` row + `aggregate_phase_costs`;
+`load_phase_costs`/`format_phase_costs` CLI; `--cost` bool flag. Columns
+PHASE/MILESTONE/ATTEMPTS/VERDICT/TOKENS/COST; unpriced (AEON-7) → cost `—`. size=m.
+Heavily pre-injected (runs.rs cost-render worked example, the latest-review-map
+shape from aggregate_profiles, TokenBreakdown manual field-sum since it has no `Add`).
+
+**M35 phase-05a-iii — done (2026-07-20, approved_first_try; executor
+AEON-7/Qwen3.6-27B-AEON, 92 turns).** `rexymcp scorecard --by model|tag|settings`
+(clap `ByArg` mirroring `CalibrateArg`; default `settings`) + the three dropped
+columns (repairs/verifier-retries/wall-clock); **retired the Settings wrapper**
+(`aggregate_by_settings` + `SettingsScorecardRow` deleted) and **removed the
+`ScorecardDimension` `#[allow(dead_code)]`** — `--by model` gives `Model` its first
+production consumer, **closing the spec_bug thread** carried since 05a-i. Test-local
+`aggregate_by_settings` shim kept the 12 settings-test sites byte-identical (only 5
+`.settings`→`.key`); the tautological wrapper-comparison test deleted. Clean
+first-try; **no `sed` trouble** (guard unexercised, 3 phases running). Gates green
+(554 mcp + 1024 executor); **live E2E** rendered all three dimensions over our own
+M35 corpus with the new columns + `SETTINGS`/`TAG`/`KEY` headers. **After 05a-iii
+the scorecard has one core, one row type (`ScorecardBucket`), no wrappers, no
+`#[allow]`.** The whole scorecard-unification arc (05a-i → 05a-ii → 05a-iii) is
+complete.
 
 phase-05a-iii drafted 2026-07-20: the CLI-side finish of the scorecard
 unification. Adds `rexymcp scorecard --by model|tag|settings` (clap `ByArg`
