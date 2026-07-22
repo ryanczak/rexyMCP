@@ -415,10 +415,10 @@ pub fn read_reviews(path: &Path) -> std::io::Result<Vec<PhaseReview>> {
 }
 
 /// Anthropic prompt-cache rate multipliers relative to the base input rate:
-/// a 5-minute cache **write** costs 1.25× input; a cache **read** costs 0.1×
-/// input. (1-hour cache writes cost 2× input — approximated here as the 1.25×
-/// standard; a dedicated 1h rate can be added additively later.)
+/// a **5-minute** cache write costs 1.25× input, a **1-hour** cache write costs 2×
+/// input, and a cache **read** (hit) costs 0.1× input.
 pub const CACHE_CREATION_RATE_MULTIPLIER: f64 = 1.25;
+pub const CACHE_CREATION_1H_RATE_MULTIPLIER: f64 = 2.0;
 pub const CACHE_READ_RATE_MULTIPLIER: f64 = 0.1;
 
 /// The four token classes an architect (Claude Code) request bills separately.
@@ -619,6 +619,30 @@ pub struct ArchitectLedger {
     pub messages: u64,
     /// Epoch-ms of the latest message in this slice (harvest freshness signal).
     pub last_ts: u64,
+}
+
+impl ArchitectLedger {
+    /// USD cost of this ledger slice at the given base `(input, output)` $/Mtok
+    /// rates. Cache rates derive from the input rate via the standard Anthropic
+    /// multipliers (read 0.1×, 5m-write 1.25×, 1h-write 2×), pricing the 5m and 1h
+    /// cache-write buckets separately.
+    pub fn cost(&self, input_per_mtok: f64, output_per_mtok: f64) -> f64 {
+        let per_m = |toks: u64, rate: f64| (toks as f64 / 1_000_000.0) * rate;
+        per_m(self.tokens.input, input_per_mtok)
+            + per_m(self.tokens.output, output_per_mtok)
+            + per_m(
+                self.tokens.cache_read,
+                input_per_mtok * CACHE_READ_RATE_MULTIPLIER,
+            )
+            + per_m(
+                self.cache_creation_5m,
+                input_per_mtok * CACHE_CREATION_RATE_MULTIPLIER,
+            )
+            + per_m(
+                self.cache_creation_1h,
+                input_per_mtok * CACHE_CREATION_1H_RATE_MULTIPLIER,
+            )
+    }
 }
 
 /// Fold `ArchitectLedger` records: keep the **last** occurrence per
@@ -1773,5 +1797,70 @@ mod tests {
         // l3 stays separate
         assert_eq!(folded[1].tokens.input, 300);
         assert_eq!(folded[1].skill, "skill_b");
+    }
+
+    #[test]
+    fn architect_ledger_cost_prices_5m_and_1h_split() {
+        let l = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "s1".to_string(),
+            model: "claude-opus-4-8".to_string(),
+            skill: "dispatch".to_string(),
+            tokens: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 1_000_000,
+                output: 1_000_000,
+            },
+            cache_creation_5m: 1_000_000,
+            cache_creation_1h: 1_000_000,
+            messages: 5,
+            last_ts: 1_717_000_000_000,
+        };
+        // input: 1M * $5.00 = $5.00
+        // output: 1M * $25.00 = $25.00
+        // cache_read: 1M * $5.00 * 0.1 = $0.50
+        // cache_creation_5m: 1M * $5.00 * 1.25 = $6.25
+        // cache_creation_1h: 1M * $5.00 * 2.0 = $10.00
+        // total = $46.75
+        let cost = l.cost(5.0, 25.0);
+        let expected = 46.75;
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "got {cost}, expected {expected}"
+        );
+    }
+
+    #[test]
+    fn architect_ledger_cost_ignores_total_cache_creation() {
+        let l = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("proj".to_string()),
+            session_id: "s1".to_string(),
+            model: "claude-opus-4-8".to_string(),
+            skill: "dispatch".to_string(),
+            tokens: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 500_000, // inconsistent — should be ignored by cost()
+                cache_read: 0,
+                output: 0,
+            },
+            cache_creation_5m: 1_000_000,
+            cache_creation_1h: 1_000_000,
+            messages: 1,
+            last_ts: 1_717_000_000_000,
+        };
+        // Only the split fields are priced:
+        // input: 1M * $5.00 = $5.00
+        // cache_creation_5m: 1M * $5.00 * 1.25 = $6.25
+        // cache_creation_1h: 1M * $5.00 * 2.0 = $10.00
+        // total = $21.25
+        let cost = l.cost(5.0, 25.0);
+        let expected = 21.25;
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "got {cost}, expected {expected}"
+        );
     }
 }

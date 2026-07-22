@@ -12,6 +12,9 @@ pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
         "claude-fable-5" | "claude-mythos-5" => Some((10.0, 50.0)),
         "claude-opus-4-8" | "claude-opus-4-7" | "claude-opus-4-6" => Some((5.0, 25.0)),
         "claude-sonnet-4-6" => Some((3.0, 15.0)),
+        // Introductory pricing through 2026-08-31; standard (3.0, 15.0) from
+        // 2026-09-01 — override via [architect.rates] after the switch.
+        "claude-sonnet-5" => Some((2.0, 10.0)),
         "claude-haiku-4-5" | "claude-haiku-4-5-20251001" => Some((1.0, 5.0)),
         _ => None,
     }
@@ -89,9 +92,20 @@ pub struct ArchitectConfig {
     /// Model ID for dispatch subagent delegation. `None` means inherit the
     /// session/architect model (not `[architect] model`).
     pub dispatch_model: Option<String>,
-    /// Model ID for review subagent delegation. `None` means inherit the
     /// session/architect model (not `[architect] model`).
     pub review_model: Option<String>,
+    /// Per-model rate overrides (from `[architect.rates]`).
+    pub rates: std::collections::HashMap<String, ArchitectModelRate>,
+}
+
+/// A per-model architect price override (a `[architect.rates."<model>"]` entry):
+/// base `(input, output)` $/Mtok that overrides `known_model_rates` for that model.
+/// Cache rates always derive from `input` via the standard multipliers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchitectModelRate {
+    pub input_per_mtok: f64,
+    pub output_per_mtok: f64,
 }
 
 impl Default for ArchitectConfig {
@@ -104,6 +118,7 @@ impl Default for ArchitectConfig {
             cache_creation_per_mtok: 0.0,
             dispatch_model: None,
             review_model: None,
+            rates: std::collections::HashMap::new(),
         }
     }
 }
@@ -142,6 +157,16 @@ impl ArchitectConfig {
             cache_read_per_mtok: cache_read,
             output_per_mtok: output,
         }
+    }
+
+    /// Resolved base `(input, output)` $/Mtok for **any** architect model by ID: a
+    /// `[architect.rates]` override wins, else the built-in `known_model_rates`.
+    /// `None` when neither knows the model (the cost is then $0; surfaces render "—").
+    pub fn rates_for(&self, model: &str) -> Option<(f64, f64)> {
+        self.rates
+            .get(model)
+            .map(|r| (r.input_per_mtok, r.output_per_mtok))
+            .or_else(|| known_model_rates(model))
     }
 }
 
@@ -1590,6 +1615,7 @@ max_turns = 200
             cache_creation_per_mtok: 0.0,
             dispatch_model: None,
             review_model: None,
+            rates: std::collections::HashMap::new(),
         };
         assert_eq!(a.effective_rates(), (5.0, 25.0));
     }
@@ -1604,6 +1630,7 @@ max_turns = 200
             cache_creation_per_mtok: 0.0,
             dispatch_model: None,
             review_model: None,
+            rates: std::collections::HashMap::new(),
         };
         assert_eq!(a.effective_rates(), (2.5, 12.5));
     }
@@ -2068,6 +2095,7 @@ runaway_output_bytes = 102400
             cache_creation_per_mtok: 0.0,
             dispatch_model: None,
             review_model: None,
+            rates: std::collections::HashMap::new(),
         };
         let rates = cfg.effective_architect_rates();
         assert_eq!(rates.input_per_mtok, 5.0);
@@ -2086,6 +2114,7 @@ runaway_output_bytes = 102400
             cache_creation_per_mtok: 9.0,
             dispatch_model: None,
             review_model: None,
+            rates: std::collections::HashMap::new(),
         };
         let rates = cfg.effective_architect_rates();
         assert_eq!(rates.input_per_mtok, 8.0);
@@ -2264,5 +2293,40 @@ model = "claude-opus-4-8"
         assert_eq!(rates.output_per_mtok, 0.0);
         assert_eq!(rates.cache_read_per_mtok, 0.0);
         assert_eq!(rates.cache_creation_per_mtok, 0.0);
+    }
+
+    #[test]
+    fn known_model_rates_prices_sonnet_5() {
+        assert_eq!(known_model_rates("claude-sonnet-5"), Some((2.0, 10.0)));
+        // Spot-check an existing entry is unchanged.
+        assert_eq!(known_model_rates("claude-opus-4-8"), Some((5.0, 25.0)));
+    }
+
+    #[test]
+    fn architect_rates_for_override_wins_then_known_then_none() {
+        let mut rates = std::collections::HashMap::new();
+        rates.insert(
+            "claude-opus-4-8".to_string(),
+            ArchitectModelRate {
+                input_per_mtok: 9.9,
+                output_per_mtok: 9.9,
+            },
+        );
+        let config = ArchitectConfig {
+            model: None,
+            input_per_mtok: 0.0,
+            output_per_mtok: 0.0,
+            cache_read_per_mtok: 0.0,
+            cache_creation_per_mtok: 0.0,
+            dispatch_model: None,
+            review_model: None,
+            rates,
+        };
+        // Override beats the built-in.
+        assert_eq!(config.rates_for("claude-opus-4-8"), Some((9.9, 9.9)));
+        // Falls through to the built-in table.
+        assert_eq!(config.rates_for("claude-sonnet-5"), Some((2.0, 10.0)));
+        // Unrecognised model with no override.
+        assert_eq!(config.rates_for("some-local-model"), None);
     }
 }

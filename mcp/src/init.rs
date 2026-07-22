@@ -94,6 +94,10 @@ output_filter = true              # filter/truncate bash output to conserve cont
 # dispatch_model = "claude-sonnet-5"   # /rexymcp:auto delegates dispatch to this model (default: inherit)
 # review_model = "claude-sonnet-5"     # /rexymcp:auto delegates review to this model (default: inherit)
 
+# [architect.rates."claude-sonnet-5"]   # override/add a per-model architect rate
+# input_per_mtok = 3.0                   #   (cache rates derive: read 0.1x, 5m 1.25x, 1h 2x)
+# output_per_mtok = 15.0
+
 [telemetry]
 # dir = "/path/to/shared/telemetry"  # cross-project PhaseRun telemetry store
 "#
