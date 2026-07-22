@@ -74,9 +74,9 @@ and the executor finally carries a real (configurable) price.
 | 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | done |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split ([phase-06c-ii-architect-pricing.md](phase-06c-ii-architect-pricing.md)) | done |
 | 06c-iii-a | Rewire costs + dashboard architect cost onto the ledger (per-model); milestone architect = `—`; restore doc ([phase-06c-iii-a-ledger-cost-rewire.md](phase-06c-iii-a-ledger-cost-rewire.md)) | done |
-| 06c-iii-b | Ledger new surfaces: per-skill architect breakdown + harvest-freshness display | not drafted |
+| 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | todo |
 | 06d | Dashboard fixes: budget `b`-toggle border hint, trailing-row trim, session milestone + full phase name | not drafted |
-| 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` | not drafted |
+| 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` + sweep-liveness indicator (absorbs harvest-freshness) | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect
@@ -240,3 +240,15 @@ Five pre-close issues, grouped into **06d** (dashboard fixes, issues 2–5) and 
      `phase-06b`). **This is a recurrence of bug-05b-1** (coarse `phase_id` vs the
      doc-stem) on the dashboard surface — the session panel must show the full phase
      name. Fix at the source or derive the stem from the phase_doc_path.
+**06c-iii-b scope refinement + freshness → 06e (2026-07-21, with the user).** The
+user observed that **06e's periodic background sweep makes a harvest-*freshness*
+display redundant** — the sweep keeps the ledger continuously fresh, so a per-`costs`
+"is this stale?" footer loses its purpose (it was a workaround for forgotten *manual*
+harvests). The residual concern is *sweep liveness* ("is the sweep running / when did
+it last run?"), which belongs with the sweep in **06e**, not on `costs`. So:
+**harvest-freshness is dropped from 06c-iii-b and folded into 06e** as a sweep-liveness
+indicator. **06c-iii-b is now per-skill-breakdown only:** (1) `rexymcp costs` **always
+appends** a per-skill architect table — **SKILL / TOKENS / COST / %-of-architect**,
+project-scoped, per-model priced, sorted by cost desc (the deep-dive found dispatch ≈
+49%); (2) the dashboard Budget panel gains a **one-line top-skill hint** (not a full
+mini-panel — keeps the TUI change small, given the executor's struggles there).

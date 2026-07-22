@@ -4,9 +4,24 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none pending `/rexymcp:architect next` — phase-06c-iii-a is `done`.**
-Remaining M35: **06c-iii-b** (per-skill breakdown + harvest freshness) → **06d**
-(dashboard fixes) → **06e** (auto-telemetry) → **07** (reporting debt) closes M35.
+**Active phase:
+[M35 phase-06c-iii-b — per-skill architect cost breakdown](milestones/M35-metrics-cost-accounting/phase-06c-iii-b-per-skill-breakdown.md)
+(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-iii-b`).**
+
+phase-06c-iii-b drafted 2026-07-21: surfaces per-skill architect spend from the ledger.
+`rexymcp costs` **always appends** a per-skill table (**SKILL / TOKENS / COST / %**,
+project-scoped, per-model priced, sorted by cost desc — the deep-dive found dispatch ≈
+49%), and the dashboard Budget panel gets a **one-line top-skill hint** (not a full
+panel — small TUI change, given the executor's TUI struggles). Additive: a new
+`SkillCost` + `skill_costs()` (mirrors 06c-iii-a's ledger grouping/pricing) +
+`CostReport.by_skill` + `DashboardData.top_skill`. **Freshness dropped → 06e:** the
+user noted 06e's periodic sweep makes a harvest-*freshness* display redundant (it kept
+the ledger fresh); the residual *sweep-liveness* concern folds into 06e. size=m (~250
+lines). Carries the hardened 06c gotchas (patch-not-write, read-once — three prior
+runs died on `sed -n` repetition).
+
+Remaining M35 after this: **06d** (dashboard fixes) → **06e** (auto-telemetry + sweep
+liveness) → **07** (reporting debt) closes M35.
 
 **M35 phase-06c-iii-a — done (2026-07-21, escalated / session takeover; executor
 AEON-7/Qwen3.6-27B-AEON did the core rewire, Claude Code finished/repaired).**
