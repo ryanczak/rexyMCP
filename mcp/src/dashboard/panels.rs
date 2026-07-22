@@ -1874,7 +1874,8 @@ mod tests {
             "Assists row should no longer appear in savings_lines output"
         );
     }
-#[test]
+
+    #[test]
     fn savings_lines_architect_cost_shown_from_project_costs() {
         // architect_*_tokens > 0 with configured architect rates → non-zero Architect value
         let summary = StatusSummary {
