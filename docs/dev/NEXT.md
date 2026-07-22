@@ -4,12 +4,28 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none pending `/rexymcp:architect next` — phase-06c-i is `done`.**
-Remaining M35 phases: **06c-ii** (per-model architect pricing) → **06c-iii** (ledger
-surfaces) → **06d** (dashboard fixes) → **06e** (auto-telemetry: periodic background
-sweep in serve) → **07** (reporting debt) closes M35. 06d + 06e were added 2026-07-21
-from the user's pre-close issue list (see the M35 README "Dashboard fixes +
-auto-telemetry" note for the 5 triaged issues + code locations).
+**Active phase:
+[M35 phase-06c-ii — per-model architect pricing (Claude price table + 5m/1h split)](milestones/M35-metrics-cost-accounting/phase-06c-ii-architect-pricing.md)
+(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-ii`).**
+
+phase-06c-ii drafted 2026-07-21: prices an `ArchitectLedger` (06c-i) at its OWN model's
+rate with the **5m/1h cache-write split** (1h = 2× input, was collapsed to 1.25×).
+Additive pricing core: adds `CACHE_CREATION_1H_RATE_MULTIPLIER = 2.0` +
+`ArchitectLedger::cost(input, output)` (derives read 0.1× / 5m 1.25× / 1h 2× from base
+input, prices the split not the total), adds the missing `claude-sonnet-5` = (2.0, 10.0)
+intro rate to `known_model_rates`, and a `[architect.rates]` per-model override
+(`ArchitectModelRate` + `ArchitectConfig::rates_for`). **Rates fetched live from
+Anthropic (2026-07-21)** — existing table entries all confirmed correct (fable 10/50,
+opus-4-8 5/25, haiku 1/5); only sonnet-5 was missing (intro $2/$10 through 2026-08-31,
+then $3/$15 — override handles the switch). Mutation-proof E2E: opus 1M 1h-write must
+cost exactly $10.00 (matches the published per-Mtok column; fails if the 1h multiplier
+is wrong). **No surface consumer yet** — 06c-iii wires `costs`/dashboard/`profile` onto
+it; `costs.rs`/dashboard/`profile` untouched here. size=m (~230 lines).
+
+Remaining M35 phases after this: **06c-iii** (ledger surfaces) → **06d** (dashboard
+fixes) → **06e** (auto-telemetry: periodic background sweep in serve) → **07**
+(reporting debt) closes M35. 06d + 06e were added 2026-07-21 from the user's pre-close
+issue list (see the M35 README "Dashboard fixes + auto-telemetry" note).
 
 **M35 phase-06c-i — done (2026-07-21, escalated / session takeover; executor
 AEON-7/Qwen3.6-27B-AEON did the implementation).** Transcript-native architect
