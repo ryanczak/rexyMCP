@@ -4,9 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06c-ii — per-model architect pricing (Claude price table + 5m/1h split)](milestones/M35-metrics-cost-accounting/phase-06c-ii-architect-pricing.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-ii`).**
+**Active phase: none pending `/rexymcp:architect next` — phase-06c-ii is `done`.**
+Remaining M35: **06c-iii** (ledger surfaces) → **06d** (dashboard fixes) → **06e**
+(auto-telemetry) → **07** (reporting debt) closes M35.
+
+**M35 phase-06c-ii — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
+105 turns clean).** Per-model architect pricing core: `CACHE_CREATION_1H_RATE_MULTIPLIER
+= 2.0` (was collapsed to 1.25×), `ArchitectLedger::cost(input, output)` pricing the 5m/1h
+split via the standard multipliers, `claude-sonnet-5 = (2.0, 10.0)` added to the built-in
+table (rates fetched live from Anthropic; all existing entries confirmed correct), and a
+`[architect.rates]` per-model override (`ArchitectModelRate` + `ArchitectConfig::rates_for`).
+Both headlines **mutation-verified at review** (wrong 1h multiplier → cost tests fail;
+split-vs-total → ignores_total test fails); cost matches Anthropic's published columns
+(opus 1h $10 / 5m $6.25 / read $0.50). Executor committed as `28e0fad`; gates green
+(579 mcp + 1031 executor). **One minor deviation accepted:** the patch damaged the adjacent
+`review_model` doc comment (config.rs:95) — cosmetic; **the 1-line restore is folded into
+06c-iii** (which edits config.rs to wire `costs` onto `rates_for`). **First clean
+first-try dispatch of the whole 06c arc** (06c-i needed a takeover). 06d + 06e were added
+2026-07-21 from the user's pre-close issue list; the harvest/journal CLI deprecation is an
+open question recorded for 06e (see the M35 README).
 
 phase-06c-ii drafted 2026-07-21: prices an `ArchitectLedger` (06c-i) at its OWN model's
 rate with the **5m/1h cache-write split** (1h = 2× input, was collapsed to 1.25×).

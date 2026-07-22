@@ -1,7 +1,7 @@
 # Phase 06c-ii: Per-model architect pricing — built-in Claude table + 5m/1h cache-write split
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-06c-i
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -396,3 +396,26 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+### Update — ts (complete, server-authored)
+
+**Summary:** Implemented the architect pricing core in 105 turns: `CACHE_CREATION_1H_RATE_MULTIPLIER = 2.0` + corrected comment; `ArchitectLedger::cost` pricing the 5m/1h split; `claude-sonnet-5 = (2.0, 10.0)`; `ArchitectModelRate` + `ArchitectConfig::rates_for` + init-template example. All four gates green (579 mcp + 1031 executor). Committed by the executor as `28e0fad`.
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (105 turns, clean — no hard_fail/stall on this phase)
+- **Scope deviations:** one **minor**, accepted (not bounced): the `patch` adding the `rates`
+  field to `ArchitectConfig` **damaged the adjacent existing `review_model` doc comment**
+  (config.rs:95) — it dropped the first line, leaving a dangling `/// session/architect model
+  (not [architect] model).` fragment. Cosmetic (compiles, clippy-clean, no behavior); a
+  regression to existing code, not new phase work. **Not worth re-dispatching an otherwise
+  mutation-verified phase** on this executor's rough-arc history — **the 1-line doc restore
+  is folded into 06c-iii** (which edits config.rs to wire `costs` onto `rates_for`).
+- **Calibration:** none new — **notably clean.** Both headline behaviors are mutation-verified
+  at review: (1) `CACHE_CREATION_1H_RATE_MULTIPLIER` 2.0→1.25 makes both cost tests fail
+  ($46.75→$43); (2) pricing `tokens.cache_creation` instead of the 5m split makes
+  `architect_ledger_cost_ignores_total_cache_creation` fail. The cost math matches Anthropic's
+  published per-Mtok columns (opus 1h-write $10.00 / 5m $6.25 / read $0.50) — real-artifact
+  verification for a core with no runtime consumer until 06c-iii. `costs.rs`/dashboard/`profile`
+  untouched as required.
