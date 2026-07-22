@@ -203,6 +203,27 @@ Five pre-close issues, grouped into **06d** (dashboard fixes, issues 2–5) and 
   the sweep records what's inferable, it does not invent verdicts. Today these are
   explicit CLI subcommands (`Commands::{Harvest,Journal,Review}` in `mcp/src/main.rs`)
   invoked with args by the skills; 06e makes them self-service inside serve.
+
+  **Deprecation design note (open question for 06e — user-raised 2026-07-21).** Once
+  the sweep automates capture, do the `harvest`/`journal` *CLI subcommands* still earn
+  their keep? The underlying **functions** (`harvest()`, `journal::record_activity()`)
+  stay — the sweep is built on them; this is only about the CLI entry points + the
+  `/auto` skill's explicit calls (the sole invokers — no interactive skill uses them).
+  - **`harvest` CLI → deprecate.** Fully automatable by the sweep (derives everything);
+    keep the function, drop the user-facing command (or demote to a hidden `--backfill`
+    debug path) and remove the `/auto` call.
+  - **`journal` CLI → decide in 06e, gated on what the sweep can reconcile.** Post-06c-iii
+    the ledger takes over token attribution, leaving `ArchitectActivity`'s **only**
+    remaining consumer the **assist count** (`activity == "assist"`, read at
+    `costs.rs:205` + `dashboard/mod.rs:63`). The ledger can't derive it (aggregated
+    `session×model×skill` — knows escalate *happened*, not *how many* assists), but
+    **serve can** — it observes every dispatch / hard_fail / refine-re-dispatch cycle in
+    its own run history. **If 06e's sweep reconciles assist counts from serve's run
+    history, then `journal` + `ArchitectActivity` + the `/auto` journal/harvest calls all
+    retire together** (a real simplification). If not, `harvest` still goes but
+    `journal`/assists stay in an auto-reconciled form.
+  - **Do not deprecate anything before 06c-iii + 06e land** — pulling the CLIs before the
+    sweep replaces them would break `/auto` mid-milestone.
 - **[06d] Dashboard fixes (issues 2–5), all in `mcp/src/dashboard/`:**
   1. **Budget `b`-toggle border hint (2).** Mirror the Activity panel's
      `.title(" Activity [f=filter] ")` (`render.rs:297`) — the Budget panel border
