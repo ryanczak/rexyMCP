@@ -82,7 +82,7 @@ and the executor finally carries a real (configurable) price.
 | 07b | Reporting debt: `output_bytes` output-flood **signal** in `calibrate-governor` (replay captures `ToolResult`; new `Signal` + percentile) ([phase-07b-output-flood-signal.md](phase-07b-output-flood-signal.md)) | done |
 | 07c | Reporting debt: `calibrate-governor` **rendering alignment** (move `percentile`→shared `metrics.rs`) + **discoverability** ("See also" cross-refs across runs/scorecard/profile/costs/calibrate-governor) ([phase-07c-calibrate-alignment-discoverability.md](phase-07c-calibrate-alignment-discoverability.md)) — reporting-debt complete; **M35 held open for cleanup** | done |
 | 07d | M35-close cleanup batch: fix `profile` help wording + remove Budget `Assists:` row + Budget border `[b=toggle view]` ([phase-07d-budget-cleanup-batch.md](phase-07d-budget-cleanup-batch.md)) — approved_after_1 (bug-07d-1 fixed) | done |
-| 07e | M35-close cleanup — Budget panel content: **negative-value column alignment** (#5, parenthesized debits align with non-paren values) + **combine the token in/out lines** into one (`Tokens in: N out: N`, #6 — also shortens Budget by a row) | not drafted |
+| 07e | M35-close cleanup — Budget panel content: **negative-value column alignment** (#5, parenthesized debits align with non-paren values) + **combine the token in/out lines** into one (`Tokens in: N out: N`, #6 — also shortens Budget by a row) ([phase-07e-budget-content-align.md](phase-07e-budget-content-align.md)) | todo |
 | 07f | M35-close cleanup: **trailing blank row** on Session/Budget/Context header panels (reopens 06d-2; drafted after 07d settles Budget height) | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect

@@ -4,10 +4,20 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — next to draft is
-[M35 phase-07e — Budget panel content (#5 alignment + #6 token-line combine)](milestones/M35-metrics-cost-accounting/README.md)
-(run `/rexymcp:architect next` to draft it). M35 remains DELIBERATELY HELD OPEN for the
-cleanup pass; the close retrospective is pending.**
+**Active phase:
+[M35 phase-07e — Budget panel content (#5 alignment + #6 token-line combine)](milestones/M35-metrics-cost-accounting/phase-07e-budget-content-align.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07e`). M35 remains
+DELIBERATELY HELD OPEN for the cleanup pass; the close retrospective is pending.**
+
+phase-07e drafted 2026-07-22: **#5** align the parenthesized debit values in the Budget
+savings block — debit rows render `($1.23)` and non-debit `$1.23`, both right-aligned in
+the same width, so the `)` pushes the debit digits one column left; fix = give non-debit
+Baseline/Net a matching ` v ` gutter (`space_pad`) so `{:>W}` aligns all digits (minimal
+touch — `make_row`/`paren`/header/tokens-mode untouched; the header-vs-value 1-col offset
+left as a cosmetic non-goal). **#6** combine `budget_lines`' two token lines into one
+`Tokens in: N out: N` (also shortens Budget by a row). Both in `panels.rs`. Mutation-
+sensitive alignment test pins the decimal-point columns equal across a debit + non-debit
+row. Carries the anti-oscillation gotcha (compiler-locates-syntax-errors).
 
 **phase-07d — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
 The low-risk cleanup batch: **#1** fixed `profile`'s inaccurate `about` (dropped the false
