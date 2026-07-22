@@ -77,7 +77,7 @@ and the executor finally carries a real (configurable) price.
 | 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | review |
 | 06d | Dashboard correctness: full `phase_id` (fixes session milestone + phase display; also bug-05b-1 root) + budget `b`-toggle border hint ([phase-06d-dashboard-fixes.md](phase-06d-dashboard-fixes.md)) | done |
 | 06d-2 | ~~Dashboard trailing-row (issue 3)~~ — **closed won't-fix** (accept the blank; see Notes) | closed |
-| 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` + sweep-liveness indicator (absorbs harvest-freshness) | not drafted |
+| 06e | Auto-telemetry: periodic background **harvest** sweep inside `serve` + liveness marker + `costs` liveness line ([phase-06e-auto-telemetry-sweep.md](phase-06e-auto-telemetry-sweep.md)) — journal-reconcile + CLI-deprecation deferred (serve can't reconcile assists) | todo |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect

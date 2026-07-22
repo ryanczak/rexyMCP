@@ -4,9 +4,25 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — next to draft is
-[M35 phase-06e — auto-telemetry sweep](milestones/M35-metrics-cost-accounting/README.md)
-(run `/rexymcp:architect next` to draft it).**
+**Active phase:
+[M35 phase-06e — auto-telemetry sweep inside `serve`](milestones/M35-metrics-cost-accounting/phase-06e-auto-telemetry-sweep.md)
+(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06e`).**
+
+phase-06e drafted 2026-07-21: adds a **periodic background harvest sweep inside
+`rexymcp serve`** so the architect ledger stays fresh with zero manual steps —
+on an interval (`[telemetry] sweep_interval_secs`, default 1800s) it re-runs
+`harvest()` (transcript dir derived from serve's cwd via the `/`→`-` slug munge,
+project-id from config), writes a `sweep_state.json` liveness marker, and
+`rexymcp costs` gains a plain-text `Last swept: …` line. **Design finding baked
+in:** `serve` provably **cannot reconcile assist counts** (in-memory transient
+run registry; blind to architect-side escalation round-trips), so **journal
+reconciliation is out of scope** — the sweep re-runs harvest only. **CLI
+deprecation deferred** (journal must stay regardless; pulling CLIs mid-milestone
+risks `/auto`). **Dashboard liveness deferred** — surfaces only via the `costs`
+plain-text line (keeps this phase off the executor's known ratatui hard-fail
+zone). Additive shape: new `mcp/src/sweep.rs` + one `TelemetryConfig` field + two
+small `main.rs` edits. size=m (~450 lines). Carries the M35 editing gotchas
+(patch-not-write, read-once, no repeated identical calls).
 
 **phase-06d — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON, 34
 turns, clean).** `derive_phase_id` now keeps all leading id segments (digits / single
