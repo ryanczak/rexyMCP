@@ -1,7 +1,7 @@
 # Phase 07a: Calibration reports the low tail for the lower-is-worse oscillation signal
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-06e
 **Estimated diff:** ~300 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -344,4 +344,35 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 7cd66b495083c296dbbf68a0fa18bdf0f0042a25
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (90 turns, clean — no hard_fail)
+- **Scope deviations:** none — single file (`mcp/src/calibrate_governor.rs`, +222/−11), exactly
+  Tasks 1–3. `TailDirection` + `Signal::direction()` (only `OscillationMinDistinct` →
+  `LowerIsWorse`); `ReportRow` renamed to `p_mid`/`p_near`/`p_far` + a `tail` string
+  (self-describing, nothing mislabeled); both build sites route by direction; `format_report`
+  labels `P50/P10/P1` for oscillation with a low-is-worse note, `P50/P90/P99` elsewhere. Live
+  detector, sample extractors, and the five higher-is-worse signals untouched.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `606` mcp-bin +
+  `1031` executor-lib). **Real-artifact E2E against the live corpus:** `calibrate-governor
+  --repo .` renders the `oscillation_min_distinct` block with `P50 P10 P1` + the lower-is-worse
+  annotation, all five other blocks with `P50 P90 P99`; `--json` tags 15 rows `"lower-is-worse"`
+  / 81 `"higher-is-worse"`. Tests mutation-sensitive: `oscillation_report_surfaces_low_tail`
+  asserts `tail == "lower-is-worse"` and `p_far <= p_near`, and `format_report_labels_oscillation_tail_low`
+  requires `P10` in output — both fail if `direction()` is reverted to higher-is-worse.
+- **Calibration:**
+  1. **Architect spec bug (my error):** this doc's E2E block gave the wrong flag
+     (`calibrate-governor --config rexymcp.toml`); the command takes `--repo`, not `--config`.
+     The executor still verified the live output correctly (its summary matched the real
+     render), so no harm — but fix the E2E command when reusing this shape.
+  2. **Minor test-quality nit:** `higher_is_worse_signal_reports_high_tail_unchanged` guards its
+     assertion behind `if !novel_rows.is_empty()`, so it can pass vacuously. Harmless here — the
+     higher-is-worse mapping is pinned non-vacuously by `signal_direction_maps_oscillation_low_others_high`
+     and the E2E — but the guard is the "assert nothing" shape STANDARDS §5 warns about.
+  3. **Status-flip header clobber did NOT recur** — 07a's header is intact (Milestone line
+     preserved, single `Status`), consistent with [[status-flip-clobbers-milestone-line]] being a
+     first-occurrence one-off. Still watching.
 

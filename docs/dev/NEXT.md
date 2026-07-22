@@ -4,20 +4,21 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-07a — calibration low-tail for the oscillation signal](milestones/M35-metrics-cost-accounting/phase-07a-oscillation-low-tail.md)
-(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07a`).**
+**Active phase: none dispatchable — next to draft is
+[M35 phase-07b — `output_bytes` output-flood signal](milestones/M35-metrics-cost-accounting/README.md)
+(run `/rexymcp:architect next` to draft it).**
 
-phase-07a drafted 2026-07-22: fixes the M35 exit-criterion item *"oscillation
-calibration reports low percentiles for its lower-is-worse signal."* `rexymcp
-calibrate-governor` reports p50/p90/p99 (high tail) for every signal, but
-`oscillation_min_distinct` is **lower-is-worse** (a small min-distinct = oscillation),
-so oscillatory runs never surface. Fix (all in `mcp/src/calibrate_governor.rs`): add a
-`TailDirection` + `Signal::direction()` (only `OscillationMinDistinct` is
-`LowerIsWorse`), and report the low tail (p50/p10/p1) for it while the other five keep
-p50/p90/p99. Rows become self-describing (a tail/direction field, no mislabeled `p90`
-holding a p10). **Calibration reporting only — the live oscillation detector is
-untouched.** size=m (~300 lines), single file.
+**phase-07a — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
+90 turns, clean).** `rexymcp calibrate-governor` now reports the **low tail**
+(P50/P10/P1) for the lower-is-worse `oscillation_min_distinct` signal while the other
+five keep P50/P90/P99 — fixing the M35 exit-criterion item (oscillatory runs, which sit
+in the low tail, finally surface). All in `mcp/src/calibrate_governor.rs`: `TailDirection`
++ `Signal::direction()`, `ReportRow` renamed to `p_mid`/`p_near`/`p_far` + a `tail` field
+(self-describing JSON), direction-routed build sites + per-signal header labels. Live
+E2E confirmed (oscillation block shows `P50 P10 P1` + a lower-is-worse note; JSON tags 15
+rows `lower-is-worse`). Live detector untouched. **Calibration:** the doc's E2E command
+had a wrong flag (`--config` vs `--repo`) — my spec bug, executor verified correctly
+anyway; a minor vacuous-guard test nit. Header clobber did **not** recur.
 
 **phase-07 was split into 07a/07b/07c** (the whole "reporting debt" grab-bag is too big
 for one session): **07a** oscillation low-tail (this) → **07b** `output_bytes`
