@@ -4,9 +4,27 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — next to draft is
-[M35 phase-07b — `output_bytes` output-flood signal](milestones/M35-metrics-cost-accounting/README.md)
-(run `/rexymcp:architect next` to draft it).**
+**Active phase:
+[M35 phase-07b — output-flood calibration signal](milestones/M35-metrics-cost-accounting/phase-07b-output-flood-signal.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07b`).**
+
+phase-07b drafted 2026-07-22: adds the **output-flood calibration signal** to
+`calibrate-governor`. The replay currently drops `ToolResult` events (`_ => {}`), so the
+`output_bytes` field phase-02 added is never read and the windowed-output-flood detector
+can't be calibrated. Fix (all in `mcp/src/calibrate_governor.rs`): collect
+`ToolResult.output_bytes` into `RunReplay`, add an `OutputFloodWindowedBytes` `Signal`
+whose sample is the **max sum over any 6-output sliding window** per run (mirrors the
+live `check_windowed_output`; window 6 = the default `output_window`). Higher-is-worse,
+so it flows through 07a's direction-aware percentile path and reports P50/P90/P99 with
+**no report-layer change**. Wire the variant through all six spots (enum/label/samples/
+SIGNALS/format_report's label list; direction's `_` arm already covers it). Single file,
+additive. size=m (~230 lines).
+
+**phase-07 split → 07a (done) / 07b (this) / 07c.** **07c** closes M35:
+`calibrate-governor` rendering alignment (move `percentile` → shared `metrics.rs` + adopt
+scorecard/runs table conventions) **+ discoverability** (undefined in-repo — needs a
+definition pass with the user when 07c is drafted; anchor = "every recorded number is
+either displayed somewhere or deleted").
 
 **phase-07a — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
 90 turns, clean).** `rexymcp calibrate-governor` now reports the **low tail**
