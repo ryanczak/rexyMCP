@@ -4,29 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06e — auto-telemetry sweep inside `serve`](milestones/M35-metrics-cost-accounting/phase-06e-auto-telemetry-sweep.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06e`).**
+**Active phase: none dispatchable — next to draft is
+[M35 phase-07 — reporting debt](milestones/M35-metrics-cost-accounting/README.md)
+(run `/rexymcp:architect next` to draft it). phase-07 closes M35.**
 
-phase-06e drafted 2026-07-21: adds a **periodic background harvest sweep inside
-`rexymcp serve`** so the architect ledger stays fresh with zero manual steps —
-on an interval (`[telemetry] sweep_interval_secs`, default **60s**) it re-runs
-`harvest()` (transcript dir derived from serve's cwd via the `/`→`-` slug munge,
-project-id from config), writes a `sweep_state.json` liveness marker, and
-`rexymcp costs` gains a plain-text `Last swept: …` line. **A skip-guard makes 60s
-safe:** the sweep tracks a watermark (max transcript mtime at last harvest) and
-**skips the harvest append when nothing changed** — so idle ticks don't bloat the
-append-only `phase_runs.jsonl`; it re-harvests only when a transcript actually
-changed. **Design finding baked
-in:** `serve` provably **cannot reconcile assist counts** (in-memory transient
-run registry; blind to architect-side escalation round-trips), so **journal
-reconciliation is out of scope** — the sweep re-runs harvest only. **CLI
-deprecation deferred** (journal must stay regardless; pulling CLIs mid-milestone
-risks `/auto`). **Dashboard liveness deferred** — surfaces only via the `costs`
-plain-text line (keeps this phase off the executor's known ratatui hard-fail
-zone). Additive shape: new `mcp/src/sweep.rs` + one `TelemetryConfig` field + two
-small `main.rs` edits. size=m (~450 lines). Carries the M35 editing gotchas
-(patch-not-write, read-once, no repeated identical calls).
+**phase-06e — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
+105 turns, clean).** Periodic background **harvest sweep inside `rexymcp serve`**: on an
+interval (`[telemetry] sweep_interval_secs`, default **60s**) it re-runs `harvest()`
+(transcript dir from serve's cwd via the `/`→`-` slug munge), writes a
+`sweep_state.json` liveness marker, and `rexymcp costs` shows a `Last swept: …` line. A
+**skip-guard** (watermark = max transcript mtime at last harvest; pure `should_harvest`)
+skips the append when nothing changed, so idle 60s ticks don't bloat the append-only
+`phase_runs.jsonl`. New `mcp/src/sweep.rs` (12 tests) + one `TelemetryConfig` field + two
+`main.rs` edits; all four gates green. **Design finding baked in:** `serve` provably
+cannot reconcile assist counts (transient in-memory registry; blind to architect-side
+escalation round-trips), so **journal reconciliation + CLI deprecation stay deferred**;
+dashboard liveness deferred (surfaces only via the `costs` plain-text line).
+**Calibration (first occurrence — watch):** the status-flip machinery clobbered the
+phase doc's `**Milestone:**` header line (wrote the new `**Status:**` over it, leaving a
+duplicate); repaired at approval. A bookkeeping-machinery bug, not a code defect — fold
+into the M35 close if it recurs. Full detail in the phase doc's Review verdict.
 
 **phase-06d — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON, 34
 turns, clean).** `derive_phase_id` now keeps all leading id segments (digits / single

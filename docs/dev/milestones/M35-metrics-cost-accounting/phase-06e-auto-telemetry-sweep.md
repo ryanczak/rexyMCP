@@ -1,7 +1,7 @@
 # Phase 06e: Auto-telemetry — periodic background harvest sweep inside `serve` + liveness
 
-**Status:** review
-**Status:** todo
+**Milestone:** M35 — Metrics & Cost Accounting Overhaul
+**Status:** done
 **Depends on:** phase-06c-iii-b, phase-06d
 **Estimated diff:** ~520 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -579,4 +579,37 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** b8d8ba702992cce926006bf8eb60cb98bbf7817a
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (105 turns, clean — no hard_fail)
+- **Scope deviations:** none — code is exactly Task 1–4 (`TelemetryConfig.sweep_interval_secs`
+  + accessor; new `mcp/src/sweep.rs`; serve-handler spawn; `costs` liveness line). No
+  out-of-scope files touched (`harvest.rs`/`journal.rs`/`dashboard/**`/`costs.rs`
+  module/`architecture.md` all untouched — confirmed by diff). Skip-guard implemented as
+  specced (watermark = max transcript mtime; pure `should_harvest`; `sweep_once` skips the
+  append on no-change). Reviewer re-ran all four gates green (fmt/build/clippy;
+  `1031` executor-lib + `602` mcp-bin tests, incl. all 12 `sweep::tests`), and the
+  `sweep_once_skips_append_when_unchanged` test is mutation-sensitive (asserts
+  `phase_runs.jsonl` line count is unchanged across an idle second sweep). E2E: `costs`
+  prints `Last swept: never` (no marker yet); `--json` unchanged.
+- **Calibration:**
+  1. **Status-flip machinery clobbered the header (first occurrence — watch).** The
+     executor's status flip (commit `b8d8ba7`) wrote `**Status:** in-progress` over line 3
+     (the `**Milestone:**` line) instead of the existing `**Status:**` line, leaving a
+     duplicate `**Status:**` and dropping the Milestone line; finalize then flipped the
+     mis-placed line to `review`. Repaired during approval (Milestone restored, single
+     `Status: done`). Not a code defect; a bookkeeping-machinery bug that will silently
+     corrupt any phase-doc header whose `**Status:**` is not the first frontmatter line.
+     06c-iii-b/06d were unaffected, so this is a first occurrence — fold into the M35
+     close if it recurs.
+  2. **`costs` liveness ignores `--telemetry-path` (nit, spec-authored).** The liveness
+     read uses `cfg.telemetry.dir` (as Task 4 pinned), so `costs --telemetry-path X` reads
+     the report from X but the liveness line from `cfg.telemetry.dir`. Harmless (the sweep
+     writes to the configured dir), but a consistency follow-up candidate.
+  3. **Stale rust-analyzer diagnostics were a non-issue** — IDE flagged E0063/E0107 in
+     out-of-scope files (`dashboard/mod.rs`/`profile.rs`) from a mid-run editing snapshot;
+     the authoritative compiler (`cargo build`/`clippy`) is clean.
 
