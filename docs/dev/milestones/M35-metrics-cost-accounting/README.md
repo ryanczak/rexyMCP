@@ -79,7 +79,7 @@ and the executor finally carries a real (configurable) price.
 | 06d-2 | ~~Dashboard trailing-row (issue 3)~~ — **closed won't-fix** (accept the blank; see Notes) | closed |
 | 06e | Auto-telemetry: periodic background **harvest** sweep inside `serve` + liveness marker + `costs` liveness line ([phase-06e-auto-telemetry-sweep.md](phase-06e-auto-telemetry-sweep.md)) — journal-reconcile + CLI-deprecation deferred (serve can't reconcile assists) | done |
 | 07a | Reporting debt: calibration reports the **low tail** for the lower-is-worse `oscillation_min_distinct` signal ([phase-07a-oscillation-low-tail.md](phase-07a-oscillation-low-tail.md)) | done |
-| 07b | Reporting debt: `output_bytes` output-flood **signal** in `calibrate-governor` (replay captures `ToolResult`; new `Signal` + percentile) ([phase-07b-output-flood-signal.md](phase-07b-output-flood-signal.md)) | todo |
+| 07b | Reporting debt: `output_bytes` output-flood **signal** in `calibrate-governor` (replay captures `ToolResult`; new `Signal` + percentile) ([phase-07b-output-flood-signal.md](phase-07b-output-flood-signal.md)) | review |
 | 07c | Reporting debt: `calibrate-governor` **rendering alignment** (shared `percentile`→`metrics.rs` + scorecard/runs table conventions) + **discoverability** pass (needs definition) | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect
