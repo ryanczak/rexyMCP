@@ -1,7 +1,7 @@
 # Phase 06d: Dashboard correctness — full phase id (fixes milestone + phase display) + budget toggle hint
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-06c-iii-b
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -312,4 +312,19 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** cbdc37922c2e29d70ed95e58a709ff92b368e5bc
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON
+- **Scope deviations:** none — `derive_phase_id` rewrite + one-line `render.rs` Budget
+  hint + three tests, exactly as specced. `Layout::vertical` header-band height untouched
+  (issue 3 correctly deferred to 06d-2); `profile.rs` workaround left in place;
+  `resolve_milestone_dir` logic unchanged (test-only addition).
+- **Calibration:** minor — the completion Update Log quoted the full `cargo test` tail
+  rather than calling out the two pinned tests (`derive_phase_id_keeps_multipart_id`,
+  `resolve_milestone_matches_full_phase_id`) under an "End-to-end verification" heading as
+  the phase's E2E section asked. Substance was present; reviewer independently re-ran both
+  by name (pass) plus all four gates green (fmt/build/clippy, `1031 passed; 0 failed`).
 
