@@ -1,8 +1,9 @@
 # Bug 1 on phase-07d: `savings_lines_baseline_dash_when_rates_unset` test was deleted (coverage regression)
 
 **Severity:** minor
-**Status:** open
+**Status:** verified
 **Filed:** 2026-07-22
+**Fixed:** 2026-07-22 (commit 6791e9e — `savings_lines_baseline_dash_when_rates_unset` restored; both tests pass)
 
 ## What's wrong
 

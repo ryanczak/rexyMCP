@@ -4,21 +4,24 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-07d — M35-close cleanup batch](milestones/M35-metrics-cost-accounting/phase-07d-budget-cleanup-batch.md)
-(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07d`). M35 is
-DELIBERATELY HELD OPEN for this cleanup pass; the close retrospective is pending.**
+**Active phase: none dispatchable — next to draft is
+[M35 phase-07e — Budget panel content (#5 alignment + #6 token-line combine)](milestones/M35-metrics-cost-accounting/README.md)
+(run `/rexymcp:architect next` to draft it). M35 remains DELIBERATELY HELD OPEN for the
+cleanup pass; the close retrospective is pending.**
 
-phase-07d drafted 2026-07-22: the low-risk batch of the user's 5 cleanup items —
-**#1** fix `profile`'s inaccurate `about` (07c's executor claimed "latency", which profile
-has none of); **#2** remove the Budget `Assists:` row (minimal: drop the 2 display lines +
-underscore the now-unused param; full plumbing removal deferred to avoid a 15-call-site
-cascade); **#4** Budget border hint `[b=$/tok]` → `[b=toggle view]`. Three small,
-independent, non-interacting changes across main.rs / panels.rs / render.rs.
+**phase-07d — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
+The low-risk cleanup batch: **#1** fixed `profile`'s inaccurate `about` (dropped the false
+"latency"), **#2** removed the Budget `Assists:` row (minimal — dropped the 2 display lines
++ underscored the param; full plumbing removal deferred), **#4** Budget border
+`[b=$/tok]` → `[b=toggle view]`. **Bounced once** (bug-07d-1, `scope_deviation`): the
+executor cannibalized the unrelated `savings_lines_baseline_dash_when_rates_unset` test to
+host the new no-assists test; a tightly-scoped re-dispatch note ("don't redo the approved
+production changes, only restore the one test") landed the fix clean in 33 turns. Both
+tests now present + passing; all gates green.
 
 **The 5 user cleanup items → sequenced as 07d / 07e / 07f** (dashboard TUI is the
 executor's fragile zone; small focused phases > one big risky one):
-- **07d (this):** #1 profile help, #2 remove Assists row, #4 border text.
+- **07d (done):** #1 profile help, #2 remove Assists row, #4 border text.
 - **07e (draft next):** Budget panel content — two tasks:
   - **#5 negative-value column alignment** — the parenthesized debits (`($1.23)`)
     right-align in the same width as non-paren values, so the digits shift by the paren

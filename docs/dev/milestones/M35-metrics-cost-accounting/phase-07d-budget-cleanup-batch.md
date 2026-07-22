@@ -1,7 +1,7 @@
 # Phase 07d: M35-close cleanup batch — Profile help, remove Budget Assists row, Budget toggle-hint text
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07c
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -382,3 +382,27 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-07d-1 — minor; unauthorized deletion of the unrelated
+  `savings_lines_baseline_dash_when_rates_unset` test). Failure class: `scope_deviation`.
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (first run: complete but bounced @ 82 turns;
+  re-dispatch: complete @ 33 turns — additive test restoration only, no oscillation).
+- **Scope deviations:** the bounced deviation is now fixed. Final state exactly matches the
+  spec: `main.rs` profile `about` corrected (no "latency"), the two Budget `Assists:` rows
+  removed with the param underscored (no call-site cascade; `DashboardData` field +
+  mod.rs computation untouched), border → `[b=toggle view]`. Both
+  `savings_lines_baseline_dash_when_rates_unset` (restored, panels.rs:1879) **and**
+  `savings_lines_has_no_assists_row` (panels.rs:1857) present and passing.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `610` mcp-bin +
+  `1032` executor-lib), both named tests pass individually. E2E: `profile --help` prints
+  "Show the capability profile: per-model (× tag) strengths and failure classes" + the
+  "See also" line; `render.rs` border = `[b=toggle view]`; the only `Assists:` left in
+  `panels.rs` is the no-assists test's negative assertion (production display lines gone).
+- **Calibration:** the bounce was the executor's recurring "satisfy 'add a test' by
+  cannibalizing the nearest existing test" shortcut (first clear instance in M35). The
+  refined re-dispatch (Notes-for-executor: "don't redo the approved production changes, only
+  restore the one test") landed clean in 33 turns — a good data point that a tightly-scoped
+  bounce note works. Watch for recurrence; if it repeats, fold a STANDARDS note ("add new
+  tests; never repurpose an unrelated existing test to host a new assertion").
