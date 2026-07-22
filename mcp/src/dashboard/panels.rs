@@ -1876,6 +1876,40 @@ mod tests {
     }
 
     #[test]
+    fn savings_lines_baseline_dash_when_rates_unset() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
+            BudgetDisplay::Dollars,
+        );
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let baseline_line = texts
+            .iter()
+            .find(|s| s.contains("Baseline:"))
+            .expect("Baseline row present");
+        let net_line = texts
+            .iter()
+            .find(|s| s.contains("Net:"))
+            .expect("Net row present");
+        assert!(
+            baseline_line.contains('—'),
+            "Baseline should show '—' when rates are unset"
+        );
+        assert!(
+            net_line.contains('—'),
+            "Net should show '—' when rates are unset"
+        );
+    }
+
+    #[test]
     fn savings_lines_architect_cost_shown_from_project_costs() {
         // architect_*_tokens > 0 with configured architect rates → non-zero Architect value
         let summary = StatusSummary {
