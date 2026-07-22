@@ -501,14 +501,14 @@ fn fmt_tokens(count: u64) -> String {
 
 /// Budget-panel savings block. A `Savings` header followed by indented,
 /// value-aligned rows: Baseline / Executor / Architect / Net across
-/// Session / Milestone / Project columns, plus an Assists count.
+/// Session / Milestone / Project columns.
 /// Returns empty when there are no session metrics yet — never a lone header.
 pub(crate) fn savings_lines(
     summary: &StatusSummary,
     rates: BudgetRates,
     milestone_costs: Option<ScopeCosts>,
     project_costs: ScopeCosts,
-    project_escalation_count: u32,
+    _project_escalation_count: u32, // retained to avoid call-site cascade; full removal deferred
     display: BudgetDisplay,
 ) -> Vec<Line<'static>> {
     let sess_in = match summary.last_input_tokens {
@@ -656,7 +656,6 @@ pub(crate) fn savings_lines(
             "—".to_string(),
             "—".to_string(),
         ));
-        out.push(Line::from(format!("  Assists: {project_escalation_count}")));
         return out;
     }
 
@@ -704,7 +703,6 @@ pub(crate) fn savings_lines(
         fmt_opt(mile.net),
         fmt_opt(proj.net),
     ));
-    out.push(Line::from(format!("  Assists: {project_escalation_count}")));
     out
 }
 
@@ -1829,8 +1827,7 @@ mod tests {
 
     #[test]
     fn savings_lines_omits_zero_debit_rows() {
-        // With default costs, Executor and Architect rows are omitted:
-        // header + Baseline + Net + Assists = 4 lines
+        // header + Baseline + Net = 3 lines
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1847,7 +1844,6 @@ mod tests {
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
         assert!(texts[1].contains("Baseline:"), "row 1 is Baseline");
         assert!(texts[2].contains("Net:"), "row 2 is Net");
-        assert!(texts[3].contains("Assists:"), "row 3 is Assists");
         assert!(
             !texts.iter().any(|s| s.contains("Executor:")),
             "Executor row must be omitted with zero costs"
@@ -1857,9 +1853,8 @@ mod tests {
             "Architect row must be omitted with zero costs"
         );
     }
-
     #[test]
-    fn savings_lines_baseline_dash_when_rates_unset() {
+    fn savings_lines_has_no_assists_row() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1874,27 +1869,12 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let baseline_line = texts
-            .iter()
-            .find(|s| s.contains("Baseline:"))
-            .expect("Baseline row missing");
-        let net_line = texts
-            .iter()
-            .find(|s| s.contains("Net:"))
-            .expect("Net row missing");
         assert!(
-            baseline_line.contains('—'),
-            "Baseline shows — when no rates: {}",
-            baseline_line
-        );
-        assert!(
-            net_line.contains('—'),
-            "Net shows — when no rates: {}",
-            net_line
+            !texts.iter().any(|s| s.starts_with("  Assists:")),
+            "Assists row should no longer appear in savings_lines output"
         );
     }
-
-    #[test]
+#[test]
     fn savings_lines_architect_cost_shown_from_project_costs() {
         // architect_*_tokens > 0 with configured architect rates → non-zero Architect value
         let summary = StatusSummary {
@@ -2039,32 +2019,6 @@ mod tests {
             !net_line.contains('('),
             "Net row must never be parenthesized: {}",
             net_line
-        );
-    }
-
-    #[test]
-    fn savings_lines_assists_shows_project_escalation_count() {
-        let summary = StatusSummary {
-            last_input_tokens: Some(1_000_000),
-            last_output_tokens: Some(0),
-            ..StatusSummary::default()
-        };
-        let lines = savings_lines(
-            &summary,
-            BudgetRates::default(),
-            None,
-            ScopeCosts::default(),
-            3,
-            BudgetDisplay::Dollars,
-        );
-        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let assists_row = texts
-            .iter()
-            .find(|s| s.contains("Assists:"))
-            .expect("Assists row missing");
-        assert!(
-            assists_row.contains("Assists: 3"),
-            "Assists row: {assists_row}"
         );
     }
 

@@ -218,7 +218,7 @@ enum Commands {
         #[arg(long, value_enum, default_value = "settings")]
         by: ByArg,
     },
-    /// Show the profile: per-model token and latency breakdown
+    /// Show the capability profile: per-model (× tag) strengths and failure classes
     ///
     /// See also: runs, scorecard, costs, calibrate-governor.
     Profile {
