@@ -19,13 +19,20 @@ independent, non-interacting changes across main.rs / panels.rs / render.rs.
 **The 5 user cleanup items → sequenced as 07d / 07e / 07f** (dashboard TUI is the
 executor's fragile zone; small focused phases > one big risky one):
 - **07d (this):** #1 profile help, #2 remove Assists row, #4 border text.
-- **07e (draft next):** #5 Budget savings **negative-value column alignment** — the
-  parenthesized debits (`($1.23)`) right-align in the same width as non-paren values, so
-  the digits shift by the paren width; fix so digits align (reserve `(`/`)` gutter columns).
-  Intricate accounting-column formatting — isolated, with exact-equality tests.
-- **07f (draft after 07d lands):** #3 **trailing blank row** on Session/Budget/Context
-  (reopens 06d-2's "accept the blank"); the header-band height must be re-derived **after**
-  07d removes the Assists row (which shortens Budget), so 07f is drafted post-07d.
+- **07e (draft next):** Budget panel content — two tasks:
+  - **#5 negative-value column alignment** — the parenthesized debits (`($1.23)`)
+    right-align in the same width as non-paren values, so the digits shift by the paren
+    width; fix so digits align (reserve `(`/`)` gutter columns). Intricate
+    accounting-column formatting — with exact-equality tests. (`savings_lines`, panels.rs.)
+  - **#6 combine the token in/out lines** — `budget_lines` (panels.rs:459–462) emits two
+    lines (`Tokens in:  N` / `Tokens out: N`); merge into one `Tokens in: N out: N`
+    (user, 2026-07-22). Trivial, but **shortens the Budget panel by one row** — so it must
+    land before 07f's trailing-blank height fix.
+- **07f (draft LAST, after 07d + 07e land):** #3 **trailing blank row** on
+  Session/Budget/Context (reopens 06d-2's "accept the blank"); the header-band height must
+  be re-derived **after both** 07d (removes the Assists row, −1) **and** 07e (combines the
+  token in/out lines, −1) shorten the Budget panel — so 07f's layout fix uses the final
+  Budget content height.
 
 **Other M35-close cleanup still queued** (fold at the `/rexymcp:architect` close, or as
 further phases): k/M compaction of `calibrate-governor`'s output-flood byte columns +
