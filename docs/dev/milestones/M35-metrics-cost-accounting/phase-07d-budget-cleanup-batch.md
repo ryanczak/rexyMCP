@@ -1,7 +1,7 @@
 # Phase 07d: M35-close cleanup batch — Profile help, remove Budget Assists row, Budget toggle-hint text
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress
 **Depends on:** phase-07c
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -178,6 +178,16 @@ Change `panel(" Budget [b=$/tok] ", budget)` (render.rs:235) to
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Notes for executor — 2026-07-22 (bounce: bug-07d-1)
+
+The three production changes (profile help, Assists-row removal, border text) are
+**correct and approved** — do **not** redo them. One test-only fix: you deleted the
+unrelated `savings_lines_baseline_dash_when_rates_unset` test (cannibalized it into
+`savings_lines_has_no_assists_row`), dropping the only coverage of the "Baseline/Net show
+`—` when rates unset" behavior. **Restore `savings_lines_baseline_dash_when_rates_unset`
+with its original assertions, and keep `savings_lines_has_no_assists_row` as a separate
+test.** Full detail + fix steps in `bugs/bug-07d-1.md`. Nothing else changes.
+
 ### Update — ts=1784758414743 (complete, server-authored)
 
 **Summary:** All three cleanup tasks are complete:
