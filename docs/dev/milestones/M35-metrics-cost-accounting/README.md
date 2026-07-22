@@ -74,7 +74,7 @@ and the executor finally carries a real (configurable) price.
 | 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | done |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split ([phase-06c-ii-architect-pricing.md](phase-06c-ii-architect-pricing.md)) | done |
 | 06c-iii-a | Rewire costs + dashboard architect cost onto the ledger (per-model); milestone architect = `—`; restore doc ([phase-06c-iii-a-ledger-cost-rewire.md](phase-06c-iii-a-ledger-cost-rewire.md)) | done |
-| 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | review |
+| 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | done |
 | 06d | Dashboard correctness: full `phase_id` (fixes session milestone + phase display; also bug-05b-1 root) + budget `b`-toggle border hint ([phase-06d-dashboard-fixes.md](phase-06d-dashboard-fixes.md)) | done |
 | 06d-2 | ~~Dashboard trailing-row (issue 3)~~ — **closed won't-fix** (accept the blank; see Notes) | closed |
 | 06e | Auto-telemetry: periodic background **harvest** sweep inside `serve` + liveness marker + `costs` liveness line ([phase-06e-auto-telemetry-sweep.md](phase-06e-auto-telemetry-sweep.md)) — journal-reconcile + CLI-deprecation deferred (serve can't reconcile assists) | done |
