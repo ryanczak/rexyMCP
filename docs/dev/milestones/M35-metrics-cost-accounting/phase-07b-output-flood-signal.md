@@ -1,7 +1,7 @@
 # Phase 07b: Add the output-flood calibration signal (`calibrate-governor` reads `output_bytes`)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-07a
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -265,3 +265,23 @@ to populate a row, say so and rely on the unit tests as the pinned evidence (quo
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Update — 2026-07-22 (escalation)
+
+**Chosen lever:** resume (`continue_phase`)
+**Rationale:** The spec was not the problem — the implementation is essentially complete
+(all six wiring points present: `OutputFloodWindowedBytes`, its label, `OUTPUT_FLOOD_WINDOW`,
+`SIGNALS`, `format_report`'s label list, and `samples`; `RunReplay.output_bytes` collected;
+tests written). The `hard_fail` was the governor's oscillation terminator
+(`distinct_calls: 2, window: 8`) firing after the executor broke brace-balance mid-edit —
+the file has **exactly one missing `}`** (288 open vs 287 close, cargo reports an unclosed
+delimiter near the `mod tests` block / the `min_runs_drops_thin_per_model_cells_into_global`
+test) — and then **looped ~12× on an identical `python3 -c` file-inspection command** trying
+to locate it. Work worth preserving + one mechanical wall = resume, not re-dispatch or
+takeover. Guidance steers to `cargo build` once for the exact location and away from the
+repeated-inspection loop that tripped the terminator.
+
+**Calibration (second occurrence — a trend now):** this is the **second** M35-arc
+`hard_fail` where the executor escaped to a repeated read-only *shell inspection* loop
+(`python3 -c` here; `sed -i`/`sed -n` in the 06c arc) after patch edits drifted its model of
+the file. One occurrence was data; two is a trend worth folding at M35 close (reinforces the
+held "make read-only-inspection repetition advisory / raise its threshold" fold).

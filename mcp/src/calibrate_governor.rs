@@ -25,6 +25,8 @@ struct RunReplay {
     /// truncation-driven empties (`finish_reason == length` is not logged), so it
     /// is a lower bound on the loop's empty-completion counter.
     completion_empty: Vec<bool>,
+    /// Per `ToolResult` event: the `output_bytes` field, in log order.
+    output_bytes: Vec<usize>,
 }
 
 /// Which tail of the distribution indicates the concern.
@@ -49,6 +51,8 @@ enum Signal {
     VerifierPersistenceRun,
     /// Longest run of consecutive empty completions (lower bound — misses truncation).
     EmptyCompletionRun,
+    /// Max windowed output-bytes sum (mirrors live `check_windowed_output`).
+    OutputFloodWindowedBytes,
 }
 
 impl Signal {
@@ -60,6 +64,7 @@ impl Signal {
             Signal::OscillationMinDistinct => "oscillation_min_distinct",
             Signal::VerifierPersistenceRun => "verifier_persistence_run",
             Signal::EmptyCompletionRun => "empty_completion_run",
+            Signal::OutputFloodWindowedBytes => "output_flood_windowed_bytes",
         }
     }
 
@@ -164,11 +169,24 @@ impl Signal {
                 }
                 vec![max]
             }
+            Signal::OutputFloodWindowedBytes => {
+                let ob = &run_.output_bytes;
+                if ob.len() < OUTPUT_FLOOD_WINDOW {
+                    return vec![];
+                }
+                let mut max = 0usize;
+                for start in 0..=ob.len() - OUTPUT_FLOOD_WINDOW {
+                    let sum: usize = ob[start..start + OUTPUT_FLOOD_WINDOW].iter().sum();
+                    max = max.max(sum);
+                }
+                vec![max]
+            }
         }
     }
 }
 
 const OSCILLATION_WINDOW: usize = 8;
+const OUTPUT_FLOOD_WINDOW: usize = 6;
 
 const SIGNALS: &[Signal] = &[
     Signal::NoveltyDistinct,
@@ -177,6 +195,7 @@ const SIGNALS: &[Signal] = &[
     Signal::OscillationMinDistinct,
     Signal::VerifierPersistenceRun,
     Signal::EmptyCompletionRun,
+    Signal::OutputFloodWindowedBytes,
 ];
 
 /// Nearest-rank percentile of a sorted slice. `p` in 0.0..=1.0. Empty → 0.
@@ -217,6 +236,7 @@ fn format_report(rows: &[ReportRow]) -> String {
         "oscillation_min_distinct",
         "verifier_persistence_run",
         "empty_completion_run",
+        "output_flood_windowed_bytes",
     ];
     for signal in signals {
         let signal_rows: Vec<_> = rows.iter().filter(|r| r.signal == *signal).collect();
@@ -409,6 +429,7 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
     let mut tool_calls = Vec::new();
     let mut verifier_error_counts = Vec::new();
     let mut completion_empty = Vec::new();
+    let mut output_bytes = Vec::new();
     for rec in records {
         match &rec.event {
             SessionEvent::SessionStart { model: m, .. } => model = m.clone(),
@@ -428,6 +449,11 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
                         .is_empty(),
                 );
             }
+            SessionEvent::ToolResult {
+                output_bytes: ob, ..
+            } => {
+                output_bytes.push(*ob as usize);
+            }
             _ => {}
         }
     }
@@ -437,6 +463,7 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
         tool_calls,
         verifier_error_counts,
         completion_empty,
+        output_bytes,
     }
 }
 
@@ -560,11 +587,10 @@ mod tests {
             tool_calls: calls,
             verifier_error_counts: Vec::new(),
             completion_empty: Vec::new(),
+            output_bytes: Vec::new(),
         };
         let samples = Signal::NoveltyDistinct.samples(&run, 24);
-        // After 24 calls, measure_novelty returns Some, and we get samples for calls 24..30
         assert!(!samples.is_empty(), "expected samples: {samples:?}");
-        // All samples should have 24 distinct targets (each file is unique)
         assert!(
             samples.iter().all(|s| *s == 24),
             "expected all samples to be 24: {samples:?}"
@@ -601,6 +627,7 @@ mod tests {
             tool_calls: calls,
             verifier_error_counts: Vec::new(),
             completion_empty: Vec::new(),
+            output_bytes: Vec::new(),
         };
         let samples = Signal::MaxReadOnlyRun.samples(&run, 24);
         // Max read-only run is 2 (the first two read_file calls before patch)
@@ -882,6 +909,7 @@ mod tests {
             tool_calls: calls,
             verifier_error_counts: Vec::new(),
             completion_empty: Vec::new(),
+            output_bytes: Vec::new(),
         };
         let samples = Signal::NoveltyDistinct.samples(&run, 24);
         // With only 2 calls and window=24, measure_novelty returns None until window is reached
@@ -892,7 +920,6 @@ mod tests {
     }
 
     // --- Tests for the four new signal extractors (06b) ---
-
     /// Helper: create a RunReplay with Verify and Completion events.
     fn make_replay_with_verify_and_completion(
         tool_calls: Vec<ToolCallSnapshot>,
@@ -905,9 +932,9 @@ mod tests {
             tool_calls,
             verifier_error_counts,
             completion_empty,
+            output_bytes: Vec::new(),
         }
     }
-
     #[test]
     fn identical_run_counts_longest_consecutive_identical() {
         // Sequence: read a, read a, read b, read b, read b -> longest run = 3 (the b's)
@@ -1147,5 +1174,156 @@ mod tests {
             out.contains("empty_completion_run"),
             "report should contain empty_completion_run: {out}"
         );
+    }
+
+    #[test]
+    fn output_flood_windowed_max_over_run() {
+        let run = RunReplay {
+            model: "test".into(),
+            outcome: "complete".into(),
+            tool_calls: Vec::new(),
+            verifier_error_counts: Vec::new(),
+            completion_empty: Vec::new(),
+            output_bytes: vec![10, 20, 30, 40, 50, 60, 70],
+        };
+        let samples = Signal::OutputFloodWindowedBytes.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![270],
+            "expected max windowed sum of 270: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn output_flood_requires_full_window() {
+        let run = RunReplay {
+            model: "test".into(),
+            outcome: "complete".into(),
+            tool_calls: Vec::new(),
+            verifier_error_counts: Vec::new(),
+            completion_empty: Vec::new(),
+            output_bytes: vec![10, 20, 30, 40, 50],
+        };
+        let samples = Signal::OutputFloodWindowedBytes.samples(&run, 24);
+        assert!(
+            samples.is_empty(),
+            "expected no samples with 5 ToolResults: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn output_flood_direction_is_higher_is_worse() {
+        assert_eq!(
+            Signal::OutputFloodWindowedBytes.direction(),
+            TailDirection::HigherIsWorse
+        );
+    }
+
+    #[test]
+    fn replay_collects_tool_result_output_bytes() {
+        let records = vec![
+            SessionRecord {
+                ts: 0,
+                turn: 0,
+                event: SessionEvent::SessionStart {
+                    session_id: "s1".into(),
+                    model: "model_x".into(),
+                    phase: "phase-01".into(),
+                },
+            },
+            SessionRecord {
+                ts: 1,
+                turn: 1,
+                event: SessionEvent::ToolResult {
+                    name: "read_file".into(),
+                    succeeded: true,
+                    output_preview: "hello".into(),
+                    output_bytes: 100,
+                },
+            },
+            SessionRecord {
+                ts: 2,
+                turn: 2,
+                event: SessionEvent::ToolResult {
+                    name: "patch".into(),
+                    succeeded: true,
+                    output_preview: "ok".into(),
+                    output_bytes: 250,
+                },
+            },
+            SessionRecord {
+                ts: 3,
+                turn: 3,
+                event: SessionEvent::ToolResult {
+                    name: "cat".into(),
+                    succeeded: true,
+                    output_preview: "pre-field default".into(),
+                    output_bytes: 0,
+                },
+            },
+        ];
+        let replay = replay(&records);
+        assert_eq!(
+            replay.output_bytes,
+            vec![100, 250, 0],
+            "expected output_bytes in log order including zero: {:?}",
+            replay.output_bytes
+        );
+    }
+
+    #[test]
+    fn output_flood_signal_appears_in_report() {
+        let tmp = TempDir::new().unwrap();
+        // Build a session with enough ToolResult events to produce a sample.
+        let records: Vec<SessionRecord> = vec![SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::SessionStart {
+                session_id: "s1".into(),
+                model: "model_x".into(),
+                phase: "phase-01".into(),
+            },
+        }];
+        let mut records = records;
+        for i in 0..7 {
+            records.push(SessionRecord {
+                ts: (i + 1) as u64,
+                turn: i + 1,
+                event: SessionEvent::ToolResult {
+                    name: "read_file".into(),
+                    succeeded: true,
+                    output_preview: "data".into(),
+                    output_bytes: ((i + 1) * 100) as u64,
+                },
+            });
+        }
+        let mut file = std::fs::File::create(tmp.path().join("session-test.jsonl")).unwrap();
+        for rec in records {
+            std::io::Write::write_all(
+                &mut file,
+                format!("{}\n", serde_json::to_string(&rec).unwrap()).as_bytes(),
+            )
+            .unwrap();
+        }
+
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: true,
+        };
+        let out = run(&args);
+        let rows: Vec<ReportRow> = serde_json::from_str(&out).unwrap();
+        let flood_rows: Vec<_> = rows
+            .iter()
+            .filter(|r| r.signal == "output_flood_windowed_bytes")
+            .collect();
+        assert!(
+            !flood_rows.is_empty(),
+            "expected output_flood_windowed_bytes row in JSON report: {out}"
+        );
+        let row = flood_rows[0];
+        assert_eq!(row.tail, "higher-is-worse");
     }
 }
