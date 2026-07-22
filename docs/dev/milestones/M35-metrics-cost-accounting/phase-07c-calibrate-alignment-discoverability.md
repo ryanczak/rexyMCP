@@ -1,7 +1,7 @@
 # Phase 07c: calibrate-governor rendering alignment (shared `percentile`) + command discoverability
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07b
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=refactor, size=m
@@ -339,4 +339,41 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** d15d0d39293bd3eb45f6c9007aaf87c324f24573
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (91 turns, clean — no hard_fail, **no oscillation**)
+- **Scope deviations:** none — exactly Tasks 1–3 across the four authorized files.
+  `percentile` moved to `executor/src/store/metrics.rs` (public + `percentile_nearest_rank`
+  test); `calibrate_governor.rs` routes through `use …store::metrics::percentile` and the
+  local fn + its test are gone; five "See also" lines added to `runs`/`scorecard`/`profile`/
+  `costs`/`calibrate-governor`, each naming the other four.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `610` mcp-bin +
+  `1032` executor-lib — the net +0 reflects `percentile_boundaries` moving from mcp-bin to
+  `percentile_nearest_rank` in executor-lib). **Real-artifact E2E:** each of the five
+  commands' `--help` prints its correct "See also" line; `calibrate-governor --repo .` still
+  renders all six signal blocks (alignment intact); `grep -c 'fn percentile'
+  calibrate_governor.rs` = 0. The moved test is real (mutation-sensitive on the nearest-rank
+  math), and the existing calibrate_governor signal/report tests still pass, proving the
+  shared `percentile` yields identical values.
+- **Calibration:**
+  1. **Anti-oscillation pre-injection WORKED (positive data point).** 07b hard_failed on
+     this exact file via a shell-inspection oscillation loop; 07c led with a loud
+     "let the compiler locate syntax errors; never hunt by re-reading in a loop" gotcha and
+     ran clean (91 turns, no oscillation). Evidence the compiler-error-recovery pre-injection
+     is the right countermeasure for [[executor-shell-inspection-oscillation-loop]] — keep
+     using it on edit-heavy phases pending the governor fold.
+  2. **Nit (cleanup candidate, not a bounce):** `Profile` had no top-level clap `about`, so
+     the executor invented one to host its "See also" — `"Show the profile: per-model token
+     and latency breakdown"` (main.rs:221). That is **inaccurate** — `profile` renders a
+     model×tag capability matrix (gate-pass / approved-first-try / reliability) and, with
+     `--cost`, per-approved-phase tokens & cost; it has **no latency** metric. Fix the about
+     wording during the M35-close cleanup.
+
+**Milestone note:** 07c is M35's last in-scope phase, but **M35 is deliberately held open**
+(user, 2026-07-22) for a cleanup pass before close — the deferred k/M-compaction + 3-way
+token-formatter DRY, the `Profile` about wording above, and the accumulated calibration
+folds. `NEXT.md` is **not** set to "none"; the milestone-close retrospective is pending.
 
