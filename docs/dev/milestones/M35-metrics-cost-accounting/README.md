@@ -74,7 +74,7 @@ and the executor finally carries a real (configurable) price.
 | 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | done |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split ([phase-06c-ii-architect-pricing.md](phase-06c-ii-architect-pricing.md)) | done |
 | 06c-iii-a | Rewire costs + dashboard architect cost onto the ledger (per-model); milestone architect = `—`; restore doc ([phase-06c-iii-a-ledger-cost-rewire.md](phase-06c-iii-a-ledger-cost-rewire.md)) | done |
-| 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | in-progress |
+| 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | review |
 | 06d | Dashboard fixes: budget `b`-toggle border hint, trailing-row trim, session milestone + full phase name | not drafted |
 | 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` + sweep-liveness indicator (absorbs harvest-freshness) | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
