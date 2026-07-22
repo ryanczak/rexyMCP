@@ -10,10 +10,14 @@ Single source of truth for which phase is active. The principal engineer
 
 phase-06e drafted 2026-07-21: adds a **periodic background harvest sweep inside
 `rexymcp serve`** so the architect ledger stays fresh with zero manual steps —
-on an interval (`[telemetry] sweep_interval_secs`, default 1800s) it re-runs
+on an interval (`[telemetry] sweep_interval_secs`, default **60s**) it re-runs
 `harvest()` (transcript dir derived from serve's cwd via the `/`→`-` slug munge,
 project-id from config), writes a `sweep_state.json` liveness marker, and
-`rexymcp costs` gains a plain-text `Last swept: …` line. **Design finding baked
+`rexymcp costs` gains a plain-text `Last swept: …` line. **A skip-guard makes 60s
+safe:** the sweep tracks a watermark (max transcript mtime at last harvest) and
+**skips the harvest append when nothing changed** — so idle ticks don't bloat the
+append-only `phase_runs.jsonl`; it re-harvests only when a transcript actually
+changed. **Design finding baked
 in:** `serve` provably **cannot reconcile assist counts** (in-memory transient
 run registry; blind to architect-side escalation round-trips), so **journal
 reconciliation is out of scope** — the sweep re-runs harvest only. **CLI
