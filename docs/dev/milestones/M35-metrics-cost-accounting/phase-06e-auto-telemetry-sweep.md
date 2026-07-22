@@ -1,6 +1,6 @@
 # Phase 06e: Auto-telemetry — periodic background harvest sweep inside `serve` + liveness
 
-**Milestone:** M35 — Metrics & Cost Accounting Overhaul
+**Status:** in-progress
 **Status:** todo
 **Depends on:** phase-06c-iii-b, phase-06d
 **Estimated diff:** ~520 lines
@@ -224,8 +224,17 @@ pub struct SweepState {
 pub fn max_transcript_mtime_ms(dir: &Path) -> Option<u64>
 
 /// Pure decision: harvest when we've never harvested (`prev` None) or a transcript
-/// changed since the watermark (`current > prev`). Skip when `current <= prev`.
-pub fn should_harvest(current_mtime_ms: Option<u64>, prev_watermark_ms: Option<u64>) -> bool {
+## Update Log
+
+(Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+<!-- entries appended below this line -->
+
+### Update — 2026-07-22 15:39 (started)
+
+**Executor:** phase-06e executor
+
+**Tasks started:** Tasks 1–4 (config field, sweep module, serve handler, costs handler)
     match (current_mtime_ms, prev_watermark_ms) {
         (Some(cur), Some(prev)) => cur > prev,
         (Some(_), None) => true,   // never harvested → harvest

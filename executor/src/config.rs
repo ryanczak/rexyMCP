@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::error::{Error, Result};
 
@@ -391,13 +392,26 @@ pub struct Config {
 pub struct TelemetryConfig {
     pub dir: Option<PathBuf>,
     pub enabled: bool,
+    pub sweep_interval_secs: Option<u64>,
 }
+
+impl TelemetryConfig {
+    pub fn sweep_interval(&self) -> Duration {
+        Duration::from_secs(
+            self.sweep_interval_secs
+                .unwrap_or(DEFAULT_SWEEP_INTERVAL_SECS),
+        )
+    }
+}
+
+pub const DEFAULT_SWEEP_INTERVAL_SECS: u64 = 60;
 
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
             dir: None,
             enabled: true,
+            sweep_interval_secs: None,
         }
     }
 }

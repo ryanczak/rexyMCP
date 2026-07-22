@@ -28,6 +28,7 @@ mod server;
 mod status;
 mod stop;
 mod stop_watcher;
+mod sweep;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"), version = env!("CARGO_PKG_VERSION"))]
@@ -536,6 +537,47 @@ async fn main() -> anyhow::Result<()> {
                 config.display(),
                 config.exists()
             );
+
+            // Spawn auto-telemetry sweep if telemetry is enabled
+            let cwd_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            if let Some(home_os) = std::env::var_os("HOME") {
+                let home = PathBuf::from(home_os);
+                match Config::load_with_env(&config) {
+                    Ok(ref cfg) => {
+                        if cfg.telemetry.enabled {
+                            if let Some(ref tel_dir) = cfg.telemetry.dir {
+                                let transcript_dir = sweep::transcript_dir_for(&home, &cwd_path);
+                                eprintln!(
+                                    "rexymcp serve: auto-sweep started (interval={}s, transcript_dir={})",
+                                    cfg.telemetry.sweep_interval().as_secs(),
+                                    transcript_dir.display()
+                                );
+                                let interval = cfg.telemetry.sweep_interval();
+                                let config_for_sweep = config.clone();
+                                let tel_dir_for_sweep = tel_dir.clone();
+                                tokio::spawn(sweep::run_sweep_loop(
+                                    config_for_sweep,
+                                    transcript_dir,
+                                    tel_dir_for_sweep,
+                                    interval,
+                                ));
+                            } else {
+                                eprintln!(
+                                    "rexymcp serve: auto-sweep skipped (telemetry.dir not set)"
+                                );
+                            }
+                        } else {
+                            eprintln!("rexymcp serve: auto-sweep skipped (telemetry disabled)");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("rexymcp serve: auto-sweep skipped (config load error: {e})");
+                    }
+                }
+            } else {
+                eprintln!("rexymcp serve: auto-sweep skipped (HOME not set)");
+            }
+
             let server = server::RexyMcpServer::new(config);
             let transport = rmcp::transport::stdio();
             let _running = rmcp::serve_server(server, transport)
@@ -868,6 +910,30 @@ async fn main() -> anyhow::Result<()> {
                         println!("{}", serde_json::to_string_pretty(&report).unwrap());
                     } else {
                         println!("{}", costs::format_costs(&report));
+                        let config_path = config.clone();
+                        match Config::load_with_env(&config_path) {
+                            Ok(ref cfg) => {
+                                if let Some(ref tel_dir) = cfg.telemetry.dir {
+                                    let now_ms = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_millis() as u64)
+                                        .unwrap_or(0);
+                                    match sweep::read_liveness(tel_dir) {
+                                        Some(state) => {
+                                            println!("{}", sweep::liveness_line(&state, now_ms));
+                                        }
+                                        None => {
+                                            println!("Last swept: never");
+                                        }
+                                    }
+                                } else {
+                                    println!("Last swept: never");
+                                }
+                            }
+                            Err(_) => {
+                                println!("Last swept: never");
+                            }
+                        }
                     }
                     Ok(())
                 }
