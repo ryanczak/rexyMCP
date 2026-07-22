@@ -65,6 +65,10 @@ Read before starting:
    `sed -n`/`cat` — `bash` refuses `sed -i`/`perl -i` outright, and repeated
    identical reads trip the governor. On a `patch` "0 matches" / "changed on
    disk", `read_file` the region again, then re-patch against the fresh text.
+   **For the harvest.rs rewrite (Task 2) do NOT use a whole-file `write_file`** —
+   make small, targeted `patch` edits, one region at a time. See the 🛑 Notes-for-
+   executor block at the top of the Update Log: the prior dispatch burned its entire
+   600-turn budget doing exactly the whole-file write this rule forbids.
 
 ## Current state
 
@@ -443,3 +447,55 @@ state, non-hermetic).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### 🛑 Notes for executor — 2026-07-21 (READ FIRST — refined re-dispatch after budget_exceeded)
+
+**The previous dispatch burned its ENTIRE 600-turn budget and finished NOTHING on
+`harvest.rs`.** Root cause: it tried to replace the whole `mcp/src/harvest.rs` file
+in a single `write_file` call, repeatedly — each attempt corrupted the file, got
+reverted, and retried until the budget ran out. **Do not repeat this.**
+
+**Already DONE — do NOT redo:**
+- **Task 1 is complete and committed** (commit `7299fa6`): `ArchitectLedger` +
+  `ARCHITECT_LEDGER_RECORD_TAG` + `fold_ledger` / `append_architect_ledger` /
+  `read_architect_ledger` + 3 unit tests, all in `executor/src/store/telemetry.rs`.
+  It compiles (`cargo check -p rexymcp-executor` is green). **Do NOT touch
+  `telemetry.rs`.** Mark Task 1 done and go straight to Task 2.
+
+**HARD RULE for Task 2 (`mcp/src/harvest.rs`): never rewrite the whole file in one
+`write_file`.** `harvest.rs` is ~530 lines; a single write that large is exactly
+what killed the last run. Make **small, targeted `patch` edits, one region at a
+time**, and run `cargo check -p rexymcp` after each so you stay green. Suggested
+order (one `patch` per step):
+
+1. **Imports** — `patch` the `use rexymcp_executor::store::telemetry::...` line to
+   add `ArchitectLedger`, `ARCHITECT_LEDGER_RECORD_TAG`, `append_architect_ledger`
+   (drop `ArchitectActivity`/`fold_activities` if they become unused).
+2. **Delete the old attribution core, in separate `patch` hunks** — one `patch`
+   each to remove `struct Usage`, remove `fn attribute`, and remove the
+   `read_architect_activities` + `fold_activities` + enrich-append loop inside
+   `harvest()`. Do not delete them all in one edit.
+3. **`HarvestOutcome`** — `patch` the struct to the new fields (`duplicates`,
+   `sessions`, `records`) per the Spec.
+4. **Add the ledger-building helpers** via `patch` inserts after an existing fn:
+   the per-message extraction (session = file stem, model, skill-or-`"other"`, the
+   5m/1h `cache_creation` split with its fallback branch) and the
+   `(session, model, skill)` accumulation.
+5. **`harvest()` body** — `patch` the old attribution block (only) to emit
+   `ArchitectLedger` records via `append_architect_ledger`, keeping the config /
+   telemetry-dir / project-id resolution at the top of the fn.
+6. **Task 3** — one small `patch` to the `Commands::Harvest` output line in
+   `mcp/src/main.rs`.
+7. **Then the tests** (`harvest.rs` `mod tests`) and the E2E, per the Test plan.
+
+On a `patch` "0 matches" / "changed on disk", `read_file` that region again and
+re-patch against the fresh text — **never** fall back to a whole-file write. The
+Spec (Tasks, Test plan, E2E) is otherwise unchanged; this block only constrains
+*how* you edit `harvest.rs`.
+
+### Update — 2026-07-21 (escalation)
+
+**Chosen lever:** refined re-dispatch
+**Rationale:** the `budget_exceeded` traced entirely to a spec-shape gap — the
+executor chose a whole-file `write_file` for the ~530-line harvest.rs rewrite and
+looped on corruption/revert; pinning targeted `patch` edits (and flagging that Task 1
+is already committed) removes the failure without a costlier takeover.
