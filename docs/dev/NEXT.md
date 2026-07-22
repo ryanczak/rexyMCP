@@ -4,9 +4,33 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06c-i — architect ledger core (transcript-native harvest rewrite)](milestones/M35-metrics-cost-accounting/phase-06c-i-architect-ledger-core.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-i`).**
+**Active phase: none pending `/rexymcp:architect next` — phase-06c-i is `done`;
+next up is 06c-ii (per-model architect pricing), then 06c-iii (ledger surfaces),
+then phase-07 closes M35.**
+
+**M35 phase-06c-i — done (2026-07-21, escalated / session takeover; executor
+AEON-7/Qwen3.6-27B-AEON did the implementation).** Transcript-native architect
+ledger: new `ArchitectLedger` record keyed `(project × session × model × skill)` +
+`append/read/fold` trio (committed by the executor as `7299fa6`), and `rexymcp harvest`
+rewritten to emit it — dedup by `message.id`, all-usage counting with an `"other"`
+bucket, real per-model attribution, 5m/1h `cache_creation` split. **A hard arc:**
+`budget_exceeded` (whole-file `write_file` loop) → refined re-dispatch (patch-not-write)
+→ `hard_fail` (`IdenticalToolCallRepetition`: `sed -n` re-reads) → refined re-dispatch
+(read-once gotcha) → `hard_fail` (`IdenticalToolCallRepetition`: a `python3` timestamp
+one-liner ×6, at the finish line) → **session takeover.** The executor's production +
+tests were complete and all four gates green; the E2E (real `rexymcp harvest` CLI)
+surfaced a `last_ts` bug unit tests missed (`extract_usage` discarded the parsed
+timestamp into `_ts` and used `cache_creation_5m` for `last_ts`). Architect fixed it,
+added `harvest_last_ts_is_max_message_timestamp`, refreshed the module doc; gates green
+(1027 executor + mcp incl. 9 harvest tests), E2E verified. **Held for M35 close:** (1)
+the governor worked as designed 3× — vindicates the "don't cancel, let the governor
+terminate" fold; (2) recurring executor identical-repetition on read-only/diagnostic
+commands near the finish — fold candidate (advisory repetition for read-only, or hand
+fixture values in the spec); (3) 4th untested-behavior slip (`last_ts`) — reinforces
+the mutation-test fold; (4) whole-file-write-too-large → patch-not-write executor nudge.
+
+phase-06c-i drafted 2026-07-21: the first phase of the 06c architect-ledger arc.
+Adds a new telemetry record `ArchitectLedger` keyed `(project_id × session_id ×
 
 phase-06c-i drafted 2026-07-21: the first phase of the 06c architect-ledger arc.
 Adds a new telemetry record `ArchitectLedger` keyed `(project_id × session_id ×

@@ -947,10 +947,11 @@ async fn main() -> anyhow::Result<()> {
             match harvest::harvest(&config, telemetry_path.as_deref(), &args) {
                 Ok(o) => {
                     println!(
-                        "harvested {} messages, enriched {} activities ({} unattributed) -> {}",
+                        "harvested {} messages across {} sessions -> {} ledger records ({} duplicates skipped) -> {}",
                         o.messages,
-                        o.enriched,
-                        o.unattributed,
+                        o.sessions,
+                        o.records,
+                        o.duplicates,
                         o.path.display()
                     );
                     Ok(())

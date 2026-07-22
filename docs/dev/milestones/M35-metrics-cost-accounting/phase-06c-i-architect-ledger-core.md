@@ -1,7 +1,7 @@
 # Phase 06c-i: Architect ledger core — transcript-native harvest rewrite
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** in-progress
+**Status:** done
 **Depends on:** phase-06b-ii
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -499,6 +499,43 @@ that way; the hard_fail is what rexymcp recorded.)
 **Action:** refined re-dispatch — the ▶️ block above scopes the remaining work to the
 test swap + gates + E2E and adds the read-once / `read_file`-not-`sed` gotcha that
 prevents the repeat-loop.
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** escalated (session takeover to finish the last mile)
+- **Bounces:** `budget_exceeded` ×1 + `hard_fail` ×2 (both `IdenticalToolCallRepetition`
+  on `bash`) across 4 dispatches. Executor **AEON-7/Qwen3.6-27B-AEON** did the bulk of
+  the implementation; Claude Code (direct) took over after the 2nd same-class hard_fail
+  to finish.
+- **Scope deviations (takeover work):** the executor's production + tests were complete
+  and all four gates were green, but the **E2E surfaced a `last_ts` bug** unit tests
+  missed — `extract_usage` computed the message timestamp into `_ts` and discarded it,
+  substituting `cache_creation_5m` for `last_ts` (so every record's freshness field was
+  a cache count, not an epoch). Architect fixed it (thread `ts` through the extraction
+  tuple; track `max(ts)`), added `harvest_last_ts_is_max_message_timestamp` (mutation-
+  sensitive — fails under the old code), and refreshed the stale module doc. No
+  behavior change beyond the phase's own scope; `costs.rs`/dashboard/`profile`
+  untouched.
+- **Calibration (rich — for M35 close):**
+  1. **The governor worked exactly as designed, three times** — it caught the
+     whole-file-write budget blow (`budget_exceeded`) and two identical-repetition
+     loops (`sed -n` re-reads; a `python3` timestamp one-liner run 6×). This is the
+     concrete vindication of the just-landed "don't cancel — let the governor
+     terminate" contract fold: every terminal outcome was a clean, briefing-bearing
+     hard_fail, not a `claude_stop`. (The two impatience-cancels earlier in this phase
+     were the counter-example the fold exists to prevent.)
+  2. **Recurring executor failure mode: identical-repetition on read-only/diagnostic
+     commands near the finish** (view a region, compute a fixture timestamp). Twice the
+     executor completed the real work then looped on trivial verification. **Fold
+     candidate:** make `IdenticalToolCallRepetition` advisory (or higher-threshold) for
+     **read-only** commands, or have the E2E spec hand the executor concrete fixture
+     values (e.g. hardcoded epoch-ms) so it never computes them via repeated shell.
+  3. **4th untested-behavior slip in M35** (`last_ts`, after 05b/06a/06b-i) — reinforces
+     the pending mutation-test STANDARDS/WORKFLOW fold. The E2E-against-real-artifact
+     DoD requirement is what caught it; unit tests alone did not.
+  4. **The whole-file-`write_file`-too-large failure** (budget blow) → the patch-not-
+     write refinement fixed it cleanly. Candidate executor-contract nudge: for large
+     rewrites, prefer targeted `patch` edits over a single `write_file`.
 
 ### 🛑 Notes for executor — 2026-07-21 (READ FIRST — refined re-dispatch after budget_exceeded)
 

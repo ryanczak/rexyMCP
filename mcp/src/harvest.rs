@@ -1,14 +1,17 @@
 //! Architect usage harvester — `rexymcp harvest` subcommand.
 //!
-//! Reads Claude Code session transcripts, sums per-message token usage by class,
-//! attributes each message to the `ArchitectActivity` whose journal time-window
-//! contains it, and appends an enriched copy (tokens filled) that
-//! `fold_activities` overlays at read time.
+//! Reads Claude Code session transcripts, dedups assistant-usage lines by
+//! `message.id`, and sums per-message token usage into `ArchitectLedger` records
+//! keyed by `(project_id, session, model, skill)` (messages with no
+//! `attributionSkill` bucket under `"other"`). Emits one ledger record per key;
+//! `fold_ledger` keeps the latest per key at read time, so re-harvest is idempotent.
 
 use std::path::{Path, PathBuf};
 
 use rexymcp_executor::config::Config;
-use rexymcp_executor::store::telemetry::{self, ArchitectActivity, ArchitectTokens};
+use rexymcp_executor::store::telemetry::{
+    ARCHITECT_LEDGER_RECORD_TAG, ArchitectLedger, ArchitectTokens, append_architect_ledger,
+};
 
 /// Borrowed harvest inputs from the CLI flags.
 pub struct HarvestArgs<'a> {
@@ -21,12 +24,10 @@ pub struct HarvestArgs<'a> {
 /// Result of a harvest run.
 pub struct HarvestOutcome {
     pub path: PathBuf,
-    /// Distinct messages counted (post-dedup).
     pub messages: usize,
-    /// Activities enriched with non-zero tokens (enriched copies appended).
-    pub enriched: usize,
-    /// Messages that fell after the last activity boundary (unattributed).
-    pub unattributed: usize,
+    pub duplicates: usize,
+    pub sessions: usize,
+    pub records: usize,
 }
 
 /// Days from 1970-01-01 to civil date (y, m[1..12], d[1..31]). Howard Hinnant's
@@ -78,103 +79,95 @@ fn parse_iso_to_epoch_ms(s: &str) -> Option<u64> {
     u64::try_from(total_ms).ok()
 }
 
-/// One deduped assistant message's usage.
-struct Usage {
-    ts_ms: u64,
-    tokens: ArchitectTokens,
+/// Accumulator for a single (session, model, skill) bucket.
+struct Accum {
+    input: u64,
+    cache_creation: u64,
+    cache_read: u64,
+    output: u64,
+    cache_creation_5m: u64,
+    cache_creation_1h: u64,
+    messages: u64,
+    last_ts: u64,
 }
 
-/// Read every `*.jsonl` under `dir`, extract assistant-line usage, dedup by
-/// `message.id` (first occurrence wins — repeats are byte-identical). A missing
-/// dir yields an empty vec (not an error). Lines that are not assistant-with-usage,
-/// or whose timestamp/ids are missing/unparseable, are skipped.
-fn read_transcript_usages(dir: &Path) -> Vec<Usage> {
-    use std::collections::HashSet;
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut out: Vec<Usage> = Vec::new();
+/// Token extraction result from a single assistant-usage line.
+/// Fields: `(message_id, model, skill, input, cache_creation, cache_read, output, cc_5m, cc_1h, ts)`
+type ExtractedTokens = (String, String, String, u64, u64, u64, u64, u64, u64, u64);
 
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return out,
+fn extract_usage(v: &serde_json::Value) -> Option<ExtractedTokens> {
+    let usage = v.get("message").and_then(|m| m.get("usage"))?;
+    let message_id = v
+        .get("message")
+        .and_then(|m| m.get("id"))?
+        .as_str()?
+        .to_string();
+    let model = v
+        .get("message")
+        .and_then(|m| m.get("model"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let skill = match v.get("attributionSkill").and_then(|s| s.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => "other".to_string(),
     };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
-        .collect();
-    files.sort(); // deterministic dedup order across files
+    let input = usage
+        .get("input_tokens")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(0);
+    let cache_read = usage
+        .get("cache_read_input_tokens")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(0);
+    let output = usage
+        .get("output_tokens")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(0);
+    let ts = parse_iso_to_epoch_ms(v.get("timestamp").and_then(|t| t.as_str()).unwrap_or(""))
+        .unwrap_or(0);
 
-    for file in files {
-        let content = match std::fs::read_to_string(&file) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        for line in content.lines().filter(|l| !l.trim().is_empty()) {
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
-                continue;
-            }
-            let Some(msg) = v.get("message") else {
-                continue;
-            };
-            let Some(usage) = msg.get("usage") else {
-                continue;
-            };
-            let Some(id) = msg.get("id").and_then(|i| i.as_str()) else {
-                continue;
-            };
-            if !seen.insert(id.to_string()) {
-                continue; // Gotcha 1: same message.id already counted
-            }
-            let Some(ts_ms) = v
-                .get("timestamp")
-                .and_then(|t| t.as_str())
-                .and_then(parse_iso_to_epoch_ms)
-            else {
-                continue;
-            };
-            let u = |k: &str| usage.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
-            out.push(Usage {
-                ts_ms,
-                tokens: ArchitectTokens {
-                    input: u("input_tokens"),
-                    cache_creation: u("cache_creation_input_tokens"),
-                    cache_read: u("cache_read_input_tokens"),
-                    output: u("output_tokens"),
-                },
-            });
+    let (cache_creation, cc_5m, cc_1h) = if let Some(cc) = usage.get("cache_creation") {
+        if cc.is_object() {
+            let c5m = cc
+                .get("ephemeral_5m_input_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            let c1h = cc
+                .get("ephemeral_1h_input_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            (c5m + c1h, c5m, c1h)
+        } else {
+            let cc = usage
+                .get("cache_creation_input_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            (cc, cc, 0)
         }
-    }
-    out
+    } else {
+        let cc = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0);
+        (cc, cc, 0)
+    };
+
+    Some((
+        message_id,
+        model,
+        skill,
+        input,
+        cache_creation,
+        cache_read,
+        output,
+        cc_5m,
+        cc_1h,
+        ts,
+    ))
 }
 
-/// Sum `b` into `a` per class (saturating).
-fn add_tokens(a: &mut ArchitectTokens, b: &ArchitectTokens) {
-    a.input = a.input.saturating_add(b.input);
-    a.cache_creation = a.cache_creation.saturating_add(b.cache_creation);
-    a.cache_read = a.cache_read.saturating_add(b.cache_read);
-    a.output = a.output.saturating_add(b.output);
-}
-
-/// For each usage, find the activity with the smallest `ts >= usage.ts_ms` (the
-/// next journaling boundary at or after the message) and add its tokens there.
-/// Returns per-activity summed tokens (index-aligned to `sorted`) and the count of
-/// usages that fell after the last boundary (unattributed).
-fn attribute(sorted: &[ArchitectActivity], usages: &[Usage]) -> (Vec<ArchitectTokens>, usize) {
-    let mut sums = vec![ArchitectTokens::default(); sorted.len()];
-    let mut unattributed = 0usize;
-    for u in usages {
-        // sorted ascending by ts; first activity whose ts >= u.ts_ms wins.
-        match sorted.iter().position(|a| a.ts >= u.ts_ms) {
-            Some(idx) => add_tokens(&mut sums[idx], &u.tokens),
-            None => unattributed += 1,
-        }
-    }
-    (sums, unattributed)
-}
-
-/// Harvest transcript usage onto this project's journal activities.
+/// Harvest transcript usage into ledger records.
 pub fn harvest(
     config_path: &Path,
     telemetry_path: Option<&Path>,
@@ -196,49 +189,138 @@ pub fn harvest(
         );
     };
 
-    let project_id = args
+    let _project_id = args
         .project_id
         .map(str::to_string)
         .or_else(|| cfg.project.id.clone());
 
     let store_path = telemetry_dir.join("phase_runs.jsonl");
-    let all = telemetry::read_architect_activities(&store_path)
-        .map_err(|e| format!("failed to read activities: {}", e))?;
-    // Fold first so we enrich the current winners, then keep only this project's,
-    // sorted ascending by ts for the window scan.
-    let mut sorted: Vec<ArchitectActivity> = telemetry::fold_activities(all)
-        .into_iter()
-        .filter(|a| a.project_id == project_id)
-        .collect();
-    sorted.sort_by_key(|a| a.ts);
 
-    let usages = read_transcript_usages(args.transcript_dir);
-    let messages = usages.len();
-    let (sums, unattributed) = attribute(&sorted, &usages);
-
-    let mut enriched = 0usize;
-    for (act, toks) in sorted.iter().zip(sums.iter()) {
-        if *toks == ArchitectTokens::default() {
-            continue; // nothing landed in this window
+    // Read and parse transcript files, sorted by path for deterministic dedup order
+    let mut files: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(args.transcript_dir)
+        .map_err(|e| format!("failed to read transcript dir: {}", e))?
+    {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "jsonl") {
+            files.push(path);
         }
-        let mut copy = act.clone();
-        copy.tokens = *toks;
-        telemetry::append_architect_activity(&telemetry_dir, &copy)
-            .map_err(|e| format!("failed to append enriched activity: {}", e))?;
-        enriched += 1;
+    }
+    files.sort();
+
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut accum: std::collections::HashMap<(String, String, String), Accum> =
+        std::collections::HashMap::new();
+    let mut duplicates: usize = 0;
+    let mut sessions: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for file_path in &files {
+        let session_id = match file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+        {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let content = match std::fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        for line in content.lines().filter(|l| !l.trim().is_empty()) {
+            let v = match serde_json::from_str::<serde_json::Value>(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // Skip non-assistant lines
+            if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+                continue;
+            }
+
+            // Extract usage; None means skip (no message.id, no usage, etc.)
+            let (msg_id, model, skill, input, cache_creation, cache_read, output, cc_5m, cc_1h, ts) =
+                match extract_usage(&v) {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+            // Dedup by message.id
+            if !seen_ids.insert(msg_id) {
+                duplicates += 1;
+                continue;
+            }
+
+            sessions.insert(session_id.clone());
+
+            let key = (session_id.clone(), model, skill);
+            let acc = accum.entry(key).or_insert(Accum {
+                input: 0,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+                cache_creation_5m: 0,
+                cache_creation_1h: 0,
+                messages: 0,
+                last_ts: 0,
+            });
+            acc.input += input;
+            acc.cache_creation += cache_creation;
+            acc.cache_read += cache_read;
+            acc.output += output;
+            acc.cache_creation_5m += cc_5m;
+            acc.cache_creation_1h += cc_1h;
+            acc.messages += 1;
+            if ts > acc.last_ts {
+                acc.last_ts = ts;
+            }
+        }
+    }
+
+    // Build ledger records from accumulators, sorted for deterministic output
+    let mut total_messages = 0usize;
+    let mut total_records = 0usize;
+    for (key, acc) in accum {
+        let ledger = ArchitectLedger {
+            record: ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: _project_id.clone(),
+            session_id: key.0,
+            model: key.1,
+            skill: key.2,
+            tokens: ArchitectTokens {
+                input: acc.input,
+                cache_creation: acc.cache_creation,
+                cache_read: acc.cache_read,
+                output: acc.output,
+            },
+            cache_creation_5m: acc.cache_creation_5m,
+            cache_creation_1h: acc.cache_creation_1h,
+            messages: acc.messages,
+            last_ts: acc.last_ts,
+        };
+        if let Err(e) = append_architect_ledger(&telemetry_dir, &ledger) {
+            eprintln!("warning: failed to append ledger record: {}", e);
+        }
+        total_messages += acc.messages as usize;
+        total_records += 1;
     }
 
     Ok(HarvestOutcome {
         path: store_path,
-        messages,
-        enriched,
-        unattributed,
+        messages: total_messages,
+        duplicates,
+        sessions: sessions.len(),
+        records: total_records,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rexymcp_executor::store::telemetry::{fold_ledger, read_architect_ledger};
     use std::fs;
     use tempfile::TempDir;
 
@@ -302,22 +384,27 @@ dir = "{}"
         assert_eq!(ms, 0);
     }
 
-    // ---- read_transcript_usages ----
+    // ---- write_fixture helper ----
 
     fn write_fixture(dir: &Path, name: &str, lines: &[&str]) {
         let path = dir.join(name);
         fs::write(&path, lines.join("\n")).unwrap();
     }
 
+    // ---- harvest tests ----
+
     #[test]
-    fn read_transcript_usages_dedups_by_message_id() {
+    fn harvest_dedups_by_message_id() {
         let dir = TempDir::new().unwrap();
-        // 5 lines with the same message.id (identical usage), plus 1 distinct
-        let _dup_id = "msg_dup";
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // 5 lines with the same message.id, plus 1 distinct
         let dup_line = r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","message":{"id":"msg_dup","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":6369,"cache_creation_input_tokens":16136,"cache_read_input_tokens":18456,"output_tokens":304}}}"#;
         let distinct_line = r#"{"type":"assistant","timestamp":"2026-07-09T16:01:00.000Z","message":{"id":"msg_other","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":200,"cache_read_input_tokens":300,"output_tokens":50}}}"#;
         write_fixture(
-            dir.path(),
+            &tx_dir,
             "session.jsonl",
             &[
                 dup_line,
@@ -329,162 +416,45 @@ dir = "{}"
             ],
         );
 
-        let usages = read_transcript_usages(dir.path());
-        // Gotcha 1: 5 dups collapse to 1, plus 1 distinct = 2
-        assert_eq!(usages.len(), 2);
-
-        // Total input is 6369 + 100, NOT 6369*5 + 100
-        let total_input: u64 = usages.iter().map(|u| u.tokens.input).sum();
-        assert_eq!(total_input, 6369 + 100);
-    }
-
-    #[test]
-    fn read_transcript_usages_skips_user_and_usageless_lines() {
-        let dir = TempDir::new().unwrap();
-        write_fixture(
-            dir.path(),
-            "session.jsonl",
-            &[
-                r#"{"type":"user","timestamp":"2026-07-09T16:00:00.000Z","message":{"id":"msg_user","role":"user","usage":{"input_tokens":9999}}}"#,
-                r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","message":{"id":"msg_no_usage","role":"assistant"}}"#,
-            ],
-        );
-
-        let usages = read_transcript_usages(dir.path());
-        assert!(usages.is_empty());
-    }
-
-    #[test]
-    fn read_transcript_usages_missing_dir_is_empty() {
-        let usages = read_transcript_usages(Path::new("/nonexistent/dir/that/does/not/exist"));
-        assert!(usages.is_empty());
-    }
-
-    #[test]
-    fn read_transcript_usages_maps_all_four_classes() {
-        let dir = TempDir::new().unwrap();
-        write_fixture(
-            dir.path(),
-            "session.jsonl",
-            &[
-                r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","message":{"id":"msg_1","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1000,"cache_creation_input_tokens":2000,"cache_read_input_tokens":3000,"output_tokens":400}}}"#,
-            ],
-        );
-
-        let usages = read_transcript_usages(dir.path());
-        assert_eq!(usages.len(), 1);
-        let u = &usages[0];
-        assert_eq!(u.tokens.input, 1000);
-        assert_eq!(u.tokens.cache_creation, 2000);
-        assert_eq!(u.tokens.cache_read, 3000);
-        assert_eq!(u.tokens.output, 400);
-    }
-
-    // ---- attribute ----
-
-    #[test]
-    fn attribute_sends_message_to_next_boundary() {
-        let act_100 = ArchitectActivity {
-            record: "architect_activity".to_string(),
-            ts: 100,
-            phase_doc_path: None,
-            phase_id: "p1".to_string(),
-            project_id: Some("proj".to_string()),
-            milestone_id: None,
-            activity: "review".to_string(),
-            outcome: None,
-            model: None,
-            tokens: ArchitectTokens::default(),
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
         };
-        let act_200 = ArchitectActivity {
-            record: "architect_activity".to_string(),
-            ts: 200,
-            phase_doc_path: None,
-            phase_id: "p1".to_string(),
-            project_id: Some("proj".to_string()),
-            milestone_id: None,
-            activity: "draft".to_string(),
-            outcome: None,
-            model: None,
-            tokens: ArchitectTokens::default(),
-        };
-        let sorted = vec![act_100, act_200];
+        let outcome = harvest(&config, None, &args).unwrap();
 
-        let usages = vec![
-            // ts=150 → next boundary is act_200
-            Usage {
-                ts_ms: 150,
-                tokens: ArchitectTokens {
-                    input: 10,
-                    cache_creation: 0,
-                    cache_read: 0,
-                    output: 0,
-                },
-            },
-            // ts=100 → >= is inclusive, lands on act_100
-            Usage {
-                ts_ms: 100,
-                tokens: ArchitectTokens {
-                    input: 20,
-                    cache_creation: 0,
-                    cache_read: 0,
-                    output: 0,
-                },
-            },
-            // ts=250 → after last boundary, unattributed
-            Usage {
-                ts_ms: 250,
-                tokens: ArchitectTokens {
-                    input: 30,
-                    cache_creation: 0,
-                    cache_read: 0,
-                    output: 0,
-                },
-            },
-        ];
-
-        let (sums, unattributed) = attribute(&sorted, &usages);
-
-        // act_100 gets ts=100 message only
-        assert_eq!(sums[0].input, 20);
-        // act_200 gets ts=150 message only
-        assert_eq!(sums[1].input, 10);
-        // ts=250 is unattributed
-        assert_eq!(unattributed, 1);
+        // 5 dups collapse to 1, plus 1 distinct = 2 messages
+        assert_eq!(outcome.messages, 2);
+        // 4 duplicates skipped
+        assert_eq!(outcome.duplicates, 4);
+        assert_eq!(outcome.records, 1);
     }
 
-    // ---- harvest end-to-end ----
-
     #[test]
-    fn harvest_appends_enriched_copy_and_fold_overlays() {
+    fn harvest_buckets_by_session_model_skill() {
         let dir = TempDir::new().unwrap();
         let config = make_config(&dir);
-        let telemetry_dir = dir.path().join("telemetry");
-        let store_path = telemetry_dir.join("phase_runs.jsonl");
-
-        // Append a zero-token activity with a known ts
-        let activity = ArchitectActivity {
-            record: "architect_activity".to_string(),
-            ts: 1_717_000_000_000,
-            phase_doc_path: None,
-            phase_id: "phase-05b".to_string(),
-            project_id: Some("test-project".to_string()),
-            milestone_id: Some("M27".to_string()),
-            activity: "review".to_string(),
-            outcome: Some("approved_first_try".to_string()),
-            model: Some("claude-opus-4-8".to_string()),
-            tokens: ArchitectTokens::default(),
-        };
-        telemetry::append_architect_activity(&telemetry_dir, &activity).unwrap();
-
-        // Write a fixture transcript with one message dated FAR in the past
-        // so it precedes the activity's ts and lands in its window
         let tx_dir = dir.path().join("tx");
         fs::create_dir_all(&tx_dir).unwrap();
-        fs::write(
-            tx_dir.join("session.jsonl"),
-            r#"{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"msg_e2e","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":6369,"cache_creation_input_tokens":16136,"cache_read_input_tokens":18456,"output_tokens":304}}}"#,
-        ).unwrap();
+
+        // Session 1: two models, two skills (one with, one without attributionSkill)
+        write_fixture(
+            &tx_dir,
+            "session_a.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_1","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":100}}}"#,
+                r#"{"type":"assistant","timestamp":"2026-07-09T16:01:00.000Z","message":{"id":"msg_2","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":2000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":200}}}"#,
+                r#"{"type":"assistant","timestamp":"2026-07-09T16:02:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_3","role":"assistant","model":"claude-sonnet-4-8","usage":{"input_tokens":3000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":300}}}"#,
+            ],
+        );
+
+        // Session 2: one model, one skill
+        write_fixture(
+            &tx_dir,
+            "session_b.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-09T17:00:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_4","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":4000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":400}}}"#,
+            ],
+        );
 
         let args = HarvestArgs {
             transcript_dir: &tx_dir,
@@ -492,58 +462,133 @@ dir = "{}"
         };
         let outcome = harvest(&config, None, &args).unwrap();
 
-        assert_eq!(outcome.messages, 1);
-        assert_eq!(outcome.enriched, 1);
-        assert_eq!(outcome.unattributed, 0);
+        // 4 distinct messages, 0 dups
+        assert_eq!(outcome.messages, 4);
+        assert_eq!(outcome.duplicates, 0);
+        // 4 distinct (session, model, skill) keys
+        assert_eq!(outcome.records, 4);
 
-        // Read back + fold: the activity should now have non-zero tokens
-        let all = telemetry::read_architect_activities(&store_path).unwrap();
-        let folded = telemetry::fold_activities(all);
-        let enriched_act = folded.iter().find(|a| a.activity == "review").unwrap();
-        assert_eq!(enriched_act.tokens.input, 6369);
-        assert_eq!(enriched_act.tokens.cache_creation, 16136);
-        assert_eq!(enriched_act.tokens.cache_read, 18456);
-        assert_eq!(enriched_act.tokens.output, 304);
+        // Verify the store contains ledger records with "other" skill
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let content = fs::read_to_string(&store_path).unwrap();
+        assert!(content.contains(r#""skill":"other""#));
     }
 
     #[test]
-    fn harvest_project_scoping() {
+    fn harvest_last_ts_is_max_message_timestamp() {
         let dir = TempDir::new().unwrap();
         let config = make_config(&dir);
-        let telemetry_dir = dir.path().join("telemetry");
-
-        // Append an activity with a DIFFERENT project_id
-        let activity = ArchitectActivity {
-            record: "architect_activity".to_string(),
-            ts: 1_717_000_000_000,
-            phase_doc_path: None,
-            phase_id: "phase-05b".to_string(),
-            project_id: Some("other-project".to_string()),
-            milestone_id: None,
-            activity: "review".to_string(),
-            outcome: None,
-            model: None,
-            tokens: ArchitectTokens::default(),
-        };
-        telemetry::append_architect_activity(&telemetry_dir, &activity).unwrap();
-
-        // Write a fixture transcript with one message dated in the past
         let tx_dir = dir.path().join("tx");
         fs::create_dir_all(&tx_dir).unwrap();
-        fs::write(
-            tx_dir.join("session.jsonl"),
-            r#"{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"msg_x","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":9999,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}"#,
-        ).unwrap();
+
+        // Two messages in one (session, model, skill) bucket, different timestamps,
+        // zero cache tokens. last_ts must be the LATER message's epoch-ms — not a
+        // cache value (guards the cc_5m-for-last_ts regression).
+        write_fixture(
+            &tx_dir,
+            "session.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"a","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}"#,
+                r#"{"type":"assistant","timestamp":"2026-07-09T16:01:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"b","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}"#,
+            ],
+        );
 
         let args = HarvestArgs {
             transcript_dir: &tx_dir,
-            project_id: None, // defaults to "test-project" from config
+            project_id: None,
+        };
+        let outcome = harvest(&config, None, &args).unwrap();
+        assert_eq!(outcome.records, 1);
+
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let content = fs::read_to_string(&store_path).unwrap();
+        // 2026-07-09T16:01:00.000Z == 1_783_612_860_000 ms
+        assert!(
+            content.contains(r#""last_ts":1783612860000"#),
+            "last_ts must be the later message's epoch-ms, got: {content}"
+        );
+    }
+
+    #[test]
+    fn harvest_splits_cache_creation_5m_1h() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // Line with nested 5m/1h split
+        let line_with_split = r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","message":{"id":"msg_1","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1000,"cache_read_input_tokens":3000,"output_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":500,"ephemeral_1h_input_tokens":1500}}}}"#;
+
+        // Line without nested split (fallback: cache_creation_input_tokens)
+        let line_fallback = r#"{"type":"assistant","timestamp":"2026-07-09T16:01:00.000Z","message":{"id":"msg_2","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":900,"cache_read_input_tokens":200,"output_tokens":50}}}"#;
+
+        write_fixture(&tx_dir, "session.jsonl", &[line_with_split, line_fallback]);
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
         };
         let outcome = harvest(&config, None, &args).unwrap();
 
-        // Cross-project isolation: the "other-project" activity receives no tokens
-        assert_eq!(outcome.enriched, 0);
-        assert_eq!(outcome.messages, 1);
-        assert_eq!(outcome.unattributed, 1); // no matching project activity
+        assert_eq!(outcome.messages, 2);
+        assert_eq!(outcome.duplicates, 0);
+
+        // Read back from store and verify the invariant
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let ledgers = read_architect_ledger(&store_path).unwrap();
+        assert_eq!(ledgers.len(), 1);
+        let ledger = &ledgers[0];
+        // msg_1: cc_5m=500, cc_1h=1500, cache_creation=2000
+        // msg_2: cc_5m=900, cc_1h=0, cache_creation=900
+        // totals: cc_5m=1400, cc_1h=1500, cache_creation=2900
+        assert_eq!(ledger.cache_creation_5m, 1400);
+        assert_eq!(ledger.cache_creation_1h, 1500);
+        assert_eq!(ledger.tokens.cache_creation, 2900);
+        // Invariant: cc_5m + cc_1h == cache_creation
+        assert_eq!(
+            ledger.cache_creation_5m + ledger.cache_creation_1h,
+            ledger.tokens.cache_creation
+        );
+    }
+
+    #[test]
+    fn harvest_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        write_fixture(
+            &tx_dir,
+            "session.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-09T16:00:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_1","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1000,"cache_creation_input_tokens":2000,"cache_read_input_tokens":3000,"output_tokens":400}}}"#,
+            ],
+        );
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+
+        // First harvest
+        let outcome1 = harvest(&config, None, &args).unwrap();
+        assert_eq!(outcome1.messages, 1);
+
+        // Second harvest (appends duplicate records to the same store)
+        let outcome2 = harvest(&config, None, &args).unwrap();
+        assert_eq!(outcome2.messages, 1);
+
+        // Read all + fold: should yield the same per-key totals as a single run
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let all_ledgers = read_architect_ledger(&store_path).unwrap();
+        let folded = fold_ledger(all_ledgers);
+
+        // After fold, only 1 record (the second harvest's record replaces the first)
+        assert_eq!(folded.len(), 1);
+        let ledger = &folded[0];
+        assert_eq!(ledger.tokens.input, 1000);
+        assert_eq!(ledger.tokens.cache_creation, 2000);
+        assert_eq!(ledger.messages, 1);
     }
 }
