@@ -6,12 +6,13 @@ use ratatui::{
 
 use crate::status::{self, StatusSummary};
 use rexymcp_executor::store::sessions::event::TaskState;
-use rexymcp_executor::store::telemetry::{ArchitectRates, ArchitectTokens};
+use rexymcp_executor::store::telemetry::ArchitectTokens;
 
 /// Token costs for one budget scope (Session / Milestone / Project).
 /// `executor_*` are local-model tokens (cost = $0.00 until a local rate is
 /// configured; future: paid OpenRouter/provider rates). `architect` is summed
-/// from folded `ArchitectActivity` records.
+/// from folded `ArchitectActivity` records (aggregate tokens).
+/// `architect_cost` is the pre-computed per-model ledger cost (dollars).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ScopeCosts {
     pub executor_in: u64,
@@ -19,6 +20,7 @@ pub struct ScopeCosts {
     pub executor_cache_read: u64,
     pub executor_cache_write: u64,
     pub architect: ArchitectTokens,
+    pub architect_cost: Option<f64>,
 }
 
 /// Whether the Budget savings block renders dollar amounts or token counts.
@@ -34,7 +36,6 @@ pub enum BudgetDisplay {
 pub struct BudgetRates {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
-    pub architect: ArchitectRates,
     /// The executor model's $/Mtok (from `cfg.model_rates`), for the Executor row.
     pub executor: rexymcp_executor::store::telemetry::ModelRates,
 }
@@ -662,7 +663,10 @@ pub(crate) fn savings_lines(
     let paren = |v: String| format!("({v})");
     let debit_row =
         |label: &str, sess: String, mile: String, proj: String| -> Option<Line<'static>> {
-            if sess == "$0.00" && mile == "$0.00" && proj == "$0.00" {
+            // Hide a debit row that is empty in every scope: all $0.00 (unpriced)
+            // or all — (not attributable, e.g. a None architect cost).
+            let empty = |v: &str| v == "$0.00" || v == "—";
+            if empty(&sess) && empty(&mile) && empty(&proj) {
                 return None;
             }
             Some(make_row(label, paren(sess), paren(mile), paren(proj)))
@@ -687,9 +691,9 @@ pub(crate) fn savings_lines(
 
     if let Some(row) = debit_row(
         "Architect:",
-        fmt_dollars(sess.architect),
-        fmt_dollars(mile.architect),
-        fmt_dollars(proj.architect),
+        fmt_opt(sess.architect),
+        fmt_opt(mile.architect),
+        fmt_opt(proj.architect),
     ) {
         out.push(row);
     }
@@ -1805,6 +1809,7 @@ mod tests {
         let mile = Some(ScopeCosts {
             executor_in: 500_000,
             executor_out: 200_000,
+            architect_cost: None,
             ..ScopeCosts::default()
         });
         let lines = savings_lines(
@@ -1900,12 +1905,6 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 5.0,
             output_per_mtok: 25.0,
-            architect: ArchitectRates {
-                input_per_mtok: 5.0,
-                cache_creation_per_mtok: 6.25,
-                cache_read_per_mtok: 0.5,
-                output_per_mtok: 25.0,
-            },
             executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
@@ -1919,6 +1918,7 @@ mod tests {
                 cache_read: 0,
                 output: 0,
             },
+            architect_cost: Some(5.0),
         };
         let lines = savings_lines(
             &summary,
@@ -1951,12 +1951,6 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 5.0,
             output_per_mtok: 25.0,
-            architect: ArchitectRates {
-                input_per_mtok: 1.0,
-                cache_creation_per_mtok: 1.25,
-                cache_read_per_mtok: 0.1,
-                output_per_mtok: 5.0,
-            },
             executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
@@ -1970,6 +1964,7 @@ mod tests {
                 cache_read: 0,
                 output: 0,
             },
+            architect_cost: Some(1.0),
         };
         let lines = savings_lines(
             &summary,
@@ -2012,12 +2007,6 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 5.0,
             output_per_mtok: 25.0,
-            architect: ArchitectRates {
-                input_per_mtok: 1.0,
-                cache_creation_per_mtok: 1.25,
-                cache_read_per_mtok: 0.1,
-                output_per_mtok: 5.0,
-            },
             executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
@@ -2031,6 +2020,7 @@ mod tests {
                 cache_read: 0,
                 output: 0,
             },
+            architect_cost: None,
         };
         let lines = savings_lines(
             &summary,
@@ -2090,16 +2080,10 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 3.0,
             output_per_mtok: 15.0,
-            architect: ArchitectRates {
-                input_per_mtok: 5.0,
-                cache_creation_per_mtok: 6.25,
-                cache_read_per_mtok: 0.5,
-                output_per_mtok: 25.0,
-            },
             executor: ModelRates::default(),
         };
         let project_costs = ScopeCosts {
-            executor_in: 5_000_000,
+            executor_in: 1_000_000,
             executor_out: 0,
             executor_cache_read: 0,
             executor_cache_write: 0,
@@ -2109,6 +2093,7 @@ mod tests {
                 cache_read: 0,
                 output: 0,
             },
+            architect_cost: None,
         };
         let lines = savings_lines(
             &summary,
@@ -2177,7 +2162,6 @@ mod tests {
         let rates = BudgetRates {
             input_per_mtok: 3.0,
             output_per_mtok: 15.0,
-            architect: ArchitectRates::default(),
             executor: ModelRates {
                 input_per_mtok: 5.0,
                 output_per_mtok: 15.0,
@@ -2191,6 +2175,7 @@ mod tests {
             executor_cache_read: 0,
             executor_cache_write: 0,
             architect: Default::default(),
+            architect_cost: None,
         };
         let lines = savings_lines(
             &summary,
@@ -2240,6 +2225,7 @@ mod tests {
                 cache_read: 25_000,
                 output: 25_000,
             },
+            architect_cost: None,
         };
         let lines = savings_lines(
             &summary,

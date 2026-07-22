@@ -1,7 +1,7 @@
 # Phase 06c-iii-a: Rewire costs + dashboard architect cost onto the ledger (per-model)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** done
 **Depends on:** phase-06c-ii
 **Estimated diff:** ~380 lines
 **Tags:** language=rust, kind=refactor, size=m
@@ -300,3 +300,45 @@ check. Do **not** hand-edit the store.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+<!-- entries appended below this line -->
+### Update — 2026-07-21 (escalation → session takeover)
+
+**Chosen lever:** session takeover (to finish + repair).
+**Rationale:** the executor (AEON-7, 268 turns) got the **core rewire correct**
+(`scope_report`/`scope_costs` per-model, milestone→None) but **hard-failed on
+`IdenticalToolCallRepetition` (bash `sed -n` ×6)** — the **third same-class hard_fail
+of the 06c arc** (06c-i ×2), *despite the read-once/`sed`-avoidance gotcha being in
+this phase doc*. It left the tree non-compiling with a production regression +
+extensive test-fixup mangles. Re-dispatch would loop again on the same class; the work
+was ~90% done. Architect took over.
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** escalated (session takeover)
+- **Bounces:** 1 hard_fail (`IdenticalToolCallRepetition`/bash, 268 turns) → takeover.
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (core rewire) + Claude Code (direct) for repair/finish.
+- **Takeover work:** (1) **production regression** — the executor replaced
+  `savings_lines`' session `ScopeCosts` with `::default()`, zeroing Session executor
+  tokens (restored from `sess_in`/`sess_out`); (2) **dead field** — `BudgetRates.architect`
+  became unread once `scope_report` stopped single-rate pricing → removed the field +
+  all literals (clippy `-D warnings` blocker); (3) **debit_row** now hides `—`-everywhere
+  rows (a `None` architect) as it already hid `$0.00`; (4) fixed ~15 mangled test literals
+  (the executor repeatedly deleted `let lines = savings_lines(` and unindented while
+  adding `architect_cost`), converted `load_data`'s test to seed an `ArchitectLedger`
+  (was an `ArchitectActivity`), and updated `scope_report` tests for the `Option<f64>`
+  architect; (5) **added the 2 missing mutation-sensitive tests** the executor skipped
+  (`scope_costs_prices_architect_per_model_from_ledger`, `scope_costs_milestone_architect_is_none`).
+- **Verification:** all four gates green (581 mcp + 1031 executor). Per-model pricing
+  **mutation-verified** (pricing all at opus → $60 ≠ the $42 opus+sonnet-5 expected).
+  **E2E** (`rexymcp costs` on the real store): Project ARCHITECT **$1432.00** (per-model),
+  Session + Milestone ARCHITECT/NET **`—`** — the design decisions confirmed live.
+  `costs.rs`/`profile` scope respected (profile untouched).
+- **Calibration (STRONG — reinforced 3×):** `IdenticalToolCallRepetition` on read-only
+  `sed -n` loops is now a **confirmed recurring executor failure the phase-doc gotcha does
+  NOT prevent** (06c-i ×2 + 06c-iii-a, the gotcha present each time). This is past the
+  three-strikes threshold: **fold candidate for M35 close** — make the identical-repetition
+  detector **advisory (or higher-threshold) for read-only commands** (`sed -n`/`cat`/`grep`
+  that don't mutate), and/or a harder executor-contract steer off `sed -n` for viewing.
+  Also: the executor **skips architect-specified new tests** under stress (2nd occurrence,
+  after 06c-i) and **mangles adjacent test literals** during multi-literal struct-field
+  additions — a green-at-every-step / one-literal-per-patch nudge may help.

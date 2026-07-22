@@ -12,6 +12,7 @@ pub(crate) fn run_loop(
     rates: BudgetRates,
     telemetry_dir: Option<&Path>,
     project_id: Option<String>,
+    architect: &rexymcp_executor::config::ArchitectConfig,
 ) -> std::io::Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use std::time::Duration;
@@ -33,7 +34,13 @@ pub(crate) fn run_loop(
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        let data = load_data(repo, session, telemetry_dir, project_id.as_deref());
+        let data = load_data(
+            repo,
+            session,
+            telemetry_dir,
+            project_id.as_deref(),
+            architect,
+        );
         // New records arrived — snap back to the bottom so the live feed is always
         // visible. This re-engages autoscroll even if the user previously scrolled up.
         if data.records.len() > prev_record_count {

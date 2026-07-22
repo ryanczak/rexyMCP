@@ -830,18 +830,24 @@ async fn main() -> anyhow::Result<()> {
             let rates = dashboard::BudgetRates {
                 input_per_mtok: i,
                 output_per_mtok: o,
-                architect: cfg.architect.effective_architect_rates(),
                 executor: cfg.model_rates(&cfg.executor.model),
             };
             let telemetry_dir = cfg.telemetry.dir.as_deref();
             let project_id = rexymcp_executor::config::Config::load(&repo.join("rexymcp.toml"))
                 .ok()
                 .and_then(|c| c.project.id);
-            dashboard::run_dashboard(&repo, session.as_deref(), rates, telemetry_dir, project_id)
-                .unwrap_or_else(|e| {
-                    eprintln!("dashboard error: {e}");
-                    std::process::exit(1);
-                });
+            dashboard::run_dashboard(
+                &repo,
+                session.as_deref(),
+                rates,
+                telemetry_dir,
+                project_id,
+                &cfg.architect,
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("dashboard error: {e}");
+                std::process::exit(1);
+            });
             Ok(())
         }
         Commands::Costs {

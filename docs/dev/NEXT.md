@@ -4,9 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06c-iii-a — rewire costs + dashboard architect cost onto the ledger](milestones/M35-metrics-cost-accounting/phase-06c-iii-a-ledger-cost-rewire.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-iii-a`).**
+**Active phase: none pending `/rexymcp:architect next` — phase-06c-iii-a is `done`.**
+Remaining M35: **06c-iii-b** (per-skill breakdown + harvest freshness) → **06d**
+(dashboard fixes) → **06e** (auto-telemetry) → **07** (reporting debt) closes M35.
+
+**M35 phase-06c-iii-a — done (2026-07-21, escalated / session takeover; executor
+AEON-7/Qwen3.6-27B-AEON did the core rewire, Claude Code finished/repaired).**
+`rexymcp costs` + dashboard Budget now price **architect cost from the ledger per-model**
+(`ArchitectLedger::cost` × `rates_for`), retiring `sum_architect_tokens`/the
+`ArchitectActivity` cost path. `ScopeReport.architect` → `Option<f64>`; **milestone +
+session architect/net render `—`** (not attributable); `BudgetRates.architect` (now dead)
+removed. **E2E confirmed live** (`rexymcp costs`): Project ARCHITECT **$1432.00**
+(per-model), Session/Milestone **`—`**. Per-model pricing mutation-verified ($60≠$42).
+**The hardest phase of the arc:** executor hard-failed at turn 268 on
+`IdenticalToolCallRepetition` (bash `sed -n` ×6) — the **3rd same-class hard_fail of 06c**,
+*despite the read-once gotcha being in the phase doc*. It left a production regression
+(session executor tokens zeroed) + ~15 mangled test literals + 2 skipped tests; takeover
+fixed all + added the mutation tests. **STRONG M35-close fold (3-strikes):** make
+`IdenticalToolCallRepetition` advisory/higher-threshold for **read-only** commands
+(`sed -n`/`grep`/`cat`) — the phase-doc gotcha demonstrably does not prevent it.
+
+**06c-iii split (2026-07-21, with the user):** 06c-iii-a = this core rewire (the shared
+`ScopeCosts`/`scope_report` touch both `costs` + dashboard, can't split at that line);
+06c-iii-b = per-skill breakdown + harvest-freshness (additive). profile stays
+executor-only. Milestone architect = `—` (user decision — no milestone dimension in the
+ledger).
 
 phase-06c-iii-a drafted 2026-07-21: the core of the ledger-surfaces work. `rexymcp costs`
 + dashboard Budget now compute **architect cost from the ledger, per-model**

@@ -19,7 +19,7 @@ use crate::status;
 pub struct ScopeReport {
     pub baseline: Option<f64>,
     pub executor: f64,
-    pub architect: f64,
+    pub architect: Option<f64>,
     pub net: Option<f64>,
 }
 
@@ -52,7 +52,7 @@ pub fn scope_report(
             costs.executor_cache_write,
             exec_rates.cache_creation_per_mtok,
         );
-    let architect = costs.architect.cost(&baseline.architect);
+    let architect = costs.architect_cost;
     let baseline_cost = if no_baseline {
         None
     } else {
@@ -61,7 +61,10 @@ pub fn scope_report(
                 + per_m(costs.executor_out, baseline.output_per_mtok),
         )
     };
-    let net = baseline_cost.map(|b| b - executor - architect);
+    let net = match (baseline_cost, architect) {
+        (Some(b), Some(a)) => Some(b - executor - a),
+        _ => None,
+    };
 
     ScopeReport {
         baseline: baseline_cost,
@@ -72,9 +75,11 @@ pub fn scope_report(
 }
 
 /// Sum executor tokens over project runs, optionally scoped to one milestone_id.
+/// Architect cost is priced per-model from the ledger (no milestone scope).
 pub(crate) fn scope_costs(
     runs: &[PhaseRun],
-    activities: &[telemetry::ArchitectActivity],
+    ledgers: &[telemetry::ArchitectLedger],
+    architect: &rexymcp_executor::config::ArchitectConfig,
     project_id: &str,
     milestone_id: Option<&str>,
 ) -> ScopeCosts {
@@ -96,36 +101,35 @@ pub(crate) fn scope_costs(
             c
         });
 
-    let arch = sum_architect_tokens(activities, Some(project_id), milestone_id);
+    // Architect: attributable at PROJECT scope only (the ledger has no milestone).
+    let (architect_tokens, architect_cost) = if milestone_id.is_some() {
+        (ArchitectTokens::default(), None)
+    } else {
+        let mut toks = ArchitectTokens::default();
+        let mut cost = 0.0_f64;
+        for l in ledgers
+            .iter()
+            .filter(|l| l.project_id.as_deref() == Some(project_id))
+        {
+            toks.input = toks.input.saturating_add(l.tokens.input);
+            toks.cache_creation = toks.cache_creation.saturating_add(l.tokens.cache_creation);
+            toks.cache_read = toks.cache_read.saturating_add(l.tokens.cache_read);
+            toks.output = toks.output.saturating_add(l.tokens.output);
+            if let Some((inp, out)) = architect.rates_for(&l.model) {
+                cost += l.cost(inp, out);
+            }
+        }
+        (toks, Some(cost))
+    };
 
     ScopeCosts {
         executor_in: exec.executor_in,
         executor_out: exec.executor_out,
         executor_cache_read: exec.executor_cache_read,
         executor_cache_write: exec.executor_cache_write,
-        architect: arch,
+        architect: architect_tokens,
+        architect_cost,
     }
-}
-
-/// Sum architect tokens from a filtered set of folded `ArchitectActivity` records.
-fn sum_architect_tokens(
-    activities: &[telemetry::ArchitectActivity],
-    project_id: Option<&str>,
-    milestone_id: Option<&str>,
-) -> ArchitectTokens {
-    activities
-        .iter()
-        .filter(|a| {
-            a.project_id.as_deref() == project_id
-                && (milestone_id.is_none() || a.milestone_id.as_deref() == milestone_id)
-        })
-        .fold(ArchitectTokens::default(), |mut acc, a| {
-            acc.input = acc.input.saturating_add(a.tokens.input);
-            acc.cache_creation = acc.cache_creation.saturating_add(a.tokens.cache_creation);
-            acc.cache_read = acc.cache_read.saturating_add(a.tokens.cache_read);
-            acc.output = acc.output.saturating_add(a.tokens.output);
-            acc
-        })
 }
 
 /// Load a full cost report from config + repo + telemetry.
@@ -152,7 +156,6 @@ pub fn load_cost_report(
     let baseline = BudgetRates {
         input_per_mtok: cfg.dashboard.effective_rates().0,
         output_per_mtok: cfg.dashboard.effective_rates().1,
-        architect: cfg.architect.effective_architect_rates(),
         executor: telemetry::ModelRates::default(),
     };
     let exec_rates = cfg.model_rates(&cfg.executor.model);
@@ -181,9 +184,12 @@ pub fn load_cost_report(
     let activities = telemetry::fold_activities(
         telemetry::read_architect_activities(&telemetry_file).unwrap_or_default(),
     );
+    let ledgers = telemetry::fold_ledger(
+        telemetry::read_architect_ledger(&telemetry_file).unwrap_or_default(),
+    );
 
     if let Some(pid) = project_id {
-        let project_costs = scope_costs(&runs, &activities, pid, None);
+        let project_costs = scope_costs(&runs, &ledgers, &cfg.architect, pid, None);
         let project_report = scope_report(&project_costs, &exec_rates, &baseline);
 
         // Find the latest milestone_id from project runs.
@@ -195,7 +201,7 @@ pub fn load_cost_report(
             .and_then(|r| r.milestone_id.as_deref());
 
         let milestone_report = latest_milestone_id.map(|mid| {
-            let costs = scope_costs(&runs, &activities, pid, Some(mid));
+            let costs = scope_costs(&runs, &ledgers, &cfg.architect, pid, Some(mid));
             scope_report(&costs, &exec_rates, &baseline)
         });
 
@@ -243,7 +249,7 @@ pub fn format_costs(report: &CostReport) -> String {
             label,
             fmt_opt(r.baseline),
             fmt_dollars(r.executor),
-            fmt_dollars(r.architect),
+            fmt_opt(r.architect),
             fmt_opt(r.net),
         )
     };
@@ -262,13 +268,11 @@ pub fn format_costs(report: &CostReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rexymcp_executor::store::telemetry::ArchitectRates;
 
     fn zero_rates() -> BudgetRates {
         BudgetRates {
             input_per_mtok: 0.0,
             output_per_mtok: 0.0,
-            architect: ArchitectRates::default(),
             executor: telemetry::ModelRates::default(),
         }
     }
@@ -286,12 +290,6 @@ mod tests {
         BudgetRates {
             input_per_mtok: 15.0,
             output_per_mtok: 75.0,
-            architect: ArchitectRates {
-                input_per_mtok: 15.0,
-                output_per_mtok: 75.0,
-                cache_read_per_mtok: 2.0,
-                cache_creation_per_mtok: 8.0,
-            },
             executor: telemetry::ModelRates::default(),
         }
     }
@@ -309,6 +307,7 @@ mod tests {
                 cache_read: 200_000,
                 output: 300_000,
             },
+            architect_cost: Some(31.2),
         };
         let exec = priced_exec_rates();
         let baseline = priced_baseline();
@@ -316,12 +315,12 @@ mod tests {
 
         // executor = 1M * 5.0 + 1M * 15.0 = $20.00
         assert_eq!(r.executor, 20.0);
-        // architect = 0.5*15 + 0.1*8 + 0.2*2 + 0.3*75 = 7.5+0.8+0.4+22.5 = $31.20
-        assert!((r.architect - 31.2).abs() < 1e-6);
+        // architect passes through the pre-computed per-model cost.
+        assert_eq!(r.architect, Some(31.2));
         // baseline = 1M*15 + 1M*75 = $90.00
         assert_eq!(r.baseline, Some(90.0));
-        // net = 90 - 20 - architect
-        assert_eq!(r.net, Some(90.0 - 20.0 - r.architect));
+        // net = 90 - 20 - 31.2
+        assert_eq!(r.net, Some(90.0 - 20.0 - 31.2));
     }
 
     #[test]
@@ -335,7 +334,6 @@ mod tests {
         let baseline = BudgetRates {
             input_per_mtok: 15.0,
             output_per_mtok: 75.0,
-            architect: ArchitectRates::default(),
             executor: telemetry::ModelRates::default(),
         };
         let r = scope_report(&costs, &zero_exec, &baseline);
@@ -344,7 +342,8 @@ mod tests {
         assert_eq!(r.executor, 0.0);
         // Baseline and net still compute normally.
         assert_eq!(r.baseline, Some(90.0));
-        assert_eq!(r.net, Some(90.0));
+        // architect is None (no ledger) => net is not attributable.
+        assert_eq!(r.net, None);
     }
 
     #[test]
@@ -362,7 +361,7 @@ mod tests {
         assert_eq!(r.net, None);
         // Executor and architect still compute.
         assert_eq!(r.executor, 20.0);
-        assert_eq!(r.architect, 0.0);
+        assert_eq!(r.architect, None);
     }
 
     #[test]
@@ -371,14 +370,14 @@ mod tests {
             session: ScopeReport {
                 baseline: None,
                 executor: 5.0,
-                architect: 0.0,
+                architect: Some(0.0),
                 net: None,
             },
             milestone: None,
             project: ScopeReport {
                 baseline: Some(100.0),
                 executor: 50.0,
-                architect: 20.0,
+                architect: Some(20.0),
                 net: Some(30.0),
             },
             assists: 3,
@@ -404,19 +403,19 @@ mod tests {
             session: ScopeReport {
                 baseline: Some(10.0),
                 executor: 5.0,
-                architect: 0.0,
+                architect: Some(0.0),
                 net: Some(5.0),
             },
             milestone: Some(ScopeReport {
                 baseline: Some(50.0),
                 executor: 25.0,
-                architect: 10.0,
+                architect: Some(10.0),
                 net: Some(15.0),
             }),
             project: ScopeReport {
                 baseline: Some(100.0),
                 executor: 50.0,
-                architect: 20.0,
+                architect: Some(20.0),
                 net: Some(30.0),
             },
             assists: 3,
@@ -511,11 +510,23 @@ saved_output_per_mtok = 0.0
             run("OTHER", "mA", 999, 999), // different project — must be excluded
         ];
         // None = all milestones of project P: 100+200 input, 10+20 output.
-        let all = scope_costs(&runs, &[], "P", None);
+        let all = scope_costs(
+            &runs,
+            &[],
+            &rexymcp_executor::config::ArchitectConfig::default(),
+            "P",
+            None,
+        );
         assert_eq!(all.executor_in, 300);
         assert_eq!(all.executor_out, 30);
         // Some("mA") = only that milestone.
-        let just_a = scope_costs(&runs, &[], "P", Some("mA"));
+        let just_a = scope_costs(
+            &runs,
+            &[],
+            &rexymcp_executor::config::ArchitectConfig::default(),
+            "P",
+            Some("mA"),
+        );
         assert_eq!(just_a.executor_in, 100);
         // Superset: project (None) >= milestone (Some).
         assert!(all.executor_in >= just_a.executor_in);
@@ -529,12 +540,12 @@ saved_output_per_mtok = 0.0
             executor_cache_read: 200_000,
             executor_cache_write: 100_000,
             architect: Default::default(),
+            architect_cost: None,
         };
         let exec_rates = priced_exec_rates();
         let baseline = BudgetRates {
             input_per_mtok: 0.0,
             output_per_mtok: 0.0,
-            architect: ArchitectRates::default(),
             executor: telemetry::ModelRates::default(),
         };
         let r = scope_report(&costs, &exec_rates, &baseline);
@@ -591,10 +602,59 @@ saved_output_per_mtok = 0.0
             ..Default::default()
         };
         let runs = vec![run("P", 100, 10, 50, 30), run("P", 200, 20, 100, 70)];
-        let all = scope_costs(&runs, &[], "P", None);
+        let all = scope_costs(
+            &runs,
+            &[],
+            &rexymcp_executor::config::ArchitectConfig::default(),
+            "P",
+            None,
+        );
         assert_eq!(all.executor_in, 300);
         assert_eq!(all.executor_out, 30);
         assert_eq!(all.executor_cache_read, 150);
         assert_eq!(all.executor_cache_write, 100);
+    }
+
+    fn ledger(model: &str) -> telemetry::ArchitectLedger {
+        telemetry::ArchitectLedger {
+            record: telemetry::ARCHITECT_LEDGER_RECORD_TAG.to_string(),
+            project_id: Some("P".to_string()),
+            session_id: "s".to_string(),
+            model: model.to_string(),
+            skill: "dispatch".to_string(),
+            tokens: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 1_000_000,
+            },
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            messages: 1,
+            last_ts: 1,
+        }
+    }
+
+    #[test]
+    fn scope_costs_prices_architect_per_model_from_ledger() {
+        // Two ledger records with DIFFERENT models must each be priced at their
+        // own rate: opus 1M in + 1M out = $5 + $25 = $30; sonnet-5 = $2 + $10 = $12.
+        let ledgers = vec![ledger("claude-opus-4-8"), ledger("claude-sonnet-5")];
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let c = scope_costs(&[], &ledgers, &cfg, "P", None);
+        let expected = 30.0 + 12.0;
+        assert!(
+            (c.architect_cost.unwrap() - expected).abs() < 1e-9,
+            "per-model architect cost should be $42.00, got {:?}",
+            c.architect_cost
+        );
+    }
+
+    #[test]
+    fn scope_costs_milestone_architect_is_none() {
+        // Architect cost is not attributable at milestone scope (ledger has no milestone).
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let c = scope_costs(&[], &[ledger("claude-opus-4-8")], &cfg, "P", Some("M35"));
+        assert_eq!(c.architect_cost, None);
     }
 }

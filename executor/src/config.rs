@@ -92,6 +92,7 @@ pub struct ArchitectConfig {
     /// Model ID for dispatch subagent delegation. `None` means inherit the
     /// session/architect model (not `[architect] model`).
     pub dispatch_model: Option<String>,
+    /// Model ID for review subagent delegation. `None` means inherit the
     /// session/architect model (not `[architect] model`).
     pub review_model: Option<String>,
     /// Per-model rate overrides (from `[architect.rates]`).

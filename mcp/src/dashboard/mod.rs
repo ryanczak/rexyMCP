@@ -45,6 +45,7 @@ pub fn load_data(
     session: Option<&str>,
     telemetry_dir: Option<&Path>,
     project_id: Option<&str>,
+    architect: &rexymcp_executor::config::ArchitectConfig,
 ) -> DashboardData {
     let phase_runs: Vec<PhaseRun> = telemetry_dir.map(read_phase_runs).unwrap_or_default();
 
@@ -57,7 +58,14 @@ pub fn load_data(
                 ),
                 _ => Vec::new(),
             };
-            let project_costs = costs::scope_costs(&phase_runs, &folded_activities, pid, None);
+            let ledgers = match telemetry_dir {
+                Some(dir) => telemetry::fold_ledger(
+                    telemetry::read_architect_ledger(&dir.join("phase_runs.jsonl"))
+                        .unwrap_or_default(),
+                ),
+                _ => Vec::new(),
+            };
+            let project_costs = costs::scope_costs(&phase_runs, &ledgers, architect, pid, None);
             let project_escalation_count = folded_activities
                 .iter()
                 .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
@@ -72,7 +80,8 @@ pub fn load_data(
                         .map(|(milestone_dir, pid)| {
                             costs::scope_costs(
                                 &phase_runs,
-                                &folded_activities,
+                                &ledgers,
+                                architect,
                                 pid,
                                 Some(&milestone_dir),
                             )
@@ -138,6 +147,7 @@ pub fn run_dashboard(
     rates: BudgetRates,
     telemetry_dir: Option<&Path>,
     project_id: Option<String>,
+    architect: &rexymcp_executor::config::ArchitectConfig,
 ) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     let result = event_loop::run_loop(
@@ -147,6 +157,7 @@ pub fn run_dashboard(
         rates,
         telemetry_dir,
         project_id,
+        architect,
     );
     ratatui::restore();
     result
@@ -273,6 +284,10 @@ mod tests {
     use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
     use tempfile::TempDir;
 
+    fn default_architect_cfg() -> rexymcp_executor::config::ArchitectConfig {
+        rexymcp_executor::config::ArchitectConfig::default()
+    }
+
     fn rec(ts: u64, turn: usize, event: SessionEvent) -> SessionRecord {
         SessionRecord { ts, turn, event }
     }
@@ -299,7 +314,7 @@ mod tests {
     #[test]
     fn load_data_returns_error_when_no_sessions_dir() {
         let dir = TempDir::new().unwrap();
-        let data = load_data(dir.path(), None, None, None);
+        let data = load_data(dir.path(), None, None, None, &default_architect_cfg());
         assert!(data.error.is_some());
         assert!(data.records.is_empty());
         assert!(data.summary.ended.is_none());
@@ -318,7 +333,7 @@ mod tests {
         );
         std::fs::write(&log, body).unwrap();
 
-        let data = load_data(dir.path(), None, None, None);
+        let data = load_data(dir.path(), None, None, None, &default_architect_cfg());
         assert!(data.error.is_none());
         assert!(!data.records.is_empty());
         assert_eq!(data.records.len(), 2);
@@ -328,7 +343,7 @@ mod tests {
     #[test]
     fn load_data_empty_records_on_error() {
         let dir = TempDir::new().unwrap();
-        let data = load_data(dir.path(), None, None, None);
+        let data = load_data(dir.path(), None, None, None, &default_architect_cfg());
         assert!(data.error.is_some());
         assert!(data.records.is_empty());
     }
@@ -346,7 +361,7 @@ mod tests {
         );
         std::fs::write(&log, body).unwrap();
 
-        let data = load_data(dir.path(), None, None, None);
+        let data = load_data(dir.path(), None, None, None, &default_architect_cfg());
         assert!(data.error.is_none());
         assert!(data.summary.phase.is_some());
         assert_eq!(data.summary.phase.as_deref(), Some("phase-01"));
@@ -372,7 +387,13 @@ mod tests {
         )
         .unwrap();
 
-        let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        let data = load_data(
+            dir.path(),
+            None,
+            Some(&telemetry_dir),
+            Some(pid),
+            &default_architect_cfg(),
+        );
         assert_eq!(
             data.project_costs.executor_in, 3000,
             "project costs must sum phase runs with matching project_id"
@@ -408,7 +429,13 @@ mod tests {
         )
         .unwrap();
 
-        let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(this_pid));
+        let data = load_data(
+            dir.path(),
+            None,
+            Some(&telemetry_dir),
+            Some(this_pid),
+            &default_architect_cfg(),
+        );
         assert_eq!(
             data.project_costs.executor_in, 1000,
             "project costs must exclude runs from other project UUIDs and legacy records"
@@ -433,7 +460,13 @@ mod tests {
         std::fs::write(telemetry_dir.join("phase_runs.jsonl"), format!("{run}\n")).unwrap();
 
         // project_id=None → costs are default regardless of what's in the store.
-        let data = load_data(dir.path(), None, Some(&telemetry_dir), None);
+        let data = load_data(
+            dir.path(),
+            None,
+            Some(&telemetry_dir),
+            None,
+            &default_architect_cfg(),
+        );
         assert_eq!(
             data.project_costs,
             ScopeCosts::default(),
@@ -442,30 +475,35 @@ mod tests {
     }
 
     #[test]
-    fn load_data_reads_project_architect_costs_from_activities() {
-        // Architect costs come from ArchitectActivity records, not tier_telemetry.
-        // Seed an ArchitectActivity with non-zero tokens and assert the dashboard
-        // sums them into project_costs.architect.
+    fn load_data_reads_project_architect_costs_from_ledger() {
+        // Architect token totals come from the ArchitectLedger. Seed one ledger
+        // record and assert the dashboard sums it into project_costs.architect.
         let dir = TempDir::new().unwrap();
         let sessions = sessions_dir(dir.path());
         std::fs::create_dir_all(&sessions).unwrap();
         let pid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
         let telemetry_dir = dir.path().join("telemetry");
         std::fs::create_dir_all(&telemetry_dir).unwrap();
-        // An ArchitectActivity with tokens.input=1_000_000, tokens.output=500_000.
-        let activity = format!(
-            r#"{{"schema_version":1,"record":"architect_activity","ts":1,"phase_doc_path":null,"phase_id":"p1","project_id":"{pid}","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{{"input":1000000,"cache_creation":200000,"cache_read":100000,"output":500000}}}}"#
+        // An ArchitectLedger with tokens.input=1_000_000, tokens.output=500_000.
+        let ledger = format!(
+            r#"{{"schema_version":1,"record":"architect_ledger","project_id":"{pid}","session_id":"s1","model":"claude-opus-4-8","skill":"dispatch","tokens":{{"input":1000000,"cache_creation":200000,"cache_read":100000,"output":500000}},"cache_creation_5m":0,"cache_creation_1h":0,"messages":1,"last_ts":1}}"#
         );
         std::fs::write(
             telemetry_dir.join("phase_runs.jsonl"),
-            format!("{activity}\n"),
+            format!("{ledger}\n"),
         )
         .unwrap();
 
-        let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        let data = load_data(
+            dir.path(),
+            None,
+            Some(&telemetry_dir),
+            Some(pid),
+            &default_architect_cfg(),
+        );
         assert_eq!(
             data.project_costs.architect.input, 1_000_000,
-            "architect input tokens must be summed from ArchitectActivity"
+            "architect input tokens must be summed from the ledger"
         );
         assert_eq!(
             data.project_costs.architect.cache_creation, 200_000,
@@ -477,16 +515,22 @@ mod tests {
         );
         assert_eq!(
             data.project_costs.architect.output, 500_000,
-            "architect output tokens must be summed from ArchitectActivity"
+            "architect output tokens must be summed from the ledger"
         );
-        // Negative: an activity with a different project_id contributes nothing.
-        let activity_other = r#"{"schema_version":1,"record":"architect_activity","ts":2,"phase_doc_path":null,"phase_id":"p1","project_id":"other-project","milestone_id":null,"activity":"assist","outcome":null,"model":null,"tokens":{"input":999999,"cache_creation":0,"cache_read":0,"output":0}}"#.to_string();
+        // Negative: a ledger with a different project_id contributes nothing.
+        let ledger_other = r#"{"schema_version":1,"record":"architect_ledger","project_id":"other-project","session_id":"s2","model":"claude-opus-4-8","skill":"dispatch","tokens":{"input":999999,"cache_creation":0,"cache_read":0,"output":0},"cache_creation_5m":0,"cache_creation_1h":0,"messages":1,"last_ts":2}"#.to_string();
         std::fs::write(
             telemetry_dir.join("phase_runs.jsonl"),
-            format!("{activity}\n{activity_other}\n"),
+            format!("{ledger}\n{ledger_other}\n"),
         )
         .unwrap();
-        let data2 = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        let data2 = load_data(
+            dir.path(),
+            None,
+            Some(&telemetry_dir),
+            Some(pid),
+            &default_architect_cfg(),
+        );
         assert_eq!(
             data2.project_costs.architect.input, 1_000_000,
             "other-project activity must not contribute to this project's costs"
@@ -515,7 +559,13 @@ mod tests {
         );
         std::fs::write(telemetry_dir.join("phase_runs.jsonl"), lines).unwrap();
 
-        let data = load_data(dir.path(), None, Some(&telemetry_dir), Some(pid));
+        let data = load_data(
+            dir.path(),
+            None,
+            Some(&telemetry_dir),
+            Some(pid),
+            &default_architect_cfg(),
+        );
         assert_eq!(
             data.project_escalation_count, 2,
             "only assist activities for this project count"
