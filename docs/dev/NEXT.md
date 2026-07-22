@@ -4,23 +4,27 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-07b — output-flood calibration signal](milestones/M35-metrics-cost-accounting/phase-07b-output-flood-signal.md)
-(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07b`).**
+**Active phase: none dispatchable — next to draft is
+[M35 phase-07c — calibrate-governor rendering alignment + discoverability](milestones/M35-metrics-cost-accounting/README.md)
+(run `/rexymcp:architect next` to draft it). 07c CLOSES M35.**
 
-phase-07b drafted 2026-07-22: adds the **output-flood calibration signal** to
-`calibrate-governor`. The replay currently drops `ToolResult` events (`_ => {}`), so the
-`output_bytes` field phase-02 added is never read and the windowed-output-flood detector
-can't be calibrated. Fix (all in `mcp/src/calibrate_governor.rs`): collect
-`ToolResult.output_bytes` into `RunReplay`, add an `OutputFloodWindowedBytes` `Signal`
-whose sample is the **max sum over any 6-output sliding window** per run (mirrors the
-live `check_windowed_output`; window 6 = the default `output_window`). Higher-is-worse,
-so it flows through 07a's direction-aware percentile path and reports P50/P90/P99 with
-**no report-layer change**. Wire the variant through all six spots (enum/label/samples/
-SIGNALS/format_report's label list; direction's `_` arm already covers it). Single file,
-additive. size=m (~230 lines).
+**phase-07b — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
+Adds the **output-flood calibration signal** to `calibrate-governor`: `replay()` now
+collects `ToolResult.output_bytes` into `RunReplay`, and a new `OutputFloodWindowedBytes`
+`Signal` reports the **max sum over any 6-output sliding window** per run (mirrors the
+live `check_windowed_output`; window 6 = default `output_window`). Higher-is-worse →
+reuses 07a's percentile path, P50/P90/P99, no report-layer change. Single file
+(`calibrate_governor.rs`), all six wiring points + replay collection + 5 tests; live E2E
+confirmed (block renders, JSON rows carry real percentiles). **Escalation:** first run
+hard_failed on the governor's oscillation terminator (repeated `python3 -c` inspection
+loop after a mid-edit brace break); **resumed** to completion in 25 turns (spec was fine,
+work was ~99% there). **Calibration — shell-inspection oscillation loop is now a 2×
+trend** (this + the 06c `sed` loop): fold at M35 close (make read-only-inspection
+repetition advisory / raise threshold; pre-inject "use the compiler error, don't hunt by
+re-reading"; add an `oscillation_stall`/`governor_stall` entry to `FAILURE_CLASSES`,
+which currently lacks one).
 
-**phase-07 split → 07a (done) / 07b (this) / 07c.** **07c** closes M35:
+**phase-07 split → 07a (done) / 07b (done) / 07c.** **07c** closes M35:
 `calibrate-governor` rendering alignment (move `percentile` → shared `metrics.rs` + adopt
 scorecard/runs table conventions) **+ discoverability** (undefined in-repo — needs a
 definition pass with the user when 07c is drafted; anchor = "every recorded number is

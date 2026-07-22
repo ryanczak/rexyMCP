@@ -1,7 +1,7 @@
 # Phase 07b: Add the output-flood calibration signal (`calibrate-governor` reads `output_bytes`)
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07a
 **Estimated diff:** ~230 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -379,4 +379,42 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 6d9e7d32f4784702d631292ac15a67aefe862c25
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 — one escalation round-trip (hard_fail → resume), no review-bug filed.
+  Failure class: `oscillation_stall` (governor oscillation terminator fired on a repeated
+  `python3 -c` inspection loop after a mid-edit brace break). Note: `oscillation_stall`
+  is **not** yet in the canonical `FAILURE_CLASSES` vocabulary (telemetry.rs:319) — it is
+  recorded as a new open-vocabulary class, which is the M35-close fold this run motivates.
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (first run hard_fail @ ~275 attempts; resume
+  complete @ 25 turns)
+- **Scope deviations:** none — the final diff is `mcp/src/calibrate_governor.rs` only
+  (+186 net), exactly Tasks 1–2. `executor/**` (event schema, live detector) read-only as
+  required; the 07a percentile/direction machinery reused unchanged. All six wiring points
+  present (enum/label/`OUTPUT_FLOOD_WINDOW`/`samples`/`SIGNALS`/`format_report` list) and
+  `RunReplay.output_bytes` collected in `replay()`.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `611` mcp-bin +
+  `1031` executor-lib). New tests (5) pass and are real: `output_flood_windowed_max_over_run`
+  asserts `vec![270]` for `[10..70]` (mutation-sensitive — min or first-window gives 210);
+  `output_flood_requires_full_window` → empty for 5 inputs; `replay_collects_tool_result_output_bytes`;
+  direction + report-appearance. **Real-artifact E2E:** `calibrate-governor --repo .` renders
+  the `output_flood_windowed_bytes` block with `P50 P90 P99`; `--json` rows carry
+  `"tail":"higher-is-worse"` with real percentiles (e.g. p_near 22166 / p_far 44821) populated
+  from corpus `output_bytes`.
+- **Calibration:**
+  1. **Shell-inspection oscillation loop — SECOND occurrence (a trend).** The hard_fail was
+     the executor escaping to a repeated read-only shell inspection (`python3 -c` file reads)
+     after patch-drift confused its model of the file, exactly the class of the 06c-arc `sed`
+     loop. Two occurrences → fold at M35 close: the held "make read-only-inspection repetition
+     advisory / raise its threshold" governor fold, and pre-inject "use the compiler error to
+     locate a brace/syntax problem; never hunt by re-reading the file" into future specs.
+     Also motivates adding `oscillation_stall` (or a `governor_stall`) entry to `FAILURE_CLASSES`.
+  2. **Minor test-coverage nit:** `replay_collects_tool_result_output_bytes` pins `100`/`250`
+     but not the spec's requested `output_bytes: 0` negative (that a pre-field-default `0` is
+     collected as `0`, not skipped). Harmless — the collection pushes unconditionally — but the
+     negative case is unpinned.
+  3. **Status-flip header clobber did NOT recur** — 07b's header is intact through both the
+     hard_fail and the resume.
 
