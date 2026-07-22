@@ -447,6 +447,59 @@ state, non-hermetic).
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### ▶️ Notes for executor — 2026-07-21 (CONTINUE — production done; prior run hard-failed on a repeated-read loop)
+
+**This supersedes the 🛑 block below, which succeeded at the hard part.** harvest.rs
+was rewritten via small `patch` edits and the **production code is done and compiling**
+(`cargo check -p rexymcp` is green). The run then **hard-failed at turn 171**: the
+governor's identical-repetition detector fired after the executor ran the *same*
+read-only command six times — `sed -n '381,383p' mcp/src/harvest.rs` — stuck trying
+to view a region while hunting for leftover old references. That is a real, avoidable
+executor mistake (see the 🔑 gotcha below). The partial work is on disk, uncommitted.
+**Do NOT restart or revert harvest.rs.** On-disk state:
+
+- **Done + compiling:** imports updated; `HarvestOutcome` has the new fields;
+  `harvest()` builds `ArchitectLedger` records and appends them via
+  `append_architect_ledger`; the old `attribute`/`Usage` attribution core is removed
+  from production. `mcp/src/main.rs`'s `Commands::Harvest` output line (Task 3) is
+  edited.
+- **All that remains:**
+  1. **Swap the tests** (targeted `patch`, no whole-file write). The `harvest.rs`
+     `mod tests` still holds the OLD tests that reference the deleted attribution
+     code — `attribute_sends_message_to_next_boundary`,
+     `harvest_appends_enriched_copy_and_fold_overlays`, `harvest_project_scoping`,
+     and the `attribute`/`Usage` test helpers. **Delete these** and add the new
+     ledger tests from the Test plan (`harvest_dedups_by_message_id`,
+     `harvest_buckets_by_session_model_skill`, `harvest_splits_cache_creation_5m_1h`,
+     `harvest_is_idempotent`). Keep the `parse_iso_*` tests and the `write_fixture`
+     helper.
+  2. **Run all four gates green** (`cargo fmt --all --check`, `cargo build`,
+     `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`).
+  3. **The E2E** per the phase doc's End-to-end verification.
+
+**🔑 GOTCHA that killed the last run — obey this or you WILL hard-fail again:** view
+file contents with **`read_file`** (`start_line`/`end_line`), **never** `sed -n` /
+`cat`, and **never read the same region twice** — read it once, then act (`patch`).
+The governor hard-fails on repeated identical calls; the last run died running
+`sed -n '381,383p'` six times in a row. To find the old tests, do **one** `read_file`
+of the `harvest.rs` `mod tests` range, then patch — do not re-scan.
+
+Task 1 (`telemetry.rs`) is committed (`7299fa6`) — don't touch it. Still targeted
+`patch` only, never a whole-file `write_file`.
+
+### Update — 2026-07-21 (hard_fail / continue)
+
+**What happened:** re-dispatch run `93ea4043` (session `6a601034`) completed the
+production harvest.rs rewrite (done + compiling) via patches, then **hard-failed at
+turn 171** — the governor's identical-repetition detector fired on six consecutive
+identical `sed -n '381,383p'` reads while the executor hunted for leftover old
+references. The governor worked as designed. (The `get_run_status` `unknown` was a
+red herring: the MCP server had disconnected, so the terminal result wasn't reachable
+that way; the hard_fail is what rexymcp recorded.)
+**Action:** refined re-dispatch — the ▶️ block above scopes the remaining work to the
+test swap + gates + E2E and adds the read-once / `read_file`-not-`sed` gotcha that
+prevents the repeat-loop.
+
 ### 🛑 Notes for executor — 2026-07-21 (READ FIRST — refined re-dispatch after budget_exceeded)
 
 **The previous dispatch burned its ENTIRE 600-turn budget and finished NOTHING on
