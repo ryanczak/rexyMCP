@@ -4,28 +4,29 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06d — dashboard correctness (full phase_id + budget toggle hint)](milestones/M35-metrics-cost-accounting/phase-06d-dashboard-fixes.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06d`).**
+**Active phase: none dispatchable — next to draft is
+[M35 phase-06e — auto-telemetry sweep](milestones/M35-metrics-cost-accounting/README.md)
+(run `/rexymcp:architect next` to draft it).**
 
-phase-06d drafted 2026-07-21: fixes 3 of the 4 pre-close dashboard issues. **Issues 4
-(wrong milestone) + 5 (truncated phase) share one root** — `derive_phase_id` (runner.rs)
-collapsed `phase-06c-iii-b-…` to coarse `"phase-06"` (stops at the first non-digit),
-which broke both the session-panel phase display AND `resolve_milestone`'s prefix match.
-**User-approved root fix:** make `derive_phase_id` keep all leading id segments (digits /
-single letters / roman numerals) → `"phase-06c-iii-b"`. Also fixes **bug-05b-1's root**
-(coarse id made sub-phases indistinguishable in scorecard/profile); the telemetry
-`phase_id` grouping gets finer going forward (back-compat waived). **Issue 2** (budget
-`b`-toggle hint) = a one-line border-title change mirroring Activity's `[f=filter]`.
-size=s (~140 lines). **Issue 3 (trailing blank row) split out → 06d-2:** it's a
-shared-fixed-height layout constraint (Session/Budget/Context share a band sized to the
-tallest, Budget ≈9; the 06c-iii-b top-skill line makes Budget tallest), not a trim —
-trimming clips Budget. Needs a layout decision (per-panel heights / move top-skill to the
-title / accept the blank); NOT in 06d.
+**phase-06d — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON, 34
+turns, clean).** `derive_phase_id` now keeps all leading id segments (digits / single
+letters / roman numerals) → `"phase-06c-iii-b"`, fixing the truncated session phase, the
+`resolve_milestone` prefix-match failure, and **bug-05b-1's root** (sub-phases were
+indistinguishable in scorecard/profile; telemetry `phase_id` grouping is finer going
+forward — back-compat already waived). Budget panel border gained the `[b=$/tok]` toggle
+hint. Three new tests (`derive_phase_id_keeps_letter_suffix`/`_keeps_multipart_id`,
+`resolve_milestone_matches_full_phase_id`), all four gates green (1031 passed).
 
-Remaining M35 after this: **06d-2** (trailing-row, pending layout decision) → **06e**
-(auto-telemetry + sweep liveness; harvest/journal CLI deprecation) → **07** (reporting
-debt) closes M35.
+**Issue 3 / 06d-2 — closed won't-fix (2026-07-21, user decision "accept the blank").** The
+trailing blank row on Session/Context is a shared-fixed-height header-band constraint
+(the three panels share one band sized to the tallest, Budget ≈9 rows since the 06c-iii-b
+top-skill line); trimming the band would clip Budget, and the alternatives (relocate
+top-skill to the border title, or a per-panel header restructure) cost more than a
+one-row cosmetic gap is worth. **Decision: accept the blank** — recorded in the milestone
+README; no `render.rs` change; no dispatchable phase. 06d-2 removed from the pipeline.
+
+Remaining M35: **06e** (auto-telemetry sweep + sweep-liveness; harvest/journal CLI
+deprecation) → **07** (reporting debt) closes M35.
 
 **M35 phase-06c-iii-b — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
 86 turns, clean — the arc's FIRST fully clean run, no hard_fail).** Per-skill architect

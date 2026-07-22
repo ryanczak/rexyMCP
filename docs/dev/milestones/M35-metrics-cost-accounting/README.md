@@ -76,7 +76,7 @@ and the executor finally carries a real (configurable) price.
 | 06c-iii-a | Rewire costs + dashboard architect cost onto the ledger (per-model); milestone architect = `—`; restore doc ([phase-06c-iii-a-ledger-cost-rewire.md](phase-06c-iii-a-ledger-cost-rewire.md)) | done |
 | 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | review |
 | 06d | Dashboard correctness: full `phase_id` (fixes session milestone + phase display; also bug-05b-1 root) + budget `b`-toggle border hint ([phase-06d-dashboard-fixes.md](phase-06d-dashboard-fixes.md)) | done |
-| 06d-2 | Dashboard trailing-row (issue 3) — needs a layout decision (see note); NOT yet scoped | not drafted |
+| 06d-2 | ~~Dashboard trailing-row (issue 3)~~ — **closed won't-fix** (accept the blank; see Notes) | closed |
 | 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` + sweep-liveness indicator (absorbs harvest-freshness) | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
@@ -267,3 +267,16 @@ Eliminating the blank needs a **design decision** — per-panel heights (a layou
 or moving the top-skill line out of Budget's content (e.g. into its border title, though
 that competes with the `[b=…]` hint), or accepting the blank. Deferred as **06d-2** pending
 that call; not scoped in 06d.
+**Issue 3 / 06d-2 — closed won't-fix (2026-07-21, user decision "accept the blank").** After
+06d landed, the trailing-row layout call was put to the user with four options (defer to
+06e / accept the blank / relocate the top-skill line into Budget's border title / per-panel
+header restructure). **Decision: accept the blank.** The blank is intrinsic to a
+shared-fixed-height horizontal band (`render.rs` `Layout::vertical([Length(11), Min(0)])`,
+render.rs:191–192): Session/Budget/Context share one height sized to the tallest (Budget, 9
+content rows = `budget_lines` 3 + `savings_lines` ~5 + the 06c-iii-b top-skill line 1), so
+the shorter Session/Context (~8) each show one blank row. Trimming the band clips Budget;
+relocating the top-skill line competes with the `[b=$/tok]` hint and truncates on narrow
+terminals; a per-panel restructure is the largest change of the four and is TUI-adjacent
+(the 06c-i/iii-a sed-repetition hard_fails all were). A one-row cosmetic gap does not
+justify any of these. **No code change; no dispatchable phase.** 06d-2 is removed from the
+pipeline — remaining M35 is **06e → 07**.
