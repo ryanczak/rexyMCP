@@ -4,9 +4,27 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — next to draft is
-[M35 phase-07c — calibrate-governor rendering alignment + discoverability](milestones/M35-metrics-cost-accounting/README.md)
-(run `/rexymcp:architect next` to draft it). 07c CLOSES M35.**
+**Active phase:
+[M35 phase-07c — calibrate-governor alignment + discoverability](milestones/M35-metrics-cost-accounting/phase-07c-calibrate-alignment-discoverability.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07c`). **07c is the
+LAST M35 phase — approving it hits the milestone boundary (human-gated close).**
+
+phase-07c drafted 2026-07-22 (user-scoped): two closing reporting-debt items.
+**(1) Alignment:** move `calibrate_governor`'s un-shared `percentile` helper into the
+shared `executor/src/store/metrics.rs` and route the call sites through it — a pure
+extract-to-shared-module refactor, no behavior change. **(2) Discoverability
+(user chose "command help + cross-ref"):** add a "See also" line to each reporting
+command's `--help` (`runs`/`scorecard`/`profile`/`costs`/`calibrate-governor`) so the
+family is mutually discoverable and calibrate-governor is no longer an orphan. Bundled
+(user-approved) since discoverability is small. **Deliberately minimal on
+`calibrate_governor.rs`** — the file 07b oscillation-hard-failed on — so the phase doc
+carries a loud anti-oscillation gotcha ("let the compiler locate a syntax error; never
+hunt by re-reading in a loop"). **Deferred to M35 close (out of scope here):** k/M
+compaction of the output-flood byte columns + consolidating the three divergent
+token-formatters (`runs::fmt_tokens`/`scorecard` inline/`costs::format_tokens`) — a real
+DRY cleanup, but too fiddly to risk on the closing phase. size=m (~180 lines).
+
+**phase-07 split → 07a (done) / 07b (done) / 07c (this, closes M35).**
 
 **phase-07b — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
 Adds the **output-flood calibration signal** to `calibrate-governor`: `replay()` now
