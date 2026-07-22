@@ -80,7 +80,10 @@ and the executor finally carries a real (configurable) price.
 | 06e | Auto-telemetry: periodic background **harvest** sweep inside `serve` + liveness marker + `costs` liveness line ([phase-06e-auto-telemetry-sweep.md](phase-06e-auto-telemetry-sweep.md)) — journal-reconcile + CLI-deprecation deferred (serve can't reconcile assists) | done |
 | 07a | Reporting debt: calibration reports the **low tail** for the lower-is-worse `oscillation_min_distinct` signal ([phase-07a-oscillation-low-tail.md](phase-07a-oscillation-low-tail.md)) | done |
 | 07b | Reporting debt: `output_bytes` output-flood **signal** in `calibrate-governor` (replay captures `ToolResult`; new `Signal` + percentile) ([phase-07b-output-flood-signal.md](phase-07b-output-flood-signal.md)) | done |
-| 07c | Reporting debt: `calibrate-governor` **rendering alignment** (move `percentile`→shared `metrics.rs`) + **discoverability** ("See also" cross-refs across runs/scorecard/profile/costs/calibrate-governor) ([phase-07c-calibrate-alignment-discoverability.md](phase-07c-calibrate-alignment-discoverability.md)) — last phase; **M35 held open for cleanup** | done |
+| 07c | Reporting debt: `calibrate-governor` **rendering alignment** (move `percentile`→shared `metrics.rs`) + **discoverability** ("See also" cross-refs across runs/scorecard/profile/costs/calibrate-governor) ([phase-07c-calibrate-alignment-discoverability.md](phase-07c-calibrate-alignment-discoverability.md)) — reporting-debt complete; **M35 held open for cleanup** | done |
+| 07d | M35-close cleanup batch: fix `profile` help wording + remove Budget `Assists:` row + Budget border `[b=toggle view]` ([phase-07d-budget-cleanup-batch.md](phase-07d-budget-cleanup-batch.md)) | todo |
+| 07e | M35-close cleanup: Budget savings **negative-value column alignment** (parenthesized debits align with non-paren values) | not drafted |
+| 07f | M35-close cleanup: **trailing blank row** on Session/Budget/Context header panels (reopens 06d-2; drafted after 07d settles Budget height) | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect
 next`) — earlier phases shape later specs, per WORKFLOW § Milestones.

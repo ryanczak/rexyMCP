@@ -4,24 +4,36 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — all M35 in-scope phases are `done`, but M35 is
-DELIBERATELY HELD OPEN (user, 2026-07-22) for a pre-close cleanup pass. NOT "none";
-the milestone-close retrospective is pending until the cleanup lands.**
+**Active phase:
+[M35 phase-07d — M35-close cleanup batch](milestones/M35-metrics-cost-accounting/phase-07d-budget-cleanup-batch.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07d`). M35 is
+DELIBERATELY HELD OPEN for this cleanup pass; the close retrospective is pending.**
 
-**M35 cleanup backlog (before the `/rexymcp:architect` close):**
-- **`Profile` clap `about` is inaccurate** — 07c's executor invented
-  `"Show the profile: per-model token and latency breakdown"` (main.rs:221); `profile`
-  has no *latency* metric (it's a model×tag capability matrix + `--cost` per-phase cost).
-  Fix the wording.
-- **k/M compaction** of `calibrate-governor`'s output-flood byte columns (deferred from 07c).
-- **DRY: consolidate the three token/number formatters** — `runs::fmt_tokens` (`{}k`),
-  `scorecard_cli` inline (`{:.0}k`), `costs::format_tokens` (`{:.1}k`/`{:.1}M`) — into one
-  shared `metrics` helper (they render differently, so this changes output + tests).
-- **(user has "a couple of issues" in mind — awaiting specifics).**
-- **Calibration folds to land at close:** the shell-inspection oscillation trend (2×) →
-  governor "read-only-inspection repetition advisory" fold + keep pre-injecting the
-  compiler-error-recovery gotcha; add `oscillation_stall`/`governor_stall` to
-  `FAILURE_CLASSES` (telemetry.rs:319); watch the status-flip header-clobber (1× so far).
+phase-07d drafted 2026-07-22: the low-risk batch of the user's 5 cleanup items —
+**#1** fix `profile`'s inaccurate `about` (07c's executor claimed "latency", which profile
+has none of); **#2** remove the Budget `Assists:` row (minimal: drop the 2 display lines +
+underscore the now-unused param; full plumbing removal deferred to avoid a 15-call-site
+cascade); **#4** Budget border hint `[b=$/tok]` → `[b=toggle view]`. Three small,
+independent, non-interacting changes across main.rs / panels.rs / render.rs.
+
+**The 5 user cleanup items → sequenced as 07d / 07e / 07f** (dashboard TUI is the
+executor's fragile zone; small focused phases > one big risky one):
+- **07d (this):** #1 profile help, #2 remove Assists row, #4 border text.
+- **07e (draft next):** #5 Budget savings **negative-value column alignment** — the
+  parenthesized debits (`($1.23)`) right-align in the same width as non-paren values, so
+  the digits shift by the paren width; fix so digits align (reserve `(`/`)` gutter columns).
+  Intricate accounting-column formatting — isolated, with exact-equality tests.
+- **07f (draft after 07d lands):** #3 **trailing blank row** on Session/Budget/Context
+  (reopens 06d-2's "accept the blank"); the header-band height must be re-derived **after**
+  07d removes the Assists row (which shortens Budget), so 07f is drafted post-07d.
+
+**Other M35-close cleanup still queued** (fold at the `/rexymcp:architect` close, or as
+further phases): k/M compaction of `calibrate-governor`'s output-flood byte columns +
+consolidating the three divergent token-formatters (`runs::fmt_tokens`/`scorecard`
+inline/`costs::format_tokens`); the calibration folds — shell-inspection oscillation trend
+(2×) → governor "read-only-inspection repetition advisory" + keep pre-injecting the
+compiler-error-recovery gotcha; add `oscillation_stall`/`governor_stall` to
+`FAILURE_CLASSES` (telemetry.rs:319); watch the status-flip header-clobber (1× so far).
 
 **phase-07c — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON, 91
 turns, clean — NO oscillation).** Moved `calibrate_governor`'s `percentile` into shared
