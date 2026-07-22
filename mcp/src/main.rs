@@ -155,6 +155,8 @@ enum Commands {
         json: bool,
     },
     /// List individual PhaseRun records, or show one in detail
+    ///
+    /// See also: scorecard, profile, costs, calibrate-governor.
     Runs {
         /// Path to the config file
         #[arg(long)]
@@ -185,6 +187,8 @@ enum Commands {
         command: Option<RunsCommand>,
     },
     /// Aggregate runs into a model × settings competency matrix
+    ///
+    /// See also: runs, profile, costs, calibrate-governor.
     Scorecard {
         /// Path to the config file
         #[arg(long)]
@@ -214,6 +218,9 @@ enum Commands {
         #[arg(long, value_enum, default_value = "settings")]
         by: ByArg,
     },
+    /// Show the profile: per-model token and latency breakdown
+    ///
+    /// See also: runs, scorecard, costs, calibrate-governor.
     Profile {
         /// Path to the config file
         #[arg(long)]
@@ -269,6 +276,8 @@ enum Commands {
     },
     /// Report token cost (Baseline/Executor/Architect/Net) across
     /// Session / Milestone / Project.
+    ///
+    /// See also: runs, scorecard, profile, calibrate-governor.
     Costs {
         /// Path to the config file
         #[arg(long, default_value = "rexymcp.toml")]
@@ -404,6 +413,8 @@ enum Commands {
         telemetry_path: Option<PathBuf>,
     },
     /// Calibrate governor thresholds by replaying the session-log corpus
+    ///
+    /// See also: runs, scorecard, profile, costs.
     CalibrateGovernor {
         /// Target repo root (where `.rexymcp/sessions/` lives)
         #[arg(long, default_value = ".")]

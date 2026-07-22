@@ -7,6 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use rexymcp_executor::governor::hard_fail::{ToolCallSnapshot, measure_novelty};
+use rexymcp_executor::store::metrics::percentile;
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 use rexymcp_executor::store::sessions::jsonl::read_session_log;
 use rexymcp_executor::tools;
@@ -197,15 +198,6 @@ const SIGNALS: &[Signal] = &[
     Signal::EmptyCompletionRun,
     Signal::OutputFloodWindowedBytes,
 ];
-
-/// Nearest-rank percentile of a sorted slice. `p` in 0.0..=1.0. Empty → 0.
-fn percentile(sorted: &[usize], p: f64) -> usize {
-    if sorted.is_empty() {
-        return 0;
-    }
-    let rank = (p * (sorted.len() as f64 - 1.0)).round() as usize;
-    sorted[rank.min(sorted.len() - 1)]
-}
 
 /// Deliverable report row for JSON output.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -721,20 +713,6 @@ mod tests {
         };
         let out = run(&args);
         assert!(out.contains("(no data)"), "{out}");
-    }
-
-    #[test]
-    fn percentile_boundaries() {
-        assert_eq!(percentile(&[], 0.5), 0);
-        assert_eq!(percentile(&[], 0.9), 0);
-        let single = vec![42];
-        assert_eq!(percentile(&single, 0.5), 42);
-        assert_eq!(percentile(&single, 0.9), 42);
-        assert_eq!(percentile(&single, 0.99), 42);
-        // Low-tail percentiles
-        let eight = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        assert_eq!(percentile(&eight, 0.1), 2);
-        assert_eq!(percentile(&eight, 0.01), 1);
     }
 
     #[test]

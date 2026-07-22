@@ -1,7 +1,7 @@
 # Phase 07c: calibrate-governor rendering alignment (shared `percentile`) + command discoverability
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-07b
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=refactor, size=m

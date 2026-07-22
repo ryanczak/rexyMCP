@@ -61,6 +61,16 @@ pub fn run_id(run: &PhaseRun) -> String {
     format!("{h:08x}")
 }
 
+/// Nearest-rank percentile of a **sorted** slice. `p` in `0.0..=1.0`. Empty → 0.
+/// The one definition of percentile, shared by calibrate-governor's stall-signal report.
+pub fn percentile(sorted: &[usize], p: f64) -> usize {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let rank = (p * (sorted.len() as f64 - 1.0)).round() as usize;
+    sorted[rank.min(sorted.len() - 1)]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,5 +224,21 @@ mod tests {
             base_id,
             "changing phase_id should change id"
         );
+    }
+
+    #[test]
+    fn percentile_nearest_rank() {
+        assert_eq!(percentile(&[], 0.5), 0);
+        assert_eq!(percentile(&[], 0.9), 0);
+        let single = vec![42];
+        assert_eq!(percentile(&single, 0.5), 42);
+        assert_eq!(percentile(&single, 0.9), 42);
+        assert_eq!(percentile(&single, 0.99), 42);
+        let eight = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        assert_eq!(percentile(&eight, 0.01), 1);
+        assert_eq!(percentile(&eight, 0.1), 2);
+        assert_eq!(percentile(&eight, 0.5), 5);
+        assert_eq!(percentile(&eight, 0.9), 7);
+        assert_eq!(percentile(&eight, 0.99), 8);
     }
 }
