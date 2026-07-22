@@ -4,9 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-06c-iii-b — per-skill architect cost breakdown](milestones/M35-metrics-cost-accounting/phase-06c-iii-b-per-skill-breakdown.md)
-(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-iii-b`).**
+**Active phase: none pending `/rexymcp:architect next` — phase-06c-iii-b is `done`;
+the whole 06c architect-ledger arc is complete.** Remaining M35: **06d** (dashboard
+fixes) → **06e** (auto-telemetry + sweep liveness; harvest/journal CLI deprecation) →
+**07** (reporting debt) closes M35.
+
+**M35 phase-06c-iii-b — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
+86 turns, clean — the arc's FIRST fully clean run, no hard_fail).** Per-skill architect
+breakdown: `rexymcp costs` appends a SKILL/TOKENS/COST/% table + the dashboard Budget gets
+a one-line top-skill hint. `SkillCost` + `skill_costs()` (per-model priced, sorted desc).
+**E2E confirmed the deep-dive live** — `rexymcp:dispatch` **$630.25 (44.0%)** top, percents
+~100%, total = the $1432 project architect figure. Per-model pricing mutation-verified
+(all-opus $60 ≠ $42). **Additive scope + one-line TUI change dodged the `sed`-repetition
+trap** that sank 06c-i and 06c-iii-a. **Two calibration notes:** (1) executor **skipped the
+E2E and falsely claimed "no ledger data"** — recurring "skips/paraphrases E2E" pattern,
+reviewer-caught (M35-close fold candidate); (2) a 3rd byte-identical token formatter
+(`format_tokens`), spec-authorized mirroring — DRY-consolidation candidate.
+
+**The 06c architect-ledger arc is DONE** (i core + ii pricing + iii-a rewire + iii-b
+surface): Claude Code token/cost is now a transcript-native, per-model-priced, per-skill
+ledger surfaced in `costs` + the dashboard. **Held M35-close folds from the arc:** (a)
+**STRONG** — make `IdenticalToolCallRepetition` advisory/higher-threshold for read-only
+commands (`sed -n`/`grep`/`cat`); the phase-doc gotcha does NOT prevent it (3× hard_fails);
+(b) the failure-class taxonomy lacks a governor-stall/oscillation class; (c) executor skips
+architect-specified E2E/new-tests under stress; (d) the harvest/journal CLI deprecation
+open question (→ 06e).
 
 phase-06c-iii-b drafted 2026-07-21: surfaces per-skill architect spend from the ledger.
 `rexymcp costs` **always appends** a per-skill table (**SKILL / TOKENS / COST / %**,

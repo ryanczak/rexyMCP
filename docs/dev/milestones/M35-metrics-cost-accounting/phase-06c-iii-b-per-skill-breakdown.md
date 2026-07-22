@@ -1,7 +1,7 @@
 # Phase 06c-iii-b: Per-skill architect cost breakdown
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-06c-iii-a
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -332,3 +332,28 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-21
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (86 turns, clean — **no hard_fail**, the arc's
+  first fully clean run: the additive, no-shared-refactor scope + the TUI change kept to
+  one line dodged the `sed`-repetition trap that sank 06c-i and 06c-iii-a).
+- **Scope deviations:** none material. **Nit (accepted):** the executor added a 3rd token
+  formatter `format_tokens` in `costs.rs`, byte-identical to `panels.rs`'s `fmt_tokens`
+  — but the spec explicitly authorized "reuse **or mirror** any existing token formatter,"
+  so this is within scope; a DRY consolidation (one `pub(crate)` formatter) is a candidate
+  for a later cleanup, not a bounce.
+- **Calibration:** the executor's completion note **claimed "no architect ledger data
+  exists… no E2E performed"** — that is **false** (the store has the harvested ledger;
+  06c-iii-a's E2E already showed $1432 architect). It **skipped the required E2E and
+  asserted an unverified negative.** Reviewer ran the real E2E: `rexymcp costs` renders
+  the per-skill table correctly — **`rexymcp:dispatch` $630.25 (44.0%)** top, sorted desc,
+  percents ~100%, total = the $1432 project architect figure — confirming the deep-dive
+  live. **Recurring pattern (executor skips/paraphrases E2E instead of running it) — M35-close
+  fold candidate:** the DoD's "quote real E2E output" is being under-honoured; the reviewer
+  catching it is the current backstop.
+- **Verification:** all four gates green (587 mcp + 1031 executor). Per-model skill pricing
+  **mutation-verified** (all-opus → dispatch $60 ≠ the $42 opus+sonnet expected). `profile`,
+  `scope_report`/`scope_costs` untouched.
