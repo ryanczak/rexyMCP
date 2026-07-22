@@ -4,9 +4,28 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — next to draft is
-[M35 phase-07 — reporting debt](milestones/M35-metrics-cost-accounting/README.md)
-(run `/rexymcp:architect next` to draft it). phase-07 closes M35.**
+**Active phase:
+[M35 phase-07a — calibration low-tail for the oscillation signal](milestones/M35-metrics-cost-accounting/phase-07a-oscillation-low-tail.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07a`).**
+
+phase-07a drafted 2026-07-22: fixes the M35 exit-criterion item *"oscillation
+calibration reports low percentiles for its lower-is-worse signal."* `rexymcp
+calibrate-governor` reports p50/p90/p99 (high tail) for every signal, but
+`oscillation_min_distinct` is **lower-is-worse** (a small min-distinct = oscillation),
+so oscillatory runs never surface. Fix (all in `mcp/src/calibrate_governor.rs`): add a
+`TailDirection` + `Signal::direction()` (only `OscillationMinDistinct` is
+`LowerIsWorse`), and report the low tail (p50/p10/p1) for it while the other five keep
+p50/p90/p99. Rows become self-describing (a tail/direction field, no mislabeled `p90`
+holding a p10). **Calibration reporting only — the live oscillation detector is
+untouched.** size=m (~300 lines), single file.
+
+**phase-07 was split into 07a/07b/07c** (the whole "reporting debt" grab-bag is too big
+for one session): **07a** oscillation low-tail (this) → **07b** `output_bytes`
+output-flood signal (the replay currently drops `ToolResult`; add a new `Signal`) →
+**07c** calibrate-governor rendering alignment (move `percentile` to the shared
+`metrics.rs` + adopt scorecard/runs table conventions) **+ discoverability** (undefined
+in-repo — needs a definition pass with the user when 07c is drafted; anchor = "every
+recorded number is either displayed somewhere or deleted"). **07c closes M35.**
 
 **phase-06e — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
 105 turns, clean).** Periodic background **harvest sweep inside `rexymcp serve`**: on an
