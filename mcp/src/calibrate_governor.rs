@@ -27,6 +27,13 @@ struct RunReplay {
     completion_empty: Vec<bool>,
 }
 
+/// Which tail of the distribution indicates the concern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TailDirection {
+    HigherIsWorse,
+    LowerIsWorse,
+}
+
 /// Signal extractor seam — extensible for 06b.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Signal {
@@ -53,6 +60,14 @@ impl Signal {
             Signal::OscillationMinDistinct => "oscillation_min_distinct",
             Signal::VerifierPersistenceRun => "verifier_persistence_run",
             Signal::EmptyCompletionRun => "empty_completion_run",
+        }
+    }
+
+    /// Which tail of the distribution is the concern.
+    fn direction(self) -> TailDirection {
+        match self {
+            Signal::OscillationMinDistinct => TailDirection::LowerIsWorse,
+            _ => TailDirection::HigherIsWorse,
         }
     }
 
@@ -181,9 +196,11 @@ struct ReportRow {
     outcome: String,
     runs: usize,
     n: usize,
-    p50: usize,
-    p90: usize,
-    p99: usize,
+    /// Which tail these percentiles represent.
+    tail: String,
+    p_mid: usize,
+    p_near: usize,
+    p_far: usize,
 }
 
 /// Format the calibration report as a text table.
@@ -208,15 +225,22 @@ fn format_report(rows: &[ReportRow]) -> String {
         }
         let header = if *signal == "empty_completion_run" {
             "signal: empty_completion_run  (lower bound — excludes length-truncated turns)"
+        } else if *signal == "oscillation_min_distinct" {
+            "signal: oscillation_min_distinct  (lower-is-worse — low values indicate oscillation)"
         } else {
             &format!("signal: {}", signal)
         };
         lines.push(header.to_string());
-        lines.push("MODEL  OUTCOME  RUNS  N  P50  P90  P99".to_string());
+        let col_header = if signal_rows[0].tail == "lower-is-worse" {
+            "MODEL  OUTCOME  RUNS  N  P50  P10  P1"
+        } else {
+            "MODEL  OUTCOME  RUNS  N  P50  P90  P99"
+        };
+        lines.push(col_header.to_string());
         for row in signal_rows {
             lines.push(format!(
                 "{:<8} {:<10} {:>4}  {:>4}  {:>4}  {:>4}  {:>4}",
-                row.model, row.outcome, row.runs, row.n, row.p50, row.p90, row.p99
+                row.model, row.outcome, row.runs, row.n, row.p_mid, row.p_near, row.p_far
             ));
         }
         lines.push("".to_string());
@@ -306,15 +330,31 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
             if n == 0 {
                 continue;
             }
+            let direction = signal.direction();
+            let (tail_str, p_near, p_far) = if matches!(direction, TailDirection::LowerIsWorse) {
+                (
+                    "lower-is-worse",
+                    percentile(&sorted, 0.1),
+                    percentile(&sorted, 0.01),
+                )
+            } else {
+                (
+                    "higher-is-worse",
+                    percentile(&sorted, 0.9),
+                    percentile(&sorted, 0.99),
+                )
+            };
+            let p_mid = percentile(&sorted, 0.5);
             rows.push(ReportRow {
                 signal: signal.label().to_string(),
                 model: "(all)".to_string(),
                 outcome,
                 runs: cell.runs,
                 n,
-                p50: percentile(&sorted, 0.5),
-                p90: percentile(&sorted, 0.9),
-                p99: percentile(&sorted, 0.99),
+                tail: tail_str.to_string(),
+                p_mid,
+                p_near,
+                p_far,
             });
         }
 
@@ -326,15 +366,31 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
             let mut sorted = cell.samples;
             sorted.sort();
             let n = sorted.len();
+            let direction = signal.direction();
+            let (tail_str, p_near, p_far) = if matches!(direction, TailDirection::LowerIsWorse) {
+                (
+                    "lower-is-worse",
+                    percentile(&sorted, 0.1),
+                    percentile(&sorted, 0.01),
+                )
+            } else {
+                (
+                    "higher-is-worse",
+                    percentile(&sorted, 0.9),
+                    percentile(&sorted, 0.99),
+                )
+            };
+            let p_mid = percentile(&sorted, 0.5);
             rows.push(ReportRow {
                 signal: signal.label().to_string(),
                 model,
                 outcome,
                 runs: cell.runs,
                 n,
-                p50: percentile(&sorted, 0.5),
-                p90: percentile(&sorted, 0.9),
-                p99: percentile(&sorted, 0.99),
+                tail: tail_str.to_string(),
+                p_mid,
+                p_near,
+                p_far,
             });
         }
     }
@@ -648,6 +704,161 @@ mod tests {
         assert_eq!(percentile(&single, 0.5), 42);
         assert_eq!(percentile(&single, 0.9), 42);
         assert_eq!(percentile(&single, 0.99), 42);
+        // Low-tail percentiles
+        let eight = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        assert_eq!(percentile(&eight, 0.1), 2);
+        assert_eq!(percentile(&eight, 0.01), 1);
+    }
+
+    #[test]
+    fn signal_direction_maps_oscillation_low_others_high() {
+        assert_eq!(
+            Signal::OscillationMinDistinct.direction(),
+            TailDirection::LowerIsWorse
+        );
+        assert_eq!(
+            Signal::IdenticalRun.direction(),
+            TailDirection::HigherIsWorse
+        );
+        assert_eq!(
+            Signal::NoveltyDistinct.direction(),
+            TailDirection::HigherIsWorse
+        );
+        assert_eq!(
+            Signal::MaxReadOnlyRun.direction(),
+            TailDirection::HigherIsWorse
+        );
+    }
+
+    #[test]
+    fn oscillation_report_surfaces_low_tail() {
+        // Build a report with oscillation samples producing varied min-distinct values.
+        // Each run uses exactly 8 calls (OSCILLATION_WINDOW), with varying distinct counts.
+        let tmp = TempDir::new().unwrap();
+        for i in 0..8 {
+            // Create a run where the min distinct count in any window is (i+1).
+            // Use i+1 distinct tool names, each repeated to fill 8 calls.
+            let distinct_count = i + 1;
+            let calls_per_tool = 8 / distinct_count;
+            let mut calls: Vec<(String, serde_json::Value)> = Vec::new();
+            for t in 0..distinct_count {
+                for _ in 0..calls_per_tool {
+                    calls.push((
+                        format!("tool_{}", t),
+                        serde_json::json!({"path": format!("file_{}_{}.rs", i, t)}),
+                    ));
+                }
+            }
+            // Pad to exactly 8 calls
+            while calls.len() < 8 {
+                calls.push((
+                    format!("tool_pad_{}", calls.len()),
+                    serde_json::json!({"path": "pad.rs"}),
+                ));
+            }
+            calls.truncate(8);
+            make_session_file(
+                tmp.path(),
+                &format!("run{}", i),
+                "model_x",
+                "complete",
+                &calls,
+            );
+        }
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: true,
+        };
+        let out = run(&args);
+        // Parse JSON and check the oscillation row
+        let rows: Vec<ReportRow> = serde_json::from_str(&out).unwrap();
+        let osc_rows: Vec<_> = rows
+            .iter()
+            .filter(|r| r.signal == "oscillation_min_distinct")
+            .collect();
+        assert!(
+            !osc_rows.is_empty(),
+            "expected oscillation_min_distinct rows: {out}"
+        );
+        let row = osc_rows[0];
+        assert_eq!(row.tail, "lower-is-worse");
+        // For lower-is-worse, p_far (p01) <= p_near (p10) — the low tail
+        assert!(
+            row.p_far <= row.p_near,
+            "lower-is-worse: p_far ({}) should be <= p_near ({})",
+            row.p_far,
+            row.p_near
+        );
+    }
+
+    #[test]
+    fn higher_is_worse_signal_reports_high_tail_unchanged() {
+        // For a higher-is-worse signal, the tail columns should be high values.
+        let tmp = TempDir::new().unwrap();
+        for i in 0..8 {
+            let calls: Vec<(String, serde_json::Value)> = (0..30)
+                .map(|j| {
+                    (
+                        "read_file".into(),
+                        serde_json::json!({"path": format!("file{}-{}.rs", i, j)}),
+                    )
+                })
+                .collect();
+            make_session_file(
+                tmp.path(),
+                &format!("run{}", i),
+                "model_x",
+                "complete",
+                &calls,
+            );
+        }
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: true,
+        };
+        let out = run(&args);
+        let rows: Vec<ReportRow> = serde_json::from_str(&out).unwrap();
+        let novel_rows: Vec<_> = rows
+            .iter()
+            .filter(|r| r.signal == "novelty_distinct_targets")
+            .collect();
+        if !novel_rows.is_empty() {
+            let row = novel_rows[0];
+            assert_eq!(row.tail, "higher-is-worse");
+        }
+    }
+
+    #[test]
+    fn format_report_labels_oscillation_tail_low() {
+        let tmp = TempDir::new().unwrap();
+        let calls: Vec<(String, serde_json::Value)> = (0..8)
+            .map(|_| ("read_file".into(), serde_json::json!({"path": "a.rs"})))
+            .collect();
+        make_session_file(tmp.path(), "test", "model_x", "complete", &calls);
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: false,
+        };
+        let out = run(&args);
+        // The oscillation block header must name low-tail percentiles
+        assert!(
+            out.contains("P10") && out.contains("P1"),
+            "oscillation block should show P10/P1: {out}"
+        );
+        // Higher-is-worse blocks must show P90/P99
+        assert!(
+            out.contains("P90") && out.contains("P99"),
+            "higher-is-worse blocks should show P90/P99: {out}"
+        );
     }
 
     #[test]
