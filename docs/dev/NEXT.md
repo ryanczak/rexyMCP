@@ -4,9 +4,31 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none pending `/rexymcp:architect next` — phase-06c-ii is `done`.**
-Remaining M35: **06c-iii** (ledger surfaces) → **06d** (dashboard fixes) → **06e**
-(auto-telemetry) → **07** (reporting debt) closes M35.
+**Active phase:
+[M35 phase-06c-iii-a — rewire costs + dashboard architect cost onto the ledger](milestones/M35-metrics-cost-accounting/phase-06c-iii-a-ledger-cost-rewire.md)
+(status: todo — drafted 2026-07-21, awaiting `/rexymcp:dispatch phase-06c-iii-a`).**
+
+phase-06c-iii-a drafted 2026-07-21: the core of the ledger-surfaces work. `rexymcp costs`
++ dashboard Budget now compute **architect cost from the ledger, per-model**
+(`ArchitectLedger::cost` × `rates_for`), retiring the stale single-rate
+`sum_architect_tokens(ArchitectActivity)` path. **Three design decisions with the user
+(2026-07-21):** (1) **milestone-scope architect = `—`** — the ledger has no milestone
+dimension and sessions straddle boundaries, so it's not attributable (executor stays
+milestone-scoped; `ScopeReport.architect` becomes `Option<f64>`, `None`→`—`); (2)
+**06c-iii split** into **06c-iii-a** (this core rewire — shared `ScopeCosts`/`scope_report`
+touch both `costs` + dashboard, can't split at that line) and **06c-iii-b** (per-skill
+breakdown + harvest-freshness, additive); (3) **profile stays executor-only** (ledger has
+no phase key — dropped from the consumer list). Architect cost is pre-computed per-model
+in `scope_costs` (gains ledger + `&ArchitectConfig`) as `architect_cost: Option<f64>`.
+`ArchitectActivity` is NOT removed (only its cost path); the assist count still reads it;
+06e decides its fate. **Folds in the 06c-ii doc-comment restore** (config.rs review_model).
+Heavily pre-injected (final type defs + scope_costs/scope_report quoted) with the 06c-i/ii
+gotchas (patch-not-write, read-once) — this is the highest-blast-radius phase of the arc.
+size=m (~380 lines).
+
+Remaining M35 after this: **06c-iii-b** → **06d** (dashboard fixes) → **06e**
+(auto-telemetry; harvest/journal CLI deprecation open question) → **07** (reporting debt)
+closes M35.
 
 **M35 phase-06c-ii — done (2026-07-21, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON,
 105 turns clean).** Per-model architect pricing core: `CACHE_CREATION_1H_RATE_MULTIPLIER

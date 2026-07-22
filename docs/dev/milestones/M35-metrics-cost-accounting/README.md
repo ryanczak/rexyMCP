@@ -73,7 +73,8 @@ and the executor finally carries a real (configurable) price.
 | 06b-ii | Dashboard `b`-key tokens⇄currency toggle ([phase-06b-ii-budget-tokens-toggle.md](phase-06b-ii-budget-tokens-toggle.md)) | done |
 | 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | done |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split ([phase-06c-ii-architect-pricing.md](phase-06c-ii-architect-pricing.md)) | done |
-| 06c-iii | Ledger surfaces: costs/dashboard/profile consume the ledger; per-skill breakdown; harvest freshness | not drafted |
+| 06c-iii-a | Rewire costs + dashboard architect cost onto the ledger (per-model); milestone architect = `—`; restore doc ([phase-06c-iii-a-ledger-cost-rewire.md](phase-06c-iii-a-ledger-cost-rewire.md)) | todo |
+| 06c-iii-b | Ledger new surfaces: per-skill architect breakdown + harvest-freshness display | not drafted |
 | 06d | Dashboard fixes: budget `b`-toggle border hint, trailing-row trim, session milestone + full phase name | not drafted |
 | 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
