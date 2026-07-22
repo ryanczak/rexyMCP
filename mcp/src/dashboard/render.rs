@@ -224,6 +224,14 @@ pub(crate) fn render_dashboard(
         data.project_escalation_count,
         state.budget_display,
     ));
+    if let Some(ref ts) = data.top_skill
+        && ts.cost > 0.0
+    {
+        budget.push(Line::from(format!(
+            "  Top skill: {} ${:.2}",
+            ts.skill, ts.cost
+        )));
+    }
     frame.render_widget(panel(" Budget ", budget), budget_area);
     frame.render_widget(
         panel(" Context ", reclaim_lines(&data.summary)),

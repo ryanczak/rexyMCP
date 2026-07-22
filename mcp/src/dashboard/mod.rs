@@ -8,7 +8,7 @@ use std::path::Path;
 use rexymcp_executor::store::sessions::event::SessionRecord;
 use rexymcp_executor::store::telemetry::{self, PhaseRun};
 
-use crate::costs;
+use crate::costs::{self, skill_costs};
 use crate::status::{self, StatusSummary};
 
 mod event_loop;
@@ -35,6 +35,9 @@ pub struct DashboardData {
     pub project_costs: ScopeCosts,
     /// Count of assist ArchitectActivity journal records for the project.
     pub project_escalation_count: u32,
+    /// Top (most expensive) architect skill for the project. `None` when there
+    /// is no architect ledger data.
+    pub top_skill: Option<crate::costs::SkillCost>,
 }
 
 /// Load the latest session data. Pure, testable.
@@ -94,6 +97,7 @@ pub fn load_data(
                         milestone_costs,
                         project_costs,
                         project_escalation_count,
+                        top_skill: skill_costs(&ledgers, architect, pid).into_iter().next(),
                     }
                 }
                 Err(e) => DashboardData {
@@ -104,6 +108,7 @@ pub fn load_data(
                     milestone_costs: None,
                     project_costs,
                     project_escalation_count,
+                    top_skill: None,
                 },
             }
         }
@@ -124,6 +129,7 @@ pub fn load_data(
                         milestone_costs: None,
                         project_costs,
                         project_escalation_count,
+                        top_skill: None,
                     }
                 }
                 Err(e) => DashboardData {
@@ -134,6 +140,7 @@ pub fn load_data(
                     milestone_costs: None,
                     project_costs,
                     project_escalation_count,
+                    top_skill: None,
                 },
             }
         }

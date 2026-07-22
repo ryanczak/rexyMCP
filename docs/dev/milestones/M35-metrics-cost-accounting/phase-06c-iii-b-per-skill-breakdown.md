@@ -1,7 +1,7 @@
 # Phase 06c-iii-b: Per-skill architect cost breakdown
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-06c-iii-a
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -216,3 +216,9 @@ hand-edit the store.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-22 04:15 (started)
+
+**Started by:** executor (06c-iii-b)
+
+**Action:** Implementing per-skill architect cost breakdown (SkillCost struct, skill_costs function, CostReport.by_skill, format_costs table, dashboard top-skill hint).

@@ -31,6 +31,7 @@ pub struct CostReport {
     pub milestone: Option<ScopeReport>,
     pub project: ScopeReport,
     pub assists: u32,
+    pub by_skill: Vec<SkillCost>,
 }
 
 /// Compute one scope's dollar lines. `exec_rates` are the executor model's
@@ -72,6 +73,56 @@ pub fn scope_report(
         architect,
         net,
     }
+}
+
+/// One skill's architect spend: total tokens (all four classes) and per-model USD cost.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SkillCost {
+    pub skill: String,
+    pub tokens: u64,
+    pub cost: f64,
+}
+
+/// Per-skill architect cost for a project, from the ledger, priced per-model.
+/// Sorted by `cost` descending (ties broken by `skill` for determinism).
+pub(crate) fn skill_costs(
+    ledgers: &[telemetry::ArchitectLedger],
+    architect: &rexymcp_executor::config::ArchitectConfig,
+    project_id: &str,
+) -> Vec<SkillCost> {
+    use std::collections::HashMap;
+    let mut acc: HashMap<String, (u64, f64)> = HashMap::new();
+    for l in ledgers
+        .iter()
+        .filter(|l| l.project_id.as_deref() == Some(project_id))
+    {
+        let toks = l
+            .tokens
+            .input
+            .saturating_add(l.tokens.cache_creation)
+            .saturating_add(l.tokens.cache_read)
+            .saturating_add(l.tokens.output);
+        let cost = architect
+            .rates_for(&l.model)
+            .map_or(0.0, |(i, o)| l.cost(i, o));
+        let e = acc.entry(l.skill.clone()).or_insert((0, 0.0));
+        e.0 = e.0.saturating_add(toks);
+        e.1 += cost;
+    }
+    let mut out: Vec<SkillCost> = acc
+        .into_iter()
+        .map(|(skill, (tokens, cost))| SkillCost {
+            skill,
+            tokens,
+            cost,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.cost
+            .total_cmp(&a.cost)
+            .then_with(|| a.skill.cmp(&b.skill))
+    });
+    out
 }
 
 /// Sum executor tokens over project runs, optionally scoped to one milestone_id.
@@ -211,11 +262,13 @@ pub fn load_cost_report(
             .filter(|a| a.project_id.as_deref() == Some(pid) && a.activity == "assist")
             .count() as u32;
 
+        let by_skill = skill_costs(&ledgers, &cfg.architect, pid);
         Ok(CostReport {
             session: session_report,
             milestone: milestone_report,
             project: project_report,
             assists,
+            by_skill,
         })
     } else {
         // No project_id: session still computes; project/milestone are zero.
@@ -226,6 +279,7 @@ pub fn load_cost_report(
             milestone: None,
             project: zero_report,
             assists: 0,
+            by_skill: Vec::new(),
         })
     }
 }
@@ -262,7 +316,46 @@ pub fn format_costs(report: &CostReport) -> String {
     lines.push(row("Project", &report.project));
     lines.push(format!("Assists: {}", report.assists));
 
+    // Per-skill architect cost table (project-scoped).
+    if !report.by_skill.is_empty() {
+        let total: f64 = report.by_skill.iter().map(|s| s.cost).sum();
+        lines.push(String::new());
+        lines.push("By skill (architect)".to_string());
+        lines.push(format!(
+            "{:<20}{:>10}{:>10}{:>8}",
+            "SKILL", "TOKENS", "COST", "%"
+        ));
+        for s in &report.by_skill {
+            let pct = if total > 0.0 {
+                s.cost / total * 100.0
+            } else {
+                0.0
+            };
+            let tokens_str = format_tokens(s.tokens);
+            lines.push(format!(
+                "{:<20}{:>10}{:>10}{:>7.1}%",
+                s.skill,
+                tokens_str,
+                fmt_dollars(s.cost),
+                pct,
+            ));
+        }
+    }
+
     lines.join("\n")
+}
+
+/// Format a token count for display: "—", raw, "{:.1}k", or "{:.1}M".
+fn format_tokens(count: u64) -> String {
+    if count == 0 {
+        "—".to_string()
+    } else if count >= 1_000_000 {
+        format!("{:.1}M", count as f64 / 1_000_000.0)
+    } else if count >= 1_000 {
+        format!("{:.1}k", count as f64 / 1_000.0)
+    } else {
+        count.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -381,6 +474,7 @@ mod tests {
                 net: Some(30.0),
             },
             assists: 3,
+            by_skill: Vec::new(),
         };
         let out = format_costs(&report);
         assert!(out.contains("Session"));
@@ -419,6 +513,7 @@ mod tests {
                 net: Some(30.0),
             },
             assists: 3,
+            by_skill: Vec::new(),
         };
         let out = format_costs(&report);
         assert!(out.contains("Session"));
@@ -656,5 +751,159 @@ saved_output_per_mtok = 0.0
         let cfg = rexymcp_executor::config::ArchitectConfig::default();
         let c = scope_costs(&[], &[ledger("claude-opus-4-8")], &cfg, "P", Some("M35"));
         assert_eq!(c.architect_cost, None);
+    }
+
+    #[test]
+    fn skill_costs_groups_and_prices_per_model() {
+        // Two dispatch records (opus + sonnet-5) and one review record (opus).
+        // Dispatch: opus ($30) + sonnet-5 ($12) = $42; review: opus ($30).
+        let mut ledgers = vec![
+            ledger("claude-opus-4-8"), // dispatch: $30
+            ledger("claude-sonnet-5"), // dispatch: $12
+        ];
+        let mut review = ledger("claude-opus-4-8");
+        review.skill = "review".to_string();
+        ledgers.push(review); // review: $30
+
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let costs = skill_costs(&ledgers, &cfg, "P");
+
+        assert_eq!(costs.len(), 2);
+        assert_eq!(costs[0].skill, "dispatch");
+        assert!(
+            (costs[0].cost - 42.0).abs() < 1e-9,
+            "dispatch cost: {}",
+            costs[0].cost
+        );
+        assert_eq!(costs[0].tokens, 4_000_000); // 2 records × 2M tokens
+        assert_eq!(costs[1].skill, "review");
+        assert!(
+            (costs[1].cost - 30.0).abs() < 1e-9,
+            "review cost: {}",
+            costs[1].cost
+        );
+        assert_eq!(costs[1].tokens, 2_000_000);
+    }
+
+    #[test]
+    fn skill_costs_sorted_by_cost_desc() {
+        // "zeta" has higher cost than "alpha" so it should sort first.
+        let mut ledgers = vec![];
+        let mut alpha = ledger("claude-sonnet-5");
+        alpha.skill = "alpha".to_string();
+        ledgers.push(alpha); // $12
+        let mut zeta = ledger("claude-opus-4-8");
+        zeta.skill = "zeta".to_string();
+        ledgers.push(zeta); // $30
+
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let costs = skill_costs(&ledgers, &cfg, "P");
+
+        assert_eq!(costs.len(), 2);
+        assert_eq!(costs[0].skill, "zeta"); // higher cost first
+        assert_eq!(costs[1].skill, "alpha");
+    }
+
+    #[test]
+    fn skill_costs_empty_is_empty() {
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let costs = skill_costs(&[], &cfg, "P");
+        assert!(costs.is_empty());
+    }
+
+    #[test]
+    fn format_costs_appends_by_skill_percent() {
+        let report = CostReport {
+            session: ScopeReport {
+                baseline: None,
+                executor: 0.0,
+                architect: None,
+                net: None,
+            },
+            milestone: None,
+            project: ScopeReport {
+                baseline: None,
+                executor: 0.0,
+                architect: None,
+                net: None,
+            },
+            assists: 0,
+            by_skill: vec![
+                SkillCost {
+                    skill: "dispatch".to_string(),
+                    tokens: 0,
+                    cost: 30.0,
+                },
+                SkillCost {
+                    skill: "review".to_string(),
+                    tokens: 0,
+                    cost: 10.0,
+                },
+            ],
+        };
+
+        let output = format_costs(&report);
+        assert!(output.contains("dispatch"));
+        assert!(output.contains("review"));
+        assert!(output.contains("$30.00"));
+        assert!(output.contains("$10.00"));
+        assert!(output.contains("75.0%"));
+        assert!(output.contains("25.0%"));
+    }
+
+    #[test]
+    fn format_costs_omits_by_skill_when_empty() {
+        let report = CostReport {
+            session: ScopeReport {
+                baseline: None,
+                executor: 0.0,
+                architect: None,
+                net: None,
+            },
+            milestone: None,
+            project: ScopeReport {
+                baseline: None,
+                executor: 0.0,
+                architect: None,
+                net: None,
+            },
+            assists: 0,
+            by_skill: Vec::new(),
+        };
+
+        let output = format_costs(&report);
+        assert!(!output.contains("By skill"));
+        assert!(!output.contains("SKILL"));
+    }
+
+    #[test]
+    fn format_costs_by_skill_percent_zero_when_total_zero() {
+        let report = CostReport {
+            session: ScopeReport {
+                baseline: None,
+                executor: 0.0,
+                architect: None,
+                net: None,
+            },
+            milestone: None,
+            project: ScopeReport {
+                baseline: None,
+                executor: 0.0,
+                architect: None,
+                net: None,
+            },
+            assists: 0,
+            by_skill: vec![SkillCost {
+                skill: "dispatch".to_string(),
+                tokens: 0,
+                cost: 0.0,
+            }],
+        };
+
+        let output = format_costs(&report);
+        assert!(
+            output.contains("0.0%"),
+            "zero total should show 0.0%: {output}"
+        );
     }
 }
