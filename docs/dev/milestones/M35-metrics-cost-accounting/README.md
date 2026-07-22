@@ -75,7 +75,8 @@ and the executor finally carries a real (configurable) price.
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split ([phase-06c-ii-architect-pricing.md](phase-06c-ii-architect-pricing.md)) | done |
 | 06c-iii-a | Rewire costs + dashboard architect cost onto the ledger (per-model); milestone architect = `—`; restore doc ([phase-06c-iii-a-ledger-cost-rewire.md](phase-06c-iii-a-ledger-cost-rewire.md)) | done |
 | 06c-iii-b | Ledger surface: per-skill architect breakdown (`costs` table SKILL/TOKENS/COST/% + one-line dashboard top-skill hint) ([phase-06c-iii-b-per-skill-breakdown.md](phase-06c-iii-b-per-skill-breakdown.md)) | review |
-| 06d | Dashboard fixes: budget `b`-toggle border hint, trailing-row trim, session milestone + full phase name | not drafted |
+| 06d | Dashboard correctness: full `phase_id` (fixes session milestone + phase display; also bug-05b-1 root) + budget `b`-toggle border hint ([phase-06d-dashboard-fixes.md](phase-06d-dashboard-fixes.md)) | todo |
+| 06d-2 | Dashboard trailing-row (issue 3) — needs a layout decision (see note); NOT yet scoped | not drafted |
 | 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` + sweep-liveness indicator (absorbs harvest-freshness) | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
@@ -252,3 +253,17 @@ appends** a per-skill architect table — **SKILL / TOKENS / COST / %-of-archite
 project-scoped, per-model priced, sorted by cost desc (the deep-dive found dispatch ≈
 49%); (2) the dashboard Budget panel gains a **one-line top-skill hint** (not a full
 mini-panel — keeps the TUI change small, given the executor's struggles there).
+**06d scope + issue-3 finding (2026-07-21).** The four pre-close dashboard issues split:
+06d takes **issues 2 (budget `b`-hint), 4 (wrong milestone), 5 (truncated phase)** — 4+5
+share one root, `derive_phase_id` collapsing `phase-06c-iii-b-…` to coarse `"phase-06"`;
+the user approved fixing it at the root (`derive_phase_id` → full id), which also fixes
+**bug-05b-1's root** and makes the telemetry `phase_id` grouping finer (06a vs 06b vs
+06c-i now distinct; back-compat already waived). **Issue 3 (trailing blank row) turned out
+NOT to be a simple trim:** the three header panels (Session/Budget/Context) share one
+fixed-height horizontal band sized to the tallest (Budget ≈9 rows — `budget_lines` 3 +
+savings ~5 + the 06c-iii-b top-skill line 1); Session/Context (~8) are shorter so show one
+blank, and the band is already right-sized to Budget, so trimming would **clip Budget**.
+Eliminating the blank needs a **design decision** — per-panel heights (a layout change),
+or moving the top-skill line out of Budget's content (e.g. into its border title, though
+that competes with the `[b=…]` hint), or accepting the blank. Deferred as **06d-2** pending
+that call; not scoped in 06d.
