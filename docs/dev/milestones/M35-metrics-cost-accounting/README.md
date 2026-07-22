@@ -74,6 +74,8 @@ and the executor finally carries a real (configurable) price.
 | 06c-i | Architect ledger core: transcript-native harvest rewrite ([phase-06c-i-architect-ledger-core.md](phase-06c-i-architect-ledger-core.md)) | done |
 | 06c-ii | Per-model architect pricing: built-in Claude price table + config override, 5m/1h cache-write split | not drafted |
 | 06c-iii | Ledger surfaces: costs/dashboard/profile consume the ledger; per-skill breakdown; harvest freshness | not drafted |
+| 06d | Dashboard fixes: budget `b`-toggle border hint, trailing-row trim, session milestone + full phase name | not drafted |
+| 06e | Auto-telemetry: periodic background harvest/journal/review-reconcile sweep inside `serve` | not drafted |
 | 07 | Reporting debt: oscillation tail, calibrate-governor alignment, discoverability | not drafted |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect
@@ -186,3 +188,33 @@ loop) — directly from `~/.claude/projects/-home-matt-src-rexyMCP/*.jsonl` (ded
 `message.id`), independent of the 06c ledger. Goal: cut both cost centers hard
 without impairing review rigor or governor-calibration signal. Feeds folds 1–2 and
 informs whether the skills themselves need trimming.
+
+**Dashboard fixes + auto-telemetry — 2 new phases queued (2026-07-21, with the user).**
+Five pre-close issues, grouped into **06d** (dashboard fixes, issues 2–5) and **06e**
+(auto-telemetry, issue 1); both land before phase-07. Code locations triaged:
+
+- **[06e] Auto-telemetry (issue 1).** On launch, `harvest`/`journal`/`review` telemetry
+  must be captured **in the background with zero user input** — deriving the transcript
+  dir from the cwd (`~/.claude/projects/<munged-cwd>`) and project-id from
+  `rexymcp.toml`. **User decision:** a **periodic background sweep inside `rexymcp
+  serve`** (re-run harvest + journal reconciliation on an interval so telemetry stays
+  continuously current), not just a one-shot at startup. `review` is reconciled from
+  existing session-log outcomes where derivable — a *verdict* remains a judgment, so
+  the sweep records what's inferable, it does not invent verdicts. Today these are
+  explicit CLI subcommands (`Commands::{Harvest,Journal,Review}` in `mcp/src/main.rs`)
+  invoked with args by the skills; 06e makes them self-service inside serve.
+- **[06d] Dashboard fixes (issues 2–5), all in `mcp/src/dashboard/`:**
+  1. **Budget `b`-toggle border hint (2).** Mirror the Activity panel's
+     `.title(" Activity [f=filter] ")` (`render.rs:297`) — the Budget panel border
+     should advertise `[b=$/tok]` (or similar) the same way.
+  2. **Trailing blank row (3).** Session / Budget / Context panels show an extra empty
+     row at the bottom (content underfills the fixed `Layout::vertical([Length(11),…])`
+     area, `render.rs:192`). Trim it.
+  3. **Session Milestone usually wrong (4).** `render.rs:209` renders `data.milestone`;
+     its derivation in `dashboard/mod.rs` (`load_data`) is buggy — fix the milestone
+     resolution.
+  4. **Session Phase truncated (5).** `panels.rs:64` shows `summary.phase`, sourced
+     coarse from the session record (`status.rs:148` → e.g. `phase-06`, not
+     `phase-06b`). **This is a recurrence of bug-05b-1** (coarse `phase_id` vs the
+     doc-stem) on the dashboard surface — the session panel must show the full phase
+     name. Fix at the source or derive the stem from the phase_doc_path.

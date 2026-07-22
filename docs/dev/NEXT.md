@@ -4,9 +4,12 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none pending `/rexymcp:architect next` — phase-06c-i is `done`;
-next up is 06c-ii (per-model architect pricing), then 06c-iii (ledger surfaces),
-then phase-07 closes M35.**
+**Active phase: none pending `/rexymcp:architect next` — phase-06c-i is `done`.**
+Remaining M35 phases: **06c-ii** (per-model architect pricing) → **06c-iii** (ledger
+surfaces) → **06d** (dashboard fixes) → **06e** (auto-telemetry: periodic background
+sweep in serve) → **07** (reporting debt) closes M35. 06d + 06e were added 2026-07-21
+from the user's pre-close issue list (see the M35 README "Dashboard fixes +
+auto-telemetry" note for the 5 triaged issues + code locations).
 
 **M35 phase-06c-i — done (2026-07-21, escalated / session takeover; executor
 AEON-7/Qwen3.6-27B-AEON did the implementation).** Transcript-native architect
