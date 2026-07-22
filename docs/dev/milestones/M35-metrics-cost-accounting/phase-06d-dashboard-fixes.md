@@ -1,7 +1,7 @@
 # Phase 06d: Dashboard correctness — full phase id (fixes milestone + phase display) + budget toggle hint
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-06c-iii-b
 **Estimated diff:** ~140 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -207,6 +207,10 @@ eyeball the ` Budget [b=…] ` border, but the unit tests are the pinned evidenc
   full phase id; only add a test.
 
 ## Update Log
+
+### Update — 2026-07-22 05:45 (started)
+
+**Executor:** `runner.rs` and `dashboard/render.rs` edits + tests for full phase id derivation and budget panel hint.
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 

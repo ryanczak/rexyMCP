@@ -672,4 +672,25 @@ mod tests {
         // phase = None
         assert_eq!(resolve_milestone(dir.path(), None), None);
     }
+
+    #[test]
+    fn resolve_milestone_matches_full_phase_id() {
+        let dir = TempDir::new().unwrap();
+        let milestones = dir.path().join("docs/dev/milestones");
+        let m35 = milestones.join("M35-metrics-cost-accounting");
+        std::fs::create_dir_all(&m35).unwrap();
+        std::fs::write(
+            m35.join("phase-06c-iii-b-per-skill-breakdown.md"),
+            "# Phase\n\n**Status:** in-progress\n",
+        )
+        .unwrap();
+
+        // Full id matches
+        let result = resolve_milestone(dir.path(), Some("phase-06c-iii-b"));
+        assert_eq!(result, Some("M35 — Metrics Cost Accounting".to_string()));
+
+        // Coarse id does NOT match (prefix "phase-06-" matches no file)
+        let coarse = resolve_milestone(dir.path(), Some("phase-06"));
+        assert_eq!(coarse, None);
+    }
 }

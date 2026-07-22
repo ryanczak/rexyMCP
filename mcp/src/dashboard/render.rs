@@ -232,7 +232,7 @@ pub(crate) fn render_dashboard(
             ts.skill, ts.cost
         )));
     }
-    frame.render_widget(panel(" Budget ", budget), budget_area);
+    frame.render_widget(panel(" Budget [b=$/tok] ", budget), budget_area);
     frame.render_widget(
         panel(" Context ", reclaim_lines(&data.summary)),
         compactions_area,

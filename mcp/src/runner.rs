@@ -73,22 +73,25 @@ pub fn parse_phase_doc(markdown: &str) -> PhaseDocFields {
 }
 
 /// Derive a short phase id from a file path stem.
-/// `phase-01-phase-runner.md` → `"phase-01"`; non-matching → whole stem.
+/// `phase-01-phase-runner.md` → `"phase-01"`; `phase-06c-iii-b-per-skill-breakdown.md` → `"phase-06c-iii-b"`.
+/// Keeps all leading id segments (digits, single letters, roman numerals), stops at the first
+/// descriptive word.
 pub fn derive_phase_id(path: &Path) -> String {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-
-    if let Some(after) = stem.strip_prefix("phase-") {
-        let digits_end = after
-            .char_indices()
-            .find(|(_, c)| !c.is_ascii_digit())
-            .map(|(i, _)| i)
-            .unwrap_or(after.len());
-        if digits_end > 0 {
-            return stem[..6 + digits_end].to_string();
-        }
+    let Some(after) = stem.strip_prefix("phase-") else {
+        return stem.to_string();
+    };
+    let is_id_seg = |s: &str| {
+        !s.is_empty()
+            && (s.chars().any(|c| c.is_ascii_digit())
+                || (s.len() == 1 && s.chars().all(|c| c.is_ascii_lowercase()))
+                || s.chars().all(|c| matches!(c, 'i' | 'v' | 'x')))
+    };
+    let kept: Vec<&str> = after.split('-').take_while(|s| is_id_seg(s)).collect();
+    if kept.is_empty() {
+        return stem.to_string();
     }
-
-    stem.to_string()
+    format!("phase-{}", kept.join("-"))
 }
 
 /// Injected seams for the testable inner assembler.
@@ -503,6 +506,26 @@ mod tests {
         assert_eq!(
             derive_phase_id(Path::new("phase-01-phase-runner.md")),
             "phase-01"
+        );
+    }
+
+    #[test]
+    fn derive_phase_id_keeps_letter_suffix() {
+        assert_eq!(
+            derive_phase_id(Path::new("phase-06a-costs-cli-core.md")),
+            "phase-06a"
+        );
+    }
+
+    #[test]
+    fn derive_phase_id_keeps_multipart_id() {
+        assert_eq!(
+            derive_phase_id(Path::new("phase-06c-iii-b-per-skill-breakdown.md")),
+            "phase-06c-iii-b"
+        );
+        assert_eq!(
+            derive_phase_id(Path::new("phase-05a-iii-scorecard-by-cli.md")),
+            "phase-05a-iii"
         );
     }
 
