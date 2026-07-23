@@ -1,7 +1,7 @@
 # Phase 01: Harvest subagent transcripts
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -276,3 +276,102 @@ a `cargo add`.)
 ### Update — 2026-07-23 21:00 (started)
 
 Executor implementing phase 01: adding `collect_transcripts` helper, rewiring `harvest()`, extending sweep watermark, updating module doc, and writing tests.
+### Update — ts=1784841093906 (complete, server-authored)
+
+**Summary:** **Summary + Notes for review:**
+
+Built the `collect_transcripts` helper in `mcp/src/harvest.rs` that discovers both top-level `<session-id>.jsonl` and `<session-id>/subagents/*.jsonl` files, pairing each with the correct session id (parent directory for subagents). Rewired `harvest()` onto this helper so subagent token usage attributes to the spawning session. Extended `max_transcript_mtime_ms` in `sweep.rs` to scan subagent directories so the sweep skip-guard no longer suppresses harvests during subagent-only activity. Only `subagents/` is scanned — `tool-results/` is explicitly excluded. Updated the module doc comment accordingly.
+
+All 8 new tests pass (6 in `harvest.rs`, 2 in `sweep.rs`), plus all 1032 existing tests remain green. E2E verification with a real temp tree confirmed: **2 messages across 1 session**, both ledger records carry `"session_id":"s1"`, and `msg_tool`'s 999 tokens from `tool-results/` appear nowhere in the output. No deviations from the spec.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+s::tests::type_mismatch_returns_recovery_hint ... ok
+test tools::update_task::tests::flips_pending_task_to_active ... ok
+test tools::update_task::tests::flips_active_task_to_done ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1032 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `docs/dev/milestones/M36-budget-truth-pass/README.md` — +1 -1
+- `docs/dev/milestones/M36-budget-truth-pass/phase-01-subagent-transcript-harvest.md` — +5 -1
+- `mcp/src/harvest.rs` — +310 -27
+- `mcp/src/sweep.rs` — +60 -1
+
+**Commit:** 3cb480691bdd85a56bdc181f803a16eff305e25d
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
