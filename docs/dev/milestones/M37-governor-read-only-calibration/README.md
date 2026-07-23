@@ -55,6 +55,10 @@ Rejected alternatives, recorded so they are not re-litigated:
   every call site migrated.
 - `calibrate-governor`'s output-flood byte columns render k/M-compacted, in line
   with the shared rendering 07c established.
+- The **server-authored completion entry** satisfies STANDARDS §1: it ticks the
+  phase doc's acceptance-criteria checkboxes and emits an
+  `**End-to-end verification:**` block carrying the actual E2E output, so a
+  `done` phase doc is not self-contradictory.
 - All four gates green.
 
 ## Architecture references
@@ -76,13 +80,36 @@ milestone into phases on demand. Expected shape:
 | 02 | `oscillation_stall` in `FAILURE_CLASSES` | todo |
 | 03 | Consolidate the three token formatters into `metrics` | todo |
 | 04 | k/M compaction for `calibrate-governor`'s byte columns | todo |
+| 05 | Server-authored completion entry: tick acceptance criteria + emit an E2E block | todo |
 
-Phase 01 is the milestone; 02–04 are carried debt and can run in any order after
+Phase 01 is the milestone; 02–05 are carried debt and can run in any order after
 it. Phase 01 changes governor termination behavior, so it needs negative tests
 pinning that mutating windows are untouched — a blanket disable would pass a
 positive-only suite.
 
 ## Notes
+
+**Phase 05 — why it exists (added 2026-07-23 at the M36 phase-01 review).**
+STANDARDS §1 requires that every acceptance criterion be ticked and that any
+criterion referencing a real artifact be verified end-to-end with **the actual
+output quoted** in the completion Update Log. Since M27 phase-03 moved the
+bookkeeping tail server-side, the server-authored completion entry does
+neither: it writes a summary, gate labels, command-output tails, files-changed
+and the commit sha, but leaves the phase doc's `- [ ]` boxes untouched and
+emits no `**End-to-end verification:**` section.
+
+The result is a `done` phase doc whose own acceptance criteria read as unmet,
+and an E2E claim asserted in prose rather than evidenced. Reproduced on M35
+phase-06e, 07g, 07h and M36 phase-01 — **4 occurrences**, so past the
+fold-immediately threshold. It is not an executor defect and **cannot be fixed
+by re-dispatch**: the executor no longer owns that output. Each review has been
+silently absorbing the gap by verifying and ticking manually.
+
+Scope: the server's completion-entry writer. It already receives the E2E
+command outputs it would need to quote. Ticking the checkboxes requires
+deciding what evidence justifies a tick — the safe shape is to tick only
+criteria whose verifying command the server actually ran and observed pass,
+and leave the rest for the reviewer rather than tick optimistically.
 
 **Sequencing against M36.** Independent — M36 is `mcp/` accounting and display,
 M37 is `executor/governor` plus small `mcp/` cleanups. Phase 03 (token
