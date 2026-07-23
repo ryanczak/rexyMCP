@@ -1,7 +1,7 @@
 # Phase 07h: Tight parens on the debit "—" — `(—)`, padding outside, still decimal-aligned
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-07g
 **Estimated diff:** ~35 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -146,3 +146,104 @@ eyeball the Architect row now reading `(—)` with the `—` under the decimals.
 ### Update — 2026-07-23 04:53 (started)
 
 **Executor:** LLM executor — started phase 07h.
+### Update — ts=1784782601240 (complete, server-authored)
+
+**Summary:** Done. Here's what was built:
+
+**What:** Changed the `paren` closure in `savings_lines` to render the debit no-value dash as `(—)  ` — tight parens with the 2 alignment spaces moved outside the closing paren, instead of the previous `(—  )` with spaces inside. This keeps the `—` on the same decimal column while making the parens hug the dash.
+
+**Deviation:** None — implemented exactly as specified.
+
+**E2E verification:** `cargo test` passes (614 unit + 1032 integration, 2 ignored). The `savings_lines_dash_aligns_with_decimal` test now includes the new tight-parens assertion (`architect.contains("(—)")`). The `grep` confirms the literal `(—)  ` is present at line 676. All build/lint/format gates pass clean.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+_matching_kind ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::exact_match_no_substring ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1032 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `docs/dev/milestones/M35-metrics-cost-accounting/README.md` — +1 -1
+- `docs/dev/milestones/M35-metrics-cost-accounting/phase-07h-dash-tight-parens.md` — +5 -1
+- `mcp/src/dashboard/panels.rs` — +14 -1
+
+**Commit:** 400c4041a0534119034ec36899d6ef2863fe2161
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
