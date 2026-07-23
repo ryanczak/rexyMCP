@@ -4,10 +4,21 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: NONE — all M35 in-scope phases are `done`. M35 is at its milestone
-boundary, held open for the CLOSE: run `/rexymcp:architect` (no args) to write the
-retrospective, fold the accumulated calibration lessons (below), and set this pointer to
-"none". Not yet "none" — the close is a separate human-gated step and has not run.**
+**Active phase:
+[M35 phase-07h — tight parens on the debit `—`](milestones/M35-metrics-cost-accounting/phase-07h-dash-tight-parens.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07h`). One more
+small user-requested cleanup fix before the M35 close (pending, below).**
+
+phase-07h drafted 2026-07-22 (user-scoped): 07g aligned the savings `—` with the decimal,
+but the **debit** row renders `(—  )` — the 2 alignment spaces sit *inside* the parens.
+The user wants tight `(—)` **and** decimal-aligned. Both are achievable: keep `(—)` tight
+and move the padding *outside* the `)` → `"(—)  "`, which right-aligns the tight unit so
+the `—` still lands on the decimal column (same `—` position as 07g). One-line `paren`
+closure change + a tight-parens test assertion (`architect.contains("(—)")`,
+mutation-sensitive vs the old `(—  )`); the 07g alignment assertion is unchanged. `panels.rs`.
+
+**(Lesson for me: don't frame "tight" vs "aligned" as mutually exclusive — moving the pad
+outside the parens gives both. The user caught this.)**
 
 **phase-07g — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON, 35
 turns, clean — no oscillation).** The Budget savings `—` now lands on the decimal column:
