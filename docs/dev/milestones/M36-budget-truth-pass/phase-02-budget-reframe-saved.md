@@ -1,7 +1,7 @@
 # Phase 02: Budget reframe — Baseline becomes Executor's `saved`
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~220 lines (mostly a mechanical field rename across tests)
 **Tags:** language=rust, kind=refactor, size=m
@@ -186,17 +186,17 @@ Update the renamed tests per Task 1, and add the new assertions in § Test plan.
 
 ## Acceptance criteria
 
-- [ ] `cargo build` is green.
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
-- [ ] `cargo fmt --all --check` reports no diff in the files this phase touched.
-- [ ] `cargo test -p rexymcp` passes.
-- [ ] `grep -rn "Baseline\|BASELINE" mcp/src README.md` returns **no** matches in
+- [x] `cargo build` is green.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
+- [x] `cargo fmt --all --check` reports no diff in the files this phase touched.
+- [x] `cargo test -p rexymcp` passes.
+- [x] `grep -rn "Baseline\|BASELINE" mcp/src README.md` returns **no** matches in
       user-visible strings. (Matches inside a doc comment explaining the
       historical name are acceptable and should be called out in Notes for
       review; a match in a rendered label is a failure.)
-- [ ] The dollars-mode block renders rows in the order Executor, Architect,
+- [x] The dollars-mode block renders rows in the order Executor, Architect,
       Saved, Net.
-- [ ] The tokens-mode block renders exactly three rows.
+- [x] The tokens-mode block renders exactly three rows.
 
 ## Test plan
 
@@ -376,3 +376,93 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-23
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (local; 167 turns, no oscillation, no bounce)
+- **Scope deviations:** one, correct — the executor also edited
+  `mcp/src/main.rs`, which the Spec's task list did not name. It is the clap
+  `about` string for the `costs` subcommand, which still read
+  "Baseline/Executor/Architect/Net" and is user-visible, so leaving it would
+  have failed the milestone's own exit criterion ("no user-visible surface says
+  Baseline"). In scope by the acceptance criterion even though absent from the
+  task list; the spec's file list was incomplete, not the executor's judgment.
+- **Calibration:** M37 phase-05 recurrence (5th) — server-authored completion
+  entry again left all 7 acceptance criteria unticked and emitted no E2E block.
+  Reviewer verified and ticked. Already scheduled; no new action.
+
+**Notable:** this was the phase with no additive shape — a public struct field
+with ~14 production and ~56 test sites, where the crate stops compiling the
+moment the field changes and the verifier's strike limit can fire mid-cascade.
+The two prior phases of this shape (M30 phase-03, M31 phase-02) both hard-failed
+before landing on a refined re-dispatch. **This one landed first try in 167
+turns** with the grep-verified site list and per-file build checkpoint
+pre-injected. That is the leaf-first fold (WORKFLOW § "Prefer additive change
+shapes") working as intended — third confirmation, and the first where it
+prevented the hard-fail outright rather than fixing one.
+
+**Reviewer verification (independent re-run):**
+
+All four gates re-run separately after forcing a recompile of the touched crate
+(`touch mcp/src/costs.rs mcp/src/dashboard/panels.rs mcp/src/main.rs`) — zero
+warnings. Tests 628 + 1032 pass, 0 fail; test count rose 622 → 628, matching the
+6 specified new tests, all confirmed present by name.
+
+**Mutation-checked** — both new behaviors bite:
+
+- Moving the `Saved:` row after `Net:` → `savings_lines_row_order_is_executor_architect_saved_net`
+  and `savings_lines_omits_zero_debit_rows` both fail.
+- Forcing the legend unconditional (`let has_saved = true`) →
+  `format_costs_legend_absent_when_unpriced` fails.
+
+All mutations reverted; `git status` clean before approval.
+
+**Acceptance criterion 5** (`grep -rn "Baseline\|BASELINE" mcp/src README.md`)
+returns exactly three matches, all permitted and called out as the criterion
+requires:
+
+- `mcp/src/runner.rs:428,444,445` — `Baseline as GovBaseline`, the **governor's**
+  verifier-baseline type. Unrelated to cost accounting, not user-visible.
+- `mcp/src/dashboard/panels.rs:583` — the doc comment recording why the tokens-mode
+  Baseline row was removed. Explicitly allowed by the criterion.
+
+No match in any rendered label.
+
+**E2E against the real binary:**
+
+```
+SCOPE         EXECUTOR ARCHITECT       NET     SAVED
+Session          $0.00         —         —    $35.09
+Milestone        $0.00         —         —    $43.52
+Project          $0.00  $1744.62  $-472.38  $1272.24
+Assists: 0
+
+SAVED = executor tokens priced at Claude rates — work not billed to Claude.
+NET   = SAVED − EXECUTOR − ARCHITECT.
+```
+
+Header exact-matches the spec, no line contains "Baseline", the legend renders
+(saved rates are configured), and the per-skill table below is unchanged.
+
+**Dashboard block:** verified through the unit tests, which assert the rendered
+`Line` content of `savings_lines` directly — the same code path the TUI renders —
+rather than by driving the terminal UI interactively. Dollars mode: 4 rows in the
+order Executor, Architect, Saved, Net. Tokens mode: exactly 3 rows, no `Saved:`
+row. The M35 07d–07h alignment machinery survives: `savings_lines_debit_digits_align_with_non_debit`,
+`savings_lines_dash_aligns_with_decimal` (incl. the tight `(—)` assertion), and
+`savings_lines_data_rows_equal_width_for_alignment` all still pass, with only
+label/index adjustments and no weakened assertions.
+
+**Pre-existing, not this phase:** `mcp/src/main.rs:921` has an `.unwrap()` in a
+production path (the `--json` serialization). Introduced by `4ef8ccd` (M35
+phase-06a); this phase's only `main.rs` change was the one-line doc comment.
+Noted for a future cleanup, not a bounce.
+
+**Operational note for the human — unrelated to this phase.** The `rexymcp costs`
+output above still shows `rexymcp:auto` at **25.9M**, the pre-phase-01 figure,
+where a fresh harvest with the new binary gives 38.1M. The background sweep runs
+inside the live `rexymcp serve` process, which is still the **pre-phase-01
+binary** — a rebuild does not hot-swap a running serve. **Restart `rexymcp serve`
+to bring phase-01's subagent harvesting into the live ledger.**
