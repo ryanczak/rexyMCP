@@ -1,7 +1,7 @@
 # Phase 07e: Budget panel content — align parenthesized debit values + combine the token in/out lines
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-07d
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -231,3 +231,95 @@ diagnose it. Work worth preserving + one test-setup wall = resume with a targete
 
 **Executor:** phase-07e executor
 **Action:** Started phase 07e — combine token in/out lines and align debit values in Budget panel.
+### Update — ts=1784765095018 (complete, server-authored)
+
+**Summary:** The prior executor already implemented both production fixes (the `space_pad` closure + Baseline/Net wrappings for debit alignment, and the combined `Tokens in: N out: N` line). My only change was fixing the broken test `savings_lines_debit_digits_align_with_non_debit` — it panicked because the Executor debit row was hidden (unpriced executor → `$0.00` → row hidden). I gave the test a priced executor setup so the row renders and the alignment assertion passes. Removed the duplicated assertion and the stray duplicate comment. All 611 tests pass, all four gates (fmt, build, clippy, test) are clean, and the working tree is committed and clean.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+
+
+TEST
+ate_task::tests::flips_pending_task_to_active ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1032 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — +11 -17
+
+**Commit:** 10e9c9adcdcfc79343bb6bb257c428d8f6702e0c
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
