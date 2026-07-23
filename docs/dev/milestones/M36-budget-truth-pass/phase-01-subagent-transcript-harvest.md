@@ -1,7 +1,7 @@
 # Phase 01: Harvest subagent transcripts
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -181,13 +181,13 @@ Write the tests named in § Test plan below. Every test builds its own
 
 ## Acceptance criteria
 
-- [ ] `cargo test -p rexymcp harvest` passes, including all six new tests.
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
-- [ ] `cargo fmt --all --check` reports no diff in the files this phase touched.
-- [ ] A transcript tree containing `s1.jsonl` **and**
+- [x] `cargo test -p rexymcp harvest` passes, including all six new tests.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
+- [x] `cargo fmt --all --check` reports no diff in the files this phase touched.
+- [x] A transcript tree containing `s1.jsonl` **and**
       `s1/subagents/agent-a.jsonl` harvests messages from both, and the ledger
       records for the subagent's usage carry `"session":"s1"`.
-- [ ] A file at `s1/tool-results/x.jsonl` containing a well-formed
+- [x] A file at `s1/tool-results/x.jsonl` containing a well-formed
       assistant-usage line is **not** harvested.
 
 ## Test plan
@@ -375,3 +375,76 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-23
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (local; 58 turns, no oscillation)
+- **Scope deviations:** none
+- **Calibration:** server-authored completion entries omit two DoD elements —
+  the phase doc's acceptance-criteria checkboxes are left unticked, and no
+  "End-to-end verification" block with quoted output is written (STANDARDS §1
+  and the WORKFLOW completion template both require them). **Systemic since
+  M27 phase-03 moved the bookkeeping tail server-side** — reproduced on M35
+  phase-06e, 07g, and 07h, so not an executor defect and not fixable by
+  re-dispatch. The reviewer verified both independently. Candidate for an M37
+  phase.
+
+**Reviewer verification (independent re-run):**
+
+All four gates re-run separately, green. Build forced to recompile the touched
+crate (`touch mcp/src/harvest.rs mcp/src/sweep.rs`) — the cached 0.08s "Finished"
+in the executor's log would have masked warnings; zero warnings on the real
+rebuild. Tests: 622 + 1032 pass, 0 fail.
+
+All 8 new tests confirmed present and passing by name (6 `harvest::tests::*`,
+2 `sweep::tests::max_transcript_*`). Both are **mutation-sensitive in two
+independent dimensions**:
+
+- Pointing the scan at `tool-results` instead of `subagents` → 4 tests fail,
+  including the negative case `ignores_non_subagent_session_subdirs`.
+- Attributing subagent files to their own file stem instead of the parent
+  session dir → `subagent_usage_attributes_to_parent_session` and
+  `subagent_transcripts_do_not_inflate_session_count` fail.
+
+E2E run against the real binary and a real temp tree:
+
+```
+harvested 2 messages across 1 sessions -> 2 ledger records (0 duplicates skipped)
+
+{"session_id":"s1","model":"claude-opus-4-8","skill":"other",
+ "tokens":{"input":100,"output":10,...}}
+{"session_id":"s1","model":"claude-sonnet-5","skill":"rexymcp:dispatch",
+ "tokens":{"input":200,"output":20,...}}
+
+msg_tool (999 input tokens, under tool-results/): 0 occurrences — correctly excluded
+```
+
+The subagent's record carries `session_id: "s1"` (parent session, not
+`agent-a`) and its own `rexymcp:dispatch` skill tag — both halves of the
+attribution contract.
+
+**Real-corpus effect** (harvested to a temp store; live telemetry untouched):
+
+| skill | before | after | delta |
+|---|---:|---:|---:|
+| `rexymcp:dispatch` | 949.6M | 951.6M | +2.0M |
+| `other` | 359.1M | 374.3M | +15.2M |
+| `rexymcp:review` | 339.6M | 344.3M | +4.7M |
+| `rexymcp:architect` | 220.4M | 222.0M | +1.6M |
+| `rexymcp:escalate` | 134.2M | 134.2M | — |
+| `rexymcp:auto` | 25.9M | 38.1M | **+12.2M (+47 %)** |
+| **total** | 2028.8M | 2064.9M | **+36.1M** |
+
+The recovered total is +36.1M rather than the +59.6M raw measurement in the
+phase doc, because the harvester dedups globally by `message.id` (6,069
+duplicates skipped this run) — subagent transcripts re-record messages that
+also appear elsewhere. The dedup is working as designed; the raw figure was
+pre-dedup. `rexymcp:auto` gaining 47 % is the predicted concentration: auto
+delegates dispatch and review to subagents, which is exactly where the blind
+spot was.
+
+(A distinct `review` bucket, 0.4M, appears post-fix. Traced to the built-in
+`/review` skill invoked in the reviewing session itself — top-level, not
+subagent. Real data, correctly bucketed, unrelated to this phase.)
