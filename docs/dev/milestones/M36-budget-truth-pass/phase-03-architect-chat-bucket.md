@@ -1,7 +1,7 @@
 # Phase 03: Rename the `other` architect bucket to `architect chat`
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (sequencing only — avoids two phases editing
 `harvest.rs` and its display consumers concurrently; no code dependency)
 **Estimated diff:** ~70 lines
@@ -99,13 +99,13 @@ Write the tests named in § Test plan.
 
 ## Acceptance criteria
 
-- [ ] `cargo build` is green.
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
-- [ ] `cargo fmt --all --check` reports no diff in the files this phase touched.
-- [ ] `cargo test -p rexymcp` passes.
-- [ ] `rexymcp costs` shows a row labelled `architect chat` and no row labelled
+- [x] `cargo build` is green.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
+- [x] `cargo fmt --all --check` reports no diff in the files this phase touched.
+- [x] `cargo test -p rexymcp` passes.
+- [x] `rexymcp costs` shows a row labelled `architect chat` and no row labelled
       `other`.
-- [ ] `mcp/src/harvest.rs` is unmodified by this phase.
+- [x] `mcp/src/harvest.rs` is unmodified by this phase.
 
 ## Test plan
 
@@ -283,3 +283,75 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-23
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (local; 38 turns, no oscillation)
+- **Scope deviations:** none. `harvest.rs`, `docs/architecture.md` and
+  `README.md` all confirmed untouched, as the spec required.
+- **Calibration:** two, both minor and neither an executor defect —
+  (1) M37 phase-05 recurrence (6th): server-authored completion entry left all
+  6 acceptance criteria unticked and emitted no E2E block; reviewer verified and
+  ticked. (2) The executor's own "started" Update Log entry self-reports
+  **`Executor: Claude Sonnet 4.5 (executor)`**, which is wrong — `rexymcp.toml`,
+  `executor_health`, and the `PhaseRun` telemetry record all say
+  `Qwen/Qwen3.6-27B-FP8`. Model self-identification is unreliable and should not
+  be written as fact. Cosmetic only: the scorecard reads the config-derived
+  telemetry field, not this prose, so no aggregate is polluted. Worth folding
+  into M37 phase-05's scope — the server writes the model it actually dispatched
+  to, so the entry should carry that rather than let the model name itself.
+
+**Reviewer verification (independent re-run):**
+
+All four gates re-run separately after forcing a recompile of `costs.rs` — zero
+warnings. Tests 632 + 1032 pass, 0 fail; count rose 628 → 632, matching the 4
+specified tests, all confirmed present by name.
+
+**Mutation-checked in two dimensions**, the second of which is the point of the
+phase:
+
+- Reverting the key to `l.skill.clone()` (no mapping at all) →
+  `skill_costs_renders_other_as_architect_chat` and
+  `skill_costs_folds_other_and_architect_chat_into_one_row` both fail.
+- **Moving the mapping from the accumulator key to the output** (`SkillCost {
+  skill: display_skill(&skill).to_string(), .. }`) → the label renders correctly
+  and `skill_costs_renders_other_as_architect_chat` **passes**, but
+  `skill_costs_folds_other_and_architect_chat_into_one_row` **fails** on two rows
+  where one is required.
+
+That second mutation is exactly the wrong-but-plausible implementation the spec
+warned about, and the fold test is the only thing that distinguishes it. The
+design decision (map at the key, not the format string) is genuinely pinned, not
+merely documented.
+
+All mutations reverted; `git status` clean before approval.
+
+**E2E against the real binary:**
+
+```
+By skill (architect)
+SKILL                   TOKENS      COST       %
+rexymcp:dispatch        955.2M   $736.60   41.5%
+architect chat          383.5M   $339.93   19.2%
+rexymcp:review          358.2M   $304.45   17.2%
+rexymcp:architect       222.0M   $237.48   13.4%
+rexymcp:escalate        134.2M   $117.89    6.6%
+rexymcp:auto             38.1M    $34.63    2.0%
+review                  413.1k     $2.06    0.1%
+```
+
+`architect chat` renders in the position `other` previously held (2nd by cost),
+no `other` row remains, and the `%` column sums to 100.0. The dashboard
+top-skill hint reads from the same `skill_costs` output, so it is covered by the
+same mapping; `rexymcp:dispatch` outranks `architect chat`, so the hint shows
+dispatch and was verified unchanged rather than forced with a contrived fixture
+(as the spec directed).
+
+**Bonus confirmation of phase-01 in production.** This is the first `costs` run
+after the human restarted `rexymcp serve` onto the post-phase-01 binary.
+`rexymcp:auto` now reads **38.1M**, up from the 25.9M shown at the phase-02
+review — and exactly matching the figure phase-01's review predicted from a
+throwaway harvest. The subagent fix is confirmed live in the real ledger, not
+just in a temp store.
