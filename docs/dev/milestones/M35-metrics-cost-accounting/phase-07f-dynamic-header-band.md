@@ -1,7 +1,7 @@
 # Phase 07f: Dynamic header-band height — no trailing blank on the tallest header panel
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-07e
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -385,6 +385,105 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 - `mcp/src/dashboard/render.rs` — +41 -22
 
 **Commit:** 1a89327a7207b3ea374757aa106e9512cb3e0b44
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+### Update — ts=1784779895123 (complete, server-authored)
+
+**Summary:** Both tasks were already implemented by the prior run (the `header_band_height` helper, the reordered `render_dashboard`, and the test all exist and pass). This run only fixed the doc-comment placement issue from bug-07f-1: `header_band_height`'s doc comment was merged into `render_dashboard`'s doc block due to a missing blank line. I separated them — `header_band_height` now has its own `///` doc block with a blank line before `render_dashboard`'s doc comment, restoring `render_dashboard`'s original documentation.
+
+**Verification:**
+- `cargo fmt --all --check` — clean
+- `cargo build` — clean
+- `cargo clippy --all-targets --all-features -- -D warnings` — clean
+- `cargo test` — 1644 passed, 0 failed, 2 ignored
+- `git status --short` — clean working tree
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+ ... ok
+test tools::update_task::tests::flips_active_task_to_done ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1032 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `mcp/src/dashboard/render.rs` — +4 -4
+
+**Commit:** b710e0cb4a13bec1a45b3fda1cdedcf3455bf900
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
