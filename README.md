@@ -1,6 +1,6 @@
 # rexyMCP
 
-**Let Claude|Antigravity be the *Architect*. Let a local model do the *execution*.**
+**Let Claude be the *Architect*. Let a local model do the *execution*.**
 
 rexyMCP is named after Rexy, my cattle dog. Rexy lives to herd — to keep the
 flock moving in one direction, to circle back the stragglers, to never let the
@@ -15,29 +15,34 @@ errors straight back into the next turn, and refusing to let the LLM touch anyth
 outside the repo. The Architect designs; the Executor codes; **rexyMCP keeps the
 herd together and moving toward the goal.**
 
-Your *Architect* runs in either **Claude Code** or **Google Antigravity**,
+Your *Architect* runs in **Claude Code**. **Google Antigravity** support is beta. 
 rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
 whichever you drive.
 
 ## News
 
-What's landed lately (newest first):
+A bunch of recent change that need to be called out because they change some core mechanics: 
 
-- **Real cost accounting.** The dashboard's Savings block now prices the *whole*
+- **Improved cost accounting.** The dashboard's Savings block now prices the *whole*
   run — Baseline / Executor / **Architect** / Net across Session · Milestone ·
   Project — with per-model `$/Mtok` rates, and architect cost is *harvested* from
-  the actual session transcripts, not estimated. Want the same numbers in the
-  shell or a script? There's a new **`rexymcp costs`** command for exactly that.
+  the actual session transcripts, not estimated. There's a new **`rexymcp costs`** 
+  command to view this information from the CLI.
 - **Runs you can interrupt.** Dispatching a phase no longer blocks — `execute_phase`
   hands back a `run_id` you poll, so a runaway can be stopped mid-flight with
   `rexymcp stop` (from any terminal) or `stop_phase` (from the Architect). The
   stopped phase comes back with its partial diff intact for triage.
+  This change makes it possible for Claude to use sub-agents with lower tier models 
+  (i.e. sonnet/haiku). However, this also means that Claude can (and will) use tokens
+  in the background if you enable it to. The Architect prompt and workflow standard 
+  prohibit this which seems to keep Claude ini line.
 - **A tougher governor.** Stall and loop detection got hardened and unified across
   the mutating tools, so it catches wedged runs more reliably without false-tripping
   on normal work — and a new **`rexymcp calibrate-governor`** replays your recorded
-  session logs to help you tune the thresholds to *your* models.
+  session logs to help you tune the thresholds to *your* models. This is all still 
+  WIP and needs tuning. Getting lower tier models to work reliably is still a challenge. 
 - **Under-the-hood upkeep.** The MCP server moved to the rmcp v2 stack, plus the
-  usual round of cleanup and reliability fixes.
+  usual round of cleanup and reliability fixes. 
 
 ## An architecture-defined, milestone-based workflow — run autonomously
 
