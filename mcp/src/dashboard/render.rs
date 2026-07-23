@@ -157,10 +157,6 @@ pub(crate) fn wrap_lines_hanging(
         .collect()
 }
 
-/// Render the dashboard into a three-panel header band (Session · Budget ·
-/// Compactions) above a body (Activity wide-left · Files right), or a
-/// single error pane when `data.error` is set.
-/// Transcript is newest-first when `follow` is true (tail-pinned).
 /// Rows for the header band: the tallest of the three header panels' content plus
 /// 2 border rows. The panels share one horizontal band, so it fits the tallest;
 /// a shorter panel shows a trailing blank equal to its shortfall.
@@ -169,6 +165,10 @@ fn header_band_height(session_len: usize, budget_len: usize, context_len: usize)
     (max as u16).saturating_add(2)
 }
 
+/// Render the dashboard into a three-panel header band (Session · Budget ·
+/// Compactions) above a body (Activity wide-left · Files right), or a
+/// single error pane when `data.error` is set.
+/// Transcript is newest-first when `follow` is true (tail-pinned).
 pub(crate) fn render_dashboard(
     frame: &mut Frame,
     area: Rect,
