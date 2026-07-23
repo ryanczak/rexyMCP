@@ -64,7 +64,7 @@ exactly once. No phase in this milestone changes `auto` accounting.
 |----|-------|--------|
 | 01 | Harvest subagent transcripts ([phase-01-subagent-transcript-harvest.md](phase-01-subagent-transcript-harvest.md)) — approved_first_try; +36.1M tokens recovered after dedup | done |
 | 02 | Budget reframe: Baseline → Executor `saved` ([phase-02-budget-reframe-saved.md](phase-02-budget-reframe-saved.md)) — approved_first_try; the no-additive-shape rename landed first try in 167 turns | done |
-| 03 | Rename the `other` bucket to `architect chat` ([phase-03-architect-chat-bucket.md](phase-03-architect-chat-bucket.md)) | in-progress |
+| 03 | Rename the `other` bucket to `architect chat` ([phase-03-architect-chat-bucket.md](phase-03-architect-chat-bucket.md)) | review |
 
 Phase 01 is deliberately standalone: it is the only phase that changes a
 *number* rather than a label, and it needs its own tests (nested-dir discovery,
