@@ -1,7 +1,7 @@
 # Phase 07f: Dynamic header-band height — no trailing blank on the tallest header panel
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07e
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -487,3 +487,29 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-07f-1 — minor; the `header_band_height` helper was inserted inside
+  `render_dashboard`'s doc comment, merging its doc into the helper and leaving
+  `render_dashboard` undocumented). No canonical `FAILURE_CLASSES` entry fits a
+  doc-placement regression — recorded `none` (another taxonomy-gap data point for the close).
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (first run: dynamic-band impl correct but doc-comment
+  bounce @ 53 turns, **no oscillation**; re-dispatch: doc-only fix, complete @ 30 turns).
+- **Scope deviations:** none — the dynamic-band work (the `header_band_height` helper, the
+  `render_dashboard` reorder to build panels → size band `max+2` → split, and the test) is
+  exactly the spec; the re-dispatch changed only the doc-comment placement (+4/−4). Body/
+  Activity layout, `total_wrapped`, and `panels.rs` untouched.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `612` mcp-bin +
+  `1032` executor-lib). `header_band_height` and `render_dashboard` now each carry their own
+  doc comment (blank-line separated); `header_band_height`'s doc no longer contains "Render
+  the dashboard"/"Transcript is newest-first". `header_band_height_fits_tallest_plus_borders`
+  passes and is mutation-sensitive (asserts `(7,5,3)→9`, `(3,8,4)→10`, `(6,6,6)→8`,
+  `(0,0,0)→2` — fails under a `min`-for-`max` or a dropped `+2`). `render_dashboard` is a live
+  TUI (not unit-testable); the band-height helper test + clean build are the pinned evidence,
+  and the next real `dashboard` launch shows the tightened band.
+- **Calibration:** the bounce was a doc-comment misplacement (helper split another item's
+  doc block) — a **new** minor class, not one of the arc's recurring patterns; note it, no
+  fold unless it recurs. Positive: the render.rs reorder — a real layout restructure on the
+  file that oscillation-hard-failed three earlier runs — landed with **no oscillation**, on
+  the strength of the exact-code-block pre-injection + the anti-oscillation gotcha.

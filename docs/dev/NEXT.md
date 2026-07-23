@@ -4,23 +4,46 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-07f — dynamic header-band height (#3, the LAST cleanup item)](milestones/M35-metrics-cost-accounting/phase-07f-dynamic-header-band.md)
-(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07f`). M35 remains
-DELIBERATELY HELD OPEN; after 07f is approved, all M35 phases are done → the milestone-close
-retrospective (a separate human-gated `/rexymcp:architect` step) is pending.**
+**Active phase: NONE — all M35 in-scope phases are `done`. M35 is at its milestone
+boundary, held open for the CLOSE: run `/rexymcp:architect` (no args) to write the
+retrospective, fold the accumulated calibration lessons, and set this pointer to "none".
+Not yet "none" — the close is a separate human-gated step and has not run.**
 
-phase-07f drafted 2026-07-22 (user-scoped): the reopened 06d-2 trailing-blank row. The
-three header panels (Session/Budget/Context) share one **fixed-height** band
-(`Length(11)` = 9 content, sized to an old Budget height that 07d's Assists-removal + 07e's
-token-combine have since shrunk ~2 rows → over-provisioned). **User chose the dynamic-band
-fix** (not a stacked-panel redesign): reorder `render_dashboard` to build the three panels
-first, then size the band to `header_band_height(session, budget, context) = max + 2`.
-Safe because the column widths depend only on the header's *width* (probe-split `area`
-before the band height is known). Pure `header_band_height` helper + mutation-sensitive
-test. **Honest limit noted:** shared horizontal band → a genuinely-shorter panel still
-shows a blank equal to its shortfall (zeroing all three needs a vertical stack, declined).
-Anti-oscillation gotcha carried (render.rs is the 3×-oscillation zone).
+**phase-07f — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
+Dynamic header-band height: `render_dashboard` now builds the three header panels first and
+sizes the band to `header_band_height(session, budget, context) = max + 2` (was fixed
+`Length(11)`), removing the trailing-blank over-provisioning 07d/07e exposed. Reorder is
+safe because column widths depend only on the header's *width* (probe-split `area` first).
+Bounced once (bug-07f-1, minor doc-comment placement; the helper split `render_dashboard`'s
+doc block) → fixed in a 30-turn re-dispatch. **The render.rs restructure landed with NO
+oscillation** — the exact-code-block pre-injection + anti-oscillation gotcha worked on the
+3×-oscillation file.
+
+## ⭐ M35 COMPLETE — all phases done; milestone CLOSE pending (run `/rexymcp:architect`)
+
+All 24 M35 phase rows are `done`/`closed`. **Do the milestone close** with
+`/rexymcp:architect` (no args): write the retrospective in the README Notes, fold the
+calibration lessons below (with user sign-off on any STANDARDS/WORKFLOW change), then set
+this pointer to "none". Lessons accumulated this milestone to fold/decide at close:
+
+- **`oscillation_stall` (or `governor_stall`) is missing from `FAILURE_CLASSES`**
+  (executor/src/store/telemetry.rs:319) — recorded 2× as an unknown open-vocab class; add it.
+- **Read-only-inspection repetition → advisory / higher threshold** (the STRONG held fold):
+  the governor oscillation/identical-repetition terminators hard-kill on repeated read-only
+  inspection (`sed -n`/`cat`/`python3 -c`) the same as on writes — **4 dashboard oscillations
+  across the arc**. Pair with the pre-injection habit that already worked: "use the compiler
+  error to locate a syntax problem; never hunt by re-reading the file in a loop," and (07e's
+  lesson) "when a test depends on a *rendered row appearing*, pin the exact fixture that makes
+  it appear."
+- **Status-flip machinery can clobber the `**Milestone:**` header line** (06e, 1× so far) —
+  watch; fold if it recurs. See [[status-flip-clobbers-milestone-line]].
+- **Executor shortcut: cannibalizing an unrelated test to host a new assertion** (07d, 1×) —
+  watch; a STANDARDS note ("add new tests; never repurpose an unrelated one") if it recurs.
+- **Deferred DRY/polish:** k/M compaction of `calibrate-governor`'s output-flood byte columns;
+  consolidate the three token/number formatters (`runs::fmt_tokens`/`scorecard` inline/
+  `costs::format_tokens`) into one shared `metrics` helper.
+- **06d-2 supersede:** the "accept the blank" won't-fix was reopened and resolved by 07f
+  (dynamic band) — reconcile the README note at close.
 
 **07d done → 07e done → 07f (this, LAST). After 07f approval → all M35 phases done →
 milestone close is pending (human-gated).**

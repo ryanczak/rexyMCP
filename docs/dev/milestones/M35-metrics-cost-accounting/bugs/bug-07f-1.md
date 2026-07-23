@@ -1,8 +1,9 @@
 # Bug 1 on phase-07f: `header_band_height` inserted inside `render_dashboard`'s doc comment (doc misattribution)
 
 **Severity:** minor
-**Status:** open
+**Status:** verified
 **Filed:** 2026-07-22
+**Fixed:** 2026-07-22 (commit b710e0c — helper moved out of `render_dashboard`'s doc block; both fns carry their own doc)
 
 ## What's wrong
 
