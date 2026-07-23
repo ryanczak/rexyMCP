@@ -1232,7 +1232,57 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-35. **M35 — Metrics & Cost Accounting Overhaul** *(in progress; opened
+37. **M37 — Governor Read-Only Calibration** *(planned; opened 2026-07-23 at
+    the M35 close)*. The STRONG calibration fold M35 accumulated and deferred.
+    `check_oscillation` and `check_identical_repetition`
+    (`executor/src/governor/hard_fail.rs`) key on `(tool, arguments)` and are
+    blind to whether a call **mutates** anything, so a model re-running
+    `sed -n`/`cat`/`python3 -c` to diagnose a confusing failure is hard-killed
+    on the same threshold as a write-thrash loop — **4 occurrences across the
+    M35 arc**, every one recovering on a resume or refined re-dispatch carrying
+    one specific hint. M34 already shipped `NoProgressStall` for exactly this
+    (N consecutive non-mutating calls, threshold 60), so the two detectors are
+    duplicate coverage at a far tighter threshold. **User decision (2026-07-23):
+    exempt windows containing no file-mutating call from both detectors** —
+    `crate::tools::mutates_files` is already used in the module by
+    `check_no_progress_stall` — leaving read-only loops to `NoProgressStall`
+    alone. Rejected alternatives: an advisory mode on M34's `novelty_action`
+    precedent (keeps a signal but keeps the pre-emption risk), and separate
+    looser read-only thresholds (still hard-kills, just later). Carries M35's
+    remaining small debt: `oscillation_stall` added to `FAILURE_CLASSES`
+    (`executor/src/store/telemetry.rs:319`, recorded 2× as an unknown open-vocab
+    class), consolidation of the three divergent token formatters
+    (`runs::fmt_tokens`, the inline one in `scorecard`, `costs::format_tokens`)
+    into the shared `metrics` helper, and k/M compaction of
+    `calibrate-governor`'s output-flood byte columns.
+36. **M36 — Budget Truth Pass** *(planned; opened 2026-07-23)*. First real use
+    of M35's cost surface exposed one presentation defect and one counting bug.
+    **(1) "Baseline" reads as a spend but is a counterfactual** — executor
+    tokens repriced at cloud rates, i.e. money *not* spent — and it leads both
+    the `costs` table and the dashboard block (titled "Savings"). The user's
+    framing, adopted here: **Architect is the only debit; Executor token usage
+    is not a cost, it is a saving.** `ScopeReport.baseline` becomes `saved`,
+    moves below the two real buckets, and the block is retitled "Spend"; `Net`
+    survives as the bottom line and no arithmetic changes. This **supersedes
+    §35's "Baseline / Executor / Architect / Net"** wording below. **(2)
+    Subagent transcripts are never harvested** — `harvest.rs` and `sweep.rs`
+    both scan non-recursively, but Claude Code writes `Agent`-tool subagent
+    transcripts to `<session-id>/subagents/*.jsonl`, and
+    `plugin/skills/auto/SKILL.md` delegates dispatch and review to subagents by
+    design. Measured on this repo: 36 files, 1,133 messages, **59.6 M tokens
+    uncounted**, ~10 % of spend in `/rexymcp:auto` sessions; the sweep's mtime
+    watermark shares the blind spot, so subagent-only activity suppresses the
+    harvest entirely. **(3)** the `other` ledger bucket — 18.7 % of architect
+    spend, verified across all 61 project transcripts as untagged architect work
+    (non-skill sessions plus the user↔architect conversation between phase runs)
+    — displays as `architect chat`, mapped at the aggregation point so the
+    stored key stays stable and no harvested record goes stale. Investigated and
+    **ruled out**: any double-counting. `attributionSkill` is single-valued per
+    message, messages dedup by `message.id`, `isSidechain` is false corpus-wide,
+    and there are zero nested `Skill` invocations — `rexymcp:auto` is disjoint
+    from `dispatch`/`review`/`escalate` and the per-skill rows sum to the
+    project total exactly once.
+35. **M35 — Metrics & Cost Accounting Overhaul** *(done 2026-07-23; opened
     2026-07-19)*. The queued post-M34 metrics & reporting deep-dive: unify the
     LLM-performance and token/cost accounting stories into one coherent,
     discoverable CLI surface. The code audit found the recording side healthy
@@ -1262,7 +1312,19 @@ The project plan. Each entry becomes a milestone with its own
     04 `runs` columns + `runs show <id>` drill-down; 05 unified
     `scorecard --by model|tag|settings` + profile tokens/cost-per-approved-
     phase; 06 `rexymcp costs` + dashboard rewire; 07 reporting debt +
-    discoverability pass.
+    discoverability pass. **Closed 2026-07-23 at 24 phase rows**, expanded
+    mid-milestone by the **06c architect-ledger arc** (a post-06b-ii audit found
+    the architect side structurally inaccurate — messages dropped outside
+    journal windows, four models priced at one rate, per-skill detail destroyed
+    at ingest; sequenced before phase-07 so reporting polish landed on correct
+    numbers) and the user-driven **07d–07h** dashboard cleanup batch. Two
+    outcomes revise the design above: the **Baseline framing is superseded by
+    M36** (§36), and the "accept the blank" won't-fix (06d-2) was **reopened and
+    resolved** by 07f's dynamic header band. The dominant executor failure mode
+    was not wrong code but the governor terminating diagnostic read-loops on the
+    fragile TUI files — 4 oscillations, all recovered on a resume or refined
+    re-dispatch with one hint — which is the fold **M37** (§37) addresses at the
+    runtime level.
 34. **M34 — Governor Stall Hardening** *(done 2026-07-19; opened 2026-07-18 to
     formalize direct-executed work)*. Close the small-model self-sabotage gaps a
     downstream project (DaemonEye M4) surfaced, then make the fixes observable and

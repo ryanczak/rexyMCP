@@ -5,39 +5,54 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M35 phase-07h — tight parens on the debit `—`](milestones/M35-metrics-cost-accounting/phase-07h-dash-tight-parens.md)
-(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07h`). One more
-small user-requested cleanup fix before the M35 close (pending, below).**
+[M36 phase-01 — harvest subagent transcripts](milestones/M36-budget-truth-pass/phase-01-subagent-transcript-harvest.md)
+(status: todo — drafted 2026-07-23, awaiting `/rexymcp:dispatch phase-01`).**
 
-phase-07h drafted 2026-07-22 (user-scoped): 07g aligned the savings `—` with the decimal,
-but the **debit** row renders `(—  )` — the 2 alignment spaces sit *inside* the parens.
-The user wants tight `(—)` **and** decimal-aligned. Both are achievable: keep `(—)` tight
-and move the padding *outside* the `)` → `"(—)  "`, which right-aligns the tight unit so
-the `—` still lands on the decimal column (same `—` position as 07g). One-line `paren`
-closure change + a tight-parens test assertion (`architect.contains("(—)")`,
-mutation-sensitive vs the old `(—  )`); the 07g alignment assertion is unchanged. `panels.rs`.
+## M35 — CLOSED 2026-07-23
 
-**(Lesson for me: don't frame "tight" vs "aligned" as mutually exclusive — moving the pad
-outside the parens gives both. The user caught this.)**
+Retrospective written into the M35 README Notes; `docs/architecture.md` §35 marked done.
+Two calibration folds landed in `WORKFLOW.md` + `plugin/templates/WORKFLOW.md` ("pin the
+fixture that makes the row appear"; "pre-inject compiler-error-driven recovery on
+oscillation-prone files"). Two folds and the accepted debt went to **M37**. Two watch-list
+items (status-flip header clobber; test cannibalization) stay at 1× — fold if either
+recurs. The token deep-dive is discharged.
 
-**phase-07g — done (2026-07-22, approved_first_try; executor AEON-7/Qwen3.6-27B-AEON, 35
-turns, clean — no oscillation).** The Budget savings `—` now lands on the decimal column:
-a pure `align_value` helper pads a `—` with 2 trailing spaces (the 2 decimal places) and
-`space_pad`/`paren` route through it (no call-site changes, empty-check untouched). Pure +
-render-level tests, both mutation-sensitive; render test reuses the known-good architect
-fixture. Dollars mode only (tokens mode noted out of scope).
+## M36 — Budget Truth Pass (OPEN, active)
 
-**phase-07f — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
-Dynamic header-band height: `render_dashboard` now builds the three header panels first and
-sizes the band to `header_band_height(session, budget, context) = max + 2` (was fixed
-`Length(11)`), removing the trailing-blank over-provisioning 07d/07e exposed. Reorder is
-safe because column widths depend only on the header's *width* (probe-split `area` first).
-Bounced once (bug-07f-1, minor doc-comment placement; the helper split `render_dashboard`'s
-doc block) → fixed in a 30-turn re-dispatch. **The render.rs restructure landed with NO
-oscillation** — the exact-code-block pre-injection + anti-oscillation gotcha worked on the
-3×-oscillation file.
+Three phases drafted 2026-07-23, all `todo`. Dispatch **01 first** — it is the only one
+that changes a *number* rather than a label.
 
-## ⭐ M35 COMPLETE — all phases done; milestone CLOSE pending (run `/rexymcp:architect`)
+- **01 subagent-transcript harvest** — `harvest.rs:201` and `sweep.rs:51` both scan
+  non-recursively; Claude Code writes `Agent`-tool subagent transcripts to
+  `<session-id>/subagents/*.jsonl`. 36 files / 1,133 messages / **59.6 M tokens
+  uncounted**, ~10 % of spend in `/rexymcp:auto` sessions. The sweep's mtime watermark
+  shares the blind spot, so subagent-only activity suppresses the harvest entirely —
+  both readers are in scope. Negative case pinned: `<session>/tool-results/` must stay
+  unread.
+- **02 budget reframe** — `ScopeReport.baseline` → `saved`, moved below Executor and
+  Architect; block retitled "Spend"; `Net` survives; no arithmetic change. Wide
+  mechanical rename (14 prod sites + ~56 test), leaf-first order pre-injected, and the
+  M35 07d–07h alignment machinery must survive intact.
+- **03 `other` → `architect chat`** — display-layer only, mapped at `skill_costs`'
+  accumulator key so the stored key stays stable and no harvested record goes stale.
+
+**Ruled out, do not re-litigate:** there is no double-counting in the ledger.
+`attributionSkill` is single-valued per message, dedup is by `message.id`, `isSidechain`
+is false corpus-wide, and there are zero nested `Skill` invocations. `rexymcp:auto` is
+disjoint from `dispatch`/`review`/`escalate`.
+
+## M37 — Governor Read-Only Calibration (planned, phases not yet expanded)
+
+Carries M35's STRONG fold: exempt windows with no file-mutating call from
+`check_oscillation` + `check_identical_repetition`, leaving read-only loops to M34's
+`NoProgressStall`. Plus `oscillation_stall` → `FAILURE_CLASSES`, the three-token-formatter
+consolidation, and k/M byte-column compaction. See the M37 README.
+
+---
+
+## Archive — M35 phase history
+
+### M35 close checklist (done 2026-07-23)
 
 All 24 M35 phase rows are `done`/`closed`. **Do the milestone close** with
 `/rexymcp:architect` (no args): write the retrospective in the README Notes, fold the
