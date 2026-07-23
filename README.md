@@ -27,7 +27,8 @@ A bunch of recent change that need to be called out because they change some cor
   run — Baseline / Executor / **Architect** / Net across Session · Milestone ·
   Project — with per-model `$/Mtok` rates, and architect cost is *harvested* from
   the actual session transcripts, not estimated. There's a new **`rexymcp costs`** 
-  command to view this information from the CLI.
+  command to view this information from the CLI. These changes **break** compatibility
+  with the old stats file format. 
 - **Runs you can interrupt.** Dispatching a phase no longer blocks — `execute_phase`
   hands back a `run_id` you poll, so a runaway can be stopped mid-flight with
   `rexymcp stop` (from any terminal) or `stop_phase` (from the Architect). The
