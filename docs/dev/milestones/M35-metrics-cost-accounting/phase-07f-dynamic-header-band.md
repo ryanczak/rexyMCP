@@ -1,7 +1,7 @@
 # Phase 07f: Dynamic header-band height — no trailing blank on the tallest header panel
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** in-progress
 **Depends on:** phase-07e
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -270,6 +270,17 @@ The dashboard is a live TUI (not hermetically capturable). Evidence:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Notes for executor — 2026-07-22 (bounce: bug-07f-1)
+
+The dynamic-band implementation is **correct and approved** — the `header_band_height`
+helper, the `render_dashboard` reorder, and the test all pass and stay. **One doc-comment
+placement fix only:** you inserted `header_band_height` *inside* `render_dashboard`'s doc
+comment (no blank line), so `render_dashboard`'s doc merged into the helper and
+`render_dashboard` lost its doc. **Move `header_band_height` (with its own `///` doc) out
+of that gap — below `render_dashboard`, or above its doc block with a blank line — and
+restore `render_dashboard`'s original doc comment directly above `pub(crate) fn
+render_dashboard`.** No functional change. Full detail + the exact doc text to restore in
+`bugs/bug-07f-1.md`.
 
 ### Started — 2026-07-23 03:52 (executor)
 
