@@ -5,8 +5,19 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M36 phase-02 — budget reframe, Baseline → Executor `saved`](milestones/M36-budget-truth-pass/phase-02-budget-reframe-saved.md)
-(status: todo — dispatched 2026-07-23).**
+[M36 phase-03 — rename the `other` bucket to `architect chat`](milestones/M36-budget-truth-pass/phase-03-architect-chat-bucket.md)
+(status: todo — dispatched 2026-07-23). Last phase of M36; milestone close is
+human-gated after approval.**
+
+**phase-02 — done (2026-07-23, approved_first_try; executor Qwen/Qwen3.6-27B-FP8, 167
+turns).** `ScopeReport.baseline` → `saved`, CLI header now
+`SCOPE EXECUTOR ARCHITECT NET SAVED` + a conditional legend, dashboard block retitled
+"Spend" with rows Executor/Architect/Saved/Net (tokens mode down to 3 rows). **The
+no-additive-shape rename landed first try** — both prior phases of this shape (M30
+phase-03, M31 phase-02) hard-failed first; the grep-verified site list + per-file build
+checkpoint is now 3× confirmed and this is the first time it *prevented* the hard-fail
+rather than repairing one. One correct scope deviation: the executor also fixed the clap
+`about` string in `main.rs`, which my task list omitted but the exit criterion required.
 
 **phase-01 — done (2026-07-23, approved_first_try; executor Qwen/Qwen3.6-27B-FP8, 58
 turns, no oscillation).** Subagent transcripts now harvested from
