@@ -1,7 +1,7 @@
 # Phase 07h: Tight parens on the debit "—" — `(—)`, padding outside, still decimal-aligned
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07g
 **Estimated diff:** ~35 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -247,3 +247,21 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (32 turns, clean — no oscillation)
+- **Scope deviations:** none
+- **Calibration:** none
+
+Independent re-run: `cargo fmt --all --check`, `cargo build`, `cargo clippy
+--all-targets --all-features -- -D warnings`, `cargo test` (1032 passed, 2
+ignored) all pass. `paren` closure renders the debit no-value dash as `(—)  `
+(tight parens, padding outside `)`); number branch `format!("({v})")` is
+byte-identical to the prior `align_value`-wrapped form (align_value passes
+numbers through). `savings_lines_dash_aligns_with_decimal` keeps the 07g
+decimal-alignment assertion and adds the mutation-sensitive `architect.contains("(—)")`
+(the old `(—  )` does not contain `(—)`). `align_value`/`space_pad`/non-debit
+dash unchanged.
