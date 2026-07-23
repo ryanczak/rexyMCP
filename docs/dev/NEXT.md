@@ -4,32 +4,47 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M36 phase-03 — rename the `other` bucket to `architect chat`](milestones/M36-budget-truth-pass/phase-03-architect-chat-bucket.md)
-(status: todo — dispatched 2026-07-23). Last phase of M36; milestone close is
-human-gated after approval.**
+**Active phase: none.** M36 closed 2026-07-23. The next milestone is a human
+gate — see below.
 
-**phase-02 — done (2026-07-23, approved_first_try; executor Qwen/Qwen3.6-27B-FP8, 167
-turns).** `ScopeReport.baseline` → `saved`, CLI header now
-`SCOPE EXECUTOR ARCHITECT NET SAVED` + a conditional legend, dashboard block retitled
-"Spend" with rows Executor/Architect/Saved/Net (tokens mode down to 3 rows). **The
-no-additive-shape rename landed first try** — both prior phases of this shape (M30
-phase-03, M31 phase-02) hard-failed first; the grep-verified site list + per-file build
-checkpoint is now 3× confirmed and this is the first time it *prevented* the hard-fail
-rather than repairing one. One correct scope deviation: the executor also fixed the clap
-`about` string in `main.rs`, which my task list omitted but the exit criterion required.
+## ⭐ M36 — CLOSED 2026-07-23; next milestone awaits human sign-off
 
-**phase-01 — done (2026-07-23, approved_first_try; executor Qwen/Qwen3.6-27B-FP8, 58
-turns, no oscillation).** Subagent transcripts now harvested from
-`<session>/subagents/*.jsonl` in both `harvest()` and the sweep watermark;
-`tool-results/` stays excluded. Real-corpus re-harvest recovered **+36.1M tokens**
-(`rexymcp:auto` +47%, the predicted concentration). The phase doc's raw +59.6M figure
-was **pre-dedup** — the harvester dedups globally by `message.id` (6,069 skipped), so
-+36.1M is the correct post-dedup recovery, an architect measurement error in the spec,
-not an executor shortfall. Tests verified mutation-sensitive in two dimensions.
-**Review finding → M37 phase 05:** server-authored completion entries leave acceptance
-criteria unticked and emit no E2E block (STANDARDS §1 requires both); systemic since
-M27 phase-03, 4 occurrences, not fixable by re-dispatch.
+All three phases `done`, **all `approved_first_try`**, zero bounces, zero
+oscillations, no carried debt. Retrospective is in the M36 README Notes;
+`docs/architecture.md` §36 is marked done.
+
+**What shipped.** The Budget surface now answers "what is consuming tokens?"
+without a counterfactual leading the table — Architect is the only debit,
+executor token usage is a saving. `baseline` → `saved` and demoted below the two
+real buckets; subagent transcripts harvested (they were ~10 % of `/rexymcp:auto`
+spend and 100 % invisible); the `other` bucket renamed `architect chat` at the
+aggregation point so no stored record goes stale.
+
+**Calibration confirmed.** Phase-02 was a public-struct-field rename with no
+additive shape — the third occurrence of the pattern and the **first to land
+without a hard_fail** (M30 phase-03, M31 phase-02 both failed first). The
+leaf-first fold now has evidence it *prevents* the failure, not just repairs it.
+No doc change: the fold is already written, this is the data point that says
+leave it alone.
+
+**Watch list (1× each, not folded).** Both are the same family — the architect
+asserted a spec fact without deriving it from the tool that defines it:
+(1) a corpus figure quoted pre-dedup (59.6M asserted, 36.1M actual recovery);
+(2) a task file-list written from memory when the acceptance criterion was
+itself the defining grep, which missed `main.rs`. Fold into WORKFLOW § "Specs
+pin behavior" if either recurs.
+
+## M37 — Governor Read-Only Calibration (planned, NOT started)
+
+**Human gate: do not begin without sign-off.** Five phases sketched, none
+expanded. Phase 01 is the milestone — exempt windows with no file-mutating call
+from `check_oscillation` + `check_identical_repetition`, leaving read-only loops
+to M34's `NoProgressStall`. Phases 02–05 are carried debt: `oscillation_stall` →
+`FAILURE_CLASSES`, the three-token-formatter consolidation, k/M byte-column
+compaction, and **phase-05** — the server-authored completion entry, now at 6
+occurrences and 3 distinct defects (unticked acceptance criteria, no E2E block,
+and an `Executor:` line taken from model self-report that named the wrong model
+on M36 phase-03). See the M37 README.
 
 ## M35 — CLOSED 2026-07-23
 
@@ -39,37 +54,6 @@ fixture that makes the row appear"; "pre-inject compiler-error-driven recovery o
 oscillation-prone files"). Two folds and the accepted debt went to **M37**. Two watch-list
 items (status-flip header clobber; test cannibalization) stay at 1× — fold if either
 recurs. The token deep-dive is discharged.
-
-## M36 — Budget Truth Pass (OPEN, active)
-
-Three phases drafted 2026-07-23, all `todo`. Dispatch **01 first** — it is the only one
-that changes a *number* rather than a label.
-
-- **01 subagent-transcript harvest** — `harvest.rs:201` and `sweep.rs:51` both scan
-  non-recursively; Claude Code writes `Agent`-tool subagent transcripts to
-  `<session-id>/subagents/*.jsonl`. 36 files / 1,133 messages / **59.6 M tokens
-  uncounted**, ~10 % of spend in `/rexymcp:auto` sessions. The sweep's mtime watermark
-  shares the blind spot, so subagent-only activity suppresses the harvest entirely —
-  both readers are in scope. Negative case pinned: `<session>/tool-results/` must stay
-  unread.
-- **02 budget reframe** — `ScopeReport.baseline` → `saved`, moved below Executor and
-  Architect; block retitled "Spend"; `Net` survives; no arithmetic change. Wide
-  mechanical rename (14 prod sites + ~56 test), leaf-first order pre-injected, and the
-  M35 07d–07h alignment machinery must survive intact.
-- **03 `other` → `architect chat`** — display-layer only, mapped at `skill_costs`'
-  accumulator key so the stored key stays stable and no harvested record goes stale.
-
-**Ruled out, do not re-litigate:** there is no double-counting in the ledger.
-`attributionSkill` is single-valued per message, dedup is by `message.id`, `isSidechain`
-is false corpus-wide, and there are zero nested `Skill` invocations. `rexymcp:auto` is
-disjoint from `dispatch`/`review`/`escalate`.
-
-## M37 — Governor Read-Only Calibration (planned, phases not yet expanded)
-
-Carries M35's STRONG fold: exempt windows with no file-mutating call from
-`check_oscillation` + `check_identical_repetition`, leaving read-only loops to M34's
-`NoProgressStall`. Plus `oscillation_stall` → `FAILURE_CLASSES`, the three-token-formatter
-consolidation, and k/M byte-column compaction. See the M37 README.
 
 ---
 

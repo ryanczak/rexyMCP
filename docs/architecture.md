@@ -1270,7 +1270,7 @@ The project plan. Each entry becomes a milestone with its own
     and all three M36 phases (6×, well past the fold threshold); not an executor
     defect and not fixable by re-dispatch, since the executor no longer owns
     that output.
-36. **M36 — Budget Truth Pass** *(planned; opened 2026-07-23)*. First real use
+36. **M36 — Budget Truth Pass** *(done 2026-07-23; opened the same day)*. First real use
     of M35's cost surface exposed one presentation defect and one counting bug.
     **(1) "Baseline" reads as a spend but is a counterfactual** — executor
     tokens repriced at cloud rates, i.e. money *not* spent — and it leads both
@@ -1296,7 +1296,18 @@ The project plan. Each entry becomes a milestone with its own
     message, messages dedup by `message.id`, `isSidechain` is false corpus-wide,
     and there are zero nested `Skill` invocations — `rexymcp:auto` is disjoint
     from `dispatch`/`review`/`escalate` and the per-skill rows sum to the
-    project total exactly once.
+    project total exactly once. **Closed the day it opened**: three phases, all
+    `approved_first_try`, zero bounces and zero oscillations, no carried debt.
+    Phase-02 is the milestone's calibration result — a public-struct-field
+    rename with no additive shape, the third occurrence of that pattern and the
+    **first to land without a hard_fail** (M30 phase-03 and M31 phase-02 both
+    failed first), confirming the leaf-first fold *prevents* the failure rather
+    than only repairing it. Two architect-side watch items recorded, both the
+    same family — a spec figure quoted pre-dedup (59.6M asserted vs 36.1M actual
+    recovery), and a task file-list written from memory when the acceptance
+    criterion was itself the defining grep. Also the first milestone on
+    `Qwen/Qwen3.6-27B-FP8`; the scorecard forks at the M35/M36 boundary and N=3
+    is too small to compare against the 38-run AEON row.
 35. **M35 — Metrics & Cost Accounting Overhaul** *(done 2026-07-23; opened
     2026-07-19)*. The queued post-M34 metrics & reporting deep-dive: unify the
     LLM-performance and token/cost accounting stories into one coherent,
