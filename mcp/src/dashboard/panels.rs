@@ -496,6 +496,19 @@ fn fmt_tokens(count: u64) -> String {
     }
 }
 
+/// Right-pad a Budget-savings value so a no-value "—" lands on the decimal column of the
+/// numeric neighbors. Amounts render `$X.XX` (2 decimals); once wrapped with a 1-char
+/// gutter (a trailing space, or `)`) and right-aligned, the decimal point sits 4 columns
+/// from the cell's right edge. A bare "—" sits 2 columns in, so it needs 2 trailing spaces
+/// (the 2 decimal places) to reach the decimal column. Everything else passes through.
+fn align_value(v: &str) -> String {
+    if v == "—" {
+        "—  ".to_string()
+    } else {
+        v.to_string()
+    }
+}
+
 /// Budget-panel savings block. A `Savings` header followed by indented,
 /// value-aligned rows: Baseline / Executor / Architect / Net across
 /// Session / Milestone / Project columns.
@@ -656,8 +669,8 @@ pub(crate) fn savings_lines(
         return out;
     }
 
-    let paren = |v: String| format!("({v})");
-    let space_pad = |v: String| format!(" {v} ");
+    let paren = |v: String| format!("({})", align_value(&v));
+    let space_pad = |v: String| format!(" {} ", align_value(&v));
     let debit_row =
         |label: &str, sess: String, mile: String, proj: String| -> Option<Line<'static>> {
             // Hide a debit row that is empty in every scope: all $0.00 (unpriced)
@@ -2352,6 +2365,62 @@ mod tests {
         assert_ne!(
             header_dollars, header_tokens,
             "Tokens and Dollars headers should differ: dollars={header_dollars} tokens={header_tokens}"
+        );
+    }
+
+    #[test]
+    fn align_value_pads_dash_to_decimal_column() {
+        assert_eq!(align_value("—"), "—  ");
+        assert_eq!(align_value("$1.23"), "$1.23");
+        assert_eq!(align_value("$0.00"), "$0.00");
+    }
+
+    #[test]
+    fn savings_lines_dash_aligns_with_decimal() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(0),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+            executor: ModelRates::default(),
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 0,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
+            architect: ArchitectTokens {
+                input: 1_000_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
+            architect_cost: Some(5.0),
+        };
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let baseline = texts
+            .iter()
+            .find(|s| s.contains("Baseline:"))
+            .expect("Baseline row");
+        let architect = texts
+            .iter()
+            .find(|s| s.contains("Architect:"))
+            .expect("Architect row");
+        assert_eq!(
+            baseline.find('.'),
+            architect.find('—'),
+            "the — must sit at the decimal column:\n{baseline}\n{architect}"
         );
     }
 }
