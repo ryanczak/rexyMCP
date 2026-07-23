@@ -4,10 +4,21 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: NONE — all M35 in-scope phases are `done`. M35 is at its milestone
-boundary, held open for the CLOSE: run `/rexymcp:architect` (no args) to write the
-retrospective, fold the accumulated calibration lessons, and set this pointer to "none".
-Not yet "none" — the close is a separate human-gated step and has not run.**
+**Active phase:
+[M35 phase-07g — align the Budget savings `—` with the decimal column](milestones/M35-metrics-cost-accounting/phase-07g-dash-decimal-align.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07g`). One more
+user-requested cleanup fix before the M35 close; the close (below) is still pending.**
+
+phase-07g drafted 2026-07-22 (user-scoped): in the Budget savings block a no-value `—`
+doesn't line up with the `.` of the `$X.XX` amounts above/below it — after 07e's gutter
+alignment, a bare `—` sits at the last-digit column, one place right of the decimals. Fix:
+a pure `align_value(v)` helper pads a `—` with **2 trailing spaces** (the 2 decimal places)
+so, once wrapped by `space_pad`/`paren` and right-aligned, it lands on the decimal column;
+route the two closures through it (no call-site changes, empty-check untouched). Pure
+`align_value` unit test + a render-level test reusing the known-good
+`savings_lines_architect_cost_shown_from_project_costs` fixture (Baseline `$X.XX` above
+Architect `(—)` → assert their `.`/`—` byte indices match). **Dollars mode only** — tokens
+mode noted out of scope. size=s (~80 lines), `panels.rs`.
 
 **phase-07f — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
 Dynamic header-band height: `render_dashboard` now builds the three header panels first and

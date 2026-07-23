@@ -84,6 +84,7 @@ and the executor finally carries a real (configurable) price.
 | 07d | M35-close cleanup batch: fix `profile` help wording + remove Budget `Assists:` row + Budget border `[b=toggle view]` ([phase-07d-budget-cleanup-batch.md](phase-07d-budget-cleanup-batch.md)) — approved_after_1 (bug-07d-1 fixed) | done |
 | 07e | M35-close cleanup — Budget panel content: **negative-value column alignment** (#5, parenthesized debits align with non-paren values) + **combine the token in/out lines** into one (`Tokens in: N out: N`, #6 — also shortens Budget by a row) ([phase-07e-budget-content-align.md](phase-07e-budget-content-align.md)) — approved_after_1 (oscillation_stall; resumed) | done |
 | 07f | M35-close cleanup: **dynamic header-band height** — size the Session/Budget/Context band to the tallest panel (`max+2`) instead of the stale fixed `11`, removing the trailing-blank over-provisioning (reopens 06d-2; user chose dynamic over a stacked-panel redesign) ([phase-07f-dynamic-header-band.md](phase-07f-dynamic-header-band.md)) — approved_after_1 (bug-07f-1 fixed) | done |
+| 07g | M35-close cleanup: align the Budget savings **`—` (no value) with the decimal column** (`align_value` pads a dash to the `.` offset; routes `space_pad`/`paren` through it) ([phase-07g-dash-decimal-align.md](phase-07g-dash-decimal-align.md)) | todo |
 
 Phases 02–07 are titles-only until drafted on demand (`/rexymcp:architect
 next`) — earlier phases shape later specs, per WORKFLOW § Milestones.
