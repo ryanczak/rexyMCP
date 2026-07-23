@@ -552,7 +552,7 @@ close.
 
 ## The CLI
 
-`rexymcp` is one binary with fifteen subcommands. Flags are all long-form; there
+`rexymcp` is one binary with seventeen subcommands. Flags are all long-form; there
 are no short aliases.
 
 ### Command reference
@@ -563,6 +563,7 @@ are no short aliases.
 | `rexymcp health` | Connectivity check against the configured endpoint; lists models. | `--config <path>`, `--base-url <url>` |
 | `rexymcp doctor` | Verify the toolchain is installed: Tier-0 `[commands]` binaries (required — a missing one exits non-zero) and Tier-1 verifier enhancers (`cargo` / `tsc` / `ruff`, advisory / fail-open). | `--config <path>`, `--json` |
 | `rexymcp calibrate <TIER>` | Write tier-derived budget defaults (`tier`, `max_turns`, `gate_retries`, `[escalation]`) to the config, preserving comments and explicit overrides. | `<TIER>` = `LARGE`\|`MEDIUM`\|`SMALL`; `--config <path>` |
+| `rexymcp calibrate-governor` | Calibrate governor thresholds empirically by replaying the recorded session-log corpus — surfaces a per-model view of where the identical-call / oscillation / output-flood detectors would trip, so you can tune the `[governor]` values to your real runs instead of guessing. | `--repo <path>` (default `.`), `--sessions-dir`, `--model`, `--novelty-window <n>` (default 24), `--min-runs <n>`, `--json` |
 | `rexymcp run-phase` | Run a single phase from the shell; prints the `PhaseResult` as JSON. No MCP client required. Honors the `.rexymcp/stop` sentinel. | `--config`, `--phase-doc`, `--repo` (all required), `--model` |
 | `rexymcp stop` | Signal a running executor to stop — writes a `.rexymcp/stop` sentinel in the target repo that the serve-side watcher (and a blocking `run-phase`) honor, cancelling every live run there. The human's out-of-band interrupt (M30). | `--repo <path>` (default `.`) |
 | `rexymcp serve` | Start the MCP stdio server. | `--config <path>` (required) |
@@ -571,6 +572,7 @@ are no short aliases.
 | `rexymcp runs` | List individual `PhaseRun` records with per-run stats. | `--config` (required), `--model`, `--tag` (repeatable, AND), `--limit <n>` (default 20; `0` = all), `--telemetry-path`, `--json` |
 | `rexymcp scorecard` | Aggregate runs into a **model × settings** competency matrix — compare e.g. `temp=0.2` vs `temp=0.7` for your model on your work. | `--config` (required), `--model`, `--tag` (repeatable), `--min-runs <n>`, `--telemetry-path`, `--json` |
 | `rexymcp profile` | Aggregate runs into a **per-(model, tag) capability profile** — strengths and ranked failure classes. | same flags as `scorecard` |
+| `rexymcp costs` | Report the token-cost breakdown — **Baseline / Executor / Architect / Net** across **Session / Milestone / Project** — for a repo's session log + project telemetry. The scriptable, one-shot equivalent of the dashboard's Savings block. | `--config` (default `rexymcp.toml`), `--repo <path>` (default `.`), `--session <id>`, `--telemetry-path`, `--json` |
 | `rexymcp review` | Record an Architect review verdict as a `PhaseReview` annotation (folds into the run's telemetry). Usually invoked by `/rexymcp:review`. | `--config`, `--phase-id`, `--verdict` (required); `--phase-doc`, `--project-id`, `--failure-class` (repeatable), `--bounces`, `--bugs-filed`, `--warnings`, `--telemetry-path` |
 | `rexymcp journal` | Append an `ArchitectActivity` record (`draft`/`dispatch`/`review`/`assist`/`takeover`/`boundary`) to the telemetry store — the substrate the `/rexymcp:auto` loop uses to meter its own work. Usually invoked by the loop skill. | `--config`, `--phase-id` (required); `--phase-doc`, `--project-id`, `--milestone`, `--activity`, `--outcome`, `--model` |
 | `rexymcp harvest` | Read Claude Code's local session transcripts and join **real** per-class token/cost onto journal activities by time window (fills the architect-cost rows; **harvested, never estimated**). Claude Code only; other clients keep counts + durations. | `--config` (required) |
