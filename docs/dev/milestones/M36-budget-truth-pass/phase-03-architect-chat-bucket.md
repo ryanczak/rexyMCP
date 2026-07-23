@@ -1,7 +1,7 @@
 # Phase 03: Rename the `other` architect bucket to `architect chat`
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01 (sequencing only — avoids two phases editing
 `harvest.rs` and its display consumers concurrently; no code dependency)
 **Estimated diff:** ~70 lines
@@ -176,3 +176,9 @@ None. No new dependencies. No edits to `docs/architecture.md` or `README.md`.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-23 23:43 (started)
+
+**Executor:** Claude Sonnet 4.5 (executor)
+
+Added `display_skill()` mapping in `mcp/src/costs.rs`, applied it at the `skill_costs` aggregation point, and wrote 4 tests. `harvest.rs` is unmodified.

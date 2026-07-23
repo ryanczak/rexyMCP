@@ -83,6 +83,20 @@ pub struct SkillCost {
     pub cost: f64,
 }
 
+/// Display name for a stored architect-ledger skill key.
+///
+/// The harvester buckets messages with no `attributionSkill` under the stable
+/// storage key `other`. That is untagged architect work — non-skill sessions and
+/// the user↔architect conversation between phase runs — so it renders as
+/// `architect chat`. Mapping here rather than at write time keeps already-
+/// harvested records valid and cannot split one bucket across two rows.
+pub(crate) fn display_skill(skill: &str) -> &str {
+    match skill {
+        "other" => "architect chat",
+        s => s,
+    }
+}
+
 /// Per-skill architect cost for a project, from the ledger, priced per-model.
 /// Sorted by `cost` descending (ties broken by `skill` for determinism).
 pub(crate) fn skill_costs(
@@ -105,7 +119,8 @@ pub(crate) fn skill_costs(
         let cost = architect
             .rates_for(&l.model)
             .map_or(0.0, |(i, o)| l.cost(i, o));
-        let e = acc.entry(l.skill.clone()).or_insert((0, 0.0));
+        let key = display_skill(&l.skill).to_string();
+        let e = acc.entry(key).or_insert((0, 0.0));
         e.0 = e.0.saturating_add(toks);
         e.1 += cost;
     }
@@ -822,6 +837,57 @@ saved_output_per_mtok = 0.0
         let cfg = rexymcp_executor::config::ArchitectConfig::default();
         let costs = skill_costs(&[], &cfg, "P");
         assert!(costs.is_empty());
+    }
+
+    #[test]
+    fn display_skill_maps_other_to_architect_chat() {
+        assert_eq!(display_skill("other"), "architect chat");
+    }
+
+    #[test]
+    fn display_skill_passes_through_named_skills() {
+        assert_eq!(display_skill("rexymcp:dispatch"), "rexymcp:dispatch");
+        assert_eq!(display_skill("rexymcp:auto"), "rexymcp:auto");
+    }
+
+    #[test]
+    fn skill_costs_renders_other_as_architect_chat() {
+        let mut ledgers = vec![ledger("claude-opus-4-8")]; // dispatch: $30
+        let mut other = ledger("claude-sonnet-5");
+        other.skill = "other".to_string();
+        ledgers.push(other); // other: $12
+
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let costs = skill_costs(&ledgers, &cfg, "P");
+
+        assert_eq!(costs.len(), 2);
+        let skills: Vec<&str> = costs.iter().map(|c| c.skill.as_str()).collect();
+        assert!(skills.contains(&"dispatch"));
+        assert!(skills.contains(&"architect chat"));
+        assert!(!skills.contains(&"other"));
+    }
+
+    #[test]
+    fn skill_costs_folds_other_and_architect_chat_into_one_row() {
+        let mut ledgers = vec![ledger("claude-opus-4-8")]; // dispatch $30, 2M tokens
+        let mut other = ledger("claude-sonnet-5");
+        other.skill = "other".to_string();
+        ledgers.push(other); // other $12, 2M tokens
+        let mut already_renamed = ledger("claude-sonnet-5");
+        already_renamed.skill = "architect chat".to_string();
+        ledgers.push(already_renamed); // architect chat $12, 2M tokens
+
+        let cfg = rexymcp_executor::config::ArchitectConfig::default();
+        let costs = skill_costs(&ledgers, &cfg, "P");
+
+        assert_eq!(costs.len(), 2);
+        let chat = costs.iter().find(|c| c.skill == "architect chat").unwrap();
+        assert_eq!(chat.tokens, 4_000_000); // 2 records × 2M tokens
+        assert!(
+            (chat.cost - 24.0).abs() < 1e-9,
+            "architect chat cost: {}",
+            chat.cost
+        );
     }
 
     #[test]
