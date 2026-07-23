@@ -5,8 +5,20 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M36 phase-01 — harvest subagent transcripts](milestones/M36-budget-truth-pass/phase-01-subagent-transcript-harvest.md)
-(status: todo — drafted 2026-07-23, awaiting `/rexymcp:dispatch phase-01`).**
+[M36 phase-02 — budget reframe, Baseline → Executor `saved`](milestones/M36-budget-truth-pass/phase-02-budget-reframe-saved.md)
+(status: todo — dispatched 2026-07-23).**
+
+**phase-01 — done (2026-07-23, approved_first_try; executor Qwen/Qwen3.6-27B-FP8, 58
+turns, no oscillation).** Subagent transcripts now harvested from
+`<session>/subagents/*.jsonl` in both `harvest()` and the sweep watermark;
+`tool-results/` stays excluded. Real-corpus re-harvest recovered **+36.1M tokens**
+(`rexymcp:auto` +47%, the predicted concentration). The phase doc's raw +59.6M figure
+was **pre-dedup** — the harvester dedups globally by `message.id` (6,069 skipped), so
++36.1M is the correct post-dedup recovery, an architect measurement error in the spec,
+not an executor shortfall. Tests verified mutation-sensitive in two dimensions.
+**Review finding → M37 phase 05:** server-authored completion entries leave acceptance
+criteria unticked and emit no E2E block (STANDARDS §1 requires both); systemic since
+M27 phase-03, 4 occurrences, not fixable by re-dispatch.
 
 ## M35 — CLOSED 2026-07-23
 
