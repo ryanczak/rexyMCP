@@ -1,7 +1,7 @@
 # Phase 07f: Dynamic header-band height — no trailing blank on the tallest header panel
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-07e
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -270,3 +270,7 @@ The dashboard is a live TUI (not hermetically capturable). Evidence:
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Started — 2026-07-23 03:52 (executor)
+
+**Executor:** Phase 07f — implementing dynamic header-band height.

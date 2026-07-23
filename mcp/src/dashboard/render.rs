@@ -161,6 +161,14 @@ pub(crate) fn wrap_lines_hanging(
 /// Compactions) above a body (Activity wide-left · Files right), or a
 /// single error pane when `data.error` is set.
 /// Transcript is newest-first when `follow` is true (tail-pinned).
+/// Rows for the header band: the tallest of the three header panels' content plus
+/// 2 border rows. The panels share one horizontal band, so it fits the tallest;
+/// a shorter panel shows a trailing blank equal to its shortfall.
+fn header_band_height(session_len: usize, budget_len: usize, context_len: usize) -> u16 {
+    let max = session_len.max(budget_len).max(context_len);
+    (max as u16).saturating_add(2)
+}
+
 pub(crate) fn render_dashboard(
     frame: &mut Frame,
     area: Rect,
@@ -181,30 +189,22 @@ pub(crate) fn render_dashboard(
         return 0;
     }
 
-    // Outer split: fixed-height header band + filling body.
-    // Height 11 = 2 border rows + 9 content rows. The 9 content rows is the tallest
-    // panel's exact need: Session = Milestone/Phase/Session/Model/State/Duration/
-    // last-update/Turn-stage/spinner; Budget = Tokens-in/out + Tok/s (3) plus the
-    // savings block (header + Baseline/Executor/Architect/Net + Assists = 6). Budget
-    // and Context share this height; the body (Activity · Tasks/Files) fills the rest.
+    // Header band sized to the tallest of the three panels (Session / Budget /
+    // Context) + 2 borders. They share one horizontal band, so it fits the
+    // tallest; a shorter panel shows a trailing blank equal to its shortfall.
     let total_wrapped;
-    let [header, body] =
-        Layout::vertical([Constraint::Length(11), Constraint::Min(0)]).areas::<2>(area);
 
-    // Header band: Session · Budget · Compactions.
-    // Budget uses Min(52) so the combined tok/s line
-    // "tok/s: X.X  (avg: X.X, max: X.X, min: X.X)" fits without wrapping.
-    // Session uses Fill(1) so it yields width to Budget when the terminal is
-    // narrow; Compactions uses Percentage(28) to mirror the Files panel below,
-    // aligning the Budget/Compactions border with the Activity/Files border.
-    let [session_area, budget_area, compactions_area] = Layout::horizontal([
+    // Column widths depend only on the header's WIDTH (not its height), so split
+    // `area` to get them before the band height is known.
+    let [session_probe, _budget_probe, _compactions_probe] = Layout::horizontal([
         Constraint::Fill(1),
         Constraint::Min(52),
         Constraint::Percentage(28),
     ])
-    .areas::<3>(header);
+    .areas::<3>(area);
+    let session_inner_width = session_probe.width.saturating_sub(2) as usize;
 
-    let session_inner_width = session_area.width.saturating_sub(2) as usize;
+    // Build the three panels' content up front so the band can fit the tallest.
     let mut session = Vec::new();
     if let Some(name) = &data.milestone {
         session.push(milestone_line(name, session_inner_width));
@@ -213,7 +213,7 @@ pub(crate) fn render_dashboard(
     if let Some(line) = spinner_line(state.spinner, session_inner_width) {
         session.push(line);
     }
-    frame.render_widget(panel(" Session ", session), session_area);
+
     let mut budget = Vec::new();
     budget.extend(budget_lines(&data.summary));
     budget.extend(savings_lines(
@@ -232,11 +232,22 @@ pub(crate) fn render_dashboard(
             ts.skill, ts.cost
         )));
     }
+
+    let context = reclaim_lines(&data.summary);
+
+    let band = header_band_height(session.len(), budget.len(), context.len());
+    let [header, body] =
+        Layout::vertical([Constraint::Length(band), Constraint::Min(0)]).areas::<2>(area);
+    let [session_area, budget_area, compactions_area] = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Min(52),
+        Constraint::Percentage(28),
+    ])
+    .areas::<3>(header);
+
+    frame.render_widget(panel(" Session ", session), session_area);
     frame.render_widget(panel(" Budget [b=toggle view] ", budget), budget_area);
-    frame.render_widget(
-        panel(" Context ", reclaim_lines(&data.summary)),
-        compactions_area,
-    );
+    frame.render_widget(panel(" Context ", context), compactions_area);
 
     // Body: Activity (wide-left) · right column (Tasks over Files).
     let [activity_area, right_area] =
@@ -336,6 +347,14 @@ pub(crate) fn render_dashboard(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn header_band_height_fits_tallest_plus_borders() {
+        assert_eq!(header_band_height(7, 5, 3), 9); // fits Session (7) + 2 borders
+        assert_eq!(header_band_height(3, 8, 4), 10); // fits Budget (8) + 2
+        assert_eq!(header_band_height(6, 6, 6), 8); // all equal -> 6 + 2
+        assert_eq!(header_band_height(0, 0, 0), 2); // borders only
+    }
 
     // --- visible_offset tests ---
 
