@@ -1,7 +1,7 @@
 # Phase 07e: Budget panel content — align parenthesized debit values + combine the token in/out lines
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07d
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -323,3 +323,31 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 — one escalation round-trip (hard_fail → resume), no review-bug filed.
+  Failure class: `oscillation_stall` (governor oscillation terminator fired on a
+  read/test loop while the executor tried to diagnose a *failing test*).
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (first run: `space_pad` + token-combine production
+  fix correct but hard_fail'd on the test; resume: test-only fix, complete @ 19 turns).
+- **Scope deviations:** none — final diff is `mcp/src/dashboard/panels.rs` only. `#6`:
+  `budget_lines` emits one `Tokens in: N out: N` line. `#5`: `space_pad` closure + the six
+  Baseline/Net wrappings; `make_row`, the `paren`/`debit_row` path, the header, and the
+  tokens-mode block untouched, exactly as specced.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `611` mcp-bin +
+  `1032` executor-lib). Both new/edited tests are **real and mutation-sensitive**:
+  `budget_lines_shows_tokens` pins the single combined token line; and neutering `space_pad`
+  to a no-op makes `savings_lines_debit_digits_align_with_non_debit` **fail** with "debit and
+  non-debit decimal points must align" (confirmed by a temporary mutation, then restored) —
+  proving it genuinely guards the alignment fix.
+- **Calibration:** the hard_fail was a **read/test oscillation loop** — the executor's own
+  new test failed ("Executor row missing": an unpriced fixture → the `$0.00` debit row is
+  *hidden*), and it looped re-reading + re-testing without diagnosing the hidden row. Two
+  lessons for the M35-close fold: (1) **third `panels.rs`/dashboard oscillation of the arc**
+  — reinforces the "read-only-inspection repetition → advisory" governor fold and the
+  `oscillation_stall` failure-class gap; (2) **pre-injection**: when a spec asks for a test
+  that depends on a *rendered row appearing*, pin the **exact fixture that makes it appear**
+  (here: a priced executor) — a rendering filter (`$0.00` debit rows hidden) silently
+  suppressed the row and the executor couldn't self-diagnose it. The resume, with the exact
+  priced-fixture hint, landed clean in 19 turns.

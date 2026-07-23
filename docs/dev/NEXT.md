@@ -4,20 +4,27 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M35 phase-07e — Budget panel content (#5 alignment + #6 token-line combine)](milestones/M35-metrics-cost-accounting/phase-07e-budget-content-align.md)
-(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07e`). M35 remains
-DELIBERATELY HELD OPEN for the cleanup pass; the close retrospective is pending.**
+**Active phase: none dispatchable — next to draft is
+[M35 phase-07f — trailing blank row on the header panels (#3, the LAST cleanup item)](milestones/M35-metrics-cost-accounting/README.md)
+(run `/rexymcp:architect next` to draft it). M35 remains DELIBERATELY HELD OPEN; after 07f
+is approved, all M35 phases are done → the milestone-close retrospective (a separate
+human-gated `/rexymcp:architect` step) is pending.**
 
-phase-07e drafted 2026-07-22: **#5** align the parenthesized debit values in the Budget
-savings block — debit rows render `($1.23)` and non-debit `$1.23`, both right-aligned in
-the same width, so the `)` pushes the debit digits one column left; fix = give non-debit
-Baseline/Net a matching ` v ` gutter (`space_pad`) so `{:>W}` aligns all digits (minimal
-touch — `make_row`/`paren`/header/tokens-mode untouched; the header-vs-value 1-col offset
-left as a cosmetic non-goal). **#6** combine `budget_lines`' two token lines into one
-`Tokens in: N out: N` (also shortens Budget by a row). Both in `panels.rs`. Mutation-
-sensitive alignment test pins the decimal-point columns equal across a debit + non-debit
-row. Carries the anti-oscillation gotcha (compiler-locates-syntax-errors).
+**phase-07e — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
+**#5** aligned the parenthesized debit values (`space_pad` gutter on Baseline/Net so
+`{:>W}` lines all digits up — `make_row`/`paren`/header/tokens-mode untouched) + **#6**
+combined `budget_lines`' two token lines into one `Tokens in: N out: N`. All in
+`panels.rs`; mutation-sensitive alignment test confirmed (neutering `space_pad` fails it).
+**Escalation:** first run's production fix was correct but hard_fail'd on a read/test
+oscillation loop — the executor's *own* new test used an unpriced fixture, so the `$0.00`
+Executor debit row was hidden ("row missing") and it looped trying to diagnose it;
+**resumed** clean in 19 turns with the exact priced-fixture hint. **Third `panels.rs`
+oscillation of the arc** (fold: read-only-inspection→advisory; `oscillation_stall` →
+`FAILURE_CLASSES`; pre-inject the exact fixture when a test depends on a rendered row
+appearing).
+
+**07d done → 07e done → 07f (last, #3 trailing blank).** 07f now has the FINAL Budget
+height to work from: Assists row gone (07d) + token lines combined (07e), both −1.
 
 **phase-07d — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
 The low-risk cleanup batch: **#1** fixed `profile`'s inaccurate `about` (dropped the false
