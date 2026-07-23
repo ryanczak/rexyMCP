@@ -45,13 +45,34 @@ pub fn read_liveness(telemetry_dir: &Path) -> Option<SweepState> {
 }
 
 /// Max mtime (millis since epoch) across `*.jsonl` files in `dir`.
+/// Also scans `<session>/subagents/*.jsonl` for each session subdirectory.
 /// `None` if the dir is unreadable or has no matching files. Stats only.
 pub fn max_transcript_mtime_ms(dir: &Path) -> Option<u64> {
     let mut max_ms: Option<u64> = None;
     let entries = fs::read_dir(dir).ok()?;
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("jsonl")
+
+        if path.is_dir() {
+            // Scan <session>/subagents/*.jsonl
+            let subagents = path.join("subagents");
+            if let Ok(inner) = fs::read_dir(&subagents) {
+                for sub in inner.filter_map(|e| e.ok()) {
+                    let p = sub.path();
+                    if p.extension().and_then(|e| e.to_str()) == Some("jsonl")
+                        && let Ok(meta) = p.metadata()
+                        && let Ok(modified) = meta.modified()
+                        && let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH)
+                    {
+                        let ms = dur.as_millis() as u64;
+                        max_ms = Some(match max_ms {
+                            Some(prev) => prev.max(ms),
+                            None => ms,
+                        });
+                    }
+                }
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl")
             && let Ok(meta) = path.metadata()
             && let Ok(modified) = meta.modified()
             && let Ok(dur) = modified.duration_since(std::time::UNIX_EPOCH)
@@ -416,5 +437,43 @@ sweep_interval_secs = 120
         fs::write(&config_path, content).unwrap();
         let cfg = rexymcp_executor::config::Config::load(&config_path).unwrap();
         assert_eq!(cfg.telemetry.sweep_interval(), Duration::from_secs(120));
+    }
+
+    // ---- subagent mtime tests ----
+
+    #[test]
+    fn max_transcript_mtime_includes_subagent_files() {
+        let temp = TempDir::new().unwrap();
+        let tx_dir = temp.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // Only a subagent file, no top-level *.jsonl
+        let sub_dir = tx_dir.join("s1").join("subagents");
+        fs::create_dir_all(&sub_dir).unwrap();
+        fs::write(sub_dir.join("agent-a.jsonl"), "dummy").unwrap();
+
+        let mt = max_transcript_mtime_ms(&tx_dir);
+        assert!(
+            mt.is_some(),
+            "max_transcript_mtime_ms must return Some when only subagent files exist"
+        );
+    }
+
+    #[test]
+    fn max_transcript_mtime_none_for_tool_results_only() {
+        let temp = TempDir::new().unwrap();
+        let tx_dir = temp.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // Only a tool-results file — must NOT be picked up
+        let tool_dir = tx_dir.join("s1").join("tool-results");
+        fs::create_dir_all(&tool_dir).unwrap();
+        fs::write(tool_dir.join("x.jsonl"), "dummy").unwrap();
+
+        let mt = max_transcript_mtime_ms(&tx_dir);
+        assert!(
+            mt.is_none(),
+            "max_transcript_mtime_ms must return None for tool-results-only dir"
+        );
     }
 }

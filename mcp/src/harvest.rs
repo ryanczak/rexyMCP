@@ -1,10 +1,12 @@
 //! Architect usage harvester — `rexymcp harvest` subcommand.
 //!
-//! Reads Claude Code session transcripts, dedups assistant-usage lines by
-//! `message.id`, and sums per-message token usage into `ArchitectLedger` records
-//! keyed by `(project_id, session, model, skill)` (messages with no
-//! `attributionSkill` bucket under `"other"`). Emits one ledger record per key;
-//! `fold_ledger` keeps the latest per key at read time, so re-harvest is idempotent.
+//! Reads Claude Code session transcripts and their `subagents/` sub-transcripts,
+//! dedups assistant-usage lines by `message.id`, and sums per-message token
+//! usage into `ArchitectLedger` records keyed by `(project_id, session, model,
+//! skill)` (messages with no `attributionSkill` bucket under `"other"`).
+//! Subagent usage attributes to the parent session directory that spawned it.
+//! Emits one ledger record per key; `fold_ledger` keeps the latest per key at
+//! read time, so re-harvest is idempotent.
 
 use std::path::{Path, PathBuf};
 
@@ -167,6 +169,47 @@ fn extract_usage(v: &serde_json::Value) -> Option<ExtractedTokens> {
     ))
 }
 
+/// Every transcript file under `dir`, paired with the session id it belongs to.
+///
+/// Two layouts are read:
+/// - `<dir>/<session-id>.jsonl`                     — session id from the file stem
+/// - `<dir>/<session-id>/subagents/*.jsonl`         — session id from the parent dir
+///
+/// Subagent usage folds into its spawning session's bucket. No other
+/// subdirectory is scanned (notably `<session-id>/tool-results/`).
+/// Sorted by path for deterministic dedup order.
+fn collect_transcripts(dir: &Path) -> Result<Vec<(PathBuf, String)>, String> {
+    let mut out: Vec<(PathBuf, String)> = Vec::new();
+    for entry in
+        std::fs::read_dir(dir).map_err(|e| format!("failed to read transcript dir: {e}"))?
+    {
+        let entry = entry.map_err(|e| format!("failed to read dir entry: {e}"))?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            let Some(session_id) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let subagents = path.join("subagents");
+            let Ok(inner) = std::fs::read_dir(&subagents) else {
+                continue; // no subagents dir for this session — normal
+            };
+            for sub in inner.filter_map(|e| e.ok()) {
+                let p = sub.path();
+                if p.extension().is_some_and(|ext| ext == "jsonl") {
+                    out.push((p, session_id.to_string()));
+                }
+            }
+        } else if path.extension().is_some_and(|ext| ext == "jsonl")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            out.push((path.clone(), stem.to_string()));
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 /// Harvest transcript usage into ledger records.
 pub fn harvest(
     config_path: &Path,
@@ -196,18 +239,7 @@ pub fn harvest(
 
     let store_path = telemetry_dir.join("phase_runs.jsonl");
 
-    // Read and parse transcript files, sorted by path for deterministic dedup order
-    let mut files: Vec<PathBuf> = Vec::new();
-    for entry in std::fs::read_dir(args.transcript_dir)
-        .map_err(|e| format!("failed to read transcript dir: {}", e))?
-    {
-        let entry = entry.map_err(|e| format!("failed to read dir entry: {}", e))?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "jsonl") {
-            files.push(path);
-        }
-    }
-    files.sort();
+    let transcripts = collect_transcripts(args.transcript_dir)?;
 
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut accum: std::collections::HashMap<(String, String, String), Accum> =
@@ -215,16 +247,7 @@ pub fn harvest(
     let mut duplicates: usize = 0;
     let mut sessions: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for file_path in &files {
-        let session_id = match file_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-        {
-            Some(s) => s,
-            None => continue,
-        };
-
+    for (file_path, session_id) in &transcripts {
         let content = match std::fs::read_to_string(file_path) {
             Ok(c) => c,
             Err(_) => continue,
@@ -590,5 +613,265 @@ dir = "{}"
         assert_eq!(ledger.tokens.input, 1000);
         assert_eq!(ledger.tokens.cache_creation, 2000);
         assert_eq!(ledger.messages, 1);
+    }
+
+    // ---- subagent transcript tests ----
+
+    fn write_subagent_fixture(tx_dir: &Path, session: &str, name: &str, lines: &[&str]) {
+        let sub_dir = tx_dir.join(session).join("subagents");
+        fs::create_dir_all(&sub_dir).unwrap();
+        let path = sub_dir.join(name);
+        fs::write(&path, lines.join("\n")).unwrap();
+    }
+
+    #[test]
+    fn harvests_subagent_transcripts_under_session_dir() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // Session transcript with 1 usage message
+        write_fixture(
+            &tx_dir,
+            "s1.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:00:00.000Z","message":{"id":"msg_top","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}"#,
+            ],
+        );
+
+        // Subagent transcript with 1 usage message (distinct id)
+        write_subagent_fixture(
+            &tx_dir,
+            "s1",
+            "agent-a.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:01:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_sub","role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":20}}}"#,
+            ],
+        );
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+        let outcome = harvest(&config, None, &args).unwrap();
+
+        assert_eq!(
+            outcome.messages, 2,
+            "both session and subagent messages harvested"
+        );
+        assert_eq!(outcome.duplicates, 0);
+    }
+
+    #[test]
+    fn subagent_usage_attributes_to_parent_session() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // Session transcript
+        write_fixture(
+            &tx_dir,
+            "s1.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:00:00.000Z","message":{"id":"msg_top","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}"#,
+            ],
+        );
+
+        // Subagent transcript with distinct id
+        write_subagent_fixture(
+            &tx_dir,
+            "s1",
+            "agent-a.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:01:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_sub","role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":20}}}"#,
+            ],
+        );
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+        harvest(&config, None, &args).unwrap();
+
+        // Read the ledger and verify the subagent record has session "s1", not "agent-a"
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let content = fs::read_to_string(&store_path).unwrap();
+        // The subagent's record must carry session s1
+        assert!(
+            content.contains(r#""session_id":"s1""#),
+            "subagent ledger record must attribute to parent session s1, got: {content}"
+        );
+        // Must NOT carry session "agent-a"
+        assert!(
+            !content.contains(r#""session_id":"agent-a""#),
+            "subagent ledger record must NOT use its own file stem as session, got: {content}"
+        );
+    }
+
+    #[test]
+    fn subagent_transcripts_do_not_inflate_session_count() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        write_fixture(
+            &tx_dir,
+            "s1.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:00:00.000Z","message":{"id":"msg_top","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}"#,
+            ],
+        );
+        write_subagent_fixture(
+            &tx_dir,
+            "s1",
+            "agent-a.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:01:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_sub","role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":20}}}"#,
+            ],
+        );
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+        let outcome = harvest(&config, None, &args).unwrap();
+
+        assert_eq!(
+            outcome.sessions, 1,
+            "session + subagent must count as 1 session, not 2"
+        );
+    }
+
+    #[test]
+    fn ignores_non_subagent_session_subdirs() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        // Session transcript with 1 message
+        write_fixture(
+            &tx_dir,
+            "s1.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:00:00.000Z","message":{"id":"msg_top","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}"#,
+            ],
+        );
+
+        // tool-results dir with a valid assistant-usage line (distinct id)
+        let tool_dir = tx_dir.join("s1").join("tool-results");
+        fs::create_dir_all(&tool_dir).unwrap();
+        fs::write(
+            tool_dir.join("x.jsonl"),
+            r#"{"type":"assistant","timestamp":"2026-07-23T10:02:00.000Z","message":{"id":"msg_tool","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":999,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":99}}}"#,
+        )
+        .unwrap();
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+        let outcome = harvest(&config, None, &args).unwrap();
+
+        assert_eq!(
+            outcome.messages, 1,
+            "only the session transcript message should be harvested, not tool-results"
+        );
+        // Verify the tool-results message's tokens are absent
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let content = fs::read_to_string(&store_path).unwrap();
+        assert!(
+            !content.contains("999"),
+            "tool-results tokens must not appear in the ledger, got: {content}"
+        );
+    }
+
+    #[test]
+    fn subagent_dedup_by_message_id_across_levels() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        let shared_line = r#"{"type":"assistant","timestamp":"2026-07-23T10:00:00.000Z","message":{"id":"msg_shared","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":500,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":50}}}"#;
+
+        // Same message.id in session transcript
+        write_fixture(&tx_dir, "s1.jsonl", &[shared_line]);
+
+        // Same message.id in subagent transcript
+        write_subagent_fixture(&tx_dir, "s1", "agent-a.jsonl", &[shared_line]);
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+        let outcome = harvest(&config, None, &args).unwrap();
+
+        assert_eq!(
+            outcome.messages, 1,
+            "dedup across session and subagent levels"
+        );
+        assert_eq!(outcome.duplicates, 1, "one duplicate skipped");
+    }
+
+    #[test]
+    fn reharvest_with_subagents_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let config = make_config(&dir);
+        let tx_dir = dir.path().join("tx");
+        fs::create_dir_all(&tx_dir).unwrap();
+
+        write_fixture(
+            &tx_dir,
+            "s1.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:00:00.000Z","message":{"id":"msg_top","role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}"#,
+            ],
+        );
+        write_subagent_fixture(
+            &tx_dir,
+            "s1",
+            "agent-a.jsonl",
+            &[
+                r#"{"type":"assistant","timestamp":"2026-07-23T10:01:00.000Z","attributionSkill":"rexymcp:dispatch","message":{"id":"msg_sub","role":"assistant","model":"claude-sonnet-5","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":20}}}"#,
+            ],
+        );
+
+        let args = HarvestArgs {
+            transcript_dir: &tx_dir,
+            project_id: None,
+        };
+
+        // First harvest
+        let outcome1 = harvest(&config, None, &args).unwrap();
+        assert_eq!(outcome1.messages, 2);
+
+        // Second harvest (appends duplicate records to the same store)
+        let outcome2 = harvest(&config, None, &args).unwrap();
+        assert_eq!(outcome2.messages, 2);
+
+        // Read all + fold: should yield the same per-key totals as a single run
+        let store_path = dir.path().join("telemetry/phase_runs.jsonl");
+        let all_ledgers = read_architect_ledger(&store_path).unwrap();
+        let folded = fold_ledger(all_ledgers);
+
+        // After fold, 2 distinct (session, model, skill) keys
+        assert_eq!(folded.len(), 2);
+
+        // Verify totals match a single harvest
+        let mut total_input = 0u64;
+        let mut total_messages = 0u64;
+        for ledger in &folded {
+            total_input += ledger.tokens.input;
+            total_messages += ledger.messages;
+        }
+        assert_eq!(total_input, 300, "folded input tokens match single harvest");
+        assert_eq!(
+            total_messages, 2,
+            "folded message count matches single harvest"
+        );
     }
 }

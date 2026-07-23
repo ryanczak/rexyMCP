@@ -1,7 +1,7 @@
 # Phase 01: Harvest subagent transcripts
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -272,3 +272,7 @@ a `cargo add`.)
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-23 21:00 (started)
+
+Executor implementing phase 01: adding `collect_transcripts` helper, rewiring `harvest()`, extending sweep watermark, updating module doc, and writing tests.

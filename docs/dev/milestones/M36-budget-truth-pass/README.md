@@ -62,7 +62,7 @@ exactly once. No phase in this milestone changes `auto` accounting.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Harvest subagent transcripts ([phase-01-subagent-transcript-harvest.md](phase-01-subagent-transcript-harvest.md)) | todo |
+| 01 | Harvest subagent transcripts ([phase-01-subagent-transcript-harvest.md](phase-01-subagent-transcript-harvest.md)) | in-progress |
 | 02 | Budget reframe: Baseline → Executor `saved` ([phase-02-budget-reframe-saved.md](phase-02-budget-reframe-saved.md)) | todo |
 | 03 | Rename the `other` bucket to `architect chat` ([phase-03-architect-chat-bucket.md](phase-03-architect-chat-bucket.md)) | todo |
 
