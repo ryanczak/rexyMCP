@@ -58,7 +58,10 @@ Rejected alternatives, recorded so they are not re-litigated:
 - The **server-authored completion entry** satisfies STANDARDS §1: it ticks the
   phase doc's acceptance-criteria checkboxes and emits an
   `**End-to-end verification:**` block carrying the actual E2E output, so a
-  `done` phase doc is not self-contradictory.
+  `done` phase doc is not self-contradictory. Its `Executor:` line names the
+  **dispatched** model (the same value as `PhaseRun.model`), never the model's
+  self-report — pinned by a test that a self-reported name cannot reach the
+  Update Log.
 - All four gates green.
 
 ## Architecture references
@@ -80,7 +83,7 @@ milestone into phases on demand. Expected shape:
 | 02 | `oscillation_stall` in `FAILURE_CLASSES` | todo |
 | 03 | Consolidate the three token formatters into `metrics` | todo |
 | 04 | k/M compaction for `calibrate-governor`'s byte columns | todo |
-| 05 | Server-authored completion entry: tick acceptance criteria + emit an E2E block | todo |
+| 05 | Server-authored completion entry: tick acceptance criteria, emit an E2E block, write `Executor:` from the dispatched model | todo |
 
 Phase 01 is the milestone; 02–05 are carried debt and can run in any order after
 it. Phase 01 changes governor termination behavior, so it needs negative tests
@@ -100,16 +103,37 @@ emits no `**End-to-end verification:**` section.
 
 The result is a `done` phase doc whose own acceptance criteria read as unmet,
 and an E2E claim asserted in prose rather than evidenced. Reproduced on M35
-phase-06e, 07g, 07h and M36 phase-01 — **4 occurrences**, so past the
+phase-06e, 07g, 07h and M36 phase-01, 02, 03 — **6 occurrences**, well past the
 fold-immediately threshold. It is not an executor defect and **cannot be fixed
 by re-dispatch**: the executor no longer owns that output. Each review has been
 silently absorbing the gap by verifying and ticking manually.
 
-Scope: the server's completion-entry writer. It already receives the E2E
-command outputs it would need to quote. Ticking the checkboxes requires
-deciding what evidence justifies a tick — the safe shape is to tick only
-criteria whose verifying command the server actually ran and observed pass,
-and leave the rest for the reviewer rather than tick optimistically.
+**A third defect, same writer (added 2026-07-23 at the M36 phase-03 review).**
+The Update Log's `**Executor:**` line is written from the model's *self-report*,
+and models misidentify themselves. M36 phase-03's entry claims
+`Executor: Claude Sonnet 4.5 (executor)` when `rexymcp.toml`, `executor_health`,
+and the run's own `PhaseRun` telemetry record all say `Qwen/Qwen3.6-27B-FP8`.
+
+Severity is **cosmetic, not corrupting**: the scorecard, `profile`, and
+`calibrate-governor` all read the config-derived `PhaseRun.model` field, so no
+aggregate is polluted — but the phase doc is the human-readable record, and a
+milestone retrospective read months later would attribute the work to the wrong
+model. The server dispatched the run and knows which model it used; it should
+write that value rather than let the model name itself.
+
+Scope: the server's completion-entry writer, three defects in one place.
+
+1. **Tick the acceptance criteria.** Deciding what justifies a tick is the
+   design question — the safe shape is to tick only criteria whose verifying
+   command the server actually ran and observed pass, leaving the rest for the
+   reviewer rather than ticking optimistically. A false tick is worse than a
+   blank box.
+2. **Emit an `**End-to-end verification:**` block** with the actual output. The
+   writer already receives the command outputs it would need to quote.
+3. **Write `Executor:` from the dispatched model**, not from model self-report.
+   Source it from the same value that populates `PhaseRun.model`, so the prose
+   and the telemetry can never disagree. Pin a test that a self-reported model
+   name in the transcript does **not** reach the Update Log.
 
 **Sequencing against M36.** Independent — M36 is `mcp/` accounting and display,
 M37 is `executor/governor` plus small `mcp/` cleanups. Phase 03 (token

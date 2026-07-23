@@ -1260,9 +1260,16 @@ The project plan. Each entry becomes a milestone with its own
     leaves the phase doc's acceptance-criteria checkboxes unticked and emits no
     `End-to-end verification` block, both of which STANDARDS §1 requires — so a
     `done` phase doc contradicts its own criteria and the E2E claim is prose
-    rather than evidence. Reproduced on M35 phase-06e/07g/07h and M36 phase-01
-    (4×, past the fold threshold); not an executor defect and not fixable by
-    re-dispatch, since the executor no longer owns that output.
+    rather than evidence. A third defect in the same writer: the `Executor:`
+    line is taken from the model's **self-report**, and models misidentify
+    themselves (M36 phase-03 claimed `Claude Sonnet 4.5` on a run
+    `rexymcp.toml`, `executor_health`, and `PhaseRun.model` all record as
+    `Qwen/Qwen3.6-27B-FP8`) — cosmetic, since every aggregator reads the
+    config-derived telemetry field, but the phase doc is the human-readable
+    record a retrospective is read from. Reproduced across M35 phase-06e/07g/07h
+    and all three M36 phases (6×, well past the fold threshold); not an executor
+    defect and not fixable by re-dispatch, since the executor no longer owns
+    that output.
 36. **M36 — Budget Truth Pass** *(planned; opened 2026-07-23)*. First real use
     of M35's cost surface exposed one presentation defect and one counting bug.
     **(1) "Baseline" reads as a spend but is a counterfactual** — executor
