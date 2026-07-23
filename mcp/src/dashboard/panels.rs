@@ -669,7 +669,15 @@ pub(crate) fn savings_lines(
         return out;
     }
 
-    let paren = |v: String| format!("({})", align_value(&v));
+    let paren = |v: String| {
+        if v == "—" {
+            // Tight parens; the 2 trailing spaces (the two decimal places a number shows)
+            // shift `(—)` left under the decimal column when right-aligned.
+            "(—)  ".to_string()
+        } else {
+            format!("({v})")
+        }
+    };
     let space_pad = |v: String| format!(" {} ", align_value(&v));
     let debit_row =
         |label: &str, sess: String, mile: String, proj: String| -> Option<Line<'static>> {
@@ -2421,6 +2429,11 @@ mod tests {
             baseline.find('.'),
             architect.find('—'),
             "the — must sit at the decimal column:\n{baseline}\n{architect}"
+        );
+        // Tight parens — no spaces between the parens and the —
+        assert!(
+            architect.contains("(—)"),
+            "debit no-value must render tight parens (—): {architect}"
         );
     }
 }

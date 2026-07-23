@@ -1,7 +1,7 @@
 # Phase 07h: Tight parens on the debit "—" — `(—)`, padding outside, still decimal-aligned
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-07g
 **Estimated diff:** ~35 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -142,3 +142,7 @@ eyeball the Architect row now reading `(—)` with the `—` under the decimals.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-23 04:53 (started)
+
+**Executor:** LLM executor — started phase 07h.
