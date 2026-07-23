@@ -1,7 +1,7 @@
 # Phase 02: Budget reframe — Baseline becomes Executor's `saved`
 
 **Milestone:** M36 — Budget Truth Pass
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~220 lines (mostly a mechanical field rename across tests)
 **Tags:** language=rust, kind=refactor, size=m
@@ -268,5 +268,11 @@ No new dependencies. No edits to `docs/architecture.md`.
 ## Update Log
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+### Update — 2026-07-23 23:07 (started)
+
+**Executor:** model executor
+
+Renamed `ScopeReport.baseline` → `saved` across all production and test sites in `mcp/src/costs.rs` and `mcp/src/dashboard/panels.rs`. Reordered CLI table columns to `SCOPE EXECUTOR ARCHITECT NET SAVED` with a conditional legend. Relabelled dashboard block from "Savings" to "Spend", reordered rows to Executor/Architect/Saved/Net in dollars mode, and removed the redundant Baseline row from tokens mode (now 3 rows). Updated README at all 5 referenced locations. Added 6 new tests per the spec's test plan. Updated the remaining `Baseline`/`Savings` references in `mcp/src/main.rs` and `mcp/src/costs.rs` doc comments.
 
 <!-- entries appended below this line -->

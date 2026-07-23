@@ -23,8 +23,8 @@ whichever you drive.
 
 A bunch of recent change that need to be called out because they change some core mechanics: 
 
-- **Improved cost accounting.** The dashboard's Savings block now prices the *whole*
-  run — Baseline / Executor / **Architect** / Net across Session · Milestone ·
+- **Improved cost accounting.** The dashboard's Spend block now prices the *whole*
+  run — Executor / Architect / **Saved** / Net across Session · Milestone ·
   Project — with per-model `$/Mtok` rates, and architect cost is *harvested* from
   the actual session transcripts, not estimated. There's a new **`rexymcp costs`** 
   command to view this information from the CLI. These changes **break** compatibility
@@ -331,9 +331,9 @@ exactly what rexyMCP is working on:
 - **Session** — which milestone, phase, model, and session is running; current
   state, turn count, and stage, with a dog-chases-its-brain liveness spinner so
   you can tell motion from a stall.
-- **Budget** — tokens in/out and tok/s, plus a **Savings** block pricing the
-  local run against a hypothetical cloud baseline (Baseline / Executor / Net
-  across Session · Milestone · Project).
+- **Budget** — tokens in/out and tok/s, plus a **Spend** block pricing the
+  local run against a hypothetical cloud baseline (Executor / Architect / Saved
+  / Net across Session · Milestone · Project).
 - **Context** — context-window utilization (green/yellow/red) and how many
   tokens each reclaim lever has recovered.
 - **Activity** — the full, scrollable transcript of the run: every prompt, tool
@@ -598,7 +598,7 @@ are no short aliases.
 | `rexymcp runs` | List individual `PhaseRun` records with per-run stats. | `--config` (required), `--model`, `--tag` (repeatable, AND), `--limit <n>` (default 20; `0` = all), `--telemetry-path`, `--json` |
 | `rexymcp scorecard` | Aggregate runs into a **model × settings** competency matrix — compare e.g. `temp=0.2` vs `temp=0.7` for your model on your work. | `--config` (required), `--model`, `--tag` (repeatable), `--min-runs <n>`, `--telemetry-path`, `--json` |
 | `rexymcp profile` | Aggregate runs into a **per-(model, tag) capability profile** — strengths and ranked failure classes. | same flags as `scorecard` |
-| `rexymcp costs` | Report the token-cost breakdown — **Baseline / Executor / Architect / Net** across **Session / Milestone / Project** — for a repo's session log + project telemetry. The scriptable, one-shot equivalent of the dashboard's Savings block. | `--config` (default `rexymcp.toml`), `--repo <path>` (default `.`), `--session <id>`, `--telemetry-path`, `--json` |
+| `rexymcp costs` | Report the token-cost breakdown — **Executor / Architect / Net / Saved** across **Session / Milestone / Project** — for a repo's session log + project telemetry. The scriptable, one-shot equivalent of the dashboard's Spend block. | `--config` (default `rexymcp.toml`), `--repo <path>` (default `.`), `--session <id>`, `--telemetry-path`, `--json` |
 | `rexymcp review` | Record an Architect review verdict as a `PhaseReview` annotation (folds into the run's telemetry). Usually invoked by `/rexymcp:review`. | `--config`, `--phase-id`, `--verdict` (required); `--phase-doc`, `--project-id`, `--failure-class` (repeatable), `--bounces`, `--bugs-filed`, `--warnings`, `--telemetry-path` |
 | `rexymcp journal` | Append an `ArchitectActivity` record (`draft`/`dispatch`/`review`/`assist`/`takeover`/`boundary`) to the telemetry store — the substrate the `/rexymcp:auto` loop uses to meter its own work. Usually invoked by the loop skill. | `--config`, `--phase-id` (required); `--phase-doc`, `--project-id`, `--milestone`, `--activity`, `--outcome`, `--model` |
 | `rexymcp harvest` | Read Claude Code's local session transcripts and join **real** per-class token/cost onto journal activities by time window (fills the architect-cost rows; **harvested, never estimated**). Claude Code only; other clients keep counts + durations. | `--config` (required) |
@@ -689,11 +689,11 @@ new sessions. Six panels:
 │ Milestone: M21 …        │ Tokens in:  742833             │ Usage: 74% (97k/13… │
 │ Phase: phase-01         │ Tokens out: 7122               │ Events: 2          │
 │ Session: 1781658-qwen   │ Tok/s: 38.4  (avg 35, max 52)  │ Freed: 41k tokens  │
-│ Model: Qwen/Qwen3.6-27B │ Savings   Session  Milestone … │ Filter: 18 calls … │
-│ State: running          │   Baseline:  $0.50   $3.20  …  │ Evict: 6 reads …   │
-│ Duration: 4m12s         │   Executor:  $0.00   $0.00  …  │ Dedupe: 3 reads …  │
-│ Turn 42, stage verify   │   Net:       $0.50   $3.20  …  │                    │
-│      🐕      🧠          │   Assists: 0                   │                    │
+│ Model: Qwen/Qwen3.6-27B │ Spend     Session  Milestone … │ Filter: 18 calls … │
+│ State: running          │   Executor:  $0.00   $0.00  …  │ Evict: 6 reads …   │
+│ Duration: 4m12s         │   Architect: $0.00   $0.00  …  │ Dedupe: 3 reads …  │
+│ Turn 42, stage verify   │   Saved:     $0.50   $3.20  …  │                    │
+│      🐕      🧠          │   Net:       $0.50   $3.20  …  │                    │
 ├─ Activity [f=filter] ───┴───────────────────┬─ Tasks ────┴────────────────────┤
 │ [t42] bash  <your test command>             │ Tasks ▕███████▏░░░░░░░ 3/7    43%│
 │   running 187 tests …                       │ ☑ Read config                   │
@@ -707,10 +707,10 @@ new sessions. Six panels:
 
 - **Session** — milestone / phase / session / model / state / duration / turn /
   stage, plus a dog-chases-its-brain liveness spinner while running.
-- **Budget** — token counts, tok/s (with avg/max/min), and a **Savings** block
+- **Budget** — token counts, tok/s (with avg/max/min), and a **Spend** block
   pricing the local run against a cloud baseline:
-  Baseline / Executor (always `$0.00`) / Architect / Net across
-  Session · Milestone · Project columns, plus an Assists counter. `--config`
+  Executor / Architect / Saved / Net across
+  Session · Milestone · Project columns. `--config`
   loads `[dashboard]` and `[architect]` rates for this breakdown.
 - **Context** — context-window usage (green/yellow/red), compaction events, and
   per-lever reclaim (filter / evict / dedupe).
@@ -898,7 +898,7 @@ temperature                    = 0.2      # any of these override the global val
 | `[commands]` | The `format` / `build` / `lint` / `test` (+ optional `lint_fix`) commands run as the final gate. |
 | `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `gate_retries`, and the optional `wall_clock_secs` ceiling (M26). |
 | `[telemetry]` | `dir` — the cross-project store. Omit to disable; `~` is expanded. |
-| `[dashboard]` | Cloud-baseline `$/Mtok` rates for the Budget panel's Savings block (or a `saved_model` to auto-fill them). |
+| `[dashboard]` | Cloud-baseline `$/Mtok` rates for the Budget panel's Spend block (or a `saved_model` to auto-fill them). |
 | `[architect]` | `$/Mtok` rates for the **real** cost of architect work (or a Claude `model` to auto-fill), plus the per-role `dispatch_model` / `review_model` keys the `/rexymcp:auto` loop delegates those steps to (M27). |
 | `[context]` | `output_filter` kill-switch for the M10 boundary filter. |
 | `[governor]` | Hard-fail thresholds (identical-call, verifier-persistence, runaway-output, no-progress read-only stall, and the oscillation/output-flood windows). |

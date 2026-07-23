@@ -31,7 +31,7 @@ pub enum BudgetDisplay {
     Tokens,
 }
 
-/// Cloud-baseline $/Mtok rates for the Budget panel's "Savings:" line.
+/// Cloud-baseline $/Mtok rates for the Budget panel's "Saved:" line.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BudgetRates {
     pub input_per_mtok: f64,
@@ -509,8 +509,8 @@ fn align_value(v: &str) -> String {
     }
 }
 
-/// Budget-panel savings block. A `Savings` header followed by indented,
-/// value-aligned rows: Baseline / Executor / Architect / Net across
+/// Budget-panel savings block. A `Spend` header followed by indented,
+/// value-aligned rows: Executor / Architect / Saved / Net across
 /// Session / Milestone / Project columns.
 /// Returns empty when there are no session metrics yet — never a lone header.
 pub(crate) fn savings_lines(
@@ -547,21 +547,21 @@ pub(crate) fn savings_lines(
         match display {
             BudgetDisplay::Tokens => Line::from(format!(
                 "{:<12}{:>10}{:>10}{:>10}",
-                "Savings (tok)", "Session", "Milestone", "Project"
+                "Spend (tok)", "Session", "Milestone", "Project"
             )),
             BudgetDisplay::Dollars => Line::from(format!(
                 "{:<12}{:>10}{:>10}{:>10}",
-                "Savings", "Session", "Milestone", "Project"
+                "Spend", "Session", "Milestone", "Project"
             )),
         }
     } else {
         match display {
             BudgetDisplay::Tokens => Line::from(format!(
                 "{:<12}{:>9}{:>9}",
-                "Savings (tok)", "Session", "Project"
+                "Spend (tok)", "Session", "Project"
             )),
             BudgetDisplay::Dollars => {
-                Line::from(format!("{:<12}{:>9}{:>9}", "Savings", "Session", "Project"))
+                Line::from(format!("{:<12}{:>9}{:>9}", "Spend", "Session", "Project"))
             }
         }
     };
@@ -580,27 +580,9 @@ pub(crate) fn savings_lines(
     let mut out = Vec::new();
 
     if display == BudgetDisplay::Tokens {
-        // Tokens mode: show token counts, no debit rows
+        // Tokens mode: Executor, Architect, Net (3 rows). Baseline removed —
+        // it was executor_in+executor_out, a strict subset of the Executor row.
         out.push(header);
-        out.push(make_row(
-            "Baseline:",
-            fmt_tokens(
-                session_costs
-                    .executor_in
-                    .saturating_add(session_costs.executor_out),
-            ),
-            fmt_tokens(
-                milestone_costs
-                    .as_ref()
-                    .map(|c| c.executor_in.saturating_add(c.executor_out))
-                    .unwrap_or(0),
-            ),
-            fmt_tokens(
-                project_costs
-                    .executor_in
-                    .saturating_add(project_costs.executor_out),
-            ),
-        ));
         out.push(make_row(
             "Executor:",
             fmt_tokens(
@@ -691,12 +673,6 @@ pub(crate) fn savings_lines(
         };
 
     out.push(header);
-    out.push(make_row(
-        "Baseline:",
-        space_pad(fmt_opt(sess.baseline)),
-        space_pad(fmt_opt(mile.baseline)),
-        space_pad(fmt_opt(proj.baseline)),
-    ));
 
     if let Some(row) = debit_row(
         "Executor:",
@@ -715,6 +691,13 @@ pub(crate) fn savings_lines(
     ) {
         out.push(row);
     }
+
+    out.push(make_row(
+        "Saved:",
+        space_pad(fmt_opt(sess.saved)),
+        space_pad(fmt_opt(mile.saved)),
+        space_pad(fmt_opt(proj.saved)),
+    ));
 
     out.push(make_row(
         "Net:",
@@ -1809,7 +1792,7 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let header = format!("{}", lines[0]);
-        assert!(header.contains("Savings"), "header must start with Savings");
+        assert!(header.contains("Spend"), "header must start with Spend");
         assert!(header.contains("Session"), "header must name Session");
         assert!(header.contains("Project"), "header must name Project");
         assert!(
@@ -1848,7 +1831,7 @@ mod tests {
 
     #[test]
     fn savings_lines_omits_zero_debit_rows() {
-        // header + Baseline + Net = 3 lines
+        // header + Saved + Net = 3 lines
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1863,7 +1846,7 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(texts[1].contains("Baseline:"), "row 1 is Baseline");
+        assert!(texts[1].contains("Saved:"), "row 1 is Saved");
         assert!(texts[2].contains("Net:"), "row 2 is Net");
         assert!(
             !texts.iter().any(|s| s.contains("Executor:")),
@@ -1897,7 +1880,7 @@ mod tests {
     }
 
     #[test]
-    fn savings_lines_baseline_dash_when_rates_unset() {
+    fn savings_lines_saved_dash_when_rates_unset() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1912,17 +1895,17 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let baseline_line = texts
+        let saved_line = texts
             .iter()
-            .find(|s| s.contains("Baseline:"))
-            .expect("Baseline row present");
+            .find(|s| s.contains("Saved:"))
+            .expect("Saved row present");
         let net_line = texts
             .iter()
             .find(|s| s.contains("Net:"))
             .expect("Net row present");
         assert!(
-            baseline_line.contains('—'),
-            "Baseline should show '—' when rates are unset"
+            saved_line.contains('—'),
+            "Saved should show '—' when rates are unset"
         );
         assert!(
             net_line.contains('—'),
@@ -1977,8 +1960,8 @@ mod tests {
     }
 
     #[test]
-    fn savings_lines_net_subtracts_architect_from_baseline() {
-        // Baseline $5.00, Architect $1.00, Net $4.00
+    fn savings_lines_net_subtracts_architect_from_saved() {
+        // Saved $5.00, Architect $1.00, Net $4.00
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(0),
@@ -2011,19 +1994,19 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let baseline_line = texts
+        let saved_line = texts
             .iter()
-            .find(|s| s.contains("Baseline:"))
-            .expect("Baseline row missing");
+            .find(|s| s.contains("Saved:"))
+            .expect("Saved row missing");
         let net_line = texts
             .iter()
             .find(|s| s.contains("Net:"))
             .expect("Net row missing");
-        // Baseline project: 1M × $5 = $5.00; Architect project: 1M × $1 = $1.00; Net = $4.00
+        // Saved project: 1M × $5 = $5.00; Architect project: 1M × $1 = $1.00; Net = $4.00
         assert!(
-            baseline_line.contains("$5.00"),
-            "Baseline project $5.00: {}",
-            baseline_line
+            saved_line.contains("$5.00"),
+            "Saved project $5.00: {}",
+            saved_line
         );
         assert!(
             net_line.contains("$4.00"),
@@ -2080,7 +2063,7 @@ mod tests {
 
     #[test]
     fn savings_lines_data_rows_equal_width_for_alignment() {
-        // All money rows (Baseline/Executor/Architect/Net) must be equal width
+        // All money rows (Executor/Architect/Saved/Net) must be equal width
         // so values land in the same columns.
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
@@ -2117,7 +2100,7 @@ mod tests {
         let money_texts: Vec<String> = texts
             .iter()
             .filter(|s| {
-                s.contains("Baseline:")
+                s.contains("Saved:")
                     || s.contains("Executor:")
                     || s.contains("Architect:")
                     || s.contains("Net:")
@@ -2138,7 +2121,7 @@ mod tests {
     #[test]
     fn savings_lines_debit_digits_align_with_non_debit() {
         // In dollars mode, the decimal point of a debit row (Executor) and
-        // a non-debit row (Baseline) must be at the same column index.
+        // a non-debit row (Saved) must be at the same column index.
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -2171,18 +2154,18 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let baseline_line = texts
+        let saved_line = texts
             .iter()
-            .find(|s| s.contains("Baseline:"))
-            .expect("Baseline row missing");
+            .find(|s| s.contains("Saved:"))
+            .expect("Saved row missing");
         let executor_line = texts
             .iter()
             .find(|s| s.contains("Executor:"))
             .expect("Executor row missing");
         assert_eq!(
-            baseline_line.find('.'),
+            saved_line.find('.'),
             executor_line.find('.'),
-            "debit and non-debit decimal points must align:\n{baseline_line}\n{executor_line}"
+            "debit and non-debit decimal points must align:\n{saved_line}\n{executor_line}"
         );
         assert!(
             executor_line.contains('(') && executor_line.contains(')'),
@@ -2417,23 +2400,140 @@ mod tests {
             BudgetDisplay::Dollars,
         );
         let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        let baseline = texts
+        let saved = texts
             .iter()
-            .find(|s| s.contains("Baseline:"))
-            .expect("Baseline row");
+            .find(|s| s.contains("Saved:"))
+            .expect("Saved row");
         let architect = texts
             .iter()
             .find(|s| s.contains("Architect:"))
             .expect("Architect row");
         assert_eq!(
-            baseline.find('.'),
+            saved.find('.'),
             architect.find('—'),
-            "the — must sit at the decimal column:\n{baseline}\n{architect}"
+            "the — must sit at the decimal column:\n{saved}\n{architect}"
         );
         // Tight parens — no spaces between the parens and the —
         assert!(
             architect.contains("(—)"),
             "debit no-value must render tight parens (—): {architect}"
         );
+    }
+
+    #[test]
+    fn savings_lines_row_order_is_executor_architect_saved_net() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+            executor: ModelRates {
+                input_per_mtok: 5.0,
+                output_per_mtok: 15.0,
+                cache_read_per_mtok: 2.0,
+                cache_creation_per_mtok: 8.0,
+            },
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 500_000,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
+            architect: ArchitectTokens {
+                input: 100_000,
+                cache_creation: 0,
+                cache_read: 0,
+                output: 0,
+            },
+            architect_cost: Some(1.0),
+        };
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        // Skip the header; collect row labels in order.
+        let row_labels: Vec<&str> = texts[1..]
+            .iter()
+            .filter_map(|s| {
+                let label = s.split(':').next()?;
+                if label.trim().is_empty() {
+                    None
+                } else {
+                    Some(label.trim())
+                }
+            })
+            .collect();
+        assert_eq!(
+            row_labels,
+            vec!["Executor", "Architect", "Saved", "Net"],
+            "row order mismatch: {row_labels:?}"
+        );
+    }
+
+    #[test]
+    fn savings_lines_header_says_spend() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates::default();
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            ScopeCosts::default(),
+            0,
+            BudgetDisplay::Dollars,
+        );
+        let header = format!("{}", lines[0]);
+        assert!(
+            header.starts_with("Spend"),
+            "header should start with 'Spend': {header}"
+        );
+        assert!(
+            !header.contains("Savings"),
+            "header should not contain 'Savings': {header}"
+        );
+    }
+
+    #[test]
+    fn savings_lines_tokens_mode_has_three_rows() {
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let lines = savings_lines(
+            &summary,
+            BudgetRates::default(),
+            None,
+            ScopeCosts::default(),
+            0,
+            BudgetDisplay::Tokens,
+        );
+        // Header + 3 data rows = 4 lines total
+        assert_eq!(
+            lines.len(),
+            4,
+            "tokens mode should have header + 3 rows, got {} lines",
+            lines.len()
+        );
+        // No row labelled "Saved:"
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        for line in &texts {
+            assert!(
+                !line.contains("Saved:"),
+                "tokens mode must not have a 'Saved:' row: {line}"
+            );
+        }
     }
 }

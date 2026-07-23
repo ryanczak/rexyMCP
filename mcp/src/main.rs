@@ -274,7 +274,7 @@ enum Commands {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Report token cost (Baseline/Executor/Architect/Net) across
+    /// Report token cost (Executor/Architect/Saved/Net) across
     /// Session / Milestone / Project.
     ///
     /// See also: runs, scorecard, profile, calibrate-governor.

@@ -1,6 +1,6 @@
 //! Cost-report core — `rexymcp costs` CLI.
 //!
-//! Computes Baseline / Executor / Architect / Net across Session / Milestone /
+//! Computes Saved / Executor / Architect / Net across Session / Milestone /
 //! Project scopes. Executor cost is derived from `cfg.model_rates` (phase-03
 //! pricing), not hardcoded `$0.00`.
 
@@ -12,18 +12,18 @@ use rexymcp_executor::store::telemetry::{self, ArchitectTokens, PhaseRun};
 use crate::dashboard::{BudgetRates, ScopeCosts};
 use crate::status;
 
-/// One scope's four cost lines, in dollars. `baseline`/`net` are `None` when no
-/// baseline rate is configured (rendered `—`); `executor`/`architect` are always
+/// One scope's four cost lines, in dollars. `saved`/`net` are `None` when no
+/// saved rate is configured (rendered `—`); `executor`/`architect` are always
 /// present (`0.0` when unpriced).
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize)]
 pub struct ScopeReport {
-    pub baseline: Option<f64>,
+    pub saved: Option<f64>,
     pub executor: f64,
     pub architect: Option<f64>,
     pub net: Option<f64>,
 }
 
-/// Baseline/Executor/Architect/Net across the three scopes.
+/// Saved/Executor/Architect/Net across the three scopes.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CostReport {
     pub session: ScopeReport,
@@ -35,16 +35,16 @@ pub struct CostReport {
 }
 
 /// Compute one scope's dollar lines. `exec_rates` are the executor model's
-/// `$/Mtok` (from `cfg.model_rates`); `baseline` carries the cloud-baseline +
+/// `$/Mtok` (from `cfg.model_rates`); `saved_rates` carries the cloud-baseline +
 /// architect rates. u64-safe (does NOT route token totals through the u32
 /// `TokenBreakdown`).
 pub fn scope_report(
     costs: &ScopeCosts,
     exec_rates: &telemetry::ModelRates,
-    baseline: &BudgetRates,
+    saved_rates: &BudgetRates,
 ) -> ScopeReport {
     let per_m = |t: u64, r: f64| (t as f64 / 1_000_000.0) * r;
-    let no_baseline = baseline.input_per_mtok == 0.0 && baseline.output_per_mtok == 0.0;
+    let no_saved_rates = saved_rates.input_per_mtok == 0.0 && saved_rates.output_per_mtok == 0.0;
 
     let executor = per_m(costs.executor_in, exec_rates.input_per_mtok)
         + per_m(costs.executor_out, exec_rates.output_per_mtok)
@@ -54,21 +54,21 @@ pub fn scope_report(
             exec_rates.cache_creation_per_mtok,
         );
     let architect = costs.architect_cost;
-    let baseline_cost = if no_baseline {
+    let saved_cost = if no_saved_rates {
         None
     } else {
         Some(
-            per_m(costs.executor_in, baseline.input_per_mtok)
-                + per_m(costs.executor_out, baseline.output_per_mtok),
+            per_m(costs.executor_in, saved_rates.input_per_mtok)
+                + per_m(costs.executor_out, saved_rates.output_per_mtok),
         )
     };
-    let net = match (baseline_cost, architect) {
-        (Some(b), Some(a)) => Some(b - executor - a),
+    let net = match (saved_cost, architect) {
+        (Some(s), Some(a)) => Some(s - executor - a),
         _ => None,
     };
 
     ScopeReport {
-        baseline: baseline_cost,
+        saved: saved_cost,
         executor,
         architect,
         net,
@@ -204,7 +204,7 @@ pub fn load_cost_report(
         );
     };
 
-    let baseline = BudgetRates {
+    let saved_rates = BudgetRates {
         input_per_mtok: cfg.dashboard.effective_rates().0,
         output_per_mtok: cfg.dashboard.effective_rates().1,
         executor: telemetry::ModelRates::default(),
@@ -224,7 +224,7 @@ pub fn load_cost_report(
         Err(_) => ScopeCosts::default(),
     };
 
-    let session_report = scope_report(&session_costs, &exec_rates, &baseline);
+    let session_report = scope_report(&session_costs, &exec_rates, &saved_rates);
 
     // Project and milestone scopes require project_id.
     let project_id = cfg.project.id.as_deref();
@@ -241,7 +241,7 @@ pub fn load_cost_report(
 
     if let Some(pid) = project_id {
         let project_costs = scope_costs(&runs, &ledgers, &cfg.architect, pid, None);
-        let project_report = scope_report(&project_costs, &exec_rates, &baseline);
+        let project_report = scope_report(&project_costs, &exec_rates, &saved_rates);
 
         // Find the latest milestone_id from project runs.
         let latest_milestone_id = runs
@@ -253,7 +253,7 @@ pub fn load_cost_report(
 
         let milestone_report = latest_milestone_id.map(|mid| {
             let costs = scope_costs(&runs, &ledgers, &cfg.architect, pid, Some(mid));
-            scope_report(&costs, &exec_rates, &baseline)
+            scope_report(&costs, &exec_rates, &saved_rates)
         });
 
         // Assists: count folded activities with project_id and activity == "assist".
@@ -273,7 +273,7 @@ pub fn load_cost_report(
     } else {
         // No project_id: session still computes; project/milestone are zero.
         let zero = ScopeCosts::default();
-        let zero_report = scope_report(&zero, &exec_rates, &baseline);
+        let zero_report = scope_report(&zero, &exec_rates, &saved_rates);
         Ok(CostReport {
             session: session_report,
             milestone: None,
@@ -294,17 +294,17 @@ pub fn format_costs(report: &CostReport) -> String {
 
     let header = format!(
         "{:<12}{:>10}{:>10}{:>10}{:>10}",
-        "SCOPE", "BASELINE", "EXECUTOR", "ARCHITECT", "NET"
+        "SCOPE", "EXECUTOR", "ARCHITECT", "NET", "SAVED"
     );
 
     let row = |label: &str, r: &ScopeReport| {
         format!(
             "{:<12}{:>10}{:>10}{:>10}{:>10}",
             label,
-            fmt_opt(r.baseline),
             fmt_dollars(r.executor),
             fmt_opt(r.architect),
             fmt_opt(r.net),
+            fmt_opt(r.saved),
         )
     };
 
@@ -315,6 +315,19 @@ pub fn format_costs(report: &CostReport) -> String {
     }
     lines.push(row("Project", &report.project));
     lines.push(format!("Assists: {}", report.assists));
+
+    // Legend — only when at least one scope has a saved rate.
+    let has_saved = report.session.saved.is_some()
+        || report.milestone.as_ref().is_some_and(|m| m.saved.is_some())
+        || report.project.saved.is_some();
+    if has_saved {
+        lines.push(String::new());
+        lines.push(
+            "SAVED = executor tokens priced at Claude rates — work not billed to Claude."
+                .to_string(),
+        );
+        lines.push("NET   = SAVED − EXECUTOR − ARCHITECT.".to_string());
+    }
 
     // Per-skill architect cost table (project-scoped).
     if !report.by_skill.is_empty() {
@@ -379,7 +392,7 @@ mod tests {
         }
     }
 
-    fn priced_baseline() -> BudgetRates {
+    fn priced_saved_rates() -> BudgetRates {
         BudgetRates {
             input_per_mtok: 15.0,
             output_per_mtok: 75.0,
@@ -388,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_report_priced_executor_and_baseline() {
+    fn scope_report_priced_executor_and_saved() {
         let costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 1_000_000,
@@ -403,15 +416,15 @@ mod tests {
             architect_cost: Some(31.2),
         };
         let exec = priced_exec_rates();
-        let baseline = priced_baseline();
-        let r = scope_report(&costs, &exec, &baseline);
+        let saved_rates = priced_saved_rates();
+        let r = scope_report(&costs, &exec, &saved_rates);
 
         // executor = 1M * 5.0 + 1M * 15.0 = $20.00
         assert_eq!(r.executor, 20.0);
         // architect passes through the pre-computed per-model cost.
         assert_eq!(r.architect, Some(31.2));
-        // baseline = 1M*15 + 1M*75 = $90.00
-        assert_eq!(r.baseline, Some(90.0));
+        // saved = 1M*15 + 1M*75 = $90.00
+        assert_eq!(r.saved, Some(90.0));
         // net = 90 - 20 - 31.2
         assert_eq!(r.net, Some(90.0 - 20.0 - 31.2));
     }
@@ -424,23 +437,23 @@ mod tests {
             ..Default::default()
         };
         let zero_exec = telemetry::ModelRates::default();
-        let baseline = BudgetRates {
+        let saved_rates = BudgetRates {
             input_per_mtok: 15.0,
             output_per_mtok: 75.0,
             executor: telemetry::ModelRates::default(),
         };
-        let r = scope_report(&costs, &zero_exec, &baseline);
+        let r = scope_report(&costs, &zero_exec, &saved_rates);
 
         // Unpriced executor computes to 0.0 (not a literal "$0.00" stub).
         assert_eq!(r.executor, 0.0);
-        // Baseline and net still compute normally.
-        assert_eq!(r.baseline, Some(90.0));
+        // Saved and net still compute normally.
+        assert_eq!(r.saved, Some(90.0));
         // architect is None (no ledger) => net is not attributable.
         assert_eq!(r.net, None);
     }
 
     #[test]
-    fn scope_report_no_baseline_is_none() {
+    fn scope_report_no_saved_rate_is_none() {
         let costs = ScopeCosts {
             executor_in: 1_000_000,
             executor_out: 1_000_000,
@@ -450,7 +463,7 @@ mod tests {
         let zero = zero_rates();
         let r = scope_report(&costs, &exec, &zero);
 
-        assert_eq!(r.baseline, None);
+        assert_eq!(r.saved, None);
         assert_eq!(r.net, None);
         // Executor and architect still compute.
         assert_eq!(r.executor, 20.0);
@@ -461,14 +474,14 @@ mod tests {
     fn format_costs_omits_milestone_when_none() {
         let report = CostReport {
             session: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 5.0,
                 architect: Some(0.0),
                 net: None,
             },
             milestone: None,
             project: ScopeReport {
-                baseline: Some(100.0),
+                saved: Some(100.0),
                 executor: 50.0,
                 architect: Some(20.0),
                 net: Some(30.0),
@@ -495,19 +508,19 @@ mod tests {
     fn format_costs_shows_milestone_when_some() {
         let report = CostReport {
             session: ScopeReport {
-                baseline: Some(10.0),
+                saved: Some(10.0),
                 executor: 5.0,
                 architect: Some(0.0),
                 net: Some(5.0),
             },
             milestone: Some(ScopeReport {
-                baseline: Some(50.0),
+                saved: Some(50.0),
                 executor: 25.0,
                 architect: Some(10.0),
                 net: Some(15.0),
             }),
             project: ScopeReport {
-                baseline: Some(100.0),
+                saved: Some(100.0),
                 executor: 50.0,
                 architect: Some(20.0),
                 net: Some(30.0),
@@ -638,17 +651,17 @@ saved_output_per_mtok = 0.0
             architect_cost: None,
         };
         let exec_rates = priced_exec_rates();
-        let baseline = BudgetRates {
+        let saved_rates = BudgetRates {
             input_per_mtok: 0.0,
             output_per_mtok: 0.0,
             executor: telemetry::ModelRates::default(),
         };
-        let r = scope_report(&costs, &exec_rates, &baseline);
+        let r = scope_report(&costs, &exec_rates, &saved_rates);
 
         // executor = 1M*5 + 0.5M*15 + 0.2M*2 + 0.1M*8 = 5 + 7.5 + 0.4 + 0.8 = $13.70
         assert!((r.executor - 13.7).abs() < 1e-6);
-        // Baseline is None (no baseline rate configured).
-        assert_eq!(r.baseline, None);
+        // Saved is None (no saved rate configured).
+        assert_eq!(r.saved, None);
         assert_eq!(r.net, None);
     }
 
@@ -815,14 +828,14 @@ saved_output_per_mtok = 0.0
     fn format_costs_appends_by_skill_percent() {
         let report = CostReport {
             session: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 0.0,
                 architect: None,
                 net: None,
             },
             milestone: None,
             project: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 0.0,
                 architect: None,
                 net: None,
@@ -855,14 +868,14 @@ saved_output_per_mtok = 0.0
     fn format_costs_omits_by_skill_when_empty() {
         let report = CostReport {
             session: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 0.0,
                 architect: None,
                 net: None,
             },
             milestone: None,
             project: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 0.0,
                 architect: None,
                 net: None,
@@ -880,14 +893,14 @@ saved_output_per_mtok = 0.0
     fn format_costs_by_skill_percent_zero_when_total_zero() {
         let report = CostReport {
             session: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 0.0,
                 architect: None,
                 net: None,
             },
             milestone: None,
             project: ScopeReport {
-                baseline: None,
+                saved: None,
                 executor: 0.0,
                 architect: None,
                 net: None,
@@ -904,6 +917,80 @@ saved_output_per_mtok = 0.0
         assert!(
             output.contains("0.0%"),
             "zero total should show 0.0%: {output}"
+        );
+    }
+
+    #[test]
+    fn format_costs_header_has_no_baseline_column() {
+        let report = CostReport {
+            session: ScopeReport::default(),
+            milestone: None,
+            project: ScopeReport::default(),
+            assists: 0,
+            by_skill: Vec::new(),
+        };
+        let output = format_costs(&report);
+        let header = output.lines().next().expect("header line present");
+        let expected = format!(
+            "{:<12}{:>10}{:>10}{:>10}{:>10}",
+            "SCOPE", "EXECUTOR", "ARCHITECT", "NET", "SAVED"
+        );
+        assert_eq!(header, expected, "header mismatch: {header}");
+    }
+
+    #[test]
+    fn format_costs_legend_present_when_saved_priced() {
+        let report = CostReport {
+            session: ScopeReport {
+                saved: Some(10.0),
+                executor: 5.0,
+                architect: Some(0.0),
+                net: Some(5.0),
+            },
+            milestone: None,
+            project: ScopeReport {
+                saved: Some(50.0),
+                executor: 25.0,
+                architect: Some(10.0),
+                net: Some(15.0),
+            },
+            assists: 0,
+            by_skill: Vec::new(),
+        };
+        let output = format_costs(&report);
+        assert!(
+            output.contains("SAVED = executor tokens priced at Claude rates"),
+            "legend line 1 missing: {output}"
+        );
+        assert!(
+            output.contains("NET   = SAVED"),
+            "legend line 2 missing: {output}"
+        );
+    }
+
+    #[test]
+    fn format_costs_legend_absent_when_unpriced() {
+        let report = CostReport {
+            session: ScopeReport {
+                saved: None,
+                executor: 5.0,
+                architect: None,
+                net: None,
+            },
+            milestone: None,
+            project: ScopeReport {
+                saved: None,
+                executor: 25.0,
+                architect: None,
+                net: None,
+            },
+            assists: 0,
+            by_skill: Vec::new(),
+        };
+        let output = format_costs(&report);
+        assert!(
+            !output.contains("SAVED ="),
+            "legend should be absent when no saved rate: {output}"
         );
     }
 }
