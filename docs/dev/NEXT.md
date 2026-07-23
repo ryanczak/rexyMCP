@@ -4,11 +4,26 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none dispatchable — next to draft is
-[M35 phase-07f — trailing blank row on the header panels (#3, the LAST cleanup item)](milestones/M35-metrics-cost-accounting/README.md)
-(run `/rexymcp:architect next` to draft it). M35 remains DELIBERATELY HELD OPEN; after 07f
-is approved, all M35 phases are done → the milestone-close retrospective (a separate
-human-gated `/rexymcp:architect` step) is pending.**
+**Active phase:
+[M35 phase-07f — dynamic header-band height (#3, the LAST cleanup item)](milestones/M35-metrics-cost-accounting/phase-07f-dynamic-header-band.md)
+(status: todo — drafted 2026-07-22, awaiting `/rexymcp:dispatch phase-07f`). M35 remains
+DELIBERATELY HELD OPEN; after 07f is approved, all M35 phases are done → the milestone-close
+retrospective (a separate human-gated `/rexymcp:architect` step) is pending.**
+
+phase-07f drafted 2026-07-22 (user-scoped): the reopened 06d-2 trailing-blank row. The
+three header panels (Session/Budget/Context) share one **fixed-height** band
+(`Length(11)` = 9 content, sized to an old Budget height that 07d's Assists-removal + 07e's
+token-combine have since shrunk ~2 rows → over-provisioned). **User chose the dynamic-band
+fix** (not a stacked-panel redesign): reorder `render_dashboard` to build the three panels
+first, then size the band to `header_band_height(session, budget, context) = max + 2`.
+Safe because the column widths depend only on the header's *width* (probe-split `area`
+before the band height is known). Pure `header_band_height` helper + mutation-sensitive
+test. **Honest limit noted:** shared horizontal band → a genuinely-shorter panel still
+shows a blank equal to its shortfall (zeroing all three needs a vertical stack, declined).
+Anti-oscillation gotcha carried (render.rs is the 3×-oscillation zone).
+
+**07d done → 07e done → 07f (this, LAST). After 07f approval → all M35 phases done →
+milestone close is pending (human-gated).**
 
 **phase-07e — done (2026-07-22, approved_after_1; executor AEON-7/Qwen3.6-27B-AEON).**
 **#5** aligned the parenthesized debit values (`space_pad` gutter on Baseline/Net so
