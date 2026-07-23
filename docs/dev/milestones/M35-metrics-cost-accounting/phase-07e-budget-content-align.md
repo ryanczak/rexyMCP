@@ -1,7 +1,7 @@
 # Phase 07e: Budget panel content — align parenthesized debit values + combine the token in/out lines
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-07d
 **Estimated diff:** ~90 lines
 **Tags:** language=rust, kind=fix, size=m
@@ -214,3 +214,20 @@ and the single token line, but the tests are the artifact.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+### Update — 2026-07-22 (escalation)
+
+**Chosen lever:** resume (`continue_phase`)
+**Rationale:** The production fix is **correct** — the `space_pad` change and the combined
+token line are on the working tree and 13/14 `savings_lines` tests pass. The `hard_fail`
+was the governor's oscillation terminator firing on a read/test loop: the executor's *new*
+test `savings_lines_debit_digits_align_with_non_debit` panics "Executor row missing"
+because it set an **unpriced** executor (`rates.executor: ModelRates::default()`,
+`executor_out: 0`) → Executor cost `$0.00` → the debit row is **hidden** by the empty-row
+check, so the test never reaches its alignment assertion; the executor looped trying to
+diagnose it. Work worth preserving + one test-setup wall = resume with a targeted hint
+(use the priced-executor setup from `savings_lines_priced_executor_shows_non_zero`).
+
+### Update — 2026-07-22 22:56 (started)
+
+**Executor:** phase-07e executor
+**Action:** Started phase 07e — combine token in/out lines and align debit values in Budget panel.

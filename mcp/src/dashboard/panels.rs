@@ -456,10 +456,7 @@ pub(crate) fn budget_lines(summary: &StatusSummary) -> Vec<Line<'static>> {
 
     let in_toks = summary.last_input_tokens.unwrap_or(0);
     let out_toks = summary.last_output_tokens.unwrap_or(0);
-    let mut lines = vec![
-        Line::from(format!("Tokens in:  {in_toks}")),
-        Line::from(format!("Tokens out: {out_toks}")),
-    ];
+    let mut lines = vec![Line::from(format!("Tokens in: {in_toks} out: {out_toks}"))];
 
     match tokens_per_sec(
         summary.prev_metrics_ts,
@@ -660,6 +657,7 @@ pub(crate) fn savings_lines(
     }
 
     let paren = |v: String| format!("({v})");
+    let space_pad = |v: String| format!(" {v} ");
     let debit_row =
         |label: &str, sess: String, mile: String, proj: String| -> Option<Line<'static>> {
             // Hide a debit row that is empty in every scope: all $0.00 (unpriced)
@@ -674,9 +672,9 @@ pub(crate) fn savings_lines(
     out.push(header);
     out.push(make_row(
         "Baseline:",
-        fmt_opt(sess.baseline),
-        fmt_opt(mile.baseline),
-        fmt_opt(proj.baseline),
+        space_pad(fmt_opt(sess.baseline)),
+        space_pad(fmt_opt(mile.baseline)),
+        space_pad(fmt_opt(proj.baseline)),
     ));
 
     if let Some(row) = debit_row(
@@ -699,9 +697,9 @@ pub(crate) fn savings_lines(
 
     out.push(make_row(
         "Net:",
-        fmt_opt(sess.net),
-        fmt_opt(mile.net),
-        fmt_opt(proj.net),
+        space_pad(fmt_opt(sess.net)),
+        space_pad(fmt_opt(mile.net)),
+        space_pad(fmt_opt(proj.net)),
     ));
     out
 }
@@ -1475,8 +1473,10 @@ mod tests {
         };
         let lines = budget_lines(&summary);
         let text: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
-        assert!(text.iter().any(|s| s.contains("1200")));
-        assert!(text.iter().any(|s| s.contains("340")));
+        assert!(
+            text.iter().any(|s| s.contains("Tokens in: 1200 out: 340")),
+            "tokens in/out must be on a single combined line"
+        );
         assert!(
             !text
                 .iter()
@@ -2111,6 +2111,63 @@ mod tests {
     }
 
     // --- effective_rates tests (model_rates moved to executor crate) ---
+
+    // --- effective_rates tests (model_rates moved to executor crate) ---
+
+    #[test]
+    fn savings_lines_debit_digits_align_with_non_debit() {
+        // In dollars mode, the decimal point of a debit row (Executor) and
+        // a non-debit row (Baseline) must be at the same column index.
+        let summary = StatusSummary {
+            last_input_tokens: Some(1_000_000),
+            last_output_tokens: Some(500_000),
+            ..StatusSummary::default()
+        };
+        let rates = BudgetRates {
+            input_per_mtok: 3.0,
+            output_per_mtok: 15.0,
+            executor: ModelRates {
+                input_per_mtok: 5.0,
+                output_per_mtok: 15.0,
+                cache_read_per_mtok: 2.0,
+                cache_creation_per_mtok: 8.0,
+            },
+        };
+        let project_costs = ScopeCosts {
+            executor_in: 1_000_000,
+            executor_out: 500_000,
+            executor_cache_read: 0,
+            executor_cache_write: 0,
+            architect: Default::default(),
+            architect_cost: None,
+        };
+        let lines = savings_lines(
+            &summary,
+            rates,
+            None,
+            project_costs,
+            0,
+            BudgetDisplay::Dollars,
+        );
+        let texts: Vec<String> = lines.iter().map(|l| format!("{l}")).collect();
+        let baseline_line = texts
+            .iter()
+            .find(|s| s.contains("Baseline:"))
+            .expect("Baseline row missing");
+        let executor_line = texts
+            .iter()
+            .find(|s| s.contains("Executor:"))
+            .expect("Executor row missing");
+        assert_eq!(
+            baseline_line.find('.'),
+            executor_line.find('.'),
+            "debit and non-debit decimal points must align:\n{baseline_line}\n{executor_line}"
+        );
+        assert!(
+            executor_line.contains('(') && executor_line.contains(')'),
+            "Executor row must be parenthesized: {executor_line}"
+        );
+    }
 
     #[test]
     fn dashboard_effective_rates_opus_48_returns_correct_pricing() {
