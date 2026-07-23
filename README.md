@@ -19,6 +19,26 @@ Your *Architect* runs in either **Claude Code** or **Google Antigravity**,
 rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
 whichever you drive.
 
+## News
+
+What's landed lately (newest first):
+
+- **Real cost accounting.** The dashboard's Savings block now prices the *whole*
+  run — Baseline / Executor / **Architect** / Net across Session · Milestone ·
+  Project — with per-model `$/Mtok` rates, and architect cost is *harvested* from
+  the actual session transcripts, not estimated. Want the same numbers in the
+  shell or a script? There's a new **`rexymcp costs`** command for exactly that.
+- **Runs you can interrupt.** Dispatching a phase no longer blocks — `execute_phase`
+  hands back a `run_id` you poll, so a runaway can be stopped mid-flight with
+  `rexymcp stop` (from any terminal) or `stop_phase` (from the Architect). The
+  stopped phase comes back with its partial diff intact for triage.
+- **A tougher governor.** Stall and loop detection got hardened and unified across
+  the mutating tools, so it catches wedged runs more reliably without false-tripping
+  on normal work — and a new **`rexymcp calibrate-governor`** replays your recorded
+  session logs to help you tune the thresholds to *your* models.
+- **Under-the-hood upkeep.** The MCP server moved to the rmcp v2 stack, plus the
+  usual round of cleanup and reliability fixes.
+
 ## An architecture-defined, milestone-based workflow — run autonomously
 
 rexyMCP is not a free-running "build me an app" agent. It runs a strict,
