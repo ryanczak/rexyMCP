@@ -1,7 +1,7 @@
 # Phase 07g: Align the Budget savings "—" (no value) with the decimal column
 
 **Milestone:** M35 — Metrics & Cost Accounting Overhaul
-**Status:** review
+**Status:** done
 **Depends on:** phase-07f
 **Estimated diff:** ~80 lines
 **Tags:** language=rust, kind=fix, size=s
@@ -282,3 +282,23 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+### Review verdict — 2026-07-22
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** AEON-7/Qwen3.6-27B-AEON (35 turns, clean — no hard_fail, **no oscillation**)
+- **Scope deviations:** none — `panels.rs` only (+71/−2), exactly Tasks 1–2: the pure
+  `align_value` helper + routing `space_pad`/`paren` through it. No call-site changes; the
+  `debit_row` empty-check, `make_row`, `fmt_opt`, the header, and tokens mode are untouched.
+- **Verification:** reviewer re-ran all four gates green (fmt/build/clippy; `614` mcp-bin +
+  `1032` executor-lib). Both new tests are **real and mutation-sensitive** — neutering
+  `align_value` (drop the pad) makes `align_value_pads_dash_to_decimal_column` fail AND the
+  render-level `savings_lines_dash_aligns_with_decimal` fail with "the — must sit at the
+  decimal column" (confirmed by a temporary mutation, then restored), proving the render test
+  genuinely finds the Architect `(—)` row and discriminates the alignment. The render test
+  reuses the known-good `savings_lines_architect_cost_shown_from_project_costs` fixture, so no
+  fixture fragility (the 07e lesson applied).
+- **Calibration:** none new. A clean, contained fix on `panels.rs` — the 07e/07g pre-injection
+  discipline (pin the exact known-good fixture when a test depends on a rendered row) and the
+  anti-oscillation gotcha continue to work; the executor did not oscillate on the dashboard
+  file this time.
