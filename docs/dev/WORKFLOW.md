@@ -605,6 +605,38 @@ suite asserting `contains("| review |")`, a substring of every malformed shape
 too; M32's exact-equality rewrite made a revert of the fix fail 4 of 6 tests.
 Same family: M30 bug-01-1's loose `Cancelled || HardFail` disjunction.)
 
+### Pin the fixture that makes the row appear
+
+When a test's assertion depends on **rendered output being present**, pin the
+exact fixture that produces it. Renderers routinely hide rows that are empty in
+every scope; under a fixture that leaves the row empty, the row never renders,
+the test fails with "row missing" — and the executor reads that as a *production*
+bug it must diagnose. It then re-reads the renderer in a loop looking for a
+defect that isn't there, until a governor terminator ends the run.
+
+The spec's job is to remove the ambiguity up front: name the fixture values that
+make the row appear, and say why (e.g. "use a **priced** rates fixture — the
+`$0.00` debit row is hidden by the all-empty rule, so an unpriced fixture makes
+the assertion unsatisfiable").
+
+*(M35 07e: the executor's own new test used an unpriced fixture, so the Executor
+debit row was hidden; the run hard-failed on a read/test oscillation while
+diagnosing it. A resume carrying the one-line priced-fixture hint landed clean in
+19 turns — the production code had been correct the whole time.)*
+
+### Pre-inject compiler-error-driven recovery on oscillation-prone files
+
+When a phase touches a file with a **history of oscillation hard-fails**, state
+the recovery discipline explicitly in the spec: *use the compiler error to locate
+a syntax problem; never hunt for it by re-reading the file in a loop.* Pair it
+with an exact code block for any structural edit, rather than a prose description
+the executor must reconstruct by reading.
+
+*(M35: proven on 07f — a `render.rs` restructure landed with no oscillation on a
+file that had oscillated 3× earlier in the same milestone. The runtime-level fix
+for the underlying terminator behavior is M37's read-only exemption; this
+discipline is what the architect controls in the meantime.)*
+
 ### Derive intentionally
 
 Before pinning serde derives on a struct, ask whether it actually gets serialized

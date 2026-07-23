@@ -5,7 +5,7 @@ token/cost — one coherent, discoverable CLI surface: every recorded number is
 either displayed somewhere or deleted, quality and cost appear side by side,
 and the executor finally carries a real (configurable) price.
 
-**Status:** in-progress
+**Status:** done *(closed 2026-07-23)*
 
 **Depends on:** M34 (calibrate-governor is one of the surfaces being aligned)
 
@@ -287,3 +287,134 @@ terminals; a per-panel restructure is the largest change of the four and is TUI-
 (the 06c-i/iii-a sed-repetition hard_fails all were). A one-row cosmetic gap does not
 justify any of these. **No code change; no dispatchable phase.** 06d-2 is removed from the
 pipeline — remaining M35 is **06e → 07**.
+---
+
+## M35 retrospective (close: 2026-07-23)
+
+**Shipped.** 24 phase rows, all `done`/`closed`. Every exit criterion met, with
+one superseded after the fact (below). The milestone did what it set out to do:
+the recording side was already healthy, and M35 rebuilt the derivation and
+presentation layers on one shared core — `runs`/`runs show`, unified
+`scorecard --by`, `profile --cost`, the new `rexymcp costs`, the dashboard
+Budget rewire with the `b`-key toggle, and a transcript-native architect ledger
+that replaced the lossy journal-window harvester mid-milestone.
+
+**Scope grew twice, both deliberately and both correctly.** The 06c arc
+(architect ledger) was added mid-milestone after a post-06b-ii audit found the
+architect side structurally inaccurate — messages dropped outside journal
+windows, four models priced at one rate, per-skill detail destroyed at ingest.
+Sequencing accounting-correctness *before* phase-07's reporting polish meant 07
+landed on numbers that were actually right. The 07d–07h cleanup batch was
+user-driven dashboard polish, deliberately split into five small phases because
+the TUI is the executor's fragile zone.
+
+**Superseded exit criterion.** "`rexymcp costs` reports Baseline / Executor /
+Architect / Net" — the Baseline framing did not survive first real use. It is a
+counterfactual (executor tokens repriced at cloud rates) presented as the
+leading cost line, which reads as a spend. **M36 reframes it**: Architect is the
+only debit, Executor token usage is a saving, `saved` replaces `baseline`, `Net`
+survives. The arithmetic is unchanged — this was a presentation defect, not an
+accounting one.
+
+**Two accounting gaps found at close, both carried to M36.** Neither is an M35
+regression; both predate it and were exposed by using the surface M35 built:
+
+- **Subagent transcripts are never harvested.** `harvest.rs:201` and
+  `sweep.rs:51` both scan non-recursively, but Claude Code writes `Agent`-tool
+  subagent transcripts to `<session-id>/subagents/*.jsonl`. Measured: 36 files,
+  1,133 messages, 59.6 M tokens uncounted — ~10 % of spend in `/rexymcp:auto`
+  sessions, where `plugin/skills/auto/SKILL.md:76-82` delegates dispatch and
+  review to subagents by design. The sweep's mtime watermark has the same blind
+  spot, so subagent-only activity suppresses the harvest entirely.
+- **The `other` bucket is 18.7 % of architect spend with an uninformative
+  name.** Verified across all 61 project transcripts as untagged architect work.
+  Renamed `architect chat` in M36.
+
+**Verified and ruled out: no double-counting anywhere in the ledger.**
+`attributionSkill` is single-valued per message, messages dedup by
+`message.id`, `isSidechain` is `false` on all 20,464 lines, and there are
+**zero** nested `Skill` invocations in the corpus. `rexymcp:auto` is disjoint
+from `dispatch`/`review`/`escalate`; the per-skill rows sum to the project total
+exactly once. Recorded here so it does not get re-litigated.
+
+**Token deep-dive — discharged.** The 2026-07-21 decision to quantify
+Claude-Code cost in two centers is closed out by the transcript measurements
+above plus the monitoring-protocol fold (which landed mid-milestone). Per-skill
+attribution is now a standing surface (`costs` § "By skill"), not a one-off
+study: dispatch 42.2 %, `other`/architect-chat 18.7 %, review 16.9 %, architect
+13.7 %, escalate 6.9 %, auto 1.7 %.
+
+**06d-2 reconciliation.** The "accept the blank" won't-fix was **reopened and
+resolved** by 07f's dynamic header band (`header_band_height = max + 2`), which
+removed the trailing-blank over-provisioning at its root. The won't-fix note
+above stands as the record of the decision at the time; the outcome superseded
+it.
+
+### Calibration folds
+
+**Landed mid-milestone** (recorded here, no action at close):
+
+1. **In-place shell edits refused** (2026-07-20). Three phases hard-failed the
+   same way: `patch` refused on a line-drifted file, the model escaped to
+   `sed -i`, which edits by raw line number and bypasses both the `old_str`-match
+   and read-before-edit guards (04a's `sed -i '178,179d'` loop cannibalized ~300
+   lines of `runs.rs`). Root cause was a **tooling escape hatch**, not a model
+   preference — it used the edit tools correctly until they refused. Fixed twice
+   over: a `Severity::RefuseInPlaceEdit` bash-classifier verdict steering to
+   `write_file`/`patch`/`patch_lines` with the re-read-then-patch recovery
+   pinned, plus a Hard Rule in `executor/templates/executor_contract.md`.
+   Read-only `sed -n …p` unaffected.
+2. **Architect cancellation policy + token-efficient monitoring** (2026-07-21),
+   in `docs/dev/WORKFLOW.md`, `plugin/templates/WORKFLOW.md`, and
+   `plugin/skills/dispatch/SKILL.md`.
+
+**Folded at close** — two architect spec-writing lessons, added to
+`WORKFLOW.md` § Calibration (and the plugin template):
+
+3. **Pin the fixture that makes the row appear.** *(07e)* A renderer that hides
+   empty rows drops it under an unpriced fixture; the executor reads "row
+   missing" as a production bug and diagnoses in a loop until the governor kills
+   it. The resume with an explicit priced-fixture hint landed in 19 turns.
+4. **Pre-inject compiler-error-driven recovery** on files with oscillation
+   history. *(Proven on 07f: the `render.rs` restructure landed with no
+   oscillation on a file that had oscillated 3×.)*
+
+**Deferred to M37** (user decision, 2026-07-23):
+
+5. **Read-only-inspection repetition hard-kills like write-thrash** — the STRONG
+   fold, **4 occurrences** across the arc, well past the three-strike line.
+   `check_oscillation` and `check_identical_repetition`
+   (`executor/src/governor/hard_fail.rs:225-256`, `137-157`) key on
+   `(tool, arguments)` and are blind to whether a call mutates anything, while
+   M34's `NoProgressStall` already exists to catch read-only spinning at a
+   threshold of 60. That is duplicate coverage at a far tighter threshold, which
+   is why it pre-empts genuine diagnosis. **Decision: exempt windows containing
+   no file-mutating call from both detectors** (`crate::tools::mutates_files` is
+   already available in the module), leaving read-only loops to
+   `NoProgressStall`.
+6. **`oscillation_stall` missing from `FAILURE_CLASSES`**
+   (`executor/src/store/telemetry.rs:319`) — recorded 2× as an unknown
+   open-vocab class.
+
+**Watch list** — 1× each, below the fold threshold. Fold if either recurs:
+
+7. **Status-flip machinery can clobber the `**Milestone:**` header line** (06e).
+8. **Executor cannibalizing an unrelated test to host a new assertion** (07d) —
+   a STANDARDS note ("add new tests; never repurpose an unrelated one") if seen
+   again.
+
+### Accepted debt, carried to M37
+
+- k/M compaction of `calibrate-governor`'s output-flood byte columns.
+- Consolidating the three divergent token formatters (`runs::fmt_tokens`, the
+  inline one in `scorecard`, `costs::format_tokens`) into one shared `metrics`
+  helper. M35 created the third one; it owns the cleanup.
+
+### Executor performance
+
+Every M35 phase ran on the local executor (AEON-7 / Qwen3.6-27B-AEON) with no
+session takeovers. The failure mode that dominated was **not** wrong code — it
+was the governor terminating diagnostic read-loops on a fragile file
+(`panels.rs`/`render.rs`, 4 oscillations). Every one recovered on a refined
+re-dispatch or resume carrying one specific hint. That pattern is what fold 5
+addresses at the runtime level rather than leaving it to architect memory.
