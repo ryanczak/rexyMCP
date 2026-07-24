@@ -1,7 +1,7 @@
 # Phase 02: Ledger layout + `--tokens` — one renderer, two surfaces
 
 **Milestone:** M38 — Discount Accounting
-**Status:** review
+**Status:** in-progress *(bounced 2026-07-24 — see `bugs/bug-02-2.md`)*
 **Depends on:** phase-01 (renders the rate phase-01 rewires)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -658,3 +658,62 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review — 2026-07-24 (bug-02-1 fixed and verified; bounced again on bug-02-2)
+
+**Verdict:** bounced · **Bug:** `bugs/bug-02-2.md` (minor) · **Executor:**
+Qwen/Qwen3.6-27B-FP8 (59 turns on the fix, no oscillation)
+
+**bug-02-1 is fixed and independently verified.** The refined re-dispatch worked
+a second time — the executor engaged the bug doc rather than no-opping on green
+gates. Live output now:
+
+```
+Spend          Session Milestone   Project
+  Architect:     (—)       (—)  ($1852.90)
+  Executor:      $9.17   $107.99  $1383.19
+  Net:             —         —   ($469.72)
+```
+
+Session and Milestone `Net:` render `—`, not `$0.00`. The Project ledger adds up:
+`1383.19 − 1852.90 = −469.71`, shown as `($469.72)`. `--tokens` and `--json` both
+correct; `executor_tokens` / `architect_tokens` present on every scope.
+
+Test count 643 → **647**, the falsifiable condition met exactly. All four gates
+green on a forced recompile. **Three mutations run by the reviewer, all bite:**
+
+- `DASH` padding `"—  "` → `"—"` → `ledger_dash_aligns_with_decimal_column` fails.
+- `net_val` back to `unwrap_or(0.0)` → `ledger_none_net_renders_dash` fails.
+- (earlier round) negative-`Net` parens and Architect row label → their tests fail.
+
+All reverted; tree clean before this review.
+
+**Declared deviation, accepted — and my spec was the wrong one.**
+`ledger_dash_aligns_with_decimal_column` does not assert the cross-field
+dash/decimal equality the bug doc asked for. The executor explained why: in the
+two-scope layout the dash sits in the Session field and the amount in the Project
+field, so their absolute columns differ by a field width and the equality I
+specified is unsatisfiable. It substituted a right-alignment position assertion,
+declared it, and the substitute **is** mutation-sensitive — dropping the padding
+moves the dash from column 18 to 20 and fails. Correct call on the executor's
+part; the unsatisfiable verification was mine.
+
+**Why it bounced again.** `panels.rs:503` introduces a **new production
+`.unwrap()`**, replacing a `match` that had none:
+
+```rust
+    if summary.last_input_tokens.is_none() { return Vec::new(); }
+    let sess_in = summary.last_input_tokens.unwrap() as u64;   // <- new
+```
+
+STANDARDS §1 and `REXYMCP.md` § "Error model" both state the no-unwrap rule
+without exception. Not a live crash — the guard makes it unreachable and the
+early-return behavior Task 4 required is preserved — but correctness now rests on
+two statements staying adjacent, in the dashboard render loop. That is the
+failure mode the absolute rule prevents.
+
+Severity **minor**: one line, obvious fix, no behavior change. Bounced rather than
+waived because it is an explicit DoD checkbox and a regression from safer code —
+if the review gate grants "provably safe today" exceptions, the rule stops being
+a rule. The three optional test renames are batched into the same fix since it
+reopens the file anyway.
