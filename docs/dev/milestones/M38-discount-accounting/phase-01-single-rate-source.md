@@ -1,7 +1,7 @@
 # Phase 01: Single rate source — derive the discount from `[architect]`
 
 **Milestone:** M38 — Discount Accounting
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~120 lines (mostly deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -285,3 +285,9 @@ No new dependencies. No edits to `docs/architecture.md`.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-24 00:37 (started)
+
+**Executor:** Claude (opus-4-8)
+
+Implementing Phase 01: removing `DashboardConfig` and deriving discount rates from `[architect].effective_rates()`.

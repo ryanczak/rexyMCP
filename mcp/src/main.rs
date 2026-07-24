@@ -879,7 +879,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let config_path = config.unwrap_or_else(|| PathBuf::from("rexymcp.toml"));
             let cfg = Config::load_with_env(&config_path)?;
-            let (i, o) = cfg.dashboard.effective_rates();
+            let (i, o) = cfg.architect.effective_rates();
             let rates = dashboard::BudgetRates {
                 input_per_mtok: i,
                 output_per_mtok: o,

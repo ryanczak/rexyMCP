@@ -716,7 +716,7 @@ pub(crate) fn panel(title: &'static str, lines: Vec<Line<'static>>) -> Paragraph
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rexymcp_executor::config::DashboardConfig;
+    use rexymcp_executor::config::ArchitectConfig;
     use rexymcp_executor::store::sessions::event::FileNumstat;
     use rexymcp_executor::store::telemetry::ModelRates;
 
@@ -2175,30 +2175,31 @@ mod tests {
 
     #[test]
     fn dashboard_effective_rates_opus_48_returns_correct_pricing() {
-        let d = DashboardConfig {
-            saved_model: Some("claude-opus-4-8".into()),
-            ..DashboardConfig::default()
+        let a = ArchitectConfig {
+            model: Some("claude-opus-4-8".into()),
+            ..ArchitectConfig::default()
         };
-        assert_eq!(d.effective_rates(), (5.0, 25.0));
+        assert_eq!(a.effective_rates(), (5.0, 25.0));
     }
 
     #[test]
     fn dashboard_effective_rates_fable_5_returns_correct_pricing() {
-        let d = DashboardConfig {
-            saved_model: Some("claude-fable-5".into()),
-            ..DashboardConfig::default()
+        let a = ArchitectConfig {
+            model: Some("claude-fable-5".into()),
+            ..ArchitectConfig::default()
         };
-        assert_eq!(d.effective_rates(), (10.0, 50.0));
+        assert_eq!(a.effective_rates(), (10.0, 50.0));
     }
 
     #[test]
     fn dashboard_effective_rates_unknown_model_uses_explicit() {
-        let d = DashboardConfig {
-            saved_model: Some("gpt-4".into()),
-            saved_input_per_mtok: 1.0,
-            saved_output_per_mtok: 2.0,
+        let a = ArchitectConfig {
+            model: Some("gpt-4".into()),
+            input_per_mtok: 1.0,
+            output_per_mtok: 2.0,
+            ..ArchitectConfig::default()
         };
-        assert_eq!(d.effective_rates(), (1.0, 2.0));
+        assert_eq!(a.effective_rates(), (1.0, 2.0));
     }
 
     #[test]

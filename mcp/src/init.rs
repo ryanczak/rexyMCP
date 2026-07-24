@@ -75,16 +75,10 @@ novelty_action = "advisory"       # "advisory" (default): log low-novelty churn 
 [context]
 output_filter = true              # filter/truncate bash output to conserve context
 
-[dashboard]
-# saved_model = "claude-opus-4-8"   # auto-fill rates for a known Claude model
-#   known models: claude-fable-5 ($10/$50/MTok), claude-opus-4-8 ($5/$25/MTok),
-#   claude-sonnet-4-6 ($3/$15/MTok), claude-haiku-4-5 ($1/$5/MTok)
-# Or set rates directly (saved_model overrides these when both are set):
-# saved_input_per_mtok = 5.0        # $/MTok input tokens saved vs cloud baseline
-# saved_output_per_mtok = 25.0      # $/MTok output tokens saved vs cloud baseline
-
 [architect]
-# model = "claude-opus-4-8"        # auto-fill architect rates for a known Claude model
+# model = "claude-opus-4-8"        # the Claude rate: prices architect spend AND
+#                                  # the executor discount (executor tokens are
+#                                  # work this model was not billed for)
 #   (cache rates derive from input: read = 0.1×, creation = 1.25×)
 # Or set rates directly (model overrides these when set & recognised):
 # input_per_mtok = 5.0             # $/MTok uncached input tokens

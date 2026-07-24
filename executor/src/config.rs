@@ -6,8 +6,8 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 
 /// Returns `(input_per_mtok, output_per_mtok)` in USD/MTok for known Claude
-/// model IDs. Used by both `DashboardConfig` and `ArchitectConfig` so the
-/// rate table lives in one place.
+/// model IDs. Used by `ArchitectConfig` and `ModelOverride` so the rate table
+/// lives in one place.
 pub fn known_model_rates(model: &str) -> Option<(f64, f64)> {
     match model {
         "claude-fable-5" | "claude-mythos-5" => Some((10.0, 50.0)),
@@ -71,9 +71,10 @@ impl Default for EscalationConfig {
     }
 }
 
-/// The model used for Architect escalation assists. Separate from `[dashboard]`
-/// which is the hypothetical cloud baseline — this is a real cost center.
-/// When `model` matches a known Claude model ID, rates are auto-filled.
+/// The model used for Architect escalation assists. Prices both the architect
+/// spend and the executor discount (executor tokens are work this model was not
+/// billed for). When `model` matches a known Claude model ID, rates are
+/// auto-filled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArchitectConfig {
@@ -169,45 +170,6 @@ impl ArchitectConfig {
             .get(model)
             .map(|r| (r.input_per_mtok, r.output_per_mtok))
             .or_else(|| known_model_rates(model))
-    }
-}
-
-/// Live-dashboard settings. The "$ saved" baseline: cloud $/million-tokens the
-/// local run is priced against. Default 0.0 → the dashboard shows "—" (unset).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DashboardConfig {
-    /// USD per million **input** tokens for the cloud baseline (used when
-    /// `saved_model` is not set or not recognised).
-    pub saved_input_per_mtok: f64,
-    /// USD per million **output** tokens for the cloud baseline (used when
-    /// `saved_model` is not set or not recognised).
-    pub saved_output_per_mtok: f64,
-    /// Optional Claude model name; when set and recognised, auto-fills
-    /// `saved_input_per_mtok` / `saved_output_per_mtok` with current pricing.
-    /// Recognised values: `claude-fable-5`, `claude-mythos-5`,
-    /// `claude-opus-4-8`/`4-7`/`4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`.
-    pub saved_model: Option<String>,
-}
-
-impl Default for DashboardConfig {
-    fn default() -> Self {
-        Self {
-            saved_input_per_mtok: 0.0,
-            saved_output_per_mtok: 0.0,
-            saved_model: None,
-        }
-    }
-}
-
-impl DashboardConfig {
-    /// Resolved `(input_per_mtok, output_per_mtok)` for the cloud baseline.
-    /// `saved_model` lookup wins; explicit fields win otherwise.
-    pub fn effective_rates(&self) -> (f64, f64) {
-        self.saved_model
-            .as_deref()
-            .and_then(known_model_rates)
-            .unwrap_or((self.saved_input_per_mtok, self.saved_output_per_mtok))
     }
 }
 
@@ -374,7 +336,6 @@ pub struct Config {
     pub commands: CommandConfig,
     pub budget: BudgetConfig,
     pub telemetry: TelemetryConfig,
-    pub dashboard: DashboardConfig,
     pub context: ContextConfig,
     pub governor: GovernorConfig,
     pub models: HashMap<String, ModelOverride>,
@@ -1057,14 +1018,7 @@ max_turns = 40
     }
 
     #[test]
-    fn dashboard_config_defaults_to_zero() {
-        let cfg = Config::default();
-        assert_eq!(cfg.dashboard.saved_input_per_mtok, 0.0);
-        assert_eq!(cfg.dashboard.saved_output_per_mtok, 0.0);
-    }
-
-    #[test]
-    fn config_loads_dashboard_rates() {
+    fn legacy_dashboard_section_is_ignored() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(
@@ -1084,13 +1038,18 @@ max_turns = 40
 [dashboard]
 saved_input_per_mtok = 3.0
 saved_output_per_mtok = 15.0
+
+[architect]
+model = "claude-opus-4-8"
 "#,
         )
         .unwrap();
 
+        // Config still loads successfully — unknown keys are silently ignored
+        // because Config derives #[serde(default)] without deny_unknown_fields.
         let cfg = Config::load(&path).unwrap();
-        assert_eq!(cfg.dashboard.saved_input_per_mtok, 3.0);
-        assert_eq!(cfg.dashboard.saved_output_per_mtok, 15.0);
+        // Architect rates resolve from the model, unaffected by stale [dashboard] keys.
+        assert_eq!(cfg.architect.effective_rates(), (5.0, 25.0));
     }
 
     #[test]
@@ -1718,12 +1677,23 @@ model = "claude-opus-4-8"
     }
 
     #[test]
-    fn dashboard_effective_rates_uses_known_model() {
-        let d = DashboardConfig {
-            saved_model: Some("claude-sonnet-4-6".into()),
-            ..DashboardConfig::default()
+    fn architect_effective_rates_from_model() {
+        let a = ArchitectConfig {
+            model: Some("claude-opus-4-8".into()),
+            ..ArchitectConfig::default()
         };
-        assert_eq!(d.effective_rates(), (3.0, 15.0));
+        assert_eq!(a.effective_rates(), (5.0, 25.0));
+    }
+
+    #[test]
+    fn architect_effective_rates_explicit_override_when_model_unknown() {
+        let a = ArchitectConfig {
+            model: Some("unknown-model".into()),
+            input_per_mtok: 7.0,
+            output_per_mtok: 35.0,
+            ..ArchitectConfig::default()
+        };
+        assert_eq!(a.effective_rates(), (7.0, 35.0));
     }
 
     #[test]

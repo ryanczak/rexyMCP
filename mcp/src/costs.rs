@@ -219,9 +219,10 @@ pub fn load_cost_report(
         );
     };
 
+    let (discount_in, discount_out) = cfg.architect.effective_rates();
     let saved_rates = BudgetRates {
-        input_per_mtok: cfg.dashboard.effective_rates().0,
-        output_per_mtok: cfg.dashboard.effective_rates().1,
+        input_per_mtok: discount_in,
+        output_per_mtok: discount_out,
         executor: telemetry::ModelRates::default(),
     };
     let exec_rates = cfg.model_rates(&cfg.executor.model);
