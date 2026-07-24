@@ -496,11 +496,10 @@ pub(crate) fn savings_lines(
     display: BudgetDisplay,
 ) -> Vec<Line<'static>> {
     // Nothing to render without input tokens.
-    if summary.last_input_tokens.is_none() {
+    let Some(sess_in) = summary.last_input_tokens else {
         return Vec::new();
-    }
-
-    let sess_in = summary.last_input_tokens.unwrap() as u64;
+    };
+    let sess_in = sess_in as u64;
     let sess_out = summary.last_output_tokens.unwrap_or(0) as u64;
 
     let session_costs = ScopeCosts {
@@ -1642,7 +1641,7 @@ mod tests {
     }
 
     #[test]
-    fn savings_lines_omits_zero_debit_rows() {
+    fn savings_lines_never_omits_rows() {
         // All three rows (Architect/Executor/Net) always render — no suppression.
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
@@ -1816,7 +1815,7 @@ mod tests {
     }
 
     #[test]
-    fn savings_lines_net_row_not_parenthesized() {
+    fn savings_lines_net_row_parenthesized_when_negative() {
         // Net row: parenthesised when negative, plain when positive.
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
@@ -2233,7 +2232,7 @@ mod tests {
     }
 
     #[test]
-    fn savings_lines_row_order_is_executor_architect_saved_net() {
+    fn savings_lines_row_order_is_architect_executor_net() {
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
