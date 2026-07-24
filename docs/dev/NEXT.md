@@ -4,35 +4,53 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M36 closed 2026-07-23. The next milestone is a human
-gate — see below.
+**Active phase:
+[M38 phase-01 — single rate source: derive the discount from `[architect]`](milestones/M38-discount-accounting/phase-01-single-rate-source.md)
+(status: todo — drafted 2026-07-23).**
 
-## ⭐ M36 — CLOSED 2026-07-23; next milestone awaits human sign-off
+## M38 — Discount Accounting (OPEN, active)
 
-All three phases `done`, **all `approved_first_try`**, zero bounces, zero
-oscillations, no carried debt. Retrospective is in the M36 README Notes;
-`docs/architecture.md` §36 is marked done.
+Opened immediately after the M36 close, from the user running `rexymcp costs` and
+observing that executor savings were not shown. **The framing is the user's:** executor
+tokens are work Claude was *not billed for*, so they are worth the **architect model's**
+rate — rexyMCP's costs are *discounts* on `[architect] model`. Only one Claude rate
+should ever exist.
 
-**What shipped.** The Budget surface now answers "what is consuming tokens?"
-without a counterfactual leading the table — Architect is the only debit,
-executor token usage is a saving. `baseline` → `saved` and demoted below the two
-real buckets; subagent transcripts harvested (they were ~10 % of `/rexymcp:auto`
-spend and 100 % invisible); the `other` bucket renamed `architect chat` at the
-aggregation point so no stored record goes stale.
+Three defects followed from not saying that plainly:
 
-**Calibration confirmed.** Phase-02 was a public-struct-field rename with no
-additive shape — the third occurrence of the pattern and the **first to land
-without a hard_fail** (M30 phase-03, M31 phase-02 both failed first). The
-leaf-first fold now has evidence it *prevents* the failure, not just repairs it.
-No doc change: the fold is already written, this is the data point that says
-leave it alone.
+1. **Duplicate rate table** — the discount priced from `[dashboard] saved_*`, architect
+   spend from `[architect]`. They agree here only because both resolve to `(5.0, 25.0)`;
+   switching `[architect] model` to `claude-fable-5` would silently halve the discount.
+2. **Dark by default** — `rexymcp init` comments out every `[dashboard]` rate, so a fresh
+   project shows `SAVED —` / `NET —`. The product's headline number is invisible until
+   the user hand-configures a duplicate of something already configured.
+3. **Executor unrenderable** — `debit_row` hides rows empty in every scope, and executor
+   *cost* is `$0.00` in every scope for an unpriced local model, so the row never draws
+   on either surface. Token counts are computed into `ScopeCosts` then discarded before
+   `format_costs` or `--json`.
 
-**Watch list (1× each, not folded).** Both are the same family — the architect
-asserted a spec fact without deriving it from the tool that defines it:
-(1) a corpus figure quoted pre-dedup (59.6M asserted, 36.1M actual recovery);
-(2) a task file-list written from memory when the acceptance criterion was
-itself the defining grep, which missed `main.rs`. Fold into WORKFLOW § "Specs
-pin behavior" if either recurs.
+**Target shape** — parens carry debit/credit, so no `SAVED` column or `avoided:` row:
+
+```
+Budget            Session  Milestone     Project      Budget (tok)   Session  Milestone   Project
+  Architect:          (—)        (—)  ($1781.15)        Architect:         —          —      1.5B
+  Executor:         $2.96     $46.47    $1275.19        Executor:          —       9.1M    252.6M
+  Net:                  —          —    ($505.95)       Net:               —          —         —
+```
+
+The rows add up: `Executor $1275.19` (credit) + `Architect ($1781.15)` (debit) =
+`Net ($505.95)`. Replaces the three-term `NET = SAVED − EXECUTOR − ARCHITECT` that
+needed a legend. `b` toggles units on the dashboard; `--tokens` mirrors it on the CLI,
+dollars by default.
+
+- **01 single rate source** — repoint 2 readers to `cfg.architect.effective_rates()`,
+  then **remove `DashboardConfig` outright** (a documented-but-ignored knob actively
+  misleads). 12 grep-verified sites across 5 files, readers-before-definition order
+  pre-injected. No rendering change: `SAVED` figures must come out **identical**.
+- **02 ledger layout + `--tokens`** — collapse `SAVED` into the Executor row, parenthesise
+  negative `Net`, stop suppressing the Executor row, thread token counts into
+  `CostReport`, and extract **one** renderer both surfaces call. Touches `panels.rs`, the
+  4×-oscillation file — anti-oscillation gotchas and exact code blocks pre-injected.
 
 ## M37 — Governor Read-Only Calibration (planned, NOT started)
 
@@ -45,6 +63,27 @@ compaction, and **phase-05** — the server-authored completion entry, now at 6
 occurrences and 3 distinct defects (unticked acceptance criteria, no E2E block,
 and an `Executor:` line taken from model self-report that named the wrong model
 on M36 phase-03). See the M37 README.
+
+## M36 — CLOSED 2026-07-23
+
+All three phases `done`, **all `approved_first_try`**, zero bounces, zero oscillations, no
+carried debt. Retrospective in the M36 README Notes; `docs/architecture.md` §36 marked done.
+Shipped: `baseline` → `saved` demoted below the real buckets, subagent transcripts harvested
+(~10 % of `/rexymcp:auto` spend, previously 100 % invisible), and `other` renamed
+`architect chat` at the aggregation point.
+
+**Calibration confirmed.** Phase-02 was a public-struct-field rename with no additive
+shape — 3rd occurrence and the **first to land without a hard_fail** (M30 phase-03, M31
+phase-02 both failed first). The leaf-first fold now has evidence it *prevents* the
+failure, not just repairs it.
+
+**Watch list (1× each, not folded).** The architect asserted a spec fact without deriving
+it from the tool that defines it: (1) a corpus figure quoted pre-dedup (59.6M asserted,
+36.1M actual); (2) a task file-list from memory when the acceptance criterion was itself
+the defining grep, missing `main.rs`. **M38 is a third instance of this family** — a
+requirement stated in design ("must track Executor token usage") that never reached the
+phase-02 spec. Three occurrences: fold into WORKFLOW § "Specs pin behavior" at the M38
+close.
 
 ## M35 — CLOSED 2026-07-23
 

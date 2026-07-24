@@ -1232,6 +1232,40 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+38. **M38 — Discount Accounting** *(in progress; opened 2026-07-23 immediately
+    after the M36 close)*. States rexyMCP's premise in the accounting itself:
+    work the executor does is work Claude was **not billed for**, so executor
+    tokens have a dollar value and that value is the **architect model's** rate.
+    rexyMCP's "costs" are therefore *discounts* on what `[architect] model`
+    would have charged, and only **one** Claude rate is ever in play — serving
+    both what Claude cost and what Claude did not cost. Three defects followed
+    from not saying that plainly. **(1) A duplicate rate table**: the discount
+    priced from `[dashboard] saved_*_per_mtok` while architect spend priced from
+    `[architect]`; they agree in this repo only because both resolve to
+    `(5.0, 25.0)`, and switching `[architect] model` to `claude-fable-5` would
+    have halved the reported discount silently. **(2) Dark by default**:
+    `rexymcp init` scaffolds every `[dashboard]` rate commented out, so a fresh
+    project renders `SAVED —` / `NET —` — the number justifying the product was
+    invisible until the user hand-configured a table duplicating one they had
+    already filled in. **(3) The executor was unrenderable**: `debit_row`
+    suppresses rows that are empty in every scope, and executor *cost* is
+    `$0.00` in every scope for an unpriced local model, so the row never drew on
+    either surface, while executor token counts were computed into `ScopeCosts`
+    and discarded before reaching `format_costs` or `--json`. The fix is a
+    two-line ledger with a net — **Architect / Executor / Net** — where
+    parentheses carry the debit/credit semantics (so no `SAVED` column or
+    `avoided:` label is needed), the rows visibly add up (`Net` = the two
+    summed, replacing the three-term `SAVED − EXECUTOR − ARCHITECT`), a negative
+    `Net` parenthesises as a debit, and the dashboard's existing `b` toggle
+    picks units with a `--tokens` flag mirroring it on the CLI. Rendered from
+    **one** implementation shared by `rexymcp costs` and the dashboard, so the
+    two cannot drift — the same de-duplication discipline M35 06b-i applied to
+    the aggregation, now applied to the presentation. Two phases: 01 single rate
+    source (`DashboardConfig` removed outright rather than deprecated — a
+    documented-but-ignored knob actively misleads); 02 ledger layout, shared
+    renderer, and `--tokens`. Design credit is the user's: the discount framing,
+    the redundancy of an `avoided:` row once `( )` carries the sign, and reusing
+    `b` rather than inventing a second control.
 37. **M37 — Governor Read-Only Calibration** *(planned; opened 2026-07-23 at
     the M35 close)*. The STRONG calibration fold M35 accumulated and deferred.
     `check_oscillation` and `check_identical_repetition`
