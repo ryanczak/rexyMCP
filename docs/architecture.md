@@ -1336,6 +1336,37 @@ The project plan. Each entry becomes a milestone with its own
     and all three M36 phases (6×, well past the fold threshold); not an executor
     defect and not fixable by re-dispatch, since the executor no longer owns
     that output.
+
+    **Scope of the exemption — recorded 2026-07-24, mid phase-01, user-confirmed.**
+    The predicate is `!crate::tools::mutates_files`, i.e. `!= Category::Write`.
+    That is **broader than "read-only"**: `bash` is `Category::Run`,
+    `search`/`find_files` are `Search`, `update_task` is `Meta`, so all of them
+    count as non-mutating and are exempted. A model looping `cargo build` six
+    times is exempted alongside the `sed -n` inspection loops that motivated the
+    milestone. **This is intended** — `check_read_only_stall` uses the identical
+    predicate, so such a loop already counts as no-progress there and terminates
+    at 60; narrowing to Read/Search-only would split `mutates_files`, which
+    exists precisely to be the single source of truth for "the model made file
+    progress." The phase doc's prose calling this "read-only" is imprecise; the
+    accurate description is **no file-mutating call in the window**.
+
+    Corpus measurement taken before dispatch (48 recorded `hard_fail` events):
+    backend/infra errors 35 %, verifier persistence 23 %, **identical `bash`
+    13 %, identical `read_file` 8 %, oscillation 8 %** — so up to ~29 % of
+    hard-fails route through the two detectors this phase changes, with the two
+    genuine write-thrash cases (`write_file`, `patch`) still firing. That is a
+    materially wider blast radius than the four M35 anecdotes implied.
+
+    **Follow-up, needs post-landing data:** does the 60-call `NoProgressStall`
+    backstop actually catch `bash` thrash that the tight detectors used to kill
+    at 6–8? The pre-dispatch corpus is suggestive — hard-failed runs have a
+    median `max_read_only_run` of **12** against a threshold of **60**, meaning
+    they were dying to the tight detectors long before the backstop was in
+    range — but that is the *old* behavior by construction. Re-run
+    `calibrate-governor` after a few post-exemption dispatches and compare the
+    `max_read_only_run` distribution for `hard_fail`; if it does not shift
+    upward toward 60, the backstop is not engaging and the threshold wants
+    revisiting. Do not tune it on the pre-exemption corpus.
 36. **M36 — Budget Truth Pass** *(done 2026-07-23; opened the same day)*. First real use
     of M35's cost surface exposed one presentation defect and one counting bug.
     **(1) "Baseline" reads as a spend but is a counterfactual** — executor
