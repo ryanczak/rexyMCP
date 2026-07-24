@@ -462,3 +462,123 @@ mislead, and they duplicate `architect_effective_rates_from_model` in
 which the spec supported (Task 4 said "preserving each test's intent", not
 "rename"). **Folded into phase-02's scope** — it rewrites `panels.rs` anyway, so
 renaming there costs nothing and avoids a second dispatch for cosmetics.
+
+### Notes for executor — 2026-07-24 (BOUNCE FIX, refined re-dispatch)
+
+> ## ⛔ THIS IS A BOUNCE FIX, NOT A GREEN-GATE RE-VERIFY
+>
+> **A clean working tree and four passing gates are EXPECTED here and are NOT
+> evidence that this phase is done.** All of the production work in § Spec
+> Tasks 1–6 is already implemented, committed, and verified correct by the
+> architect. Do **not** re-do it. Do **not** report "already complete".
+>
+> **There is exactly one piece of work left: write one missing test.**
+> It is `discount_rate_comes_from_architect_config`, named in § Test plan and
+> never written. See `bugs/bug-01-1.md`.
+>
+> When you finish, `cargo test -p rexymcp` must report **633** tests, not 632.
+> If it still reports 632, you have not done the work.
+
+**The one task.** Add this test to the `#[cfg(test)] mod tests` block at the
+bottom of `mcp/src/costs.rs`. Add **only** this test; change no production code
+and no other file.
+
+Why `claude-fable-5`: its rates are `(10.0, 50.0)` while `claude-opus-4-8` is
+`(5.0, 25.0)`. A test written against opus would pass under *either* rate source
+and prove nothing. Fable-5 fails unless `load_cost_report` really reads
+`[architect]`.
+
+```rust
+    #[test]
+    fn discount_rate_comes_from_architect_config() {
+        use rexymcp_executor::ai::types::TokenBreakdown;
+        use rexymcp_executor::store::telemetry::{self, Gates, GenerationParams, PhaseRun};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let tel_dir = tmp.path().join("telemetry");
+        std::fs::create_dir_all(&tel_dir).unwrap();
+        let config_path = tmp.path().join("rexymcp.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"
+[project]
+id = "PID"
+
+[executor]
+model = "local-unpriced"
+provider = "ollama"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+format = "cargo fmt --all"
+build = "cargo build"
+lint = "cargo clippy"
+test = "cargo test"
+
+[telemetry]
+dir = "{}"
+
+[architect]
+model = "claude-fable-5"
+"#,
+                tel_dir.display()
+            ),
+        )
+        .unwrap();
+
+        // One run: 1M input, 1M output, attributed to project PID.
+        let run = PhaseRun {
+            ts: 1,
+            model: "local-unpriced".into(),
+            generation_params: GenerationParams::default(),
+            phase_id: "p".into(),
+            status: "complete".into(),
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            tokens: TokenBreakdown {
+                input_tokens: 1_000_000,
+                output_tokens: 1_000_000,
+                ..Default::default()
+            },
+            project_id: Some("PID".into()),
+            ..Default::default()
+        };
+        telemetry::append(&tel_dir, &run).unwrap();
+
+        let report = load_cost_report(&config_path, tmp.path(), None, None).unwrap();
+
+        // claude-fable-5 = $10/Mtok in, $50/Mtok out.
+        // 1M * 10 + 1M * 50 = $60.00 — NOT the $30.00 opus-4-8 would give.
+        let saved = report.project.saved.expect("project saved must be priced");
+        assert!(
+            (saved - 60.0).abs() < 1e-9,
+            "discount must use [architect] rates (fable-5 => $60.00), got {saved}"
+        );
+    }
+```
+
+**Adapt, don't fight the compiler.** The exact `PhaseRun` field set and the
+`telemetry::append` signature are the source of truth — if a field name above is
+wrong, take the compiler's word over this sketch and fix it. Use the compiler
+error to locate any problem; **do not hunt by re-reading the file in a loop.**
+The neighbouring `scope_costs_none_sums_all_milestones` test builds a `PhaseRun`
+the same way and is a working reference in the same module.
+
+**Before reporting complete, prove the test bites.** Temporarily change
+`mcp/src/costs.rs:222` from `cfg.architect.effective_rates()` to a hardcoded
+`(5.0, 25.0)`, confirm the new test **fails**, then revert. State the result in
+your completion summary. A test that passes under both rate sources is worthless
+here — that is the whole point of the bug.
+
+**Completion checklist:**
+
+1. `cargo test -p rexymcp discount_rate_comes_from_architect_config` — passes.
+2. Mutation check above — test fails under the hardcoded rate, then reverted.
+3. `cargo test` — `rexymcp` crate reports **633** (was 632).
+4. All four gates green.
+5. `git status` clean except your one-test commit.
