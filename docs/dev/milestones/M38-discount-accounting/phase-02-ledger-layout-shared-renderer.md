@@ -717,3 +717,58 @@ waived because it is an explicit DoD checkbox and a regression from safer code �
 if the review gate grants "provably safe today" exceptions, the rule stops being
 a rule. The three optional test renames are batched into the same fix since it
 reopens the file anyway.
+
+### Notes for executor — 2026-07-24 (BOUNCE FIX #2, refined re-dispatch)
+
+> ## ⛔ BOUNCE FIX, NOT A GREEN-GATE RE-VERIFY
+>
+> **All four gates pass and the tree is clean. EXPECTED — not evidence of done.**
+> The defect fails no test; it is a STANDARDS violation, not a broken behavior.
+>
+> **bug-02-1 is fixed and approved. Do not touch it.** The ledger, the dashes,
+> the `--tokens` flag, `ledger_lines`, `format_costs`, and every test are correct
+> and verified. Re-doing any of it is a regression.
+>
+> **One line remains.** See `bugs/bug-02-2.md`.
+
+**The fix** — `mcp/src/dashboard/panels.rs`, ~line 499. Replace the
+guard-plus-unwrap with a single binding:
+
+```rust
+    // Nothing to render without input tokens.
+    let Some(sess_in) = summary.last_input_tokens else {
+        return Vec::new();
+    };
+    let sess_in = sess_in as u64;
+    let sess_out = summary.last_output_tokens.unwrap_or(0) as u64;
+```
+
+That removes the `.unwrap()` while keeping the exact early-return behavior.
+**Leave `unwrap_or(0)` on `last_output_tokens` alone** — it is pre-existing, is
+not an `unwrap()`, and supplies a documented default.
+
+**Then three test renames** (bodies unchanged, `fn` line only) — batched here
+because this reopens the file, not because they are related:
+
+- `savings_lines_omits_zero_debit_rows` → `savings_lines_never_omits_rows`
+- `savings_lines_row_order_is_executor_architect_saved_net` →
+  `savings_lines_row_order_is_architect_executor_net`
+- `savings_lines_net_row_not_parenthesized` →
+  `savings_lines_net_row_parenthesized_when_negative`
+
+If a rename would touch anything beyond the `fn` line, skip it and say so.
+
+**Falsifiable finish condition:**
+
+```
+$ grep -nE '\.unwrap\(\)' mcp/src/dashboard/panels.rs | grep -v '^2[0-9][0-9][0-9]:'
+(no output above the #[cfg(test)] module)
+
+$ cargo test -p rexymcp   # must still be exactly 647 — this fix adds no tests
+```
+
+**647, not 648.** A changed count means scope crept. `rexymcp costs` output must
+be byte-identical to now (Session/Milestone `Net:` = `—`, Project parenthesised).
+
+**On this file.** `panels.rs` oscillated 4× during M35. Use the compiler error to
+locate any syntax problem; **never hunt by re-reading the file in a loop.**
