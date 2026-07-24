@@ -1,7 +1,7 @@
 # Phase 01: Single rate source — derive the discount from `[architect]`
 
 **Milestone:** M38 — Discount Accounting
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~120 lines (mostly deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -198,21 +198,21 @@ Four sites, all naming the removed table:
 
 ## Acceptance criteria
 
-- [ ] `cargo build` is green.
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
-- [ ] `cargo fmt --all --check` reports no diff in the files this phase touched.
-- [ ] `cargo test` passes.
-- [ ] `grep -rn "DashboardConfig\|saved_input_per_mtok\|saved_output_per_mtok\|saved_model" executor/src mcp/src` returns matches **only inside TOML fixture strings in tests** — the `legacy_dashboard_section_is_ignored` fixture (mandated by Task 3) and the pre-existing
+- [x] `cargo build` is green.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
+- [x] `cargo fmt --all --check` reports no diff in the files this phase touched.
+- [x] `cargo test` passes.
+- [x] `grep -rn "DashboardConfig\|saved_input_per_mtok\|saved_output_per_mtok\|saved_model" executor/src mcp/src` returns matches **only inside TOML fixture strings in tests** — the `legacy_dashboard_section_is_ignored` fixture (mandated by Task 3) and the pre-existing
       `load_cost_report_telemetry_disabled_errors` fixture. **No match in
       production code.** *(Corrected 2026-07-24: as originally written this
       criterion demanded zero matches, contradicting Task 3, which requires
       keeping a `[dashboard]` block in a fixture. Architect spec bug, not an
       executor defect.)*
-- [ ] `grep -rn "saved_input_per_mtok\|saved_output_per_mtok\|saved_model\|\[dashboard\]" README.md` returns **no** matches.
-- [ ] `rexymcp costs --config rexymcp.toml --repo .` reports the **same**
+- [x] `grep -rn "saved_input_per_mtok\|saved_output_per_mtok\|saved_model\|\[dashboard\]" README.md` returns **no** matches.
+- [x] `rexymcp costs --config rexymcp.toml --repo .` reports the **same**
       `SAVED` figures as before the change (both tables resolve to `(5.0, 25.0)`
       in this repo, so the numbers must not move).
-- [ ] A `rexymcp.toml` still containing a `[dashboard]` section loads without
+- [x] A `rexymcp.toml` still containing a `[dashboard]` section loads without
       error.
 
 ## Test plan
@@ -682,3 +682,94 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-24
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bug-01-1 — minor; `discount_rate_comes_from_architect_config`
+  named in § Test plan but not written)
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (87 turns first run, 40 on the bounce fix;
+  no oscillation on either)
+- **Scope deviations:** none on the fix run — exactly one test added to
+  `mcp/src/costs.rs`, no production code and no other file touched, as the bug
+  doc required.
+- **Calibration:** two, both recorded below — the green-bounce refined
+  re-dispatch worked (2nd confirmation), and two architect spec bugs bring the
+  "asserted without deriving from the source of truth" family to **five**
+  occurrences, folding into WORKFLOW at the M38 close.
+
+**Reviewer verification.** All four gates re-run independently with a forced
+recompile — zero warnings. Test count **632 → 633**, the falsifiable finish
+condition the re-dispatch note set, met exactly.
+
+**Mutation verified by the reviewer, not taken on report.** Replacing
+`costs.rs:222` with a hardcoded `(5.0, 25.0)`:
+
+```
+test costs::tests::discount_rate_comes_from_architect_config ... FAILED
+  discount must use [architect] rates (fable-5 => $60.00), got 30
+```
+
+Reverted; `git status` clean before approval. The `claude-fable-5` fixture is
+what makes this bite — at `(10.0, 50.0)` vs opus-4-8's `(5.0, 25.0)`, the
+assertion can only pass if `load_cost_report` genuinely reads `[architect]`. An
+opus-based fixture would have passed under either source and proven nothing.
+
+**E2E — the dark-by-default fix, against the real binary:**
+
+```
+$ rexymcp init --dir $TMP
+wrote rexymcp.toml (project id: a7d72184-c8c3-4a5b-bf43-f9c31baaf961)
+$ grep -c dashboard $TMP/rexymcp.toml
+0
+
+[architect]
+# model = "claude-opus-4-8"        # the Claude rate: prices architect spend AND
+#                                  # the executor discount (executor tokens are
+#                                  # work this model was not billed for)
+```
+
+A fresh project now has exactly one rate to configure, and the template says
+what it does. `rexymcp costs` continues to report correctly
+(project `SAVED $1289.86` against `ARCHITECT $1811.75`); figures drift between
+runs because the ledger keeps growing, so the rate was verified by
+recomputation rather than comparison.
+
+**Acceptance criterion 5** returns four matches, all TOML fixture strings in
+tests — `config.rs:1039-1040` (the mandated `legacy_dashboard_section_is_ignored`
+fixture) and `costs.rs:577-578` (pre-existing, untouched). **Zero production
+matches.**
+
+### Calibration — the green-bounce refined re-dispatch, 2nd confirmation
+
+This bounce had the exact profile that makes a plain re-dispatch no-op: four
+green gates, clean tree, committed code, bounced only for test coverage. The
+executor's "is there work to do?" heuristic keys off a dirty tree or a red gate
+and would have found neither. M30 phase-01 hit this and returned `complete` with
+an empty diff.
+
+The countermeasure was applied and worked: a loud header stating clean gates are
+expected and are **not** evidence of completion, the single remaining task named,
+the missing test inlined as a worked example, and a falsifiable finish condition
+(633, not 632). The executor engaged the bug doc, wrote the test, and ran the
+mutation check on its own before reporting — landing in 40 turns.
+
+Two confirmations now (M30 phase-01, M38 phase-01). Worth folding into
+`plugin/skills/escalate/SKILL.md` as the standard treatment for a green bounce if
+it recurs a third time; noted, not folded.
+
+### Calibration — architect spec bugs (five occurrences, fold at close)
+
+Two more this phase, both corrected in place in § Acceptance criteria and § E2E
+above:
+
+1. **AC5 was unsatisfiable as written** — it demanded zero `saved_*` matches
+   while Task 3 required *keeping* a `[dashboard]` fixture.
+2. **The E2E used `init --config`; the flag is `--dir`.** The executor caught it
+   and adapted, flagging it in Notes for review — the right call.
+
+With M36's two (a corpus figure quoted pre-dedup, a file list written from
+memory) and M38's dropped requirement, the family — *asserting a spec fact
+without deriving it from the tool that defines it* — is at **five occurrences**.
+Well past the fold threshold. Folds into `WORKFLOW.md` § "Specs pin behavior" at
+the M38 close, with user sign-off.

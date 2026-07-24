@@ -103,7 +103,7 @@ local inference ever costs more than it saves.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Single rate source: derive the discount from `[architect]`, remove `DashboardConfig` ([phase-01-single-rate-source.md](phase-01-single-rate-source.md)) — bounced (bug-01-1, minor: missing spec'd test) | review |
+| 01 | Single rate source: derive the discount from `[architect]`, remove `DashboardConfig` ([phase-01-single-rate-source.md](phase-01-single-rate-source.md)) — approved_after_1 (bug-01-1 verified; mutation-checked by reviewer) | done |
 | 02 | Ledger layout + `--tokens`: collapse SAVED into the Executor row, shared renderer ([phase-02-ledger-layout-shared-renderer.md](phase-02-ledger-layout-shared-renderer.md)) | todo |
 
 Split deliberately. Phase 01 is a config-removal cascade across 5 files but
