@@ -1,7 +1,7 @@
 # Phase 02: Ledger layout + `--tokens` — one renderer, two surfaces
 
 **Milestone:** M38 — Discount Accounting
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (renders the rate phase-01 rewires)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -223,19 +223,19 @@ Write the tests named in § Test plan.
 
 ## Acceptance criteria
 
-- [ ] `cargo build` is green.
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
-- [ ] `cargo fmt --all --check` reports no diff in the files this phase touched.
-- [ ] `cargo test` passes.
-- [ ] `rexymcp costs` renders rows in the order Architect, Executor, Net, with
+- [x] `cargo build` is green.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
+- [x] `cargo fmt --all --check` reports no diff in the files this phase touched.
+- [x] `cargo test` passes.
+- [x] `rexymcp costs` renders rows in the order Architect, Executor, Net, with
       the Architect value parenthesised and no `SAVED` column.
-- [ ] `rexymcp costs --tokens` renders token counts for Architect and Executor
+- [x] `rexymcp costs --tokens` renders token counts for Architect and Executor
       and `—` for Net.
-- [ ] `rexymcp costs --json` includes `executor_tokens` and `architect_tokens`
+- [x] `rexymcp costs --json` includes `executor_tokens` and `architect_tokens`
       for every scope.
-- [ ] A negative `Net` renders parenthesised, e.g. `($505.95)`, with no `-` sign.
-- [ ] The Executor row renders even when executor cost is `$0.00` in every scope.
-- [ ] `grep -rn "fn dashboard_effective_rates" mcp/src` returns **no** matches
+- [x] A negative `Net` renders parenthesised, e.g. `($505.95)`, with no `-` sign.
+- [x] The Executor row renders even when executor cost is `$0.00` in every scope.
+- [x] `grep -rn "fn dashboard_effective_rates" mcp/src` returns **no** matches
       (Task 8 rename complete).
 
 ## Test plan
@@ -868,3 +868,78 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review verdict — 2026-07-24
+
+- **Verdict:** approved_after_2
+- **Bounces:** 2 (bug-02-1 major — `—` rendered as `$0.00`; bug-02-2 minor —
+  new production `.unwrap()`). Both verified fixed.
+- **Executor:** Qwen/Qwen3.6-27B-FP8 (273 + 59 + 32 turns; **no oscillation on
+  any of the three runs**, on the file that oscillated 4× during M35)
+- **Scope deviations:** none on either fix run. The final run was `+6 −7` in one
+  file — exactly the `let ... else` binding and three test renames.
+- **Calibration:** green-bounce refined re-dispatch confirmed 3rd and 4th time;
+  the architect spec-error family reached **eight** occurrences this milestone.
+  Both recorded below.
+
+**Reviewer verification.** Four gates re-run independently with a forced
+recompile, zero warnings. Tests **647** — and 647 was the finish condition
+precisely *because* this fix adds none; an increase would have signalled scope
+creep. Production paths in both `costs.rs` and `panels.rs` are free of
+`unwrap`/`expect`/`panic!`. All three renames landed, old names gone.
+
+**Mutations run by the reviewer across the three rounds — every one bites:**
+
+| mutation | fails |
+|---|---|
+| `DASH` `"—  "` → `"—"` | `ledger_dash_aligns_with_decimal_column` |
+| `net_val` → `unwrap_or(0.0)` | `ledger_none_net_renders_dash` |
+| drop negative-`Net` parens | `ledger_negative_net_is_parenthesised` |
+| relabel Architect row | row-order tests, both surfaces |
+| drop the early return | `savings_lines_empty_without_session_metrics` |
+
+All reverted; tree clean before approval.
+
+**Final state, verified against the real binary:**
+
+```
+Spend          Session Milestone   Project
+  Architect:     (—)       (—)  ($1866.23)
+  Executor:      $3.54   $111.53  $1386.72
+  Net:             —         —   ($479.50)
+
+Executor = Claude cost avoided at [architect] rates; ( ) = debit.
+```
+
+The ledger adds up — `1386.72 − 1866.23 = −479.51`, rendered `($479.50)`.
+Unattributable cells render `—`, never a false `$0.00`. `--tokens` and `--json`
+both correct. **All four M35 07d–07h alignment tests survive unchanged.**
+
+### Calibration — green-bounce refined re-dispatch (3rd and 4th confirmations)
+
+Both bounces had the profile that makes a plain re-dispatch no-op: green gates,
+clean tree, committed code. Neither defect failed a test — the first because its
+guard test had been inverted, the second because it was a standards violation
+rather than a behavior. Both times the loud header + inlined worked code +
+falsifiable finish condition got the executor to engage the bug doc, landing in
+59 and 32 turns.
+
+Four confirmations now (M30 phase-01, M38 phase-01, M38 phase-02 ×2). **This is
+past the fold threshold** — it belongs in `plugin/skills/escalate/SKILL.md` as
+the standard treatment for a green bounce, with the finish-condition trick
+generalised: state a *falsifiable* number, and invert it when the fix should add
+nothing (647, **not** 648).
+
+### Calibration — architect spec errors, eight occurrences
+
+This phase alone contributed three: an unsatisfiable cross-field alignment
+assertion in bug-02-1's verification, an incomplete Task 8 rename list (three
+named, three more invalidated by the phase's own change), and a worked fix
+referencing `align_value` after the restructure had inlined it — caught
+pre-dispatch only because I checked the source instead of trusting the draft.
+
+Across M36 and M38 the family — *asserting a spec fact without deriving it from
+the tool that defines it* — now stands at **eight**. It is the dominant failure
+mode of this milestone, ahead of any executor defect, and the executor caught
+several of them for me. The M38 close owes this a substantive `WORKFLOW.md` fold,
+not a note.
