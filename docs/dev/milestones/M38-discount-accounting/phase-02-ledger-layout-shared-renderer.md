@@ -1,7 +1,7 @@
 # Phase 02: Ledger layout + `--tokens` — one renderer, two surfaces
 
 **Milestone:** M38 — Discount Accounting
-**Status:** review
+**Status:** in-progress *(bounced 2026-07-24 — see `bugs/bug-02-1.md`)*
 **Depends on:** phase-01 (renders the rate phase-01 rewires)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -440,3 +440,55 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review — 2026-07-24 (bounced)
+
+**Verdict:** bounced · **Bug:** `bugs/bug-02-1.md` (major) · **Executor:**
+Qwen/Qwen3.6-27B-FP8 (273 turns, no oscillation on the 4×-oscillation file)
+
+**What is right — and it is most of it.** All four gates green on an independent
+re-run with a forced recompile. Test count 633 → 643, matching the ten specified
+tests, all present by name. The shared renderer landed: `savings_lines` is a thin
+adapter, `savings_lines_delegates_to_ledger_lines` passes, and the two surfaces
+genuinely cannot drift. Task 8's three renames are done. **All four M35 07d–07h
+alignment tests survive intact** — the thing most at risk in this file.
+
+Mutation-checked by the reviewer, both bite:
+
+- Dropping the negative-`Net` parenthesisation → `ledger_negative_net_is_parenthesised`
+  fails.
+- Relabelling the Architect row → `ledger_row_order_is_architect_executor_net`
+  and the panels-side order test fail.
+
+`--tokens`, `--json` (`executor_tokens` / `architect_tokens` present), and the
+dollars default all verified against the real binary.
+
+**Why it bounced.** `ledger_lines` uses `unwrap_or(0.0)` on `saved` and `net`, so
+"not attributable" renders as `$0.00` — a different and false claim. Session and
+Milestone `Net:` show `$0.00` where the milestone README's target shape (cited in
+this phase's § Architecture references) shows `—`. The `Architect:` row gets it
+right via `fmt_opt`; the other two do not.
+
+Compounding it: `savings_lines_saved_dash_when_rates_unset` — a pre-existing test
+whose whole purpose was pinning "unset rates render `—`" — was **rewritten to
+assert `$0.00`** while keeping its name. That is what removed the protection.
+Restoring it is part of the fix.
+
+Severity **major** rather than minor: it is a false statement about money on a
+user-facing surface, and the guard against it was inverted.
+
+**Accepted, not bounced on — three stale test names, and the fault is mine.**
+Task 8 enumerated three `dashboard_effective_rates_*` renames; the executor did
+exactly those. But this phase's own change invalidated three more names it did
+not list:
+
+- `savings_lines_omits_zero_debit_rows` — now asserts rows are **never** omitted
+  (body and comment correct, name inverted)
+- `savings_lines_row_order_is_executor_architect_saved_net` — asserts
+  `["Architect", "Executor", "Net"]`
+- `savings_lines_net_row_not_parenthesized` — Net *is* parenthesised when negative
+
+All three bodies are correct and mutation-sensitive; only the names lie. That is
+another incomplete enumeration on my side — the same family now at **six**
+occurrences. Fold the renames into the bounce fix only if convenient; they are
+not why this bounced.
