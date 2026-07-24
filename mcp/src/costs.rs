@@ -1060,4 +1060,95 @@ saved_output_per_mtok = 0.0
             "legend should be absent when no saved rate: {output}"
         );
     }
+
+    #[test]
+    fn discount_rate_comes_from_architect_config() {
+        use rexymcp_executor::ai::types::TokenBreakdown;
+        use rexymcp_executor::store::telemetry::{self, Gates, GenerationParams, PhaseRun};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let tel_dir = tmp.path().join("telemetry");
+        std::fs::create_dir_all(&tel_dir).unwrap();
+        let config_path = tmp.path().join("rexymcp.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"
+[project]
+id = "PID"
+
+[executor]
+model = "local-unpriced"
+provider = "ollama"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+format = "cargo fmt --all"
+build = "cargo build"
+lint = "cargo clippy"
+test = "cargo test"
+
+[telemetry]
+dir = "{}"
+
+[architect]
+model = "claude-fable-5"
+"#,
+                tel_dir.display()
+            ),
+        )
+        .unwrap();
+
+        // One run: 1M input, 1M output, attributed to project PID.
+        let run = PhaseRun {
+            ts: 1,
+            model: "local-unpriced".into(),
+            generation_params: GenerationParams::default(),
+            phase_id: "p".into(),
+            phase_doc_path: None,
+            tags: vec![],
+            status: "complete".into(),
+            escalated: false,
+            gates: Gates {
+                fmt: Some(true),
+                build: Some(true),
+                lint: Some(true),
+                test: Some(true),
+            },
+            parse_failure_rate: 0.0,
+            repairs_per_call: 0.0,
+            verifier_retries: 0,
+            tool_success_rate: 1.0,
+            turns: 1,
+            wall_clock_s: 1.0,
+            tokens: TokenBreakdown {
+                input_tokens: 1_000_000,
+                output_tokens: 1_000_000,
+                ..Default::default()
+            },
+            warnings: None,
+            bugs_filed: None,
+            bounces_to_approval: None,
+            architect_verdict: None,
+            served_model: None,
+            length_finish_rate: None,
+            context_window: None,
+            context_efficiency: Default::default(),
+            project_id: Some("PID".into()),
+            milestone_id: None,
+            tier_telemetry: Default::default(),
+            ..Default::default()
+        };
+        telemetry::append(&tel_dir, &run).unwrap();
+
+        let report = load_cost_report(&config_path, tmp.path(), None, None).unwrap();
+
+        // claude-fable-5 = $10/Mtok in, $50/Mtok out.
+        // 1M * 10 + 1M * 50 = $60.00 — NOT the $30.00 opus-4-8 would give.
+        let saved = report.project.saved.expect("project saved must be priced");
+        assert!(
+            (saved - 60.0).abs() < 1e-9,
+            "discount must use [architect] rates (fable-5 => $60.00), got {saved}"
+        );
+    }
 }
