@@ -3,7 +3,7 @@
 **Goal:** Stop the governor from hard-killing read-only diagnosis at
 write-thrash thresholds, and clear the last of M35's accounting debt.
 
-**Status:** planning
+**Status:** in-progress *(opened 2026-07-24)*
 
 **Depends on:** M34 (`NoProgressStall`, which this milestone makes the sole
 read-only terminator), M35 (source of the calibration data and the debt)
@@ -82,12 +82,13 @@ Rejected alternatives, recorded so they are not re-litigated:
 
 ## Phases
 
-Not yet expanded. Per WORKFLOW.md § Milestones, the architect expands a
-milestone into phases on demand. Expected shape:
+**Phase 01 is drafted** (2026-07-24). Phases 02–05 stay sketched — per
+WORKFLOW.md § Milestones the architect expands on demand, and 01 changes a
+terminator whose outcome may inform how the rest are scoped.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Read-only exemption in the oscillation + identical-repetition detectors | todo |
+| 01 | Read-only exemption in the oscillation + identical-repetition detectors ([phase-01-read-only-exemption.md](phase-01-read-only-exemption.md)) | todo |
 | 02 | `oscillation_stall` + `missing_spec_test` in `FAILURE_CLASSES` | todo |
 | 03 | Consolidate the three token formatters into `metrics` | todo |
 | 04 | k/M compaction for `calibrate-governor`'s byte columns | todo |

@@ -4,8 +4,39 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.** M38 closed 2026-07-24. The next milestone is a human
-gate, and **two calibration folds await sign-off** — see below.
+**Active phase:
+[M37 phase-01 — exempt read-only windows from the oscillation detectors](milestones/M37-governor-read-only-calibration/phase-01-read-only-exemption.md)
+(status: todo — drafted 2026-07-24).**
+
+## M37 — Governor Read-Only Calibration (OPEN, active)
+
+**Phase 01 drafted; 02–05 stay sketched** — on-demand expansion, and 01 changes a
+terminator whose outcome may inform the rest.
+
+**Phase 01 is the milestone.** `check_oscillation` and `check_identical_repetition`
+key on `(tool, arguments)` and are blind to whether a call *mutates* anything, so
+read-only diagnosis is killed at write-thrash thresholds — 4 occurrences across the
+M35 arc, every one recovering on a resume or refined re-dispatch. M34's
+`NoProgressStall` already covers read-only spinning at threshold **60** vs the
+detectors' **6/8**; the tight one always wins, which is why it pre-empts. Fix:
+exempt windows with no file-mutating call from both, leaving read-only loops to
+`NoProgressStall` alone.
+
+**The risk is a blanket disable**, so the spec front-loads negative tests: a window
+with a write still fires; a mutation at the far edge of the window still fires; and
+— the one that catches the likeliest wrong implementation — a mutation *outside* the
+inspected slice must still be exempt, because each detector's window is its own
+(`threshold` for identical-repetition, `oscillation_window` for oscillation), not
+the whole deque.
+
+**E2E is the calibration corpus.** This is the first terminator change since
+`calibrate-governor` existed; the replay distributions must **not** move, since the
+phase changes what fires on future runs, not how past ones score.
+
+**Both M38 folds are LANDED** (`WORKFLOW.md` + plugin template: "Derive every spec
+fact from its source"; `plugin/skills/escalate/SKILL.md`: "Green bounces need a
+refined re-dispatch"). **M39 logged as a candidate** in architecture.md — executor
+cache buckets read zero across all 41 in-schema runs.
 
 ## ⭐ M38 — CLOSED 2026-07-24; two folds awaiting sign-off
 
