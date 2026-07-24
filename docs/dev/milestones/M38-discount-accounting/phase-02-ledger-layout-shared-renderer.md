@@ -492,3 +492,67 @@ All three bodies are correct and mutation-sensitive; only the names lie. That is
 another incomplete enumeration on my side — the same family now at **six**
 occurrences. Fold the renames into the bounce fix only if convenient; they are
 not why this bounced.
+
+### Notes for executor — 2026-07-24 (BOUNCE FIX, refined re-dispatch)
+
+> ## ⛔ THIS IS A BOUNCE FIX, NOT A GREEN-GATE RE-VERIFY
+>
+> **All four gates pass right now and the tree is clean. That is EXPECTED and is
+> NOT evidence this phase is done.** The bug does not fail any test — because the
+> test that would have caught it was rewritten to assert the wrong thing.
+>
+> Everything in § Spec Tasks 1–9 is already implemented and was verified correct
+> by the architect. Do **not** re-do it. Do **not** report "already complete".
+>
+> **Two edits remain, both in service of one defect.** See `bugs/bug-02-1.md`
+> for the full write-up and the exact replacement code.
+
+**1. Stop rendering "not attributable" as `$0.00`** — `mcp/src/costs.rs`,
+inside `ledger_lines`, the `executor_val` closure (~line 491) and the `net_val`
+closure (~line 509). Both currently call `unwrap_or(0.0)`, which turns "cannot be
+computed at this scope" into a claim that the value is zero. Replace with the
+`match`-on-`Option` versions in the bug doc's § How to fix, returning the aligned
+dash `"—  "` for `None`.
+
+**2. Restore the inverted guard test** — `mcp/src/dashboard/panels.rs`,
+`savings_lines_saved_dash_when_rates_unset`. It currently asserts
+`executor_line.contains("$0.00")`. Its name, and its original purpose, say `—`.
+Restore the `—` assertion. **Do not rename it to match the wrong behavior** — the
+name was right and the assertion drifted.
+
+Then add the four tests in the bug doc's § Verification.
+
+**The falsifiable finish condition.** After the fix:
+
+```
+$ cargo run -p rexymcp -- costs --config rexymcp.toml --repo . | head -4
+Spend          Session Milestone   Project
+  Architect:     (—)       (—)  ($1833.40)
+  Executor:      ...       ...        ...
+  Net:             —         —  ($459.38)      <- dashes, NOT $0.00
+```
+
+Session and Milestone `Net:` must read `—`. If they still read `$0.00`, the fix
+is not in. Exact dollar figures will differ from the sample — the ledger grows
+between runs; the **dashes** are what matters.
+
+**Out of scope for this fix.** Do not touch row order, labels, the header, the
+`--tokens` flag, `format_costs`, `savings_lines`' adapter shape, or any other
+test. The three stale test names noted in the review
+(`savings_lines_omits_zero_debit_rows`,
+`savings_lines_row_order_is_executor_architect_saved_net`,
+`savings_lines_net_row_not_parenthesized`) are **optional** — rename them only if
+it costs nothing; they are not why this bounced and must not expand the diff.
+
+**On this file.** `panels.rs` oscillated 4× during M35. Use the compiler error to
+locate any syntax problem; **never hunt by re-reading the file in a loop.** The
+replacement code is inlined in the bug doc — implement from it rather than
+re-deriving.
+
+**Completion checklist:**
+
+1. `rexymcp costs` shows `—` for Session and Milestone `Net:`.
+2. `savings_lines_saved_dash_when_rates_unset` asserts `—` and passes.
+3. Four new tests from the bug doc's § Verification pass.
+4. All four M35 alignment tests still pass unchanged.
+5. All four gates green; `cargo test -p rexymcp` reports **647** (was 643).
