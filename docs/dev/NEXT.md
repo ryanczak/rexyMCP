@@ -4,64 +4,53 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:
-[M38 phase-02 — ledger layout + `--tokens`, one renderer for two surfaces](milestones/M38-discount-accounting/phase-02-ledger-layout-shared-renderer.md)
-(status: todo — dispatched 2026-07-24). Last phase of M38.**
+**Active phase: none.** M38 closed 2026-07-24. The next milestone is a human
+gate, and **two calibration folds await sign-off** — see below.
 
-**phase-01 — done (2026-07-24, approved_after_1; executor Qwen/Qwen3.6-27B-FP8, 87 + 40
-turns).** `DashboardConfig` removed; the discount now derives from
-`[architect].effective_rates()`, so there is one Claude rate instead of two. A fresh
-`rexymcp init` no longer scaffolds a second rate table — the dark-by-default hole is
-closed. **Bounced once** (bug-01-1, minor): the spec named four tests, three were
-written, and the missing one was the only thing pinning `costs.rs:222`. **Green-bounce
-countermeasure confirmed a 2nd time** — a plain re-dispatch would have no-opped (green
-gates, clean tree); the loud bounce-fix header + inlined worked example + falsifiable
-finish condition (633 tests, not 632) got it engaged in 40 turns. Reviewer re-ran the
-mutation independently: hardcoding `(5.0, 25.0)` fails the test with `got 30`.
+## ⭐ M38 — CLOSED 2026-07-24; two folds awaiting sign-off
 
-## M38 — Discount Accounting (OPEN, active)
+Both phases `done`. Two phases, **five dispatches, three bounces**. Retrospective is
+in the M38 README Notes; `docs/architecture.md` §38 marked done.
 
-Opened immediately after the M36 close, from the user running `rexymcp costs` and
-observing that executor savings were not shown. **The framing is the user's:** executor
-tokens are work Claude was *not billed for*, so they are worth the **architect model's**
-rate — rexyMCP's costs are *discounts* on `[architect] model`. Only one Claude rate
-should ever exist.
+**Shipped.** `rexymcp costs` and the dashboard are now a discount ledger: one Claude
+rate (`[architect]`, `DashboardConfig` gone), parens carrying debit/credit so no
+`SAVED` column is needed, rows that add up, `—` for genuinely-unattributable cells
+instead of a false `$0.00`, `--tokens` + `--json` token counts, and **one renderer
+both surfaces call** so they cannot drift.
 
-Three defects followed from not saying that plainly:
+**Executor.** Zero oscillations across all five runs — including three consecutive on
+`panels.rs`, which hard-failed on oscillation 4× during M35. The M35 folds are
+holding. Both bounces were defects **no gate could see**: a false `$0.00` whose guard
+test had been rewritten to assert the wrong thing, and a new production `.unwrap()`
+that violates STANDARDS without failing anything. Nine reviewer-run mutations, all bit.
 
-1. **Duplicate rate table** — the discount priced from `[dashboard] saved_*`, architect
-   spend from `[architect]`. They agree here only because both resolve to `(5.0, 25.0)`;
-   switching `[architect] model` to `claude-fable-5` would silently halve the discount.
-2. **Dark by default** — `rexymcp init` comments out every `[dashboard]` rate, so a fresh
-   project shows `SAVED —` / `NET —`. The product's headline number is invisible until
-   the user hand-configures a duplicate of something already configured.
-3. **Executor unrenderable** — `debit_row` hides rows empty in every scope, and executor
-   *cost* is `$0.00` in every scope for an unpriced local model, so the row never draws
-   on either surface. Token counts are computed into `ScopeCosts` then discarded before
-   `format_costs` or `--json`.
+### ⛔ TWO FOLDS DRAFTED, NOT LANDED — need user sign-off
 
-**Target shape** — parens carry debit/credit, so no `SAVED` column or `avoided:` row:
+Per architect skill §6 prohibition 5, contract docs are not edited without approval.
 
-```
-Budget            Session  Milestone     Project      Budget (tok)   Session  Milestone   Project
-  Architect:          (—)        (—)  ($1781.15)        Architect:         —          —      1.5B
-  Executor:         $2.96     $46.47    $1275.19        Executor:          —       9.1M    252.6M
-  Net:                  —          —    ($505.95)       Net:               —          —         —
-```
+1. **`WORKFLOW.md` § Calibration — "Derive every spec fact from its source."**
+   **Ten occurrences** across M36+M38: the architect states a line number, a CLI
+   flag, a file list, a corpus figure, or an assertion that must hold, without
+   deriving it from the tool that defines it. Only 2 of 10 were caught before
+   dispatch; the executor caught 3 and adapted correctly each time. This was the
+   milestone's dominant failure mode, ahead of anything the executor did.
+2. **`plugin/skills/escalate/SKILL.md` — green-bounce refined re-dispatch.**
+   **Four occurrences.** A phase bounced on test quality or a standards violation
+   has green gates and a clean tree, so a plain re-dispatch no-ops. Countered
+   successfully 3× in M38 with: loud "green gates are expected, not evidence"
+   header + inlined worked fix + a **falsifiable finish condition**, *inverted*
+   when the fix should add nothing ("647, **not** 648").
 
-The rows add up: `Executor $1275.19` (credit) + `Architect ($1781.15)` (debit) =
-`Net ($505.95)`. Replaces the three-term `NET = SAVED − EXECUTOR − ARCHITECT` that
-needed a legend. `b` toggles units on the dashboard; `--tokens` mirrors it on the CLI,
-dollars by default.
+Proposed wording is in the session transcript; ask for it to be restated if this
+is read fresh.
 
-- **01 single rate source** — repoint 2 readers to `cfg.architect.effective_rates()`,
-  then **remove `DashboardConfig` outright** (a documented-but-ignored knob actively
-  misleads). 12 grep-verified sites across 5 files, readers-before-definition order
-  pre-injected. No rendering change: `SAVED` figures must come out **identical**.
-- **02 ledger layout + `--tokens`** — collapse `SAVED` into the Executor row, parenthesise
-  negative `Net`, stop suppressing the Executor row, thread token counts into
-  `CostReport`, and extract **one** renderer both surfaces call. Touches `panels.rs`, the
-  4×-oscillation file — anti-oscillation gotchas and exact code blocks pre-injected.
+### Carried forward
+
+- **M37 phase-05** — server-authored completion bookkeeping: 3 defects, 8+ occurrences.
+- **M37 phase-02** — `FAILURE_CLASSES` gaps: `oscillation_stall` **and** `missing_spec_test`.
+- **Executor cache buckets read zero** across all 41 in-schema runs — vLLM may not
+  surface prefix-cache hits, or they are not captured. Uninvestigated, no milestone.
+- Three duplicate `architect_effective_rates_*` tests in `panels.rs` (deliberate).
 
 ## M37 — Governor Read-Only Calibration (planned, NOT started)
 

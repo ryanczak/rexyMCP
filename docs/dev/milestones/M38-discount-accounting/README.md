@@ -4,7 +4,7 @@
 **discount** on architect token cost — as a two-line ledger with a net, priced
 from a single Claude rate.
 
-**Status:** in-progress *(opened 2026-07-23)*
+**Status:** done *(opened 2026-07-23, closed 2026-07-24)*
 
 **Depends on:** M36 (this corrects the surface M36 shipped)
 
@@ -134,3 +134,127 @@ family — asserting or specifying without deriving from the source of truth.
 unstarted; it remains a human gate. M38 leads because it is user-facing and the
 user raised it. The two are independent — M37 is `executor/governor`, M38 is
 `mcp/` display and `executor/config`.
+
+---
+
+## M38 retrospective (close: 2026-07-24)
+
+**Two phases, five dispatches, three bounces.** That ratio is the milestone's
+real story, and it is not an executor story — see § Calibration.
+
+### What shipped
+
+`rexymcp costs` and the dashboard Budget panel now state rexyMCP's premise
+directly: executor tokens are work Claude was not billed for, priced at the
+architect model's rate, so the report is a **discount ledger**.
+
+```
+Spend          Session Milestone   Project
+  Architect:     (—)       (—)  ($1866.23)
+  Executor:      $3.54   $111.53  $1386.72
+  Net:             —         —   ($479.50)
+
+Executor = Claude cost avoided at [architect] rates; ( ) = debit.
+```
+
+- **One Claude rate.** `DashboardConfig` is gone; the discount derives from
+  `[architect].effective_rates()`. The duplicate table could silently halve the
+  reported discount by changing one config key, and did not agree with
+  `[architect]` by design — only by coincidence.
+- **Not dark by default.** `rexymcp init` no longer scaffolds a second rate
+  table. Setting `[architect] model` — needed anyway — lights the whole report.
+- **Parens carry the semantics.** No `SAVED` column, no `avoided:` row: a debit
+  is parenthesised, a credit is plain, and the rows add up
+  (`1386.72 − 1866.23 = −479.51`). Replaces the three-term
+  `NET = SAVED − EXECUTOR − ARCHITECT` that needed a legend to parse.
+- **`—` means "not attributable", never `$0.00`.** Architect cost is
+  project-scope-only, so Session and Milestone `Net` are genuinely unknown.
+  Rendering them as zero was a false financial statement (bug-02-1).
+- **One renderer, two surfaces.** `savings_lines` is a thin adapter over
+  `ledger_lines`; `savings_lines_delegates_to_ledger_lines` makes drift
+  impossible. The same de-duplication M35 06b-i applied to the aggregation.
+- **`--tokens` mirrors the dashboard `b` key**; `--json` carries
+  `executor_tokens` / `architect_tokens`, which were computed and discarded before.
+
+### Executor performance
+
+| phase | dispatches | turns | outcome |
+|---|---|---|---|
+| 01 | 2 | 87 + 40 | approved_after_1 |
+| 02 | 3 | 273 + 59 + 32 | approved_after_2 |
+
+**Zero oscillations across all five runs**, including three consecutive runs on
+`panels.rs` — the file that hard-failed on oscillation four times during M35.
+The M35 folds (pre-inject compiler-error recovery; pin the fixture that makes
+the row appear) are holding. Scorecard for `Qwen/Qwen3.6-27B-FP8` now reads
+N=8, gates 1.00, AFT 0.60 — the M38 bounces pulled the first-try rate down from
+the N=3 reading of 1.00, which is the honest correction to a sample that was
+always too small to mean anything.
+
+**Both bounces were defects no gate could see**, which is the case for having a
+review gate at all:
+
+- **bug-02-1 (major)** — `$0.00` where `—` was correct. Failed no test *because
+  the guard test had been rewritten to assert the wrong thing*.
+- **bug-02-2 (minor)** — a new production `.unwrap()`. A STANDARDS violation
+  rather than a behavior, so nothing could fail.
+
+Nine reviewer-run mutations across the milestone; every one bit.
+
+### Calibration — the architect spec-error family, TEN occurrences
+
+**This is the milestone's dominant failure mode, ahead of anything the executor
+did.** The pattern: *the architect states a fact in a spec — a line number, a
+flag, a file list, a figure, an assertion that must hold — without deriving it
+from the tool that defines it.*
+
+| # | occurrence | surfaced |
+|---|---|---|
+| 1 | M36: `+59.6M` quoted pre-dedup; real recovery `+36.1M` | at review |
+| 2 | M36 phase-02: file list from memory, missed `main.rs` | by the executor |
+| 3 | M38: dropped "must track Executor token usage" between design and spec | by the user |
+| 4 | phase-01 AC5 demanded zero `saved_*` matches while Task 3 required a fixture keeping them | at review |
+| 5 | phase-01 E2E used `init --config`; the flag is `--dir` | by the executor |
+| 6 | phase-02 cited drifted line numbers | pre-dispatch, by me |
+| 7 | phase-02 Task 8 named 3 renames; the phase invalidated 3 more | at review |
+| 8 | bug-02-1's worked fix cited `align_value` after the restructure inlined it | pre-dispatch, by me |
+| 9 | bug-02-1's verification demanded a cross-field alignment equality that is unsatisfiable | by the executor |
+| 10 | this review's own status edits no-opped against strings already rewritten | by checking the result |
+
+Only **two** were caught before dispatch. The executor caught three of them and
+adapted correctly each time, declaring the deviation — exactly the
+declare-deviations discipline WORKFLOW asks for.
+
+**A `WORKFLOW.md` fold is drafted and awaiting user sign-off** (per architect
+skill § 6 prohibition 5). It is not landed in this commit.
+
+### Calibration — green-bounce refined re-dispatch, FOUR occurrences
+
+A phase bounced on test quality or a standards violation has green gates and a
+clean tree, so a plain re-dispatch reads as already-done and no-ops. Confirmed
+on M30 phase-01 (returned `complete`, empty diff), then countered successfully
+three times in M38: phase-01, and phase-02 twice.
+
+The working treatment: a loud header stating green gates are **expected and not
+evidence of completion**, the remaining work enumerated, the fix inlined as a
+worked example, and a **falsifiable finish condition** — with the refinement
+that the condition should be *inverted* when the fix should add nothing
+(bug-02-2's was "647, **not** 648", so a rising count signalled scope creep
+rather than success).
+
+**Also drafted for `plugin/skills/escalate/SKILL.md`, awaiting sign-off.**
+
+### Carried forward
+
+- **M37 phase-05** — server-authored completion bookkeeping, now 3 defects and
+  8+ occurrences (unticked criteria, no E2E block, `Executor:` from model
+  self-report).
+- **M37 phase-02** — `FAILURE_CLASSES` gaps: `oscillation_stall` **and**
+  `missing_spec_test`, both recorded open-vocab.
+- **Duplicate rate tests** — `panels.rs` keeps three `architect_effective_rates_*`
+  tests duplicating `config.rs`. Deliberately left: deleting tests was out of
+  scope for a rendering phase and a duplicate passing test costs nothing.
+- **Executor cache buckets read zero.** All 41 in-schema runs report
+  `cache_read`/`cache_write` of 0 — either vLLM does not surface prefix-cache
+  hits in its OpenAI-compatible response, or they are not captured. The buckets
+  M35 06b-i wired up receive nothing. Not investigated; no milestone yet.

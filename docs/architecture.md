@@ -1232,8 +1232,8 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-38. **M38 — Discount Accounting** *(in progress; opened 2026-07-23 immediately
-    after the M36 close)*. States rexyMCP's premise in the accounting itself:
+38. **M38 — Discount Accounting** *(done 2026-07-24; opened 2026-07-23
+    immediately after the M36 close)*. States rexyMCP's premise in the accounting itself:
     work the executor does is work Claude was **not billed for**, so executor
     tokens have a dollar value and that value is the **architect model's** rate.
     rexyMCP's "costs" are therefore *discounts* on what `[architect] model`
@@ -1265,7 +1265,20 @@ The project plan. Each entry becomes a milestone with its own
     documented-but-ignored knob actively misleads); 02 ledger layout, shared
     renderer, and `--tokens`. Design credit is the user's: the discount framing,
     the redundancy of an `avoided:` row once `( )` carries the sign, and reusing
-    `b` rather than inventing a second control.
+    `b` rather than inventing a second control. **Closed after two phases, five
+    dispatches and three bounces** — both bounces being defects no gate could
+    see (`$0.00` where `—` was correct, its guard test having been rewritten to
+    assert the wrong thing; then a new production `.unwrap()`, a STANDARDS
+    violation rather than a behavior). Nine reviewer-run mutations, all of which
+    bit. **Zero oscillations across all five runs**, including three consecutive
+    on `panels.rs`, the file that hard-failed on oscillation 4× during M35 — the
+    M35 folds are holding. The milestone's dominant failure mode was **the
+    architect's own**: ten occurrences of stating a spec fact (a line number, a
+    flag, a file list, a figure, an assertion) without deriving it from the tool
+    that defines it — only two caught before dispatch, three caught by the
+    executor. A `WORKFLOW.md` fold and a `plugin/skills/escalate/SKILL.md` fold
+    (green-bounce refined re-dispatch, 4 occurrences) are drafted and held for
+    user sign-off rather than landed at close.
 37. **M37 — Governor Read-Only Calibration** *(planned; opened 2026-07-23 at
     the M35 close)*. The STRONG calibration fold M35 accumulated and deferred.
     `check_oscillation` and `check_identical_repetition`
