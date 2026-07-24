@@ -1,7 +1,7 @@
 # Phase 02: Ledger layout + `--tokens` — one renderer, two surfaces
 
 **Milestone:** M38 — Discount Accounting
-**Status:** in-progress *(bounced 2026-07-24 — see `bugs/bug-02-2.md`)*
+**Status:** review
 **Depends on:** phase-01 (renders the rate phase-01 rewires)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -772,3 +772,99 @@ be byte-identical to now (Session/Milestone `Net:` = `—`, Project parenthesise
 
 **On this file.** `panels.rs` oscillated 4× during M35. Use the compiler error to
 locate any syntax problem; **never hunt by re-reading the file in a loop.**
+### Update — ts=1784860498225 (complete, server-authored)
+
+**Summary:** **Summary + Notes for review:**
+
+Fixed the bounce bug (bug-02-2): replaced the `is_none()` guard + `.unwrap()` pattern in `savings_lines` with a `let Some(sess_in) = ... else { return Vec::new(); }` binding, removing the production `.unwrap()` while preserving the exact early-return behavior. Also renamed three stale test functions whose names had drifted from their bodies after the ledger layout change: `savings_lines_omits_zero_debit_rows` → `savings_lines_never_omits_rows`, `savings_lines_row_order_is_executor_architect_saved_net` → `savings_lines_row_order_is_architect_executor_net`, and `savings_lines_net_row_not_parenthesized` → `savings_lines_net_row_parenthesized_when_negative`. All test bodies unchanged.
+
+**E2E result:** `rexymcp costs` output is byte-identical to the approved state (Session/Milestone `Net:` = `—`, Project parenthesised). All 647 tests pass, clippy clean, fmt clean. No `.unwrap()` remains in production code in `panels.rs` (all remaining `.unwrap()` calls are in the `#[cfg(test)]` module, exempt per standards). Working tree is clean.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1032 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.10s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `mcp/src/dashboard/panels.rs` — +6 -7
+
+**Commit:** 0108e4a6d53345a06bcdeac89c72b16adc025338
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
