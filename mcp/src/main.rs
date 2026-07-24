@@ -274,8 +274,10 @@ enum Commands {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Report token cost (Executor/Architect/Saved/Net) across
+    /// Report token cost (Architect/Executor/Net) across
     /// Session / Milestone / Project.
+    ///
+    /// Use `--tokens` to show raw token counts instead of dollar values.
     ///
     /// See also: runs, scorecard, profile, calibrate-governor.
     Costs {
@@ -294,6 +296,9 @@ enum Commands {
         /// Emit JSON instead of a human table
         #[arg(long)]
         json: bool,
+        /// Show raw token counts instead of dollar values
+        #[arg(long)]
+        tokens: bool,
     },
     /// Report whether the configured toolchain + verifier enhancers are on PATH
     Doctor {
@@ -909,7 +914,13 @@ async fn main() -> anyhow::Result<()> {
             session,
             telemetry_path,
             json,
+            tokens,
         } => {
+            let units = if tokens {
+                costs::LedgerUnits::Tokens
+            } else {
+                costs::LedgerUnits::Dollars
+            };
             match costs::load_cost_report(
                 &config,
                 &repo,
@@ -920,7 +931,7 @@ async fn main() -> anyhow::Result<()> {
                     if json {
                         println!("{}", serde_json::to_string_pretty(&report).unwrap());
                     } else {
-                        println!("{}", costs::format_costs(&report));
+                        println!("{}", costs::format_costs_with(&report, units));
                         let config_path = config.clone();
                         match Config::load_with_env(&config_path) {
                             Ok(ref cfg) => {

@@ -1,7 +1,7 @@
 # Phase 02: Ledger layout + `--tokens` — one renderer, two surfaces
 
 **Milestone:** M38 — Discount Accounting
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01 (renders the rate phase-01 rewires)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -325,3 +325,9 @@ No new dependencies. No edits to `docs/architecture.md`.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-24 01:07 (started)
+
+**Executor:** Claude (Sonnet 4.5)
+
+Implemented all 9 spec tasks: threaded token counts into `ScopeReport`, extracted shared `ledger_lines` renderer in `costs.rs`, rewired `savings_lines` and `format_costs` onto it, added `--tokens` CLI flag, updated README, renamed 3 misleading tests, and wrote all new ledger tests.

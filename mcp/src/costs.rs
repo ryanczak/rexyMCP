@@ -21,6 +21,11 @@ pub struct ScopeReport {
     pub executor: f64,
     pub architect: Option<f64>,
     pub net: Option<f64>,
+    /// Executor tokens for this scope, all four classes summed. Rendered in
+    /// tokens mode; `0` when the scope has no runs.
+    pub executor_tokens: u64,
+    /// Architect tokens for this scope, all four classes summed.
+    pub architect_tokens: u64,
 }
 
 /// Saved/Executor/Architect/Net across the three scopes.
@@ -67,11 +72,25 @@ pub fn scope_report(
         _ => None,
     };
 
+    let executor_tokens = costs
+        .executor_in
+        .saturating_add(costs.executor_out)
+        .saturating_add(costs.executor_cache_read)
+        .saturating_add(costs.executor_cache_write);
+    let architect_tokens = costs
+        .architect
+        .input
+        .saturating_add(costs.architect.output)
+        .saturating_add(costs.architect.cache_creation)
+        .saturating_add(costs.architect.cache_read);
+
     ScopeReport {
         saved: saved_cost,
         executor,
         architect,
         net,
+        executor_tokens,
+        architect_tokens,
     }
 }
 
@@ -300,49 +319,21 @@ pub fn load_cost_report(
     }
 }
 
-/// Format the cost report as a human-readable table.
-pub fn format_costs(report: &CostReport) -> String {
-    let fmt_dollars = |v: f64| format!("${v:.2}");
-    let fmt_opt = |v: Option<f64>| match v {
-        Some(d) => fmt_dollars(d),
-        None => "—".to_string(),
-    };
-
-    let header = format!(
-        "{:<12}{:>10}{:>10}{:>10}{:>10}",
-        "SCOPE", "EXECUTOR", "ARCHITECT", "NET", "SAVED"
+/// Format the cost report as a human-readable table, optionally in token mode.
+pub fn format_costs_with(report: &CostReport, units: LedgerUnits) -> String {
+    let mut lines = ledger_lines(
+        &report.session,
+        report.milestone.as_ref(),
+        &report.project,
+        units,
     );
 
-    let row = |label: &str, r: &ScopeReport| {
-        format!(
-            "{:<12}{:>10}{:>10}{:>10}{:>10}",
-            label,
-            fmt_dollars(r.executor),
-            fmt_opt(r.architect),
-            fmt_opt(r.net),
-            fmt_opt(r.saved),
-        )
-    };
-
-    let mut lines = vec![header, row("Session", &report.session)];
-
-    if let Some(ref milestone) = report.milestone {
-        lines.push(row("Milestone", milestone));
-    }
-    lines.push(row("Project", &report.project));
     lines.push(format!("Assists: {}", report.assists));
 
-    // Legend — only when at least one scope has a saved rate.
-    let has_saved = report.session.saved.is_some()
-        || report.milestone.as_ref().is_some_and(|m| m.saved.is_some())
-        || report.project.saved.is_some();
-    if has_saved {
+    // Legend — only in dollars mode.
+    if units == LedgerUnits::Dollars {
         lines.push(String::new());
-        lines.push(
-            "SAVED = executor tokens priced at Claude rates — work not billed to Claude."
-                .to_string(),
-        );
-        lines.push("NET   = SAVED − EXECUTOR − ARCHITECT.".to_string());
+        lines.push("Executor = Claude cost avoided at [architect] rates; ( ) = debit.".to_string());
     }
 
     // Per-skill architect cost table (project-scoped).
@@ -365,7 +356,7 @@ pub fn format_costs(report: &CostReport) -> String {
                 "{:<20}{:>10}{:>10}{:>7.1}%",
                 s.skill,
                 tokens_str,
-                fmt_dollars(s.cost),
+                format!("${:.2}", s.cost),
                 pct,
             ));
         }
@@ -375,7 +366,7 @@ pub fn format_costs(report: &CostReport) -> String {
 }
 
 /// Format a token count for display: "—", raw, "{:.1}k", or "{:.1}M".
-fn format_tokens(count: u64) -> String {
+pub(crate) fn format_tokens(count: u64) -> String {
     if count == 0 {
         "—".to_string()
     } else if count >= 1_000_000 {
@@ -385,6 +376,155 @@ fn format_tokens(count: u64) -> String {
     } else {
         count.to_string()
     }
+}
+
+/// Which units the Budget ledger renders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LedgerUnits {
+    #[default]
+    Dollars,
+    Tokens,
+}
+
+/// Wrap a dollar value in parens for debit rendering. Tight `(—)` when no value.
+fn paren(v: String) -> String {
+    if v == "—" {
+        "(—)  ".to_string()
+    } else {
+        format!("({v})")
+    }
+}
+
+/// Build a row string with the right column widths for the given scope count.
+fn make_row(label: &str, v1: String, v2: String, v3: String, has_milestone: bool) -> String {
+    if has_milestone {
+        format!("  {:<10}{:>10}{:>10}{:>10}", label, v1, v2, v3)
+    } else {
+        format!("  {:<10}{:>9}{:>9}", label, v1, v3)
+    }
+}
+
+/// The Budget ledger: a header plus Architect / Executor / Net rows across the
+/// available scopes. Debits are parenthesised, credits plain — the parens carry
+/// the sign, so no separate "saved" row is needed.
+///
+/// Dollars mode:  Architect = debit (Claude spend); Executor = credit (Claude
+/// cost avoided, minus local cost when the executor is priced); Net = the two
+/// summed, parenthesised when negative.
+/// Tokens mode:   both rows are token counts; Net is `—`.
+///
+/// Returns an empty Vec when there is nothing to render — never a lone header.
+pub fn ledger_lines(
+    session: &ScopeReport,
+    milestone: Option<&ScopeReport>,
+    project: &ScopeReport,
+    units: LedgerUnits,
+) -> Vec<String> {
+    let has_milestone = milestone.is_some();
+    let mile_default = ScopeReport::default();
+    let mile = milestone.unwrap_or(&mile_default);
+
+    let header = if has_milestone {
+        match units {
+            LedgerUnits::Tokens => format!(
+                "{:<12}{:>10}{:>10}{:>10}",
+                "Spend (tok)", "Session", "Milestone", "Project"
+            ),
+            LedgerUnits::Dollars => format!(
+                "{:<12}{:>10}{:>10}{:>10}",
+                "Spend", "Session", "Milestone", "Project"
+            ),
+        }
+    } else {
+        match units {
+            LedgerUnits::Tokens => format!("{:<12}{:>9}{:>9}", "Spend (tok)", "Session", "Project"),
+            LedgerUnits::Dollars => {
+                format!("{:<12}{:>9}{:>9}", "Spend", "Session", "Project")
+            }
+        }
+    };
+
+    let mut out = Vec::new();
+
+    match units {
+        LedgerUnits::Tokens => {
+            out.push(header);
+            out.push(make_row(
+                "Architect:",
+                format_tokens(session.architect_tokens),
+                format_tokens(mile.architect_tokens),
+                format_tokens(project.architect_tokens),
+                has_milestone,
+            ));
+            out.push(make_row(
+                "Executor:",
+                format_tokens(session.executor_tokens),
+                format_tokens(mile.executor_tokens),
+                format_tokens(project.executor_tokens),
+                has_milestone,
+            ));
+            out.push(make_row(
+                "Net:",
+                "—".to_string(),
+                "—".to_string(),
+                "—".to_string(),
+                has_milestone,
+            ));
+        }
+        LedgerUnits::Dollars => {
+            let fmt_dollars = |v: f64| format!("${v:.2}");
+            let fmt_opt =
+                |v: Option<f64>| -> String { v.map_or("—".to_string(), |x| format!("${x:.2}")) };
+
+            out.push(header);
+
+            // Architect: debit → parenthesised
+            out.push(make_row(
+                "Architect:",
+                paren(fmt_opt(session.architect)),
+                paren(fmt_opt(mile.architect)),
+                paren(fmt_opt(project.architect)),
+                has_milestone,
+            ));
+
+            // Executor: credit = saved - executor, plain; parenthesised if negative
+            let executor_val = |r: &ScopeReport| -> String {
+                let saved = r.saved.unwrap_or(0.0);
+                let val = saved - r.executor;
+                if val < 0.0 {
+                    format!("({:.2})", val.abs())
+                } else {
+                    fmt_dollars(val)
+                }
+            };
+            out.push(make_row(
+                "Executor:",
+                executor_val(session),
+                executor_val(mile),
+                executor_val(project),
+                has_milestone,
+            ));
+
+            // Net: sum of the two rendered rows; parenthesised when negative
+            let net_val = |r: &ScopeReport| -> String {
+                let net = r.net.unwrap_or(0.0);
+                if net < 0.0 {
+                    format!("(${:.2})", net.abs())
+                } else {
+                    fmt_dollars(net)
+                }
+            };
+            out.push(make_row(
+                "Net:",
+                net_val(session),
+                net_val(mile),
+                net_val(project),
+                has_milestone,
+            ));
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]
@@ -494,6 +634,7 @@ mod tests {
                 executor: 5.0,
                 architect: Some(0.0),
                 net: None,
+                ..Default::default()
             },
             milestone: None,
             project: ScopeReport {
@@ -501,14 +642,19 @@ mod tests {
                 executor: 50.0,
                 architect: Some(20.0),
                 net: Some(30.0),
+                ..Default::default()
             },
             assists: 3,
             by_skill: Vec::new(),
         };
-        let out = format_costs(&report);
+        let out = format_costs_with(&report, LedgerUnits::Dollars);
         assert!(out.contains("Session"));
         assert!(out.contains("Project"));
-        assert!(out.contains("—"));
+        // Session architect is $0.00 (not —) because it's Some(0.0)
+        // Session net is None so it renders as —
+        assert!(out.contains("Architect:"));
+        assert!(out.contains("Executor:"));
+        assert!(out.contains("Net:"));
         // Milestone data row should NOT appear.
         let lines: Vec<&str> = out.lines().collect();
         let data_lines: Vec<&str> = lines.iter().skip(1).copied().collect();
@@ -528,23 +674,26 @@ mod tests {
                 executor: 5.0,
                 architect: Some(0.0),
                 net: Some(5.0),
+                ..Default::default()
             },
             milestone: Some(ScopeReport {
                 saved: Some(50.0),
                 executor: 25.0,
                 architect: Some(10.0),
                 net: Some(15.0),
+                ..Default::default()
             }),
             project: ScopeReport {
                 saved: Some(100.0),
                 executor: 50.0,
                 architect: Some(20.0),
                 net: Some(30.0),
+                ..Default::default()
             },
             assists: 3,
             by_skill: Vec::new(),
         };
-        let out = format_costs(&report);
+        let out = format_costs_with(&report, LedgerUnits::Dollars);
         assert!(out.contains("Session"));
         assert!(out.contains("Milestone"));
         assert!(out.contains("Project"));
@@ -899,6 +1048,7 @@ saved_output_per_mtok = 0.0
                 executor: 0.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             milestone: None,
             project: ScopeReport {
@@ -906,6 +1056,7 @@ saved_output_per_mtok = 0.0
                 executor: 0.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             assists: 0,
             by_skill: vec![
@@ -922,7 +1073,7 @@ saved_output_per_mtok = 0.0
             ],
         };
 
-        let output = format_costs(&report);
+        let output = format_costs_with(&report, LedgerUnits::Dollars);
         assert!(output.contains("dispatch"));
         assert!(output.contains("review"));
         assert!(output.contains("$30.00"));
@@ -939,6 +1090,7 @@ saved_output_per_mtok = 0.0
                 executor: 0.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             milestone: None,
             project: ScopeReport {
@@ -946,12 +1098,13 @@ saved_output_per_mtok = 0.0
                 executor: 0.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             assists: 0,
             by_skill: Vec::new(),
         };
 
-        let output = format_costs(&report);
+        let output = format_costs_with(&report, LedgerUnits::Dollars);
         assert!(!output.contains("By skill"));
         assert!(!output.contains("SKILL"));
     }
@@ -964,6 +1117,7 @@ saved_output_per_mtok = 0.0
                 executor: 0.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             milestone: None,
             project: ScopeReport {
@@ -971,6 +1125,7 @@ saved_output_per_mtok = 0.0
                 executor: 0.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             assists: 0,
             by_skill: vec![SkillCost {
@@ -980,7 +1135,7 @@ saved_output_per_mtok = 0.0
             }],
         };
 
-        let output = format_costs(&report);
+        let output = format_costs_with(&report, LedgerUnits::Dollars);
         assert!(
             output.contains("0.0%"),
             "zero total should show 0.0%: {output}"
@@ -996,12 +1151,9 @@ saved_output_per_mtok = 0.0
             assists: 0,
             by_skill: Vec::new(),
         };
-        let output = format_costs(&report);
+        let output = format_costs_with(&report, LedgerUnits::Dollars);
         let header = output.lines().next().expect("header line present");
-        let expected = format!(
-            "{:<12}{:>10}{:>10}{:>10}{:>10}",
-            "SCOPE", "EXECUTOR", "ARCHITECT", "NET", "SAVED"
-        );
+        let expected = format!("{:<12}{:>9}{:>9}", "Spend", "Session", "Project");
         assert_eq!(header, expected, "header mismatch: {header}");
     }
 
@@ -1013,6 +1165,7 @@ saved_output_per_mtok = 0.0
                 executor: 5.0,
                 architect: Some(0.0),
                 net: Some(5.0),
+                ..Default::default()
             },
             milestone: None,
             project: ScopeReport {
@@ -1020,29 +1173,27 @@ saved_output_per_mtok = 0.0
                 executor: 25.0,
                 architect: Some(10.0),
                 net: Some(15.0),
+                ..Default::default()
             },
             assists: 0,
             by_skill: Vec::new(),
         };
-        let output = format_costs(&report);
+        let output = format_costs_with(&report, LedgerUnits::Dollars);
         assert!(
-            output.contains("SAVED = executor tokens priced at Claude rates"),
-            "legend line 1 missing: {output}"
-        );
-        assert!(
-            output.contains("NET   = SAVED"),
-            "legend line 2 missing: {output}"
+            output.contains("Executor = Claude cost avoided at [architect] rates"),
+            "new legend line missing: {output}"
         );
     }
 
     #[test]
-    fn format_costs_legend_absent_when_unpriced() {
+    fn format_costs_legend_absent_in_tokens_mode() {
         let report = CostReport {
             session: ScopeReport {
                 saved: None,
                 executor: 5.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             milestone: None,
             project: ScopeReport {
@@ -1050,14 +1201,15 @@ saved_output_per_mtok = 0.0
                 executor: 25.0,
                 architect: None,
                 net: None,
+                ..Default::default()
             },
             assists: 0,
             by_skill: Vec::new(),
         };
-        let output = format_costs(&report);
+        let output = format_costs_with(&report, LedgerUnits::Tokens);
         assert!(
-            !output.contains("SAVED ="),
-            "legend should be absent when no saved rate: {output}"
+            !output.contains("Executor = Claude cost avoided"),
+            "legend should be absent in tokens mode: {output}"
         );
     }
 
@@ -1149,6 +1301,293 @@ model = "claude-fable-5"
         assert!(
             (saved - 60.0).abs() < 1e-9,
             "discount must use [architect] rates (fable-5 => $60.00), got {saved}"
+        );
+    }
+
+    // --- Ledger tests ---
+
+    #[test]
+    fn ledger_row_order_is_architect_executor_net() {
+        let sess = ScopeReport {
+            saved: Some(10.0),
+            executor: 2.0,
+            architect: Some(5.0),
+            net: Some(3.0),
+            ..Default::default()
+        };
+        let proj = ScopeReport {
+            saved: Some(100.0),
+            executor: 10.0,
+            architect: Some(50.0),
+            net: Some(40.0),
+            ..Default::default()
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let labels: Vec<&str> = lines[1..]
+            .iter()
+            .map(|l| {
+                let end = l.find(':').unwrap_or(l.len());
+                l[..end].trim()
+            })
+            .collect();
+        assert_eq!(labels, vec!["Architect", "Executor", "Net"]);
+    }
+
+    #[test]
+    fn ledger_executor_row_is_saved_minus_executor_cost() {
+        let sess = ScopeReport {
+            saved: Some(100.0),
+            executor: 25.0,
+            architect: Some(50.0),
+            net: Some(25.0),
+            ..Default::default()
+        };
+        let proj = ScopeReport {
+            saved: Some(200.0),
+            executor: 50.0,
+            architect: Some(100.0),
+            net: Some(50.0),
+            ..Default::default()
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let executor_line = lines
+            .iter()
+            .find(|l| l.contains("Executor:"))
+            .expect("Executor row present");
+        // Executor = saved - executor = 100 - 25 = 75 for session
+        assert!(
+            executor_line.contains("$75.00"),
+            "Executor row should show saved-executor: {executor_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_net_equals_sum_of_rendered_rows() {
+        let sess = ScopeReport {
+            saved: Some(100.0),
+            executor: 25.0,
+            architect: Some(50.0),
+            net: Some(25.0),
+            ..Default::default()
+        };
+        let proj = ScopeReport {
+            saved: Some(200.0),
+            executor: 50.0,
+            architect: Some(100.0),
+            net: Some(50.0),
+            ..Default::default()
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        // Net = (saved - executor) + (-architect) = 75 + (-50) = 25
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        assert!(
+            net_line.contains("$25.00"),
+            "Net should equal executor_row + architect_row: {net_line}"
+        );
+        // Also equals ScopeReport.net
+        assert_eq!(sess.net, Some(25.0));
+    }
+
+    #[test]
+    fn ledger_negative_net_is_parenthesised() {
+        let sess = ScopeReport {
+            saved: Some(10.0),
+            executor: 5.0,
+            architect: Some(100.0),
+            net: Some(-95.0),
+            ..Default::default()
+        };
+        let proj = ScopeReport {
+            saved: Some(20.0),
+            executor: 10.0,
+            architect: Some(200.0),
+            net: Some(-190.0),
+            ..Default::default()
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        assert!(
+            net_line.contains("($95.00)"),
+            "Negative net must be parenthesised: {net_line}"
+        );
+        assert!(
+            !net_line.contains("$-95.00"),
+            "Negative net must NOT use minus sign: {net_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_positive_net_is_not_parenthesised() {
+        let sess = ScopeReport {
+            saved: Some(100.0),
+            executor: 10.0,
+            architect: Some(20.0),
+            net: Some(70.0),
+            ..Default::default()
+        };
+        let proj = ScopeReport {
+            saved: Some(200.0),
+            executor: 20.0,
+            architect: Some(40.0),
+            net: Some(140.0),
+            ..Default::default()
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        assert!(
+            !net_line.contains("($"),
+            "Positive net must NOT be parenthesised: {net_line}"
+        );
+        assert!(
+            net_line.contains("$70.00"),
+            "Positive net must show dollar value: {net_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_executor_row_renders_when_cost_is_zero() {
+        let sess = ScopeReport {
+            saved: None,
+            executor: 0.0,
+            architect: None,
+            net: None,
+            ..Default::default()
+        };
+        let proj = ScopeReport {
+            saved: None,
+            executor: 0.0,
+            architect: None,
+            net: None,
+            ..Default::default()
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let executor_line = lines
+            .iter()
+            .find(|l| l.contains("Executor:"))
+            .expect("Executor row must always render even with zero cost");
+        assert!(
+            executor_line.contains("$0.00"),
+            "Executor row with zero cost: {executor_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_tokens_mode_shows_counts_and_dash_net() {
+        let sess = ScopeReport {
+            saved: None,
+            executor: 0.0,
+            architect: None,
+            net: None,
+            executor_tokens: 500_000,
+            architect_tokens: 1_200_000,
+        };
+        let proj = ScopeReport {
+            saved: None,
+            executor: 0.0,
+            architect: None,
+            net: None,
+            executor_tokens: 2_000_000,
+            architect_tokens: 5_500_000,
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Tokens);
+        let architect_line = lines
+            .iter()
+            .find(|l| l.contains("Architect:"))
+            .expect("Architect row present");
+        let executor_line = lines
+            .iter()
+            .find(|l| l.contains("Executor:"))
+            .expect("Executor row present");
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        assert!(
+            architect_line.contains("1.2M"),
+            "Architect tokens should show compacted: {architect_line}"
+        );
+        assert!(
+            executor_line.contains("500.0k"),
+            "Executor tokens should show compacted: {executor_line}"
+        );
+        assert!(
+            net_line.contains('—'),
+            "Net in tokens mode must be —: {net_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_tokens_mode_has_no_parens() {
+        let sess = ScopeReport {
+            saved: Some(10.0),
+            executor: 5.0,
+            architect: Some(100.0),
+            net: Some(-95.0),
+            executor_tokens: 500_000,
+            architect_tokens: 1_200_000,
+        };
+        let proj = ScopeReport {
+            saved: Some(20.0),
+            executor: 10.0,
+            architect: Some(200.0),
+            net: Some(-190.0),
+            executor_tokens: 2_000_000,
+            architect_tokens: 5_500_000,
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Tokens);
+        // Skip the header (which contains "(tok)") — only data rows must have no parens.
+        for line in &lines[1..] {
+            assert!(
+                !line.contains('('),
+                "Tokens mode data rows must not contain parens: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_costs_tokens_mode_omits_dollar_legend() {
+        let report = CostReport {
+            session: ScopeReport {
+                saved: Some(10.0),
+                executor: 5.0,
+                architect: Some(0.0),
+                net: Some(5.0),
+                ..Default::default()
+            },
+            milestone: None,
+            project: ScopeReport {
+                saved: Some(50.0),
+                executor: 25.0,
+                architect: Some(10.0),
+                net: Some(15.0),
+                ..Default::default()
+            },
+            assists: 0,
+            by_skill: Vec::new(),
+        };
+        let out = format_costs_with(&report, LedgerUnits::Tokens);
+        assert!(
+            !out.contains("Executor = Claude cost avoided"),
+            "Dollar legend must be omitted in tokens mode: {out}"
+        );
+        assert!(
+            !out.contains("SAVED ="),
+            "Old SAVED legend must not appear: {out}"
+        );
+        // Dollars mode should have the legend
+        let out_dollars = format_costs_with(&report, LedgerUnits::Dollars);
+        assert!(
+            out_dollars.contains("Executor = Claude cost avoided"),
+            "Dollar legend must appear in dollars mode"
         );
     }
 }

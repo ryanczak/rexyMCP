@@ -332,8 +332,9 @@ exactly what rexyMCP is working on:
   state, turn count, and stage, with a dog-chases-its-brain liveness spinner so
   you can tell motion from a stall.
 - **Budget** — tokens in/out and tok/s, plus a **Spend** block pricing the
-  local run against a hypothetical cloud baseline (Executor / Architect / Saved
-  / Net across Session · Milestone · Project).
+  local run against a hypothetical cloud baseline (Architect / Executor / Net
+  across Session · Milestone · Project). Press `b` to toggle between dollar
+  values and raw token counts.
 - **Context** — context-window utilization (green/yellow/red) and how many
   tokens each reclaim lever has recovered.
 - **Activity** — the full, scrollable transcript of the run: every prompt, tool
@@ -598,7 +599,7 @@ are no short aliases.
 | `rexymcp runs` | List individual `PhaseRun` records with per-run stats. | `--config` (required), `--model`, `--tag` (repeatable, AND), `--limit <n>` (default 20; `0` = all), `--telemetry-path`, `--json` |
 | `rexymcp scorecard` | Aggregate runs into a **model × settings** competency matrix — compare e.g. `temp=0.2` vs `temp=0.7` for your model on your work. | `--config` (required), `--model`, `--tag` (repeatable), `--min-runs <n>`, `--telemetry-path`, `--json` |
 | `rexymcp profile` | Aggregate runs into a **per-(model, tag) capability profile** — strengths and ranked failure classes. | same flags as `scorecard` |
-| `rexymcp costs` | Report the token-cost breakdown — **Executor / Architect / Net / Saved** across **Session / Milestone / Project** — for a repo's session log + project telemetry. The scriptable, one-shot equivalent of the dashboard's Spend block. | `--config` (default `rexymcp.toml`), `--repo <path>` (default `.`), `--session <id>`, `--telemetry-path`, `--json` |
+| `rexymcp costs` | Report the token-cost breakdown — **Architect / Executor / Net** across **Session / Milestone / Project** — for a repo's session log + project telemetry. Use `--tokens` for raw token counts instead of dollar values. The scriptable, one-shot equivalent of the dashboard's Spend block. | `--config` (default `rexymcp.toml`), `--repo <path>` (default `.`), `--session <id>`, `--telemetry-path`, `--json`, `--tokens` |
 | `rexymcp review` | Record an Architect review verdict as a `PhaseReview` annotation (folds into the run's telemetry). Usually invoked by `/rexymcp:review`. | `--config`, `--phase-id`, `--verdict` (required); `--phase-doc`, `--project-id`, `--failure-class` (repeatable), `--bounces`, `--bugs-filed`, `--warnings`, `--telemetry-path` |
 | `rexymcp journal` | Append an `ArchitectActivity` record (`draft`/`dispatch`/`review`/`assist`/`takeover`/`boundary`) to the telemetry store — the substrate the `/rexymcp:auto` loop uses to meter its own work. Usually invoked by the loop skill. | `--config`, `--phase-id` (required); `--phase-doc`, `--project-id`, `--milestone`, `--activity`, `--outcome`, `--model` |
 | `rexymcp harvest` | Read Claude Code's local session transcripts and join **real** per-class token/cost onto journal activities by time window (fills the architect-cost rows; **harvested, never estimated**). Claude Code only; other clients keep counts + durations. | `--config` (required) |
@@ -690,10 +691,10 @@ new sessions. Six panels:
 │ Phase: phase-01         │ Tokens out: 7122               │ Events: 2          │
 │ Session: 1781658-qwen   │ Tok/s: 38.4  (avg 35, max 52)  │ Freed: 41k tokens  │
 │ Model: Qwen/Qwen3.6-27B │ Spend     Session  Milestone … │ Filter: 18 calls … │
-│ State: running          │   Executor:  $0.00   $0.00  …  │ Evict: 6 reads …   │
-│ Duration: 4m12s         │   Architect: $0.00   $0.00  …  │ Dedupe: 3 reads …  │
-│ Turn 42, stage verify   │   Saved:     $0.50   $3.20  …  │                    │
-│      🐕      🧠          │   Net:       $0.50   $3.20  …  │                    │
+│ State: running          │   Architect: ($0.00) ($0.00) …  │ Evict: 6 reads …   │
+│ Duration: 4m12s         │   Executor:  $0.50   $3.20  …  │ Dedupe: 3 reads …  │
+│ Turn 42, stage verify   │   Net:       ($0.50) ($3.20) …  │                    │
+│      🐕      🧠          │                                   │                    │
 ├─ Activity [f=filter] ───┴───────────────────┬─ Tasks ────┴────────────────────┤
 │ [t42] bash  <your test command>             │ Tasks ▕███████▏░░░░░░░ 3/7    43%│
 │   running 187 tests …                       │ ☑ Read config                   │
@@ -709,8 +710,9 @@ new sessions. Six panels:
   stage, plus a dog-chases-its-brain liveness spinner while running.
 - **Budget** — token counts, tok/s (with avg/max/min), and a **Spend** block
   pricing the local run against a cloud baseline:
-  Executor / Architect / Saved / Net across
-  Session · Milestone · Project columns. `--config`
+  Architect / Executor / Net across
+  Session · Milestone · Project columns. Press `b` to toggle between dollar
+  values and raw token counts. `--config`
   loads `[architect]` rates for this breakdown.
 - **Context** — context-window usage (green/yellow/red), compaction events, and
   per-lever reclaim (filter / evict / dedupe).
