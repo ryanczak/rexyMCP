@@ -5,8 +5,19 @@ Single source of truth for which phase is active. The principal engineer
 § "Read these first") to know which phase to work next.
 
 **Active phase:
-[M38 phase-01 — single rate source: derive the discount from `[architect]`](milestones/M38-discount-accounting/phase-01-single-rate-source.md)
-(status: todo — drafted 2026-07-23).**
+[M38 phase-02 — ledger layout + `--tokens`, one renderer for two surfaces](milestones/M38-discount-accounting/phase-02-ledger-layout-shared-renderer.md)
+(status: todo — dispatched 2026-07-24). Last phase of M38.**
+
+**phase-01 — done (2026-07-24, approved_after_1; executor Qwen/Qwen3.6-27B-FP8, 87 + 40
+turns).** `DashboardConfig` removed; the discount now derives from
+`[architect].effective_rates()`, so there is one Claude rate instead of two. A fresh
+`rexymcp init` no longer scaffolds a second rate table — the dark-by-default hole is
+closed. **Bounced once** (bug-01-1, minor): the spec named four tests, three were
+written, and the missing one was the only thing pinning `costs.rs:222`. **Green-bounce
+countermeasure confirmed a 2nd time** — a plain re-dispatch would have no-opped (green
+gates, clean tree); the loud bounce-fix header + inlined worked example + falsifiable
+finish condition (633 tests, not 632) got it engaged in 40 turns. Reviewer re-ran the
+mutation independently: hardcoding `(5.0, 25.0)` fails the test with `got 30`.
 
 ## M38 — Discount Accounting (OPEN, active)
 

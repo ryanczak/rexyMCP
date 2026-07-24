@@ -39,11 +39,11 @@ Read before starting:
 
 ## Current state
 
-**`mcp/src/dashboard/panels.rs:516-712`** — `savings_lines` renders four rows in
+**`mcp/src/dashboard/panels.rs:516-700`** — `savings_lines` renders four rows in
 both modes. Dollars mode order is Executor / Architect / Saved / Net; tokens mode
 is Executor / Architect / Net.
 
-**The Executor row never renders.** `debit_row` (panels.rs:682-691):
+**The Executor row never renders.** `debit_row` (panels.rs:664-673):
 
 ```rust
     let debit_row =
@@ -61,14 +61,14 @@ Executor cost is `$0.00` in every scope whenever the local model has no
 contribution reaches the user only via the `Saved:` row.
 
 **Alignment machinery that must survive** (M35 07d–07h, four phases of work):
-`align_value` (panels.rs:504), `space_pad`, the tight `paren` form `"(—)  "`,
+`align_value` (panels.rs:504), `space_pad` (663), the tight `paren` form `"(—)  "` (654),
 and equal-width rows so decimal points line up. Do not rewrite these; reuse them.
 
-**`mcp/src/costs.rs:288-346`** — `format_costs` renders an independent
+**`mcp/src/costs.rs:304-376`** — `format_costs` renders an independent
 scope-per-row table with a `SAVED` column and a two-line legend. Nothing is
 shared with `savings_lines` today; the two can drift and have.
 
-**`CostReport` (costs.rs:26-35) carries no token counts.** `ScopeCosts` holds
+**`CostReport` (costs.rs:28-35) carries no token counts.** `ScopeCosts` holds
 `executor_in/out/cache_read/cache_write` and `architect: ArchitectTokens`, but
 `scope_report` reduces it to four `f64`s and the tokens are dropped. Tokens mode
 in the CLI is impossible until they are threaded through.
@@ -194,7 +194,30 @@ Budget-panel descriptions (README.md:331-336, 689-700, 707-714) to the
 Architect / Executor / Net shape, and document `--tokens`. The ASCII dashboard
 mock-up at 689-700 must show the new rows; keep the box drawing intact.
 
-### 8. Tests
+### 8. Rename three now-misleading tests in `panels.rs`
+
+Carried over from the phase-01 review, which deferred it here rather than
+spending a dispatch on cosmetics. These three tests construct an
+`ArchitectConfig` (phase-01 retargeted them) but are still named for the
+`DashboardConfig` that no longer exists:
+
+- **`panels.rs:2177`** `dashboard_effective_rates_opus_48_returns_correct_pricing`
+  → `architect_effective_rates_opus_48_returns_correct_pricing`
+- **`panels.rs:2186`** `dashboard_effective_rates_fable_5_returns_correct_pricing`
+  → `architect_effective_rates_fable_5_returns_correct_pricing`
+- **`panels.rs:2195`** `dashboard_effective_rates_unknown_model_uses_explicit`
+  → `architect_effective_rates_unknown_model_uses_explicit`
+
+**Rename only** — do not change their bodies or expected numbers.
+
+Note they now duplicate `architect_effective_rates_from_model` and
+`architect_effective_rates_explicit_override_when_model_unknown` in
+`executor/src/config.rs`, and they test a config accessor from a rendering
+module where they do not belong. **Leave the duplication in place** — deleting
+tests is out of scope here and a duplicate passing test costs nothing. Mention
+it in "Notes for review" so it can be cleaned up deliberately later.
+
+### 9. Tests
 
 Write the tests named in § Test plan.
 
@@ -212,6 +235,8 @@ Write the tests named in § Test plan.
       for every scope.
 - [ ] A negative `Net` renders parenthesised, e.g. `($505.95)`, with no `-` sign.
 - [ ] The Executor row renders even when executor cost is `$0.00` in every scope.
+- [ ] `grep -rn "fn dashboard_effective_rates" mcp/src` returns **no** matches
+      (Task 8 rename complete).
 
 ## Test plan
 
