@@ -88,7 +88,7 @@ terminator whose outcome may inform how the rest are scoped.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Read-only exemption in the oscillation + identical-repetition detectors ([phase-01-read-only-exemption.md](phase-01-read-only-exemption.md)) | todo |
+| 01 | Read-only exemption in the oscillation + identical-repetition detectors ([phase-01-read-only-exemption.md](phase-01-read-only-exemption.md)) | in-progress |
 | 02 | `oscillation_stall` + `missing_spec_test` in `FAILURE_CLASSES` | todo |
 | 03 | Consolidate the three token formatters into `metrics` | todo |
 | 04 | k/M compaction for `calibrate-governor`'s byte columns | todo |

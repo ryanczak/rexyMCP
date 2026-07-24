@@ -1332,7 +1332,7 @@ async fn identical_tool_call_repetition_trips_hard_fail() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("f.txt"), "hi").unwrap();
     let path = dir.path().join("f.txt").to_string_lossy().to_string();
-    let mk = || native("read_file", json!({ "path": path }));
+    let mk = || native("write_file", json!({ "path": path, "content": "x" }));
     let client = MockAiClientScript::new(vec![
         vec![mk()],
         vec![mk()],
@@ -1382,13 +1382,18 @@ async fn oscillation_across_alternating_reads_trips_hard_fail() {
     let path_a = dir.path().join("a.txt").to_string_lossy().to_string();
     let path_b = dir.path().join("b.txt").to_string_lossy().to_string();
     let read_a = || native("read_file", json!({ "path": path_a.clone() }));
-    let read_b = || native("read_file", json!({ "path": path_b.clone() }));
+    let write_b = || {
+        native(
+            "write_file",
+            json!({ "path": path_b.clone(), "content": "x" }),
+        )
+    };
     // Alternate A,B,A,B — 4 distinct-turn tool calls, then one trailing read as slack
     let client = MockAiClientScript::new(vec![
         vec![read_a()],
-        vec![read_b()],
+        vec![write_b()],
         vec![read_a()],
-        vec![read_b()],
+        vec![write_b()],
         vec![read_a()], // slack
     ]);
     let verifier = MockFileVerifier::new(vec![]);

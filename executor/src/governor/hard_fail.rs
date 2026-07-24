@@ -135,11 +135,18 @@ pub fn evaluate(
     None
 }
 
+/// Identical repetition: the last `threshold` tool calls are all the same
+/// `(tool, arguments)` pair. Fires when `threshold` identical calls are seen.
+/// Read-only repetitions are exempt — left to `check_read_only_stall`.
 fn check_identical_repetition(
     recent: &VecDeque<ToolCallSnapshot>,
     threshold: usize,
 ) -> Option<HardFailSignal> {
     if recent.len() < threshold {
+        return None;
+    }
+    // Read-only repetition is diagnosis, not thrash — left to check_read_only_stall.
+    if !window_has_mutation(recent, threshold) {
         return None;
     }
     let last_n: Vec<_> = recent.iter().rev().take(threshold).collect();
@@ -222,17 +229,40 @@ pub fn check_repeated_gate_feedback(
     }
 }
 
+/// True when the last `window` calls contain at least one file-mutating call.
+///
+/// The oscillation detectors fire on *thrash* — a model churning edits without
+/// converging. A window with no mutating call is not thrash: it is diagnosis
+/// (repeated `sed -n`/`cat`/`grep` while reading toward a fix), which
+/// `check_read_only_stall` already terminates at its own, far looser threshold.
+/// Firing the tight detectors on it kills runs mid-diagnosis.
+///
+/// `window` is clamped to the deque length, so a short history scans what exists.
+fn window_has_mutation(recent: &VecDeque<ToolCallSnapshot>, window: usize) -> bool {
+    recent
+        .iter()
+        .rev()
+        .take(window)
+        .any(|c| crate::tools::mutates_files(&c.tool))
+}
+
 /// Oscillation stall: the last `window` tool calls collapse to only a small set
 /// of distinct `(tool, arguments)` pairs (e.g. an A,B,A,B read↔patch cycle) that
 /// `IdenticalToolCallRepetition` misses because the calls are not *consecutively*
 /// identical. Fires when the distinct count is in `2..=distinct_max`. A distinct
 /// count of 1 is left to `check_identical_repetition`; `window == 0` disables.
+/// Read-only windows (no file-mutating call) are exempt — left to
+/// `check_read_only_stall`.
 pub fn check_oscillation(
     recent: &VecDeque<ToolCallSnapshot>,
     window: usize,
     distinct_max: usize,
 ) -> Option<HardFailSignal> {
     if window == 0 || recent.len() < window {
+        return None;
+    }
+    // Read-only windows are diagnosis, not thrash — left to check_read_only_stall.
+    if !window_has_mutation(recent, window) {
         return None;
     }
     let mut distinct: Vec<(&str, &serde_json::Value)> = Vec::new();
@@ -657,12 +687,12 @@ mod tests {
     fn oscillation_fires_on_two_call_cycle() {
         let mut recent = VecDeque::new();
         let a = ToolCallSnapshot {
-            tool: "read_file".to_string(),
+            tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
         };
         let b = ToolCallSnapshot {
-            tool: "read_file".to_string(),
+            tool: "write_file".to_string(),
             arguments: serde_json::json!({"path": "b.txt"}),
             succeeded: true,
         };
@@ -1159,5 +1189,178 @@ mod tests {
         assert!(desc.contains("distinct"));
         assert!(desc.contains("24"));
         assert!(desc.contains("novelty"));
+    }
+
+    // — Read-only exemption tests —
+
+    #[test]
+    fn oscillation_exempts_read_only_window() {
+        let mut recent = VecDeque::new();
+        let a = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let b = ToolCallSnapshot {
+            tool: "bash".to_string(),
+            arguments: serde_json::json!({"command": "cat b.txt"}),
+            succeeded: true,
+        };
+        // A, B, A, B — 4 calls, 2 distinct, all read-only
+        for _ in 0..2 {
+            recent.push_back(a.clone());
+            recent.push_back(b.clone());
+        }
+        assert!(
+            check_oscillation(&recent, 4, 2).is_none(),
+            "read-only oscillation window must be exempt"
+        );
+    }
+
+    #[test]
+    fn identical_repetition_exempts_read_only_window() {
+        let mut recent = VecDeque::new();
+        let call = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let threshold = 6;
+        for _ in 0..threshold {
+            recent.push_back(call.clone());
+        }
+        assert!(
+            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
+            "read-only identical repetition must be exempt"
+        );
+    }
+
+    #[test]
+    fn oscillation_still_fires_when_window_has_a_write() {
+        let mut recent = VecDeque::new();
+        let a = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let b = ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "b.txt"}),
+            succeeded: true,
+        };
+        // A, B, A, B — 4 calls, 2 distinct, one is a write
+        for _ in 0..2 {
+            recent.push_back(a.clone());
+            recent.push_back(b.clone());
+        }
+        let signal = check_oscillation(&recent, 4, 2)
+            .expect("oscillation must still fire when the window contains a mutating call");
+        assert!(matches!(
+            signal,
+            HardFailSignal::Oscillation {
+                distinct_calls: 2,
+                window: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn identical_repetition_still_fires_for_write_tool() {
+        let mut recent = VecDeque::new();
+        let call = ToolCallSnapshot {
+            tool: "write_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let threshold = 6;
+        for _ in 0..threshold {
+            recent.push_back(call.clone());
+        }
+        let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
+            .expect("identical repetition must still fire for write tools");
+        assert!(matches!(
+            signal,
+            HardFailSignal::IdenticalToolCallRepetition {
+                tool,
+                consecutive_count: 6
+            } if tool == "write_file"
+        ));
+    }
+
+    #[test]
+    fn oscillation_fires_when_mutation_is_oldest_in_window() {
+        let mut recent = VecDeque::new();
+        let read = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let write = ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "b.txt"}),
+            succeeded: true,
+        };
+        // Oldest in window is the write; all newer are reads — A,B,A,B pattern
+        // with write at position 0 (oldest)
+        recent.push_back(write);
+        recent.push_back(read.clone());
+        recent.push_back(read.clone());
+        recent.push_back(read);
+        let signal = check_oscillation(&recent, 4, 2)
+            .expect("oscillation must fire when mutation is at the far edge of the window");
+        assert!(matches!(
+            signal,
+            HardFailSignal::Oscillation {
+                distinct_calls: 2,
+                window: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn identical_repetition_window_is_threshold_not_deque_length() {
+        let mut recent = VecDeque::new();
+        // A mutating call sits in the deque but outside the last `threshold` calls
+        let write = ToolCallSnapshot {
+            tool: "write_file".to_string(),
+            arguments: serde_json::json!({"path": "old.txt"}),
+            succeeded: true,
+        };
+        let read = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        recent.push_back(write); // outside the threshold window
+        let threshold = 6;
+        for _ in 0..threshold {
+            recent.push_back(read.clone());
+        }
+        // The last `threshold` calls are all identical read-only calls — exempt
+        assert!(
+            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
+            "mutation outside the threshold window must not prevent exemption"
+        );
+    }
+
+    #[test]
+    fn read_only_stall_still_terminates_after_exemption() {
+        let mut recent = VecDeque::new();
+        let call = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        let cfg = GovernorConfig::default();
+        for _ in 0..cfg.read_only_stall_threshold {
+            recent.push_back(call.clone());
+        }
+        let signal = check_read_only_stall(&recent, cfg.read_only_stall_threshold)
+            .expect("read-only stall must still terminate after the oscillation exemption");
+        assert!(
+            matches!(signal, HardFailSignal::NoProgressStall { .. }),
+            "expected NoProgressStall, got {:?}",
+            signal
+        );
     }
 }

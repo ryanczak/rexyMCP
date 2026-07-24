@@ -1,7 +1,7 @@
 # Phase 01: Exempt read-only windows from the oscillation detectors
 
 **Milestone:** M37 — Governor Read-Only Calibration
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~180 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -283,3 +283,9 @@ None. No new dependencies. No edits to `docs/architecture.md`, `STANDARDS.md`, o
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-07-24 03:00 (started)
+
+Executor implementing phase 01: adding `window_has_mutation` helper, exempting
+read-only windows in `check_oscillation` and `check_identical_repetition`,
+updating doc comments, and writing 7 new tests.
