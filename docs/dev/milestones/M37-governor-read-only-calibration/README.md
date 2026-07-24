@@ -50,6 +50,14 @@ Rejected alternatives, recorded so they are not re-litigated:
 - `oscillation_stall` is in `FAILURE_CLASSES`
   (`executor/src/store/telemetry.rs:319`) and `is_known_failure_class` accepts
   it. Recorded 2× as an unknown open-vocab class during M35.
+- **`missing_spec_test`** is in `FAILURE_CLASSES` too. Recorded open-vocab at
+  the M38 phase-01 bounce (2026-07-24): the executor implemented the production
+  change correctly but omitted one of the four tests the spec's § Test plan
+  named. None of the nine existing classes fits — it is not
+  `false_completion` (gates were green), not `scope_deviation` (nothing extra
+  was touched), and not `spec_bug` (the spec named the test explicitly). A
+  spec'd-but-unwritten test is a distinct and recurring enough failure mode to
+  deserve its own label, or the scorecard buckets it as noise.
 - One token formatter. `runs::fmt_tokens`, the inline formatter in `scorecard`,
   and `costs::format_tokens` collapse into the shared `metrics` helper, with
   every call site migrated.
@@ -80,7 +88,7 @@ milestone into phases on demand. Expected shape:
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Read-only exemption in the oscillation + identical-repetition detectors | todo |
-| 02 | `oscillation_stall` in `FAILURE_CLASSES` | todo |
+| 02 | `oscillation_stall` + `missing_spec_test` in `FAILURE_CLASSES` | todo |
 | 03 | Consolidate the three token formatters into `metrics` | todo |
 | 04 | k/M compaction for `calibrate-governor`'s byte columns | todo |
 | 05 | Server-authored completion entry: tick acceptance criteria, emit an E2E block, write `Executor:` from the dispatched model | todo |

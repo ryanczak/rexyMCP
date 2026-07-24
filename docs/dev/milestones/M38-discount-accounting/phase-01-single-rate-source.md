@@ -1,7 +1,7 @@
 # Phase 01: Single rate source — derive the discount from `[architect]`
 
 **Milestone:** M38 — Discount Accounting
-**Status:** review
+**Status:** in-progress *(bounced 2026-07-24 — see `bugs/bug-01-1.md`)*
 **Depends on:** none
 **Estimated diff:** ~120 lines (mostly deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -202,7 +202,12 @@ Four sites, all naming the removed table:
 - [ ] `cargo clippy --all-targets --all-features -- -D warnings` is clean.
 - [ ] `cargo fmt --all --check` reports no diff in the files this phase touched.
 - [ ] `cargo test` passes.
-- [ ] `grep -rn "DashboardConfig\|saved_input_per_mtok\|saved_output_per_mtok\|saved_model" executor/src mcp/src` returns **no** matches.
+- [ ] `grep -rn "DashboardConfig\|saved_input_per_mtok\|saved_output_per_mtok\|saved_model" executor/src mcp/src` returns matches **only inside TOML fixture strings in tests** — the `legacy_dashboard_section_is_ignored` fixture (mandated by Task 3) and the pre-existing
+      `load_cost_report_telemetry_disabled_errors` fixture. **No match in
+      production code.** *(Corrected 2026-07-24: as originally written this
+      criterion demanded zero matches, contradicting Task 3, which requires
+      keeping a `[dashboard]` block in a fixture. Architect spec bug, not an
+      executor defect.)*
 - [ ] `grep -rn "saved_input_per_mtok\|saved_output_per_mtok\|saved_model\|\[dashboard\]" README.md` returns **no** matches.
 - [ ] `rexymcp costs --config rexymcp.toml --repo .` reports the **same**
       `SAVED` figures as before the change (both tables resolve to `(5.0, 25.0)`
@@ -256,9 +261,13 @@ repo's own `rexymcp.toml` is untouched:
 
 ```bash
 TMP=$(mktemp -d)
-cargo run -p rexymcp -- init --config "$TMP/rexymcp.toml"
+cargo run -p rexymcp -- init --dir "$TMP"
 grep -c "dashboard" "$TMP/rexymcp.toml"    # expect 0
 ```
+
+*(Corrected 2026-07-24: this block originally used `--config`, which `init` does
+not accept — the flag is `--dir`. Architect spec bug; the executor caught it and
+adapted, which was the right call.)*
 
 Quote the output. Expected: the generated template has no `[dashboard]` section.
 
@@ -397,3 +406,59 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
 
+
+### Review — 2026-07-24 (bounced)
+
+**Verdict:** bounced · **Bug:** `bugs/bug-01-1.md` (minor) · **Executor:**
+Qwen/Qwen3.6-27B-FP8 (87 turns, no oscillation)
+
+**What is right.** All four gates green on an independent re-run with a forced
+recompile of both crates — zero warnings, 632 + 1032 tests pass. The production
+change is correct and reconciles exactly:
+
+```
+project executor: 254.00M in, 0.617M out
+  × [architect] claude-opus-4-8 (5/25) = $1285.43   ← matches `rexymcp costs`
+```
+
+`DashboardConfig` is fully gone from production code; the two readers, the
+struct, its impls, the `Config` field, the `init` template and four README sites
+are all correctly updated. The `[dashboard]` removal is confirmed safe for
+existing configs by `legacy_dashboard_section_is_ignored`.
+
+Note the Milestone column moved $46.47 → $10.24 between the pre- and
+post-change runs. **Not a regression:** `latest_milestone_id` is now
+`M38-discount-accounting` (this phase's own run) rather than M36, so the column
+is reporting a different, newer milestone. Verified by recomputation, not by
+comparison.
+
+**Why it bounced.** The § Test plan named four tests; three were written.
+`discount_rate_comes_from_architect_config` is missing, so `costs.rs:222` — the
+line the entire phase exists to change — has no test. The three tests that
+landed all exercise the `ArchitectConfig` accessor; none asserts that
+`load_cost_report` calls it. Repoint that line at any other source and the whole
+suite still passes. Details and the fix in `bugs/bug-01-1.md`.
+
+**Two architect spec bugs, corrected in place above — not executor defects:**
+
+1. **Acceptance criterion 5 was unsatisfiable as written.** It demanded zero
+   `saved_*` matches under `executor/src`/`mcp/src` while Task 3 explicitly
+   required *keeping* a `[dashboard]` block in a test fixture. Reworded to
+   "production code only". The four surviving matches are both fixtures, both
+   correct.
+2. **The E2E block used `rexymcp init --config`; the flag is `--dir`.** The
+   executor caught this and adapted, flagging it in Notes for review — the right
+   call, and exactly the declare-deviations discipline WORKFLOW asks for.
+
+Both are the same architect-side family M36's retrospective is already tracking:
+*asserting a fact in a spec without deriving it from the source of truth.* This
+brings that pattern to **five** occurrences (M36 ×2, the dropped M38 requirement,
+plus these two). It folds into `WORKFLOW.md` at the M38 close.
+
+**Accepted as-is, not bounced on:** the three `panels.rs` tests still named
+`dashboard_effective_rates_*` now construct an `ArchitectConfig`, so the names
+mislead, and they duplicate `architect_effective_rates_from_model` in
+`config.rs`. The executor flagged this and declined it as cosmetic scope creep,
+which the spec supported (Task 4 said "preserving each test's intent", not
+"rename"). **Folded into phase-02's scope** — it rewrites `panels.rs` anyway, so
+renaming there costs nothing and avoids a second dispatch for cosmetics.
