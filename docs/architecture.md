@@ -1232,6 +1232,25 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+39. **M39 — Executor cache accounting** *(candidate; not opened. Logged
+    2026-07-24 at the M38 close)*. The executor's `cache_read_tokens` and
+    `cache_write_tokens` read **zero across all 41 in-schema `PhaseRun`
+    records** — every run since M35's telemetry version bump. `scope_costs`
+    (`mcp/src/costs.rs`) sums them, `scope_report` prices them against
+    `[models] cache_read_per_mtok` / `cache_creation_per_mtok`, and the M38
+    ledger folds them into the executor token total, so the whole path is wired
+    and receiving nothing. Two candidate causes, not yet distinguished:
+    **(a)** vLLM's OpenAI-compatible `usage` object does not surface
+    prefix-cache hits (it reports `prompt_tokens` whole, with automatic prefix
+    caching invisible to the client), or **(b)** the response is not parsed for
+    them. If (a), the fields are unfillable from this backend and the honest fix
+    is to stop pricing what cannot be measured — or to source it from vLLM's
+    metrics endpoint instead of the chat response. If (b), it is a capture bug.
+    **Impact is understated savings, not wrong arithmetic**: a cached input
+    token still counts in `input_tokens`, so the discount is computed at the
+    full input rate rather than the cheaper cache-read rate. Investigation
+    before scoping — start by dumping a raw `usage` object from a live run
+    rather than reading the parser.
 38. **M38 — Discount Accounting** *(done 2026-07-24; opened 2026-07-23
     immediately after the M36 close)*. States rexyMCP's premise in the accounting itself:
     work the executor does is work Claude was **not billed for**, so executor

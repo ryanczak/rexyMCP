@@ -578,6 +578,49 @@ file that had oscillated 3× earlier in the same milestone. The runtime-level fi
 for the underlying terminator behavior is M37's read-only exemption; this
 discipline is what the architect controls in the meantime.)*
 
+### Derive every spec fact from its source
+
+A phase doc is full of assertions of fact: a `file:line`, a CLI flag, a list of
+call sites, a corpus measurement, a condition the executor must satisfy. Every
+one of them is a claim the executor **cannot check and will implement
+literally**.
+
+**Before dispatch, derive each such fact by running the tool that defines it** —
+`grep` the sites, `--help` the flag, re-read the line numbers, recompute the
+figure through the same code path the product uses. Never restate one from
+memory, and never carry one forward from an earlier draft: both drift, and a
+draft that was correct when written is not correct after the phase before it
+lands.
+
+The failure is silent by construction — nothing in the toolchain checks a phase
+doc's prose against the code. Severity scales badly:
+
+- A wrong line number costs the executor a search.
+- A wrong flag costs a round trip (or a declared deviation, if the executor is
+  disciplined enough to catch it).
+- **An acceptance criterion that contradicts its own Spec, or a verification
+  that is arithmetically unsatisfiable, cannot be met at all.** The executor
+  either bounces on the architect's error or adapts and gets recorded as
+  deviating.
+
+The same discipline applies to bug docs and re-dispatch notes, which are specs
+too: a worked "here is the exact replacement code" block that calls a function
+the last phase inlined is worse than no worked example, because it is trusted.
+
+*(Folded 2026-07-24 after **ten** occurrences across M36–M38, only two caught
+before dispatch: a corpus figure quoted pre-dedup (59.6M asserted vs 36.1M
+actual); a file list written from memory that missed `main.rs`; a design
+requirement dropped between conversation and spec; an acceptance criterion
+demanding zero matches while its own task required a fixture keeping them; an
+E2E block using `init --config` when the flag is `--dir`; drifted line numbers;
+a rename list naming three sites when the phase invalidated six; a bug doc's
+worked fix citing `align_value` after a restructure had inlined it; a
+verification demanding a cross-field column equality that the layout makes
+unsatisfiable; and a status edit replacing strings the executor's bookkeeping
+had already rewritten. The executor caught three of the ten and adapted
+correctly, declaring each — which is the declare-deviations discipline working,
+not a substitute for the architect deriving the fact.)*
+
 ### Derive intentionally
 
 Before adding protocol-derived traits to a struct, ask whether it actually gets

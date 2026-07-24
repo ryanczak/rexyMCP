@@ -85,6 +85,44 @@ This lever is cheap (one model call) and produces telemetry
 executor learns by re-trying with better inputs; the `model_scorecard`
 accumulates a real data point on bug-class-to-fix ratios.
 
+### Green bounces need a refined re-dispatch, never a plain one
+
+A phase bounced on **test quality, coverage, or a standards violation** rather
+than a broken behavior has **four green gates and a clean tree**. The executor's
+"is there work to do?" heuristic keys off a dirty tree or a red gate, finds
+neither, and reports `complete` with an empty diff — never engaging the bug doc.
+
+This is not a `hard_fail` path, so it arrives through `/rexymcp:review` rather
+than a briefing, but the lever is the same: **refined re-dispatch, always**.
+
+The treatment, all four parts load-bearing:
+
+1. **A loud header** stating that green gates and a clean tree are **expected
+   here and are NOT evidence the phase is done** — and naming what is already
+   approved so it is not redone. Without this the executor re-derives finished
+   work or reports complete.
+2. **The remaining work enumerated** — "there is exactly one edit left" beats
+   "fix the bug".
+3. **The fix inlined as a worked example**, per § "Refined re-dispatch" above
+   and `WORKFLOW.md` § "Derive every spec fact from its source" — a worked block
+   citing a symbol that no longer exists is worse than none, because it is
+   trusted.
+4. **A falsifiable finish condition** the executor can check itself. A test
+   count is ideal: "`cargo test` must report 633, not 632."
+
+**Invert the finish condition when the fix should add nothing.** A pure
+correctness or standards fix adds no tests, so state the count that must *not*
+change — "647, **not** 648" makes a *rising* count the signal for scope creep.
+"Tests pass" would have been satisfied either way.
+
+Ask the executor to **mutation-check its own fix** before reporting: break the
+line the fix touches, confirm the new test fails, revert, and state the result.
+Then verify that independently at review — a claimed mutation check is not one.
+
+*(Folded 2026-07-24 after four occurrences. M30 phase-01 was the uncountered
+case: a plain re-dispatch returned `complete` with an empty diff. M38 phase-01
+and phase-02 (twice) applied the treatment and landed in 40, 59 and 32 turns.)*
+
 ### Session takeover — last resort
 
 You (Claude) take over and implement the phase directly. Use this when:
