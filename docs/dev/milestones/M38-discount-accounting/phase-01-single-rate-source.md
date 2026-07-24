@@ -1,7 +1,7 @@
 # Phase 01: Single rate source — derive the discount from `[architect]`
 
 **Milestone:** M38 — Discount Accounting
-**Status:** in-progress *(bounced 2026-07-24 — see `bugs/bug-01-1.md`)*
+**Status:** in-progress *(bounced 2026-07-24 — see `bugs/bug-01-1.md`; bounced again — missing test added)*
 **Depends on:** none
 **Estimated diff:** ~120 lines (mostly deletions)
 **Tags:** language=rust, kind=refactor, size=m
@@ -405,6 +405,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 1097868513d7ef2aa75786950d7b47dff53ef584
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+
+### Update — 2026-07-24 01:00 (started, bounce fix)
+
+**Executor:** Claude (opus-4-8)
+
+Adding the missing `discount_rate_comes_from_architect_config` test to `mcp/src/costs.rs` per `bugs/bug-01-1.md`.
 
 
 ### Review — 2026-07-24 (bounced)
