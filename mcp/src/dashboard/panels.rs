@@ -1688,8 +1688,7 @@ mod tests {
 
     #[test]
     fn savings_lines_saved_dash_when_rates_unset() {
-        // With no rates, Executor row shows $0.00 (credit = saved - executor = 0 - 0)
-        // and Net shows $0.00.
+        // With no rates, Executor row shows — (not attributable) and Net shows —.
         let summary = StatusSummary {
             last_input_tokens: Some(1_000_000),
             last_output_tokens: Some(500_000),
@@ -1709,8 +1708,8 @@ mod tests {
             .find(|s| s.contains("Executor:"))
             .expect("Executor row present");
         assert!(
-            executor_line.contains("$0.00"),
-            "Executor should show $0.00 when rates are unset: {executor_line}"
+            executor_line.contains("—"),
+            "Executor should show — when rates are unset: {executor_line}"
         );
     }
 

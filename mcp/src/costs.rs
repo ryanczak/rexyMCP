@@ -487,14 +487,25 @@ pub fn ledger_lines(
                 has_milestone,
             ));
 
+            // A non-debit cell with no value. Two trailing spaces put the dash on the
+            // decimal column: an amount renders `$X.XX`, so `.` sits 3 chars from the
+            // right once `make_row` right-aligns it — and so does `—` followed by two
+            // spaces. This is the M35 07g convention, now expressed for non-debit rows
+            // (the debit form lives in `paren`, which emits `"(—)  "`).
+            const DASH: &str = "—  ";
+
             // Executor: credit = saved - executor, plain; parenthesised if negative
             let executor_val = |r: &ScopeReport| -> String {
-                let saved = r.saved.unwrap_or(0.0);
-                let val = saved - r.executor;
-                if val < 0.0 {
-                    format!("({:.2})", val.abs())
-                } else {
-                    fmt_dollars(val)
+                match r.saved {
+                    None => DASH.to_string(),
+                    Some(saved) => {
+                        let val = saved - r.executor;
+                        if val < 0.0 {
+                            format!("({:.2})", val.abs())
+                        } else {
+                            fmt_dollars(val)
+                        }
+                    }
                 }
             };
             out.push(make_row(
@@ -507,11 +518,10 @@ pub fn ledger_lines(
 
             // Net: sum of the two rendered rows; parenthesised when negative
             let net_val = |r: &ScopeReport| -> String {
-                let net = r.net.unwrap_or(0.0);
-                if net < 0.0 {
-                    format!("(${:.2})", net.abs())
-                } else {
-                    fmt_dollars(net)
+                match r.net {
+                    None => DASH.to_string(),
+                    Some(net) if net < 0.0 => format!("(${:.2})", net.abs()),
+                    Some(net) => fmt_dollars(net),
                 }
             };
             out.push(make_row(
@@ -1455,6 +1465,8 @@ model = "claude-fable-5"
 
     #[test]
     fn ledger_executor_row_renders_when_cost_is_zero() {
+        // Unpriced executor across all scopes — saved is None, executor is 0.
+        // The row must still render (the old debit_row suppressed it).
         let sess = ScopeReport {
             saved: None,
             executor: 0.0,
@@ -1474,9 +1486,10 @@ model = "claude-fable-5"
             .iter()
             .find(|l| l.contains("Executor:"))
             .expect("Executor row must always render even with zero cost");
+        // When saved is None, Executor renders — (not attributable), not $0.00.
         assert!(
-            executor_line.contains("$0.00"),
-            "Executor row with zero cost: {executor_line}"
+            executor_line.contains('—'),
+            "Executor row with unpriced executor should render —: {executor_line}"
         );
     }
 
@@ -1588,6 +1601,156 @@ model = "claude-fable-5"
         assert!(
             out_dollars.contains("Executor = Claude cost avoided"),
             "Dollar legend must appear in dollars mode"
+        );
+    }
+
+    #[test]
+    fn ledger_none_net_renders_dash() {
+        let sess = ScopeReport {
+            saved: None,
+            executor: 0.0,
+            architect: None,
+            net: None,
+            executor_tokens: 0,
+            architect_tokens: 0,
+        };
+        let proj = ScopeReport {
+            saved: Some(100.0),
+            executor: 10.0,
+            architect: Some(200.0),
+            net: Some(-110.0),
+            executor_tokens: 1_000_000,
+            architect_tokens: 3_000_000,
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        // 2-scope layout: "  Net:          —  ($110.00)"
+        // The Session column is the first data field after the label.
+        // It should contain — for None net.
+        assert!(
+            net_line.contains('—'),
+            "Net row should contain — when net is None: {net_line}"
+        );
+        // Must not render $0.00 for the None cell
+        assert!(
+            !net_line.contains("$0.00"),
+            "None net must not render as $0.00: {net_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_none_saved_renders_dash() {
+        let sess = ScopeReport {
+            saved: None,
+            executor: 5.0,
+            architect: Some(10.0),
+            net: Some(-15.0),
+            executor_tokens: 100_000,
+            architect_tokens: 200_000,
+        };
+        let proj = ScopeReport {
+            saved: Some(100.0),
+            executor: 10.0,
+            architect: Some(200.0),
+            net: Some(-110.0),
+            executor_tokens: 1_000_000,
+            architect_tokens: 3_000_000,
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let executor_line = lines
+            .iter()
+            .find(|l| l.contains("Executor:"))
+            .expect("Executor row present");
+        // 2-scope layout: "  Executor:       —     $90.00"
+        // The Session column should be — when saved is None.
+        assert!(
+            executor_line.contains('—'),
+            "Executor row should contain — when saved is None: {executor_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_zero_net_renders_dollar_zero() {
+        let sess = ScopeReport {
+            saved: Some(10.0),
+            executor: 5.0,
+            architect: Some(5.0),
+            net: Some(0.0),
+            executor_tokens: 100_000,
+            architect_tokens: 200_000,
+        };
+        let proj = ScopeReport {
+            saved: Some(100.0),
+            executor: 10.0,
+            architect: Some(200.0),
+            net: Some(-110.0),
+            executor_tokens: 1_000_000,
+            architect_tokens: 3_000_000,
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        // 2-scope layout: "  Net:          $0.00($110.00)"
+        // Session column should render $0.00 for Some(0.0).
+        assert!(
+            net_line.contains("$0.00"),
+            "Net row should contain $0.00 when net is Some(0.0): {net_line}"
+        );
+        // The — character should not appear in this row (no None values here)
+        assert!(
+            !net_line.contains('—'),
+            "Some(0.0) must not render as —: {net_line}"
+        );
+    }
+
+    #[test]
+    fn ledger_dash_aligns_with_decimal_column() {
+        let sess = ScopeReport {
+            saved: None,
+            executor: 0.0,
+            architect: None,
+            net: None,
+            executor_tokens: 0,
+            architect_tokens: 0,
+        };
+        let proj = ScopeReport {
+            saved: Some(100.0),
+            executor: 10.0,
+            architect: Some(200.0),
+            net: Some(-110.0),
+            executor_tokens: 1_000_000,
+            architect_tokens: 3_000_000,
+        };
+        let lines = ledger_lines(&sess, None, &proj, LedgerUnits::Dollars);
+        let net_line = lines
+            .iter()
+            .find(|l| l.contains("Net:"))
+            .expect("Net row present");
+        // 2-scope layout: "  Net:            —  ($110.00)"
+        // The dash is in the Session column (9-char field), the dot is in the
+        // Project column (9-char field). Each field is right-aligned. The dash
+        // "—  " has two trailing spaces, so the — character sits at position
+        // (field_end - 3) within its field. The dot in "$110.00" sits at
+        // (field_end - 3) within its field. Since both fields are the same
+        // width, the — and the . should be at the same column index.
+        // But the Session column is 9 chars and the Project column is 9 chars,
+        // so the dash at col 18 and the dot at col 28 differ by exactly one
+        // field width (10 chars including the separator). We verify the dash
+        // is right-aligned in its field by checking it appears in the expected
+        // position relative to the label.
+        let dash_col = net_line.find('—').expect("dash present in Net row");
+        // The dash should be at the rightmost position of the Session column,
+        // minus 2 (since "—  " has the dash 2 chars from the right edge of the
+        // 9-char field). The Session field starts at column 12 (2 spaces + 10
+        // for label), so the dash should be at 12 + 9 - 3 = 18.
+        assert_eq!(
+            dash_col, 18,
+            "Dash should be at column 18 (right-aligned in 9-char Session field): {net_line}"
         );
     }
 }
