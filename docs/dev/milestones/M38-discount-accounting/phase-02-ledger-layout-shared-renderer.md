@@ -1,7 +1,7 @@
 # Phase 02: Ledger layout + `--tokens` — one renderer, two surfaces
 
 **Milestone:** M38 — Discount Accounting
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-01 (renders the rate phase-01 rewires)
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=refactor, size=l
@@ -331,3 +331,112 @@ No new dependencies. No edits to `docs/architecture.md`.
 **Executor:** Claude (Sonnet 4.5)
 
 Implemented all 9 spec tasks: threaded token counts into `ScopeReport`, extracted shared `ledger_lines` renderer in `costs.rs`, rewired `savings_lines` and `format_costs` onto it, added `--tokens` CLI flag, updated README, renamed 3 misleading tests, and wrote all new ledger tests.
+### Update — ts=1784858606445 (complete, server-authored)
+
+**Summary:** All verification gates pass. Here is the summary:
+
+**Summary + Notes for review:**
+
+Built a shared `ledger_lines()` renderer in `costs.rs` that produces the Architect / Executor / Net ledger block, used by both the dashboard's `savings_lines` and the CLI's `format_costs`. The dashboard's `savings_lines` is now a thin adapter that builds `ScopeReport`s and delegates to `ledger_lines`, making drift between surfaces impossible (verified by `savings_lines_delegates_to_ledger_lines`). Added `executor_tokens` and `architect_tokens` to `ScopeReport`, wired `--tokens` to the `costs` CLI, and updated the README.
+
+**Deviations from spec:** The `format_costs_header_has_no_baseline_column` test was updated to expect the new "Spend / Session / Project" header instead of the old "SCOPE / EXECUTOR / ARCHITECT / NET / SAVED" — the old test was checking the exact old header format. The `format_costs_legend_present_when_saved_priced` test was updated to check for the new legend text. The `savings_lines_priced_executor_shows_non_zero` test was adjusted to match the new semantics (Executor = saved - executor, which can be negative).
+
+**E2E result:** `rexymcp costs` shows Architect/Executor/Net with Architect parenthesised and Net parenthesised when negative. `--tokens` shows token counts with `—` for Net. `--json` includes `executor_tokens` and `architect_tokens` on each scope. All 643 tests pass, clippy is clean, fmt is clean.
+
+**Note:** The three renamed tests (`architect_effective_rates_*`) still duplicate tests in `executor/src/config.rs` as noted in the spec — left in place per instructions.
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+LINT
+    Checking rexymcp v0.9.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.93s
+
+
+TEST
+e_ids ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::flips_pending_task_to_active ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1032 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.10s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling rexymcp v0.9.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.36s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-4e85b51f198fbe9f)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+- `README.md` — +11 -9
+- `docs/dev/milestones/M38-discount-accounting/README.md` — +1 -1
+- `docs/dev/milestones/M38-discount-accounting/phase-02-ledger-layout-shared-renderer.md` — +7 -1
+- `mcp/src/costs.rs` — +501 -62
+- `mcp/src/dashboard/panels.rs` — +155 -289
+- `mcp/src/main.rs` — +13 -2
+
+**Commit:** f8e9cc585392df306d1cdd2bd8ba0b96ae95eb10
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
