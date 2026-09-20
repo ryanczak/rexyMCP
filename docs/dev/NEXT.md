@@ -4,7 +4,19 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.**
+**Active phase: M47 / phase-01 — Refile persistence rule**
+(`docs/dev/milestones/M47-verifier-persistence-refile/phase-01-refile-persistence-rule.md`,
+status `todo`). Dispatch with `/rexymcp:dispatch phase-01`.
+
+**M47 — Verifier Persistence Keyed on Re-editing opened 2026-09-20** from
+GitHub issue #10: `VerifierFailurePersistent` killed 7 wiring sweeps out of
+its 8 fires in a downstream corpus; the streak is re-keyed on re-editing a
+file already in the streak (the `refile` variant, the only one of five that
+kept the true positive). Two phases: the executor rule (01), then the
+`calibrate-governor` replay signal (02). README:
+[M47/README.md](milestones/M47-verifier-persistence-refile/README.md);
+`architecture.md` §47.
+
 
 **M46 — Token-First Accounting closed 2026-08-16 at four phases**, all
 `approved_first_try`, zero bugs, zero bounces, zero assists — the first

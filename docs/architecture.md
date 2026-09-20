@@ -1232,6 +1232,28 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+47. **M47 — Verifier persistence keyed on re-editing** *(in-progress; opened
+    2026-09-20 from GitHub issue #10)*. `VerifierFailurePersistent` fired on
+    `≥ threshold` consecutive post-edit verifies with a positive,
+    non-decreasing author-error count — a progress notion of "the count went
+    down" that a **wiring sweep** (one consumer site edited per turn through a
+    type change whose tree cannot compile until the definition site lands)
+    can never satisfy. A downstream 435-log replay found 7 of the rule's 8
+    fires were such sweeps, all completing on the next plain re-dispatch;
+    the eighth was a real stall. Raising the threshold is a disable (at 10 it
+    fires on nothing). The rule is re-keyed as **refile**: the streak extends
+    only when the triggering write hit a file already written in this streak
+    and the count did not fall; a zero clears it, a decrease or a
+    first-touched file restarts it at 1 with the path set reduced to that
+    file. Threshold stays 6, no new knob, shipped live rather than
+    advisory-first because the replay already sampled the corpus and the
+    calibration replay can reconstruct both rules from existing `parsed` +
+    `verify` events. The signal gains the re-edited `file`; the
+    `calibrate-governor` report gains a `verifier_refile_run` signal beside
+    the shipped `verifier_persistence_run`, computed by the same exported
+    streak function. Known limitation recorded: alternating edits of two
+    files against one wall never fire. Two phases:
+    `docs/dev/milestones/M47-verifier-persistence-refile/README.md`.
 46. **M46 — Token-first accounting** *(done 2026-08-16; opened and closed the
     same day at four phases, all `approved_first_try`, phases 02–04 inside one
     `/rexymcp:auto` run on executor `deepseek-v4-flash-0731`)*.
