@@ -338,6 +338,13 @@ This is your main steady-state activity. When drafting phase docs:
   string-matching, path resolution, or escape/confinement semantics, give
   explicit *must-NOT-match* / *must-stay-hermetic* examples.
 - **Pre-inject** per §4 below.
+- **Run the pre-dispatch check** (`WORKFLOW.md` § "Acceptance criteria",
+  *Pre-dispatch check*): execute the whole criteria block against the current
+  tree and require every non-preservation line to fail; re-derive each pinned
+  count against the tree the Spec's own tasks will produce; put every
+  self-check verdict in the criteria, not in task prose. This is a literal
+  step, not a habit — the rules it triggers already existed and were missed
+  at drafting, repeatedly.
 - **On `/rexymcp:architect next`**: draft the next phase doc in the active
   milestone, write it to disk, update `NEXT.md` to point at it, **stop** (the
   user explicitly dispatches via `/rexymcp:dispatch`).

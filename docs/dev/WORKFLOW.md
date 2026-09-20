@@ -228,6 +228,28 @@ Verifiable conditions — each one checkable by running a command or reading a f
 - [ ] `<command>` produces `<expected output>`.
 - [ ] Test `<test_name>` passes.
 
+**Pre-dispatch check.** With the finished Spec in front of you, before
+dispatch:
+
+1. **Run the whole criteria block against the current tree** and require
+   every line that is not a labelled *preservation criterion* to fail. A line
+   that already passes certifies nothing.
+2. **Re-derive every pinned count after accounting for the artifacts this
+   Spec's own tasks create** — the test that must name the retired symbol, the
+   `use` line that imports the new function, the fixture that adds a row. A
+   count measured against the pre-phase tree is one the executor cannot reach.
+3. **Any self-check verdict (`PASTE MATCH`, `GUARD OK`, …) is a numbered
+   criterion here, not Task prose.** A verdict that lives only in a task can be
+   omitted with every task complete, and the check silently moves to review.
+4. **A criterion pinning an *absence* pins behaviour, not file text.**
+   `grep -c 'X' <file>` → 0 also counts the negative test that must name `X`;
+   pin the function's output or a mutation that must turn a named test red.
+
+These are triggers for rules this document already carries (§ "Every
+acceptance criterion must be satisfiable", § "Run every count criterion",
+§ "Specs pin behavior, not rendering"); they sit here because the rules kept
+being missed at drafting time, not at review.
+
 ## Test plan
 
 Concrete tests to write — names + what they assert. Typically unit tests against
@@ -383,7 +405,10 @@ third is the one that determines whether the re-dispatch does anything:
    expressed *there*, and **run each new criterion to confirm it fails against
    the current tree**. Any count the fix will change is re-pinned to its new
    exact value ("more than N" is satisfied by what is already on disk;
-   "exactly N+1" is not).
+   "exactly N+1" is not). **When the finding is an evidence artifact, pin the
+   artifact where it lives** — the fenced transcript, scoped to its entry —
+   not the prose describing it: a claim in prose *and* in a fence is two
+   artifacts, and a grep for the prose polices one.
 4. **Update the milestone README row** and record the bounce in telemetry.
 
 **Step 3 is the load-bearing one, and it is the one that gets skipped.** The
@@ -804,6 +829,11 @@ type in the tree (and risks cascading derive additions onto settled types in
 other crates, which is exactly the trap M4 phase-03 hit with `Deserialize` on
 the parser types). Choose at draft time per type, not at code time.
 
+**Prescribed code must pass the project's lint gate, not just the compiler.**
+A worked example is a spec fact the executor copies verbatim, so it inherits
+every gate the project runs. Before speccing a replacement block, put it in a
+scratch tree and run the lint command on it; "it compiles" is not the gate.
+
 ### Anticipate cross-boundary trait bounds
 
 When a phase introduces a new protocol or async boundary (MCP tool, async
@@ -831,6 +861,20 @@ spec); M5 phase-04 (`JsonSchema` on `ScorecardRow`, planned in spec); M5
 phase-05a (`Send + Sync` on `ProgressCallback`, planned in spec). Five
 occurrences — the rule is well-established now; subsequent phases should
 catch it at draft time, not review time.
+
+### A struct field's blast radius is every construction site — Authorizations must name them all
+
+When a spec adds a field to a struct, every `StructName { … }` literal in the
+crate must change or the build breaks — including the ones in other files'
+test modules. Enumerate them at draft time (`grep -rn 'StructName {' src/`)
+and list **every file that holds one** in § Authorizations. A spec that says
+"add the field at every construction site" while its Authorizations forbid
+touching a file that holds three of them hands the executor a choice between
+a compile error and an authorization breach. The same enumeration applies to
+a *semantic* change that forces test literals elsewhere (a default that now
+reports a different state, say).
+
+*(Folded 2026-09-20 from a downstream project, three occurrences.)*
 
 ### Verify external APIs against live docs
 
@@ -1093,9 +1137,22 @@ verification" actually produce evidence:
 
 **1. Give the commands as one runnable block, never as prose.** Write the
 exact shell the executor should run — output redirected to an artifact file,
-`exit=$?` markers included. Where a result's success case produces *no* output
+exit markers included. Where a result's success case produces *no* output
 (a grep that finds nothing, a diff over identical inputs), the exit marker is
-the whole proof. And **everything the entry must contain has to be produced
+the whole proof. **When a command is piped, the marker must record
+`${PIPESTATUS[0]}`, never `$?`** — `$?` after `cmd | tail -20` is `tail`'s
+exit and is 0 whatever `cmd` did, so the block green-washes every failure the
+pipe truncates:
+
+```sh
+cmd 2>&1 | tail -20; echo "exit=${PIPESTATUS[0]}"
+```
+
+**The artifact must contain only bytes the executor can round-trip.** Raw
+ANSI escapes or other control bytes make a byte-exact paste impossible, and
+the resulting mismatch is architect-caused. Strip them inside the generator
+itself (`cmd 2>&1 | sed 's/\x1b\[[0-9;]*m//g' >> "$A"`), never as a
+post-edit. And **everything the entry must contain has to be produced
 *by the block***: evidence named in prose outside the fence, or a manual step
 inside it (`# make the edit by hand, then:`), is a gap the executor can only
 fill with narrative, because narrative is the only thing left to fill it with.
@@ -1312,6 +1369,53 @@ them a rule in the workflow docs themselves prescribing a shell-edit form the
 executor contract bans. The criterion was checked against the tree and never
 against the rest of its own spec.)*
 
+**Validate every mechanical criterion against the tree the phase will
+*produce* — by executing it, not reasoning about it.** Running a count today
+proves the "now" value; it does not prove the target is reachable once the
+phase's own tests, `use` lines and doc comments land. Prototype the intended
+delta in a scratch copy, run the criterion there, and paste what it printed.
+Reasoning the gap out has failed every time it was tried.
+
+**A criterion about a gate is validated by running that gate**, not by a
+proxy that resembles it. Deleting an `#[allow(dead_code)]` and grepping for
+the attribute measures the attribute's absence; only the lint command shows
+whether the tree is green without it.
+
+**Count the Spec, don't estimate it.** A pinned number that describes the
+phase's own tasks is arithmetic over prose you have already written: if the
+Test plan names 12 tests, a criterion demanding 11 is wrong before dispatch.
+Write the arithmetic *in the criterion* — `(now 6) + 1 named test = 7` — so
+the executor can re-derive it from the doc, and anchor `fn`/`pub` greps with
+the `(` or trailing token that matches a declaration and nothing else. A
+number the executor cannot re-derive is one it is right to distrust.
+
+*(Folded 2026-09-20 from a downstream project, eleven occurrences across five
+milestones; the executor was right every time and twice filed a blocker
+rather than pad the count.)*
+
+### A cleanup obligation's criterion must assert the cleanup *ran*
+
+When a phase hands out a resource — an alternate screen, a terminal mode, a
+lock, a temp file — the criterion guarding its release must assert **that the
+release happened, and how many times**. A criterion that asserts a mechanism
+*exists* can be satisfied while the phase is more broken than before.
+
+Write:
+
+- [ ] Test `x_guard_runs_teardown_on_normal_exit` passes: a guarded scope
+      returning normally ran the teardown **exactly once** (`== 1`, not `>= 1`).
+
+Not:
+
+- [ ] `grep -c "impl Drop" src/foo.rs` prints 1.
+
+Assert the count, not merely non-zero: a teardown that runs twice is also
+wrong, and `>= 1` hides it. Each occurrence of this class measured a proxy for
+the obligation instead of the obligation.
+
+*(Folded 2026-09-20 from a downstream project, three occurrences — one a
+round-2 fix that satisfied every round-1 criterion and broke the common path.)*
+
 ### Run every count criterion; never derive it
 
 A phase doc that pins a count (`grep -c … returns 4`) is making a claim about
@@ -1337,6 +1441,71 @@ that re-derives them.
 success against an unmet goal — two blind instruments, and a fifth miscount
 from staleness in a phase drafted under the rule; meanwhile running the counts
 caught an error in roughly a third of the phases that did it.)*
+
+**Scope the search so the criterion's own corpus cannot satisfy it.** A grep
+over a file that also contains the criterion's text, the spec's dictated
+prose, or a pinned test vector can never reach its target. Three recipes:
+
+| The grep is about… | Scope it with |
+|---|---|
+| production code only | `sed -n '1,/^#\[cfg(test)\]/p' <file> \| grep -c …` |
+| the Update Log only | `sed -n '/^## Update Log/,$p' <doc> \| grep -c …` |
+| a section of a doc | `sed -n '/^## Section/,/^## /p' <doc> \| grep -c …` |
+| an identifier the phase itself introduces | prod-scope it (row 1) and expect the phase's own test names, `use` lines and doc comments to match it — they arrive with the code |
+
+Make the tell a literal step: **after writing a grep criterion, run it against
+the phase doc you are writing.** A non-zero hit on your own spec means the
+corpus is contaminated — scope it or pick a different token.
+
+**A criterion that already passes is either a preservation criterion or a
+vacuous one — label which.** If the "now" value you *ran* does not match the
+"now" value you *wrote*, stop. When a criterion is meant to pass now and keep
+passing, say **preservation criterion** in the text so the executor does not
+read it as a task. And **`git diff <branch>` on the working branch is empty by
+construction** — pin a body anchor or a baseline commit hash instead.
+
+*(Folded 2026-09-20 from a downstream project, eight occurrences, all caught
+at drafting once the criteria block was run before dispatch.)*
+
+### A check the executor cannot satisfy is a bounce you wrote yourself
+
+Running a count against today's tree proves the "now" value. It does not
+prove the target is reachable, that the anchor survives the executor's own
+edits, or that the test a mutation is meant to redden exists. Four shapes,
+each seen to cost a full turn budget or a round trip:
+
+- **A count asserting a structure that does not exist** — an exit path the
+  compiler reports unreachable, counted as a site to instrument.
+- **An anchor the executor's own edit invalidates** — sites identified by line
+  number when the phase's first task inserts lines above them.
+- **A whole-file grep whose target the spec itself puts in the file** — a
+  `→ 0` where the Test plan requires the symbol in a test, or a `→ 2` where the
+  natural `use` import makes correct code read 3.
+- **A mutation naming an arm no test renders.**
+
+The rule: **before dispatch, show every criterion, anchor and mutation is
+satisfiable — not merely that its "now" value is what you wrote.**
+
+1. **A count's target is derived from something you ran.** When the compiler
+   can settle a structural claim (reachability, an arm's existence, a trait
+   bound), ask it — a probe edit plus a build is cheaper than a lost budget.
+2. **Anchors are quoted text, never line numbers.** Quote the unique line(s)
+   `patch` should match; those survive every edit but the one meant to change
+   them.
+3. **Scope a grep to what it is actually about** — production-only via the
+   recipes above, or include the call's argument (`'fn_name(&'`) to count
+   call sites rather than mentions.
+4. **A mutation prescription names the test AND the assertion, and you have
+   confirmed that test exists and reaches that arm.** If you cannot point at
+   the assertion message the failure will print, you have described a wish.
+
+The tell, every time: the check was written from the spec's own description
+of the code rather than from the code. Hitting the turn cap on such a phase
+is a spec smell, not a capacity problem; the remedy is a satisfiable spec, not
+a larger cap.
+
+*(Folded 2026-09-20 from a downstream project, four occurrences, two of them
+full turn-budget losses.)*
 
 ### A sweep's scope is its convertible sites, not its matches
 

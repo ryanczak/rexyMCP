@@ -39,6 +39,11 @@ the phase's Update Log — never silently mark a phase done.
       prose). A green `{TEST_COMMAND}`
       run that exercises a `TempDir`-scoped fake is **not** by itself sufficient,
       and neither is a result that would look the same if nothing ran — see §1.1.
+- [ ] The end-to-end evidence lives in its **own Update Log entry, authored by
+      whoever ran the phase** — `### Update — <date> (end-to-end verification)`.
+      **The server-authored `(complete)` entry does not satisfy this box**: its
+      command-output tails show the gates ran, not that the acceptance criteria
+      were exercised against real artifacts.
 - [ ] `{BUILD_COMMAND}` succeeds with **zero new warnings**.
 - [ ] `{LINT_COMMAND}` passes.
 - [ ] `{FORMAT_COMMAND}` passes.
