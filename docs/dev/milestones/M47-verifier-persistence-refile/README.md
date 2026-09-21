@@ -86,7 +86,7 @@ wall; *first-touching a new file* is a sweep by definition.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Refile persistence rule ([phase-01-refile-persistence-rule.md](phase-01-refile-persistence-rule.md)): `VerifySample` + `verifier_persistence_streaks` + the rewritten check in `hard_fail.rs`; `file` on the signal; the agent loop records the edit path per verify; unit tests replaying the sweep and stall traces; agent-level sweep test | in-progress |
+| 01 | Refile persistence rule ([phase-01-refile-persistence-rule.md](phase-01-refile-persistence-rule.md)): `VerifySample` + `verifier_persistence_streaks` + the rewritten check in `hard_fail.rs`; `file` on the signal; the agent loop records the edit path per verify; unit tests replaying the sweep and stall traces; agent-level sweep test | review      |
 | 02 | Replay refile signal ([phase-02-replay-refile-signal.md](phase-02-replay-refile-signal.md)): pair each `verify` with the preceding verified write in `calibrate_governor::replay`, add `VerifierRefileRun` to `SIGNALS` **and** `format_report`'s label list, synthetic-log tests | todo |
 
 Ordering: the executor crate first so phase-02 reuses the exported streak

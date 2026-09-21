@@ -1,7 +1,7 @@
 # Phase 01: Refile persistence rule
 
 **Milestone:** M47 — Verifier Persistence Keyed on Re-editing
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~250 lines (one new struct + one new pub fn + a rewritten check in `hard_fail.rs`; three-line change in the agent loop; five new unit tests, four adapted, one new agent-level test)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -461,3 +461,105 @@ counts_ident=0
 
 PASTE MATCH
 
+### Update — ts=1789951106933 (complete, server-authored)
+
+**Summary:** **Summary + Notes for review**
+
+Implemented M47 phase-01: the verifier-persistence hard-fail rule is re-keyed on re-editing. `hard_fail.rs` gains the `pub struct VerifySample { author_errors, path }` and `pub fn verifier_persistence_streaks(&[VerifySample]) -> Vec<usize>` exactly as specified (streak extends only on a non-decreasing count *and* a path already in the streak's path set; a zero clears, a decrease or first-touched path restarts at 1 with the set reduced to that path); `check_verifier_persistence` is rewritten on top of it and `evaluate` now takes `&[VerifySample]`; `VerifierFailurePersistent` gains `file: String` and its describe arm names the re-edited file; the agent loop (`mod.rs`) records `VerifySample { author_errors: author.len(), path: path.clone() }` per verify and passes `&recent_verifier_samples` to `evaluate`, with `recent_verifier_error_counts` fully gone. Tests: five new unit tests (`verifier_persistence_ignores_sweep_across_files`, `..._fires_on_single_file_stall`, `..._new_file_resets_path_set`, `..._zero_clears_streak`, `..._decrease_restarts_streak`) each asserting the exact streak vector plus the `evaluate` outcome; four existing tests + `describe_verifier_persistence` adapted via the `sample` helper; new agent-level `sweep_across_files_does_not_trip_verifier_persistence`. E2E capture ran verbatim (positive control built in: the sweep test must not fire while `detects_verifier_persistence` still fires on the single-file stall) and is pasted byte-for-byte in the end-to-end Update Log entry, which ends `PASTE MATCH`; all four gates are green (fmt, build, clippy `-D warnings`, 1058 tests / 0 failed) and the work is committed as `8fc88e5`.
+
+**Notes for review:** (1) The tree was not clean at start — it carried the architect's own uncommitted draft of phase-02 plus NEXT.md/README wording edits; since the contract requires a clean tree to commit, I included those pre-existing doc changes in the same commit rather than stashing or reverting architect-authored content — flag if you want them split out. (2) Phase status left at `in-progress` per the lifecycle; no `(complete)` entry written. (3) `verifier_persistence_decrease_restarts_streak` builds its "appending one more makes it fire" case by chaining an extra sample rather than `samples.push` (array → `Vec`); semantics identical to the spec's wording. (4) `edit_target`'s `patch_lines` gap and the A/B/A/B alternation limitation remain untouched as directed.
+
+**Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+
+TEST
+_task_to_active ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::bash::tests::cargo_command_records_cargo_filter_label ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test tools::bash::tests::cargo_command_output_is_filtered_through_cargo_filter ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1058 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.10s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-9705ec1e04e62e42)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-80b252dbdf01b3a7)
+     Running unittests src/lib.rs (target/debug/deps/executor-c1650299697d7408)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M47-verifier-persistence-refile/README.md` — +1 -1
+- `docs/dev/milestones/M47-verifier-persistence-refile/phase-01-refile-persistence-rule.md` — +60 -1
+- `executor/src/agent/mod.rs` — +7 -4
+- `executor/src/agent/tests.rs` — +34 -0
+- `executor/src/governor/hard_fail.rs` — +184 -30
+
+**Commit:** 8fc88e53d40698b0bc09de20cfbaece31d97e530
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
