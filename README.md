@@ -782,7 +782,7 @@ precisely because the loop catches and corrects their failure modes
 automatically.
 
 And it works great with the recent generation of open-weight models running
-on local hardware — **GLM-5.3-Flash, Qwen3.8, and DeepSeek 4.1** have each
+on local hardware — **GLM-5.3-Flash, Qwen3.8, and DeepSeek V4 Flash** have each
 driven whole milestones to `approved_first_try` through this loop. The
 guardrails built for 7B-class models are what let a 27B-class model run
 unattended for a hundred-plus turns and hand back green gates.
