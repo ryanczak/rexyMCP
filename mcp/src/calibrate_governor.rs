@@ -6,7 +6,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
-use rexymcp_executor::governor::hard_fail::{ToolCallSnapshot, measure_novelty};
+use rexymcp_executor::governor::hard_fail::{
+    ToolCallSnapshot, VerifySample, measure_novelty, verifier_persistence_streaks,
+};
 use rexymcp_executor::store::metrics::{fmt_tokens, percentile};
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
 use rexymcp_executor::store::sessions::jsonl::read_session_log;
@@ -22,6 +24,10 @@ struct RunReplay {
     tool_calls: Vec<ToolCallSnapshot>,
     /// Author-attributed verifier error count per `Verify` event, in order.
     verifier_error_counts: Vec<usize>,
+    /// Per `Verify` event, the author-error count paired with the path of the
+    /// most recent preceding verified write. A `Verify` with no preceding
+    /// write is dropped (the live loop only verifies after an edit).
+    verify_samples: Vec<VerifySample>,
     /// Per `Completion` event: whether it was blank/think-only. NOTE: this misses
     /// truncation-driven empties (`finish_reason == length` is not logged), so it
     /// is a lower bound on the loop's empty-completion counter.
@@ -50,6 +56,10 @@ enum Signal {
     OscillationMinDistinct,
     /// Longest streak of consecutive non-decreasing positive author-error counts.
     VerifierPersistenceRun,
+    /// Longest refile streak — the shipped rule re-keyed on re-editing a file
+    /// already edited in the streak (M47). Reported beside
+    /// `VerifierPersistenceRun` so the two rules' disagreements are visible.
+    VerifierRefileRun,
     /// Longest run of consecutive empty completions (lower bound — misses truncation).
     EmptyCompletionRun,
     /// Max windowed output-bytes sum (mirrors live `check_windowed_output`).
@@ -64,6 +74,7 @@ impl Signal {
             Signal::IdenticalRun => "identical_run",
             Signal::OscillationMinDistinct => "oscillation_min_distinct",
             Signal::VerifierPersistenceRun => "verifier_persistence_run",
+            Signal::VerifierRefileRun => "verifier_refile_run",
             Signal::EmptyCompletionRun => "empty_completion_run",
             Signal::OutputFloodWindowedBytes => "output_flood_windowed_bytes",
         }
@@ -161,6 +172,16 @@ impl Signal {
                 }
                 vec![max]
             }
+            Signal::VerifierRefileRun => {
+                if run_.verify_samples.is_empty() {
+                    return vec![];
+                }
+                let max = verifier_persistence_streaks(&run_.verify_samples)
+                    .into_iter()
+                    .max()
+                    .unwrap_or(0);
+                vec![max]
+            }
             Signal::EmptyCompletionRun => {
                 let mut max = 0usize;
                 let mut run = 0usize;
@@ -195,6 +216,7 @@ const SIGNALS: &[Signal] = &[
     Signal::IdenticalRun,
     Signal::OscillationMinDistinct,
     Signal::VerifierPersistenceRun,
+    Signal::VerifierRefileRun,
     Signal::EmptyCompletionRun,
     Signal::OutputFloodWindowedBytes,
 ];
@@ -227,6 +249,7 @@ fn format_report(rows: &[ReportRow]) -> String {
         "identical_run",
         "oscillation_min_distinct",
         "verifier_persistence_run",
+        "verifier_refile_run",
         "empty_completion_run",
         "output_flood_windowed_bytes",
     ];
@@ -437,25 +460,54 @@ pub fn run(args: &CalibrateGovernorArgs<'_>) -> String {
     }
 }
 
+/// The write tools whose edits run the post-edit verifier — mirrors
+/// `edit_target` in `executor/src/agent/tools.rs`. Deliberately **not**
+/// `tools::mutates_files`, which is a wider set: `patch_lines`, `delete_file`
+/// and `move_file` mutate but run no verifier, so pairing on them would
+/// attribute a verify to a file that never triggered it.
+fn is_verified_write(tool: &str) -> bool {
+    tool == "write_file" || tool == "patch"
+}
+
+/// The `path` string argument of a logged tool call, if present.
+fn path_arg(arguments: &serde_json::Value) -> Option<PathBuf> {
+    arguments.get("path")?.as_str().map(PathBuf::from)
+}
+
 /// Replay a single session log into a `RunReplay`.
 fn replay(records: &[SessionRecord]) -> RunReplay {
     let mut model = String::from("(unknown)");
     let mut outcome = String::from("unknown");
     let mut tool_calls = Vec::new();
     let mut verifier_error_counts = Vec::new();
+    let mut verify_samples = Vec::new();
+    let mut last_write: Option<PathBuf> = None;
     let mut completion_empty = Vec::new();
     let mut output_bytes = Vec::new();
     for rec in records {
         match &rec.event {
             SessionEvent::SessionStart { model: m, .. } => model = m.clone(),
             SessionEvent::SessionEnd { status, .. } => outcome = status.clone(),
-            SessionEvent::Parsed { tool_call } => tool_calls.push(ToolCallSnapshot {
-                tool: tool_call.name.clone(),
-                arguments: tool_call.arguments.clone(),
-                succeeded: true, // the 06a stall signals key on tool+args, not success
-            }),
+            SessionEvent::Parsed { tool_call } => {
+                if is_verified_write(&tool_call.name)
+                    && let Some(p) = path_arg(&tool_call.arguments)
+                {
+                    last_write = Some(p);
+                }
+                tool_calls.push(ToolCallSnapshot {
+                    tool: tool_call.name.clone(),
+                    arguments: tool_call.arguments.clone(),
+                    succeeded: true, // the 06a stall signals key on tool+args, not success
+                })
+            }
             SessionEvent::Verify { diagnostics } => {
                 verifier_error_counts.push(diagnostics.len());
+                if let Some(p) = last_write.as_ref() {
+                    verify_samples.push(VerifySample {
+                        author_errors: diagnostics.len(),
+                        path: p.clone(),
+                    });
+                }
             }
             SessionEvent::Completion { raw } => {
                 completion_empty.push(
@@ -477,6 +529,7 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
         outcome,
         tool_calls,
         verifier_error_counts,
+        verify_samples,
         completion_empty,
         output_bytes,
     }
@@ -601,6 +654,7 @@ mod tests {
             outcome: "complete".into(),
             tool_calls: calls,
             verifier_error_counts: Vec::new(),
+            verify_samples: Vec::new(),
             completion_empty: Vec::new(),
             output_bytes: Vec::new(),
         };
@@ -641,6 +695,7 @@ mod tests {
             outcome: "complete".into(),
             tool_calls: calls,
             verifier_error_counts: Vec::new(),
+            verify_samples: Vec::new(),
             completion_empty: Vec::new(),
             output_bytes: Vec::new(),
         };
@@ -909,6 +964,7 @@ mod tests {
             outcome: "complete".into(),
             tool_calls: calls,
             verifier_error_counts: Vec::new(),
+            verify_samples: Vec::new(),
             completion_empty: Vec::new(),
             output_bytes: Vec::new(),
         };
@@ -926,12 +982,14 @@ mod tests {
         tool_calls: Vec<ToolCallSnapshot>,
         verifier_error_counts: Vec<usize>,
         completion_empty: Vec<bool>,
+        verify_samples: Vec<VerifySample>,
     ) -> RunReplay {
         RunReplay {
             model: "test".into(),
             outcome: "complete".into(),
             tool_calls,
             verifier_error_counts,
+            verify_samples,
             completion_empty,
             output_bytes: Vec::new(),
         }
@@ -966,14 +1024,15 @@ mod tests {
                 succeeded: true,
             },
         ];
-        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new());
+        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new(), Vec::new());
         let samples = Signal::IdenticalRun.samples(&run, 24);
         assert_eq!(samples, vec![3], "expected longest run of 3: {samples:?}");
     }
 
     #[test]
     fn identical_run_returns_no_sample_for_empty_calls() {
-        let run = make_replay_with_verify_and_completion(Vec::new(), Vec::new(), Vec::new());
+        let run =
+            make_replay_with_verify_and_completion(Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let samples = Signal::IdenticalRun.samples(&run, 24);
         assert!(
             samples.is_empty(),
@@ -996,7 +1055,7 @@ mod tests {
                 succeeded: true,
             },
         ];
-        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new());
+        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new(), Vec::new());
         let samples = Signal::OscillationMinDistinct.samples(&run, 24);
         assert!(
             samples.is_empty(),
@@ -1025,7 +1084,7 @@ mod tests {
                 }
             })
             .collect();
-        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new());
+        let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new(), Vec::new());
         let samples = Signal::OscillationMinDistinct.samples(&run, 24);
         assert_eq!(
             samples,
@@ -1037,8 +1096,12 @@ mod tests {
     #[test]
     fn verifier_persistence_run_matches_detector_semantics() {
         // Counts [1, 2, 2, 0, 3] -> longest non-decreasing positive streak = 3 (the 1,2,2)
-        let run =
-            make_replay_with_verify_and_completion(Vec::new(), vec![1, 2, 2, 0, 3], Vec::new());
+        let run = make_replay_with_verify_and_completion(
+            Vec::new(),
+            vec![1, 2, 2, 0, 3],
+            Vec::new(),
+            Vec::new(),
+        );
         let samples = Signal::VerifierPersistenceRun.samples(&run, 24);
         assert_eq!(
             samples,
@@ -1050,7 +1113,8 @@ mod tests {
     #[test]
     fn verifier_persistence_reset_on_decrease() {
         // Counts [2, 1] -> positive but decreased -> streak resets to 1, not 2
-        let run = make_replay_with_verify_and_completion(Vec::new(), vec![2, 1], Vec::new());
+        let run =
+            make_replay_with_verify_and_completion(Vec::new(), vec![2, 1], Vec::new(), Vec::new());
         let samples = Signal::VerifierPersistenceRun.samples(&run, 24);
         assert_eq!(
             samples,
@@ -1070,6 +1134,7 @@ mod tests {
             }],
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         );
         let samples = Signal::VerifierPersistenceRun.samples(&run, 24);
         assert!(
@@ -1085,6 +1150,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             vec![false, true, true, false],
+            Vec::new(),
         );
         let samples = Signal::EmptyCompletionRun.samples(&run, 24);
         assert_eq!(
@@ -1097,7 +1163,8 @@ mod tests {
     #[test]
     fn empty_completion_run_think_only_counts_as_empty() {
         // A think-only completion should count as empty (strip_think_blocks removes it)
-        let run = make_replay_with_verify_and_completion(Vec::new(), Vec::new(), vec![true]);
+        let run =
+            make_replay_with_verify_and_completion(Vec::new(), Vec::new(), vec![true], Vec::new());
         let samples = Signal::EmptyCompletionRun.samples(&run, 24);
         assert_eq!(
             samples,
@@ -1184,6 +1251,7 @@ mod tests {
             outcome: "complete".into(),
             tool_calls: Vec::new(),
             verifier_error_counts: Vec::new(),
+            verify_samples: Vec::new(),
             completion_empty: Vec::new(),
             output_bytes: vec![10, 20, 30, 40, 50, 60, 70],
         };
@@ -1202,6 +1270,7 @@ mod tests {
             outcome: "complete".into(),
             tool_calls: Vec::new(),
             verifier_error_counts: Vec::new(),
+            verify_samples: Vec::new(),
             completion_empty: Vec::new(),
             output_bytes: vec![10, 20, 30, 40, 50],
         };
@@ -1443,6 +1512,227 @@ mod tests {
         assert!(
             out.contains('—'),
             "byte signal with 0 should render dash sentinel: {out}"
+        );
+    }
+
+    // --- M47 phase-02: VerifierRefileRun signal ---
+
+    fn start_record() -> SessionRecord {
+        SessionRecord {
+            ts: 0,
+            turn: 0,
+            event: SessionEvent::SessionStart {
+                session_id: "s1".into(),
+                model: "test-model".into(),
+                phase: "phase-01".into(),
+            },
+        }
+    }
+
+    fn parsed_record(tool: &str, arguments: serde_json::Value) -> SessionRecord {
+        SessionRecord {
+            ts: 10,
+            turn: 1,
+            event: SessionEvent::Parsed {
+                tool_call: rexymcp_executor::parser::ToolCall {
+                    name: tool.into(),
+                    arguments,
+                    origin: rexymcp_executor::parser::Origin::Extracted {
+                        format: rexymcp_executor::parser::Format::Hermes,
+                    },
+                },
+            },
+        }
+    }
+
+    fn diag_record() -> rexymcp_executor::governor::verifier::Diagnostic {
+        use rexymcp_executor::governor::verifier::{Diagnostic, Severity};
+        Diagnostic {
+            path: PathBuf::from("a.rs"),
+            line: 1,
+            column: None,
+            severity: Severity::Error,
+            message: "boom".into(),
+            code: None,
+        }
+    }
+
+    fn verify_record(count: usize) -> SessionRecord {
+        SessionRecord {
+            ts: 20,
+            turn: 2,
+            event: SessionEvent::Verify {
+                diagnostics: std::iter::repeat_with(diag_record).take(count).collect(),
+            },
+        }
+    }
+
+    fn verify_samples(pairs: &[(&str, usize)]) -> Vec<VerifySample> {
+        pairs
+            .iter()
+            .map(|(path, errors)| VerifySample {
+                author_errors: *errors,
+                path: PathBuf::from(path),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn refile_signal_takes_longest_streak() {
+        // 1@a, 1@a, 1@b, 1@b, 1@b — b is re-edited after the streak already
+        // touched a, so the longest refile streak is 3 (the b's).
+        let run = make_replay_with_verify_and_completion(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            verify_samples(&[("a", 1), ("a", 1), ("b", 1), ("b", 1), ("b", 1)]),
+        );
+        let samples = Signal::VerifierRefileRun.samples(&run, 24);
+        assert_eq!(samples, vec![3], "expected longest refile streak of 3");
+    }
+
+    #[test]
+    fn refile_signal_absent_without_verify_samples() {
+        let run =
+            make_replay_with_verify_and_completion(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let samples = Signal::VerifierRefileRun.samples(&run, 24);
+        assert!(
+            samples.is_empty(),
+            "expected no sample without verify_samples: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn refile_streak_resets_on_count_decrease() {
+        let run = make_replay_with_verify_and_completion(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            verify_samples(&[("a", 2), ("a", 1)]),
+        );
+        let samples = Signal::VerifierRefileRun.samples(&run, 24);
+        assert_eq!(
+            samples,
+            vec![1],
+            "a decrease on the same file restarts the streak at 1"
+        );
+    }
+
+    #[test]
+    fn replay_pairs_verify_with_preceding_write() {
+        let records = vec![
+            start_record(),
+            verify_record(2),
+            parsed_record("patch", serde_json::json!({"path": "a.rs"})),
+            verify_record(1),
+        ];
+        let replay = replay(&records);
+        assert_eq!(replay.verify_samples.len(), 1, "the pre-write verify drops");
+        assert_eq!(replay.verify_samples[0].path, PathBuf::from("a.rs"));
+        assert_eq!(
+            replay.verify_samples[0].author_errors, 1,
+            "the sample carries the verify's own count, not the write's"
+        );
+        assert_eq!(
+            replay.verifier_error_counts,
+            vec![2, 1],
+            "verifier_error_counts keeps every verify"
+        );
+    }
+
+    #[test]
+    fn replay_ignores_unverified_write_tools_when_pairing() {
+        let records = vec![
+            start_record(),
+            parsed_record("patch", serde_json::json!({"path": "a.rs"})),
+            parsed_record("patch_lines", serde_json::json!({"path": "b.rs"})),
+            verify_record(1),
+        ];
+        let replay = replay(&records);
+        assert_eq!(replay.verify_samples.len(), 1);
+        assert_eq!(
+            replay.verify_samples[0].path,
+            PathBuf::from("a.rs"),
+            "patch_lines runs no verifier, so it must not steal the pairing"
+        );
+    }
+
+    #[test]
+    fn replay_pairs_second_verify_with_most_recent_write() {
+        let records = vec![
+            start_record(),
+            parsed_record("write_file", serde_json::json!({"path": "a.rs"})),
+            verify_record(1),
+            parsed_record("write_file", serde_json::json!({"path": "b.rs"})),
+            verify_record(2),
+        ];
+        let replay = replay(&records);
+        assert_eq!(
+            replay.verify_samples,
+            vec![
+                VerifySample {
+                    author_errors: 1,
+                    path: PathBuf::from("a.rs")
+                },
+                VerifySample {
+                    author_errors: 2,
+                    path: PathBuf::from("b.rs")
+                },
+            ],
+            "each verify pairs with the most recent preceding write"
+        );
+    }
+
+    #[test]
+    fn replay_skips_verify_without_any_preceding_write() {
+        let records = vec![start_record(), verify_record(3)];
+        let replay = replay(&records);
+        assert!(
+            replay.verify_samples.is_empty(),
+            "a verify with no preceding write has nothing to pair with"
+        );
+    }
+
+    #[test]
+    fn refile_signal_appears_in_report() {
+        let tmp = TempDir::new().unwrap();
+        make_session_file(
+            tmp.path(),
+            "refile",
+            "llama-3",
+            "complete",
+            &[("patch".into(), serde_json::json!({"path": "a.rs"}))],
+        );
+        let log_path = tmp.path().join("session-refile.jsonl");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log_path)
+            .unwrap();
+        for diagnostics in [vec![], vec![diag_record()], vec![diag_record()]] {
+            let record = SessionRecord {
+                ts: 1000,
+                turn: 1,
+                event: SessionEvent::Verify { diagnostics },
+            };
+            writeln!(file, "{}", serde_json::to_string(&record).unwrap()).unwrap();
+        }
+        drop(file);
+
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: false,
+        };
+        let out = run(&args);
+        assert!(
+            out.contains("verifier_refile_run"),
+            "report should contain verifier_refile_run: {out}"
+        );
+        assert!(
+            out.contains("verifier_persistence_run"),
+            "the shipped signal's block must stay beside the new one: {out}"
         );
     }
 }

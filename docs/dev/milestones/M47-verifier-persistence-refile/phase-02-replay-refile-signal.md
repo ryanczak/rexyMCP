@@ -1,7 +1,7 @@
 # Phase 02: Replay refile signal
 
 **Milestone:** M47 — Verifier Persistence Keyed on Re-editing
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01 (uses the `VerifySample` + `verifier_persistence_streaks` it exports)
 **Estimated diff:** ~180 lines (one field on `RunReplay` + its 6 construction sites, one `Signal` variant with 3 match arms, the `format_report` label list, pairing in `replay`, 5 tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -386,3 +386,66 @@ edits.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-09-21 00:43 (started)
+
+Executor `opus-4-6-headless` begins phase-02. Pre-flight checks passed: tree clean
+on `master`, `verifier_persistence_streaks` present in
+`executor/src/governor/hard_fail.rs` (grep count 1), phase-01 doc `done`.
+Implementation proceeds in `mcp/src/calibrate_governor.rs` per the Spec.
+
+### Update — 2026-09-21 00:48 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim (`target/e2e/m47-phase-02.txt`), then the
+paste self-check below. `refile_label` arithmetic: 4 = the `label()` arm, the
+`format_report` list entry, the `VerifierRefileRun.samples()` doc-adjacent
+signal name, and the `refile_signal_appears_in_report` assertion (>= 3 ✓).
+`samples_field` arithmetic: 6 = the struct field declaration (1) + the
+`samples()` read (2) + the `replay` accumulator declaration (1) + the push (1)
++ the struct-literal field init in `replay` (1) (>= 5 ✓). Both blocks appear in
+the real report against this repo's own 290-log corpus, and the corpus
+difference is visible: `hard_fail` runs sit at P90 4 → P99 6 under the shipped
+persistence rule but P90 3 → P99 5 under refile — the sweep-only fires are
+downgraded exactly as the architecture doc predicted.
+
+```text
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-6abaed7699c8e630)
+
+running 4 tests
+test calibrate_governor::tests::refile_signal_absent_without_verify_samples ... ok
+test calibrate_governor::tests::refile_signal_takes_longest_streak ... ok
+test calibrate_governor::tests::refile_streak_resets_on_count_decrease ... ok
+test calibrate_governor::tests::refile_signal_appears_in_report ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 704 filtered out; finished in 0.00s
+
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-48a7a2c4c616c4d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+exit=0
+signal: verifier_persistence_run
+MODEL  OUTCOME  RUNS  N  P50  P90  P99
+(all)    budget_exceeded    3     3       1       4       4
+(all)    cancelled     3     3       0       4       4
+(all)    complete    201   201       1       2       4
+(all)    hard_fail    36    36       2       4       6
+(all)    unknown       5     5       0       4       4
+--
+signal: verifier_refile_run
+MODEL  OUTCOME  RUNS  N  P50  P90  P99
+(all)    budget_exceeded    3     3       1       2       2
+(all)    cancelled     3     3       0       4       4
+(all)    complete    201   201       1       2       3
+(all)    hard_fail    36    36       1       3       5
+(all)    unknown       5     5       0       4       4
+exit=0
+refile_label=4
+samples_field=6
+```
+
+`PASTE MATCH` — the fenced block above is byte-identical to
+`target/e2e/m47-phase-02.txt` (diff exit 0).
