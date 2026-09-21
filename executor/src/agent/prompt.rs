@@ -53,16 +53,19 @@ fn format_utc_time(now_ms: u64) -> String {
     format!("{hours:02}:{minutes:02}")
 }
 
+/// Format epoch-millis (UTC) as `YYYY-MM-DD HH:MM` — the WORKFLOW.md Update
+/// Log heading stamp. Shared by the system-prompt header and the server's
+/// completion entry so both sides write the same shape.
+pub fn format_utc_datetime(now_ms: u64) -> String {
+    format!("{} {}", format_utc_date(now_ms), format_utc_time(now_ms))
+}
+
 /// The one-line temporal-grounding header prepended to the system prompt. The
 /// local model has no clock of its own; without this it stamps hallucinated
 /// dates and times in its Update Log. Built from the injected `clock`, never
 /// real wall-clock time, so it stays deterministic under test.
 pub fn datetime_header(now_ms: u64) -> String {
-    format!(
-        "Today's date is {} {} (UTC).\n\n",
-        format_utc_date(now_ms),
-        format_utc_time(now_ms)
-    )
+    format!("Today's date is {} (UTC).\n\n", format_utc_datetime(now_ms))
 }
 
 /// Render a task-tracking section for the system prompt.
@@ -94,6 +97,15 @@ pub fn task_section(tasks: &[Task]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_utc_datetime_matches_workflow_stamp_shape() {
+        // 2026-07-24 20:22:50.254 UTC
+        assert_eq!(format_utc_datetime(1_784_924_570_254), "2026-07-24 20:22");
+        // 999_999 ms after the epoch = 16 min 39 s into 1970-01-01
+        assert_eq!(format_utc_datetime(999_999), "1970-01-01 00:16");
+        assert_eq!(format_utc_datetime(0), "1970-01-01 00:00");
+    }
 
     #[test]
     fn format_utc_date_formats_midnight_epoch_millis() {

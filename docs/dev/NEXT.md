@@ -33,10 +33,11 @@ identity in an Update Log entry 1×; architect left `NEXT.md` on the
 just-approved phase 1×; architect E2E-block syntax errors 2× (trend — fold a
 dry-run rule on the 3rd); executor undisclosed scope deviation 1×.
 
-**At threshold, still needs human go-ahead as a runtime fix:**
-server-authored completion entries heading themselves `ts=<epoch-ms>` instead
-of the WORKFLOW.md date format — now 6 occurrences (both M47 phases added
-one each). This is server code, not a doc fold.
+**Runtime fix landed 2026-09-21 on human go-ahead:** server-authored
+completion entries now head themselves `YYYY-MM-DD HH:MM` (UTC) per
+WORKFLOW.md instead of `ts=<epoch-ms>`; the stamp comes from the same
+executor formatter the system-prompt date header uses. Closed at 6
+occurrences. The two M47 entries were converted in place.
 
 **The next milestone is a human decision — no auto-advance across the
 boundary.** Recorded candidates: the entry-header date-format server fix; the

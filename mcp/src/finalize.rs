@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use rexymcp_executor::agent::command::CommandRunner;
+use rexymcp_executor::agent::prompt::format_utc_datetime;
 use rexymcp_executor::phase::{CommandOutputs, FileChange, PhaseResult, PhaseStatus};
 
 /// Inputs for the server-authored completion finalize step.
@@ -107,9 +108,10 @@ fn baseline_entry(result: &PhaseResult, now_ms: u64, code_sha: &str, model: &str
     let gates = gate_line(&result.command_outputs);
     let command_tails = command_output_tails(&result.command_outputs);
     let files = files_changed_list(&result.files_changed);
+    let stamp = format_utc_datetime(now_ms);
 
     format!(
-        "### Update — ts={now_ms} (complete, server-authored)\n\n\
+        "### Update — {stamp} (complete, server-authored)\n\n\
          **Summary:** {summary}\n\n\
          **Executor:** {model}\n\n\
          **Gates:** {gates}\n\n\
@@ -638,7 +640,11 @@ mod tests {
 
         // Entry appended
         assert!(after.contains("(complete, server-authored)"));
-        assert!(after.contains("ts=999999"));
+        assert!(after.contains("### Update — 1970-01-01 00:16 (complete, server-authored)"));
+        assert!(
+            !after.contains("ts="),
+            "heading must use the WORKFLOW date stamp, not epoch-ms"
+        );
         assert!(after.contains("Implemented server-authored finalize."));
         assert!(after.contains("src/lib.rs"));
         assert!(after.contains("src/util.rs"));
@@ -1044,7 +1050,7 @@ mod tests {
     #[test]
     fn golden_roundtrip_flip_then_append_produces_wellformed_doc() {
         let doc = "# Phase 01: Well-formed bookkeeping output\n\n**Milestone:** M42 — Bookkeeping Format Hygiene\n**Status:** in-progress\n**Depends on:** none\n\n## Update Log\n\n<!-- entries appended below this line -->\n\n### Update — 2026-07-24 23:09 (started)\n\nStarted implementation by AI executor.\n";
-        let entry = "### Update — ts=1784924570254 (complete, server-authored)\n\n**Summary:** Done.\n\n**Acceptance criteria:** all ticked above.\n\n**Notes:** server-authored completion entry.\n";
+        let entry = "### Update — 2026-07-24 23:16 (complete, server-authored)\n\n**Summary:** Done.\n\n**Acceptance criteria:** all ticked above.\n\n**Notes:** server-authored completion entry.\n";
 
         let after_flip = flip_status_to_review(doc);
         assert!(after_flip.contains("**Status:** review"));
@@ -1054,7 +1060,7 @@ mod tests {
 
         // The started entry and the complete entry must be separated by a blank line
         assert!(
-            final_doc.contains("by AI executor.\n\n### Update — ts="),
+            final_doc.contains("by AI executor.\n\n### Update — 2026-07-24 23:16"),
             "blank line must separate entries: {final_doc:?}"
         );
 
@@ -1069,7 +1075,7 @@ mod tests {
         assert!(final_doc.contains("**Status:** review\n"));
 
         // Full expected output (byte-for-byte)
-        let expected = "# Phase 01: Well-formed bookkeeping output\n\n**Milestone:** M42 — Bookkeeping Format Hygiene\n**Status:** review\n**Depends on:** none\n\n## Update Log\n\n<!-- entries appended below this line -->\n\n### Update — 2026-07-24 23:09 (started)\n\nStarted implementation by AI executor.\n\n### Update — ts=1784924570254 (complete, server-authored)\n\n**Summary:** Done.\n\n**Acceptance criteria:** all ticked above.\n\n**Notes:** server-authored completion entry.\n";
+        let expected = "# Phase 01: Well-formed bookkeeping output\n\n**Milestone:** M42 — Bookkeeping Format Hygiene\n**Status:** review\n**Depends on:** none\n\n## Update Log\n\n<!-- entries appended below this line -->\n\n### Update — 2026-07-24 23:09 (started)\n\nStarted implementation by AI executor.\n\n### Update — 2026-07-24 23:16 (complete, server-authored)\n\n**Summary:** Done.\n\n**Acceptance criteria:** all ticked above.\n\n**Notes:** server-authored completion entry.\n";
         assert_eq!(final_doc, expected);
     }
 }

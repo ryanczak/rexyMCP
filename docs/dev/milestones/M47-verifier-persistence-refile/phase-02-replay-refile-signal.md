@@ -451,7 +451,7 @@ samples_field=6
 `PASTE MATCH` — the fenced block above is byte-identical to
 `target/e2e/m47-phase-02.txt` (diff exit 0).
 
-### Update — ts=1789952011832 (complete, server-authored)
+### Update — 2026-09-21 00:53 (complete, server-authored)
 
 **Summary:** **Summary:** Phase-02 is implemented and committed (`9bf645b`, working tree clean). `RunReplay` gained a `verify_samples` field carried through all six construction sites; `replay()` pairs each `Verify` with the most recent preceding verified write via the two new helpers (`is_verified_write` mirroring `edit_target`, `path_arg`), and a new `Signal::VerifierRefileRun` computes its longest streak through the executor's exported `verifier_persistence_streaks` — one implementation behind both the live rule and the report. The signal is registered in **both** `SIGNALS` and `format_report`'s label list, and all 9 new tests plus the full suite pass. The end-to-end block ran verbatim with `PASTE MATCH` on the paste self-check; its artifact is quoted in the phase doc's `(end-to-end verification)` Update Log entry.
 
