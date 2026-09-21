@@ -16,7 +16,7 @@ errors straight back into the next turn, and refusing to let the LLM touch anyth
 outside the repo. The Architect designs; the Executor codes; **rexyMCP keeps the
 herd together and moving toward the goal.**
 
-Your *Architect* runs in **Claude Code**. **Google Antigravity** support is beta. 
+Your *Architect* runs in **Claude Code** or any harness that supports MCP and skills. 
 rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
 whichever you drive.
 
@@ -24,6 +24,23 @@ whichever you drive.
 
 A bunch of recent change that need to be called out because they change some core mechanics: 
 
+- **The verifier-persistence detector stops killing wiring sweeps (M47).**
+  `VerifierFailurePersistent` used to fire on N consecutive post-edit verifies
+  with a non-decreasing error count — a notion of progress that a legitimate
+  sweep (add a field or variant, then fix one consumer file per turn) can never
+  satisfy, because the tree cannot compile until the last site lands. A replay
+  of 436 real session logs found **7 of its 8 fires were exactly that**, all of
+  them completing on the very next dispatch. The streak is now keyed on
+  **re-editing a file already in the streak** while the count does not fall;
+  first-touching a new file restarts it. Same threshold, no new knob, and the
+  briefing now names the file being hit. `rexymcp calibrate-governor` reports
+  the new `verifier_refile_run` beside the old `verifier_persistence_run` so
+  you can see the two rules disagree on your own corpus.
+- **Server bookkeeping hygiene, finished (M42 follow-through).** The
+  server-authored completion entry now heads itself `YYYY-MM-DD HH:MM` (UTC)
+  like every other Update Log entry, instead of a raw `ts=<epoch-ms>` nobody
+  could place in time. The stamp comes from the same formatter that grounds
+  the executor's system-prompt date, so the two writers can't drift apart.
 - **Token-first accounting (M46).** Dollar cost accounting is gone; token
   counts are the accounting currency. The dashboard's Budget panel and the
   **`rexymcp costs`** CLI render a token ledger — **Architect / Executor /
@@ -608,7 +625,7 @@ are no short aliases.
 | `rexymcp health` | Connectivity check against the configured endpoint; lists models. | `--config <path>`, `--base-url <url>` |
 | `rexymcp doctor` | Verify the toolchain is installed: Tier-0 `[commands]` binaries (required — a missing one exits non-zero) and Tier-1 verifier enhancers (`cargo` / `tsc` / `ruff`, advisory / fail-open). | `--config <path>`, `--json` |
 | `rexymcp calibrate <TIER>` | Write tier-derived budget defaults (`tier`, `max_turns`, `gate_retries`, `[escalation]`) to the config, preserving comments and explicit overrides. | `<TIER>` = `LARGE`\|`MEDIUM`\|`SMALL`; `--config <path>` |
-| `rexymcp calibrate-governor` | Calibrate governor thresholds empirically by replaying the recorded session-log corpus — surfaces a per-model view of where the identical-call / oscillation / output-flood detectors would trip, so you can tune the `[governor]` values to your real runs instead of guessing. | `--repo <path>` (default `.`), `--sessions-dir`, `--model`, `--novelty-window <n>` (default 24), `--min-runs <n>`, `--json` |
+| `rexymcp calibrate-governor` | Calibrate governor thresholds empirically by replaying the recorded session-log corpus — surfaces a per-model view of where the identical-call / oscillation / output-flood / verifier-persistence detectors would trip (both the shipped `verifier_persistence_run` and the re-keyed `verifier_refile_run`), so you can tune the `[governor]` values to your real runs instead of guessing. | `--repo <path>` (default `.`), `--sessions-dir`, `--model`, `--novelty-window <n>` (default 24), `--min-runs <n>`, `--json` |
 | `rexymcp run-phase` | Run a single phase from the shell; prints the `PhaseResult` as JSON. No MCP client required. Honors the `.rexymcp/stop` sentinel. | `--config`, `--phase-doc`, `--repo` (all required), `--model` |
 | `rexymcp stop` | Signal a running executor to stop — writes a `.rexymcp/stop` sentinel in the target repo that the serve-side watcher (and a blocking `run-phase`) honor, cancelling every live run there. The human's out-of-band interrupt (M30). | `--repo <path>` (default `.`) |
 | `rexymcp serve` | Start the MCP stdio server. | `--config <path>` (required) |
@@ -764,6 +781,12 @@ freshly-quantized 27B — become useful executors for bounded, spec-driven work,
 precisely because the loop catches and corrects their failure modes
 automatically.
 
+And it works great with the recent generation of open-weight models running
+on local hardware — **GLM-5.3-Flash, Qwen3.8, and DeepSeek 4.1** have each
+driven whole milestones to `approved_first_try` through this loop. The
+guardrails built for 7B-class models are what let a 27B-class model run
+unattended for a hundred-plus turns and hand back green gates.
+
 ---
 
 ## The improvement loop
@@ -878,7 +901,7 @@ output_filter = true                      # false → raw head+tail truncation, 
 # ── Governor hard-fail thresholds ─────────────────────────────────
 [governor]
 identical_call_threshold        = 6       # consecutive identical tool calls → hard-fail (default 6)
-verifier_persistence_threshold  = 6       # consecutive verifier-failing turns → hard-fail (default 6)
+verifier_persistence_threshold  = 6       # consecutive verifier-failing edits of a file already in the streak, error count not falling → hard-fail (default 6); a first-touched file restarts the streak
 runaway_output_bytes            = 102400  # single tool-output byte cap → hard-fail (default 100 KiB)
 empty_completion_threshold      = 3       # consecutive empty model completions → hard-fail (default 3)
 gate_feedback_repeat_threshold  = 5       # consecutive byte-identical gate-feedback re-injections → hard-fail (default 5)
