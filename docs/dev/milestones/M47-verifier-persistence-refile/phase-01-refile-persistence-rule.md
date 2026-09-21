@@ -1,7 +1,7 @@
 # Phase 01: Refile persistence rule
 
 **Milestone:** M47 — Verifier Persistence Keyed on Re-editing
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~250 lines (one new struct + one new pub fn + a rewritten check in `hard_fail.rs`; three-line change in the agent loop; five new unit tests, four adapted, one new agent-level test)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -563,3 +563,43 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 8fc88e53d40698b0bc09de20cfbaece31d97e530
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-09-21
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark (125 turns)
+- **Scope deviations:** one, disclosed. The executor's commit `8fc88e5` also
+  carries architect-authored files that were uncommitted in the tree at
+  dispatch (the phase-02 draft, the NEXT.md phase-02 note, the README row).
+  Verified byte-for-byte: nothing of that content was altered, only committed.
+  **Architect-caused** — this phase doc's own Pre-flight step 4 requires a
+  clean tree and the dispatch went out dirty, leaving the executor to choose
+  between not committing at all and sweeping in architect content. It picked
+  the option that preserved the work and declared it, which is the correct
+  move from that position. Let stand.
+- **Calibration:** two, both held as data, neither a fold.
+  (1) *Architect dispatched with a dirty tree* — 1st occurrence. Remedy is
+  procedural: commit or stash architect-authored drafts before dispatch.
+  (2) *Server-authored completion entry headed `ts=<epoch-ms>`* instead of the
+  WORKFLOW.md date format — 4th occurrence, already at threshold and awaiting
+  the human's go-ahead as a runtime fix (tracked in NEXT.md).
+
+**Independent verification (reviewer, not the executor's run):** all four
+gates re-run as separate invocations — fmt, build, clippy `-D warnings`, and
+1058 + 700 + 2 tests, every one exit 0. All ten acceptance criteria executed:
+the six named tests pass, both preservation tests pass, and the four
+structural greps return `streaks_fn=1`, `file_string=1`, `vec_verifysample=1`,
+`counts_ident=0`. DoD greps found no added `unwrap`/`expect`/`panic!` in
+production paths, no `#[allow]`/`#[ignore]`/`unsafe`, no `TODO`/`FIXME`/
+`dbg!`/`println!`, no commented-out code.
+
+**Mutation proof the new tests are real:** removing the refile keying from
+`verifier_persistence_streaks` (`non_decreasing && paths.contains(…)` →
+`non_decreasing`, which restores the old count-only rule) turns exactly three
+tests red — `verifier_persistence_ignores_sweep_across_files`,
+`verifier_persistence_new_file_resets_path_set`, and the agent-level
+`sweep_across_files_does_not_trip_verifier_persistence` — while
+`verifier_persistence_fires_on_single_file_stall` and the preserved
+`detects_verifier_persistence` stay green. The guard discriminates the
+behaviour change in both directions. File restored; tree clean.
