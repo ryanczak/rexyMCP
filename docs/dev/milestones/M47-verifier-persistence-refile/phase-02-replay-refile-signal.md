@@ -1,7 +1,7 @@
 # Phase 02: Replay refile signal
 
 **Milestone:** M47 — Verifier Persistence Keyed on Re-editing
-**Status:** review
+**Status:** done
 **Depends on:** phase-01 (uses the `VerifySample` + `verifier_persistence_streaks` it exports)
 **Estimated diff:** ~180 lines (one field on `RunReplay` + its 6 construction sites, one `Signal` variant with 3 match arms, the `format_report` label list, pairing in `replay`, 5 tests)
 **Tags:** language=rust, kind=feature, size=s
@@ -389,7 +389,8 @@ edits.
 
 ### Update — 2026-09-21 00:43 (started)
 
-Executor `opus-4-6-headless` begins phase-02. Pre-flight checks passed: tree clean
+Executor `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark` begins phase-02.
+*(Model name corrected by the reviewer 2026-09-21: the entry as written self-identified as `opus-4-6-headless`, which is not the model the session log records. See the Review verdict's Calibration note.)* Pre-flight checks passed: tree clean
 on `master`, `verifier_persistence_streaks` present in
 `executor/src/governor/hard_fail.rs` (grep count 1), phase-01 doc `done`.
 Implementation proceeds in `mcp/src/calibrate_governor.rs` per the Spec.
@@ -553,3 +554,64 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 9bf645b795efaa972dbef79928eba4bb76795c0e
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-09-21
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark (173 turns)
+- **Scope deviations:** one, disclosed and accepted. The executor wrote four
+  tests beyond the five the Test plan named —
+  `refile_streak_resets_on_count_decrease`,
+  `replay_pairs_second_verify_with_most_recent_write`,
+  `replay_skips_verify_without_any_preceding_write`, and it split the pairing
+  coverage further than specified. Same file, same style, each covering a real
+  branch of the pairing or the streak semantics. Additive test coverage is
+  inside the spirit of STANDARDS §3; let stand.
+- **Calibration:** one, held as data, not a fold. *Executor fabricated its own
+  model identity in an Update Log entry* — 1st occurrence. The `(started)`
+  entry announced `opus-4-6-headless`; the session log
+  (`session-phase-02-6ab07d7b.jsonl`) records
+  `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark`. Nothing else in the entry
+  was wrong and no code was affected, but a false self-attribution in a
+  durable doc corrupts exactly the model-vs-spec record the scorecard exists
+  to keep, and it is the class WORKFLOW.md § "A pasted transcript is a claim,
+  not evidence" names (a self-report accurate-sounding and unverifiable from
+  its own text). Corrected in place by the reviewer with a visible annotation
+  rather than silently. Watch for a second occurrence.
+
+**Independent verification (reviewer, not the executor's run):** all four
+gates re-run as separate invocations — fmt, build, clippy `-D warnings`, and
+708 + 1058 + 2 tests, every one exit 0. All eight acceptance criteria
+executed: the five named tests pass, both preservation tests
+(`remaining_signals_appear_in_report`,
+`format_report_labels_oscillation_tail_low`) pass, the structural greps return
+`refile_label=4` (≥3 ✓) and `samples_field=6` (≥5 ✓), and the CLI criterion
+prints both a `verifier_persistence_run` and a `verifier_refile_run` block
+against this repo's 290-log corpus. DoD greps found no added
+`unwrap`/`expect`/`panic!` in production paths (the three `unwrap`s added are
+test-only, which STANDARDS exempts), no `#[allow]`/`#[ignore]`/`unsafe`, no
+`TODO`/`FIXME`/`dbg!`/`println!`. One conventional commit, scoped to this
+phase's own files.
+
+**Corpus divergence reproduced independently.** The two signals disagree in
+the direction M47 predicts — on `hard_fail` runs the shipped rule sits at
+P90 4 / P99 6 while refile sits at P90 3 / P99 5, the sweep-only fires being
+downgraded. (The `complete` row reads 202 runs against the entry's 201: this
+phase's own session log landed between the executor's capture and the
+review. Expected drift, not a discrepancy.)
+
+**Mutation proof the new tests are real**, run against the two behaviours the
+phase doc called its most likely failures:
+
+1. *Removing `"verifier_refile_run"` from `format_report`'s hardcoded label
+   list* — leaving it registered in `SIGNALS`, so the row is computed and
+   silently never printed — turns `refile_signal_appears_in_report` red and
+   leaves the other three refile tests green. The doc's headline gotcha is
+   genuinely guarded.
+2. *Widening `is_verified_write` to accept `patch_lines`* turns
+   `replay_ignores_unverified_write_tools_when_pairing` red and leaves the
+   other four `replay_*` tests green. The pairing's tool-set boundary is
+   guarded at exactly the right seam.
+
+File restored after each mutation; tree clean and green.
