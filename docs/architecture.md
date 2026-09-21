@@ -1232,8 +1232,9 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-47. **M47 — Verifier persistence keyed on re-editing** *(in-progress; opened
-    2026-09-20 from GitHub issue #10)*. `VerifierFailurePersistent` fired on
+47. **M47 — Verifier persistence keyed on re-editing** *(done 2026-09-21;
+    opened 2026-09-20 from GitHub issue #10, closed at two phases, both
+    `approved_first_try`, on executor GLM-5.3-Flash)*. `VerifierFailurePersistent` fired on
     `≥ threshold` consecutive post-edit verifies with a positive,
     non-decreasing author-error count — a progress notion of "the count went
     down" that a **wiring sweep** (one consumer site edited per turn through a

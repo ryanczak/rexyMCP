@@ -4,22 +4,46 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M47 / phase-02 — Replay refile signal**
-(`docs/dev/milestones/M47-verifier-persistence-refile/phase-02-replay-refile-signal.md`,
-status `todo`). Dispatch with `/rexymcp:dispatch phase-02`.
+**Active phase: none.**
 
-**M47 / phase-01 — Refile persistence rule: done 2026-09-21,
-`approved_first_try`** (code `8fc88e5`, approval `80f7ba5`), 125 turns on
-executor `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark`. One disclosed,
-architect-caused scope deviation (dispatched with a dirty tree; the
-executor's commit swept in uncommitted architect docs, verified unaltered).
+**M47 — Verifier Persistence Keyed on Re-editing closed 2026-09-21 at two
+phases**, both `approved_first_try`, zero bugs, zero bounces, zero assists,
+on executor `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark` (125 + 173
+turns). `VerifierFailurePersistent` is re-keyed on re-editing: the streak
+extends only when the triggering write hit a file already edited in the
+streak and the author-error count did not fall. The calibration replay
+reports `verifier_refile_run` beside the shipped `verifier_persistence_run`,
+both through the one exported streak function.
 
-**Phase-02 is drafted ahead of phase-01's run** (`phase-02-replay-refile-signal.md`,
-status `todo`) at the human's request. It consumes the `VerifySample` +
-`verifier_persistence_streaks` API phase-01 exports, so if phase-01 lands
-that API with a different shape, re-read phase-02's § Current state before
-dispatching it. Its Pre-flight step 5 checks for the API and files a blocker
-if it is absent. **Do not dispatch phase-02 before phase-01 is approved.**
+**Corpus check (architect, at close):** replaying the downstream project's
+436 logs through the shipped binary and the issue's variant script, the rule
+fires on **1** run where the shipped one fired on **8** — and the survivor is
+the run the issue classified as a genuine stall. The false-positive floor is
+unchanged at 5. Retrospective in
+[M47/README.md § M47 retrospective](milestones/M47-verifier-persistence-refile/README.md);
+`architecture.md` §47 done.
+
+**Open for the human — GitHub issue #10 is fixed but not yet closed.** The
+milestone addresses it in full; closing it with a reference to `8fc88e5` /
+`9bf645b` is a one-line action nobody has taken.
+
+**Calibration held as data (no fold due — all at 1st or 2nd occurrence):**
+architect dispatched with a dirty tree 1×; executor fabricated its own model
+identity in an Update Log entry 1×; architect left `NEXT.md` on the
+just-approved phase 1×; architect E2E-block syntax errors 2× (trend — fold a
+dry-run rule on the 3rd); executor undisclosed scope deviation 1×.
+
+**At threshold, still needs human go-ahead as a runtime fix:**
+server-authored completion entries heading themselves `ts=<epoch-ms>` instead
+of the WORKFLOW.md date format — now 6 occurrences (both M47 phases added
+one each). This is server code, not a doc fold.
+
+**The next milestone is a human decision — no auto-advance across the
+boundary.** Recorded candidates: the entry-header date-format server fix; the
+`patch_lines` verifier gap (a registered write tool whose edits run no
+post-edit verify, so they are invisible to both the persistence rule and the
+verifier retry loop); architect tokens-by-milestone attribution (needs a
+ledger milestone dimension).
 
 **M47 — Verifier Persistence Keyed on Re-editing opened 2026-09-20** from
 GitHub issue #10: `VerifierFailurePersistent` killed 7 wiring sweeps out of

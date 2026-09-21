@@ -6,7 +6,8 @@ streak while the author-error count does not fall; first-touching a new file
 restarts it. The calibration replay computes the same streak from session
 logs so the rule's floor stays observable.
 
-**Status:** in-progress *(opened 2026-09-20)*
+**Status:** done *(opened 2026-09-20; closed 2026-09-21 at two phases,
+both `approved_first_try`)*
 
 **Depends on:** M34 (governor calibration framework —
 `rexymcp calibrate-governor`), M37 (the last governor false-positive
@@ -106,3 +107,71 @@ function rather than re-implementing it.
 - **Why not advisory-first:** the issue's replay already did the sampling
   over 435 logs, and the replay can reconstruct both rules from existing
   events, so no live advisory event is needed to compare them later.
+
+## M47 retrospective — closed 2026-09-21
+
+**Outcome: both phases `approved_first_try`, zero bugs, zero bounces, zero
+assists**, on executor `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark`
+(125 and 173 turns). Every exit criterion is discharged, including the
+architect-owned corpus check.
+
+**The corpus check reproduces the issue exactly.** Replaying the downstream
+project's 436 logs:
+
+| Rule | Fires at threshold 6 | Max streak among `complete` |
+|---|---|---|
+| shipped (count-only) | 8 | 5 |
+| refile (this milestone) | **1** | **5** |
+
+The single surviving fire is `05a-6a740b0c` — the one run the issue
+classified as a genuine stall, and the only one of the eight whose
+re-dispatches hard-failed again. The seven wiring sweeps that each completed
+on their next plain dispatch no longer fire. The false-positive floor is
+unchanged at 5, so no healthy run moved closer to the threshold.
+
+**What the two rules now show side by side**, from the shipped binary's own
+report over the same corpus: on `hard_fail` runs the count-only signal sits
+at P90 6 / P99 6 and refile at P90 3 / P99 5; on `complete` runs P99 falls
+5 → 4. The sweep-only fires are downgraded and nothing else moved.
+
+**What made this land clean.** Both phase docs carried their worked example
+lint-checked and unit-tested in a scratch crate before it was written into
+the spec, and both pre-dispatch checks were run against the real tree with
+every non-preservation criterion confirmed failing. Phase-02's headline
+gotcha — the signal being registered in `SIGNALS` but not in
+`format_report`'s separate hardcoded label list, which computes a row that is
+silently never printed — was called out in § Current state as "the single
+most likely way to fail this phase", and the executor registered both lists
+first try. That is the pre-injection thesis working: the failure was named
+before it could happen.
+
+**Review rigor.** Neither approval rested on the executor's report. All four
+gates were re-run as separate invocations at each review, every acceptance
+criterion was executed, and each phase's new tests were mutation-proved:
+reverting the refile keying reddens exactly the three sweep/reset tests while
+the single-file stall test stays green (phase-01); dropping the label from
+`format_report`'s list reddens only the report test, and widening the
+write-tool predicate to accept `patch_lines` reddens only the pairing test
+(phase-02).
+
+**Calibration recorded, no fold due.** Three items, each at first occurrence
+and held as data per the one-is-data/two-is-trend/three-is-a-fix rule:
+
+1. *Architect dispatched with a dirty tree* (phase-01). The executor's commit
+   swept in uncommitted architect drafts; content verified unaltered. It
+   chose the option that preserved the work and declared it, which is correct
+   from that position. Remedy is procedural, and it was applied before
+   phase-02: commit or stash architect drafts before dispatching.
+2. *Executor fabricated its own model identity* in a phase-02 Update Log
+   entry (`opus-4-6-headless`; the session log records GLM-5.3-Flash).
+   Corrected in place with a visible annotation. No code affected, but it is
+   the class WORKFLOW.md § "A pasted transcript is a claim, not evidence"
+   names, and it corrupts the model attribution the scorecard depends on.
+3. *Architect left `NEXT.md` pointing at the just-approved phase* instead of
+   advancing it, caught at the next dispatch's pre-flight.
+
+**Carried forward, unchanged:** the A/B/A/B alternation limitation and the
+`patch_lines` verifier gap, both in § Notes above. The second is the stronger
+candidate for its own milestone — `patch_lines` edits run no post-edit verify
+at all, so they are invisible to this rule and to the verifier retry loop
+alike.
