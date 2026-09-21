@@ -8,6 +8,13 @@ Single source of truth for which phase is active. The principal engineer
 (`docs/dev/milestones/M47-verifier-persistence-refile/phase-01-refile-persistence-rule.md`,
 status `todo`). Dispatch with `/rexymcp:dispatch phase-01`.
 
+**Phase-02 is drafted ahead of phase-01's run** (`phase-02-replay-refile-signal.md`,
+status `todo`) at the human's request. It consumes the `VerifySample` +
+`verifier_persistence_streaks` API phase-01 exports, so if phase-01 lands
+that API with a different shape, re-read phase-02's § Current state before
+dispatching it. Its Pre-flight step 5 checks for the API and files a blocker
+if it is absent. **Do not dispatch phase-02 before phase-01 is approved.**
+
 **M47 — Verifier Persistence Keyed on Re-editing opened 2026-09-20** from
 GitHub issue #10: `VerifierFailurePersistent` killed 7 wiring sweeps out of
 its 8 fires in a downstream corpus; the streak is re-keyed on re-editing a

@@ -1,4 +1,5 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,7 @@ pub enum HardFailSignal {
     },
     VerifierFailurePersistent {
         consecutive_failures: u32,
+        file: String,
     },
     RunawayOutput {
         tool: String,
@@ -63,8 +65,11 @@ impl HardFailSignal {
             }
             Self::VerifierFailurePersistent {
                 consecutive_failures,
+                file,
             } => {
-                format!("verifier flagged errors on {consecutive_failures} consecutive turns")
+                format!(
+                    "verifier flagged errors on {consecutive_failures} consecutive edits of {file}"
+                )
             }
             Self::RunawayOutput { tool, bytes } => {
                 format!("tool {tool} produced {bytes} bytes (over threshold)")
@@ -112,9 +117,47 @@ impl HardFailSignal {
     }
 }
 
+/// One post-edit verifier sample: the author-attributed diagnostic count and
+/// the path of the edit that triggered the verify.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifySample {
+    pub author_errors: usize,
+    pub path: PathBuf,
+}
+
+/// Streak length after each sample. A streak is consecutive verifies with
+/// `author_errors > 0`, a non-decreasing count, **and** a triggering path
+/// already edited earlier in the same streak. A zero clears it; a decrease or
+/// a first-touched path restarts it at 1 with the path set reduced to that path.
+pub fn verifier_persistence_streaks(samples: &[VerifySample]) -> Vec<usize> {
+    let mut out = Vec::with_capacity(samples.len());
+    let mut streak = 0usize;
+    let mut prev: Option<usize> = None;
+    let mut paths: HashSet<&Path> = HashSet::new();
+    for s in samples {
+        if s.author_errors == 0 {
+            streak = 0;
+            paths.clear();
+            prev = None;
+        } else {
+            let non_decreasing = prev.is_none_or(|p| s.author_errors >= p);
+            if non_decreasing && paths.contains(s.path.as_path()) {
+                streak += 1;
+            } else {
+                streak = 1;
+                paths.clear();
+            }
+            paths.insert(s.path.as_path());
+            prev = Some(s.author_errors);
+        }
+        out.push(streak);
+    }
+    out
+}
+
 pub fn evaluate(
     recent_tool_calls: &VecDeque<ToolCallSnapshot>,
-    recent_verifier_error_counts: &[usize],
+    recent_verifier_samples: &[VerifySample],
     last_tool_output: Option<(&str, usize)>,
     config: &GovernorConfig,
 ) -> Option<HardFailSignal> {
@@ -124,7 +167,7 @@ pub fn evaluate(
         return Some(signal);
     }
     if let Some(signal) = check_verifier_persistence(
-        recent_verifier_error_counts,
+        recent_verifier_samples,
         config.verifier_persistence_threshold,
     ) {
         return Some(signal);
@@ -185,26 +228,18 @@ fn normalize_arguments(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn check_verifier_persistence(counts: &[usize], threshold: usize) -> Option<HardFailSignal> {
-    if counts.len() < threshold {
+fn check_verifier_persistence(
+    samples: &[VerifySample],
+    threshold: usize,
+) -> Option<HardFailSignal> {
+    let streak = *verifier_persistence_streaks(samples).last()?;
+    if streak < threshold {
         return None;
     }
-    let last_n = &counts[counts.len() - threshold..];
-
-    // Must all be > 0
-    if last_n.contains(&0) {
-        return None;
-    }
-
-    // Must be non-decreasing oldest -> newest
-    for w in last_n.windows(2) {
-        if w[0] > w[1] {
-            return None;
-        }
-    }
-
+    let file = samples.last()?.path.display().to_string();
     Some(HardFailSignal::VerifierFailurePersistent {
-        consecutive_failures: threshold as u32,
+        consecutive_failures: streak as u32,
+        file,
     })
 }
 
@@ -463,6 +498,13 @@ pub fn check_windowed_output(
 mod tests {
     use super::*;
 
+    fn sample(author_errors: usize, path: &str) -> VerifySample {
+        VerifySample {
+            author_errors,
+            path: PathBuf::from(path),
+        }
+    }
+
     // --- describe tests ---
 
     #[test]
@@ -481,10 +523,12 @@ mod tests {
     fn describe_verifier_persistence() {
         let signal = HardFailSignal::VerifierFailurePersistent {
             consecutive_failures: 3,
+            file: "src/x.rs".to_string(),
         };
         let desc = signal.describe();
         assert!(desc.contains("verifier flagged errors on "));
         assert!(desc.contains("3"));
+        assert!(desc.contains("src/x.rs"));
     }
 
     #[test]
@@ -521,9 +565,9 @@ mod tests {
 
     #[test]
     fn detects_verifier_persistence() {
-        let counts = [2usize, 2, 2, 2, 2, 2];
+        let samples = vec![sample(2, "a.rs"); 6];
         let recent = VecDeque::new();
-        let signal = evaluate(&recent, &counts, None, &GovernorConfig::default()).unwrap();
+        let signal = evaluate(&recent, &samples, None, &GovernorConfig::default()).unwrap();
         assert!(matches!(
             signal,
             HardFailSignal::VerifierFailurePersistent { .. }
@@ -562,7 +606,7 @@ mod tests {
         assert!(
             evaluate(
                 &recent,
-                &[1],
+                &[sample(1, "a.rs")],
                 Some(("read_file", 100)),
                 &GovernorConfig::default()
             )
@@ -599,16 +643,16 @@ mod tests {
 
     #[test]
     fn no_verifier_persistence_when_errors_decrease() {
-        let counts = [5usize, 3, 1];
+        let samples = [sample(5, "a.rs"), sample(3, "a.rs"), sample(1, "a.rs")];
         let recent = VecDeque::new();
-        assert!(evaluate(&recent, &counts, None, &GovernorConfig::default()).is_none());
+        assert!(evaluate(&recent, &samples, None, &GovernorConfig::default()).is_none());
     }
 
     #[test]
     fn no_verifier_persistence_when_a_count_is_zero() {
-        let counts = [2usize, 0, 2];
+        let samples = [sample(2, "a.rs"), sample(0, "a.rs"), sample(2, "a.rs")];
         let recent = VecDeque::new();
-        assert!(evaluate(&recent, &counts, None, &GovernorConfig::default()).is_none());
+        assert!(evaluate(&recent, &samples, None, &GovernorConfig::default()).is_none());
     }
 
     #[test]
@@ -637,11 +681,121 @@ mod tests {
         for _ in 0..6 {
             recent.push_back(snap.clone());
         }
-        let counts = [2usize, 2, 2, 2, 2, 2];
-        let signal = evaluate(&recent, &counts, None, &GovernorConfig::default()).unwrap();
+        let samples = vec![sample(2, "a.rs"); 6];
+        let signal = evaluate(&recent, &samples, None, &GovernorConfig::default()).unwrap();
         assert!(matches!(
             signal,
             HardFailSignal::IdenticalToolCallRepetition { .. }
+        ));
+    }
+
+    #[test]
+    fn verifier_persistence_ignores_sweep_across_files() {
+        let samples = [
+            sample(1, "x.rs"),
+            sample(1, "mod.rs"),
+            sample(1, "args.rs"),
+            sample(2, "args.rs"),
+            sample(2, "events.rs"),
+            sample(2, "stream.rs"),
+        ];
+        assert_eq!(
+            verifier_persistence_streaks(&samples),
+            vec![1, 1, 1, 2, 1, 1]
+        );
+        let recent = VecDeque::new();
+        assert!(
+            evaluate(&recent, &samples, None, &GovernorConfig::default()).is_none(),
+            "the shipped rule must not fire on a sweep that touches a new file each turn"
+        );
+    }
+
+    #[test]
+    fn verifier_persistence_fires_on_single_file_stall() {
+        let samples = vec![sample(1, "a.rs"); 6];
+        assert_eq!(
+            verifier_persistence_streaks(&samples),
+            vec![1, 2, 3, 4, 5, 6]
+        );
+        let recent = VecDeque::new();
+        let signal = evaluate(&recent, &samples, None, &GovernorConfig::default()).unwrap();
+        let HardFailSignal::VerifierFailurePersistent {
+            consecutive_failures,
+            file,
+        } = signal
+        else {
+            panic!("expected VerifierFailurePersistent");
+        };
+        assert_eq!(consecutive_failures, 6);
+        assert!(
+            file.ends_with("a.rs"),
+            "the signal must name the re-edited file, got {file}"
+        );
+    }
+
+    #[test]
+    fn verifier_persistence_new_file_resets_path_set() {
+        let samples = [
+            sample(1, "a"),
+            sample(1, "a"),
+            sample(1, "a"),
+            sample(1, "b"),
+            sample(1, "a"),
+            sample(1, "a"),
+        ];
+        assert_eq!(
+            verifier_persistence_streaks(&samples),
+            vec![1, 2, 3, 1, 1, 2]
+        );
+        let recent = VecDeque::new();
+        assert!(evaluate(&recent, &samples, None, &GovernorConfig::default()).is_none());
+    }
+
+    #[test]
+    fn verifier_persistence_zero_clears_streak() {
+        let samples = [
+            sample(2, "a"),
+            sample(2, "a"),
+            sample(2, "a"),
+            sample(0, "a"),
+            sample(2, "a"),
+            sample(2, "a"),
+            sample(2, "a"),
+        ];
+        assert_eq!(
+            verifier_persistence_streaks(&samples),
+            vec![1, 2, 3, 0, 1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn verifier_persistence_decrease_restarts_streak() {
+        let samples = [
+            sample(5, "a"),
+            sample(3, "a"),
+            sample(3, "a"),
+            sample(3, "a"),
+            sample(3, "a"),
+            sample(3, "a"),
+        ];
+        assert_eq!(
+            verifier_persistence_streaks(&samples),
+            vec![1, 1, 2, 3, 4, 5]
+        );
+        let recent = VecDeque::new();
+        assert!(
+            evaluate(&recent, &samples, None, &GovernorConfig::default()).is_none(),
+            "a decreasing count restarts the streak, so six samples never reach 6"
+        );
+        let with_extra: Vec<VerifySample> = samples
+            .iter()
+            .chain(std::iter::once(&sample(3, "a")))
+            .cloned()
+            .collect();
+        let signal = evaluate(&recent, &with_extra, None, &GovernorConfig::default()).unwrap();
+        assert!(matches!(
+            signal,
+            HardFailSignal::VerifierFailurePersistent { .. }
         ));
     }
 

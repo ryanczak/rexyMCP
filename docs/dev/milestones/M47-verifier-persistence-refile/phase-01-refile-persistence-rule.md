@@ -1,7 +1,7 @@
 # Phase 01: Refile persistence rule
 
 **Milestone:** M47 — Verifier Persistence Keyed on Re-editing
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~250 lines (one new struct + one new pub fn + a rewritten check in `hard_fail.rs`; three-line change in the agent loop; five new unit tests, four adapted, one new agent-level test)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -402,3 +402,62 @@ None. No dependencies, no `Cargo.toml`, no config-schema changes.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-09-21 00:30 (progress)
+
+Started phase-01. Flipped phase doc Status to `in-progress` and the milestone
+README's phase-01 row to match. Implementing Spec tasks 1–8: `VerifySample` +
+`verifier_persistence_streaks` in `hard_fail.rs`, the rewritten
+`check_verifier_persistence`, `file` on the signal, the agent loop recording
+the edit path per verify, the five new unit tests, the four adapted ones, and
+the agent-level sweep test, then the E2E capture.
+
+### Update — 2026-09-21 00:36 (end-to-end verification)
+
+All spec §8 criteria met. `cargo test -p rexymcp-executor verifier_persistence`
+ran the ten persistence tests (nine unit, one agent-level) plus the six
+single-file-stall names the criteria call out — `0 failed`, `exit=0` on both
+captures. `streaks_fn=1` proves the streak function landed above
+`#[cfg(test)]` in `hard_fail.rs`; `counts_ident=0` proves the agent loop no
+longer names `recent_verifier_error_counts`. Positive control is inherent in
+the capture: the sweep test asserts the rule does **not** fire on the issue's
+sweep window while the adapted `detects_verifier_persistence` asserts it still
+fires on the single-file stall, so a no-op re-keying could not have produced
+this output. `grep -c 'file: String'` over the non-test head of
+`hard_fail.rs` = 1; `grep -c 'Vec<VerifySample>' agent/mod.rs` = 1.
+`target/e2e/m47-phase-01.txt`, pasted byte-for-byte:
+
+```
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/executor-300152e5d9c0cc60)
+
+running 10 tests
+test governor::hard_fail::tests::describe_verifier_persistence ... ok
+test governor::hard_fail::tests::no_verifier_persistence_when_errors_decrease ... ok
+test governor::hard_fail::tests::detects_verifier_persistence ... ok
+test governor::hard_fail::tests::verifier_persistence_fires_on_single_file_stall ... ok
+test governor::hard_fail::tests::verifier_persistence_decrease_restarts_streak ... ok
+test governor::hard_fail::tests::no_verifier_persistence_when_a_count_is_zero ... ok
+test governor::hard_fail::tests::verifier_persistence_new_file_resets_path_set ... ok
+test governor::hard_fail::tests::verifier_persistence_zero_clears_streak ... ok
+test governor::hard_fail::tests::verifier_persistence_ignores_sweep_across_files ... ok
+test agent::tests::sweep_across_files_does_not_trip_verifier_persistence ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1050 filtered out; finished in 0.02s
+
+exit=0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/executor-300152e5d9c0cc60)
+
+running 1 test
+test agent::tests::sweep_across_files_does_not_trip_verifier_persistence ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1059 filtered out; finished in 0.02s
+
+exit=0
+streaks_fn=1
+counts_ident=0
+```
+
+PASTE MATCH
+

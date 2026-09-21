@@ -1328,6 +1328,40 @@ async fn persistent_verifier_failure_trips_hard_fail() {
 }
 
 #[tokio::test]
+async fn sweep_across_files_does_not_trip_verifier_persistence() {
+    let dir = TempDir::new().unwrap();
+    let names = ["a.rs", "b.rs", "c.rs", "d.rs", "e.rs", "f.rs"];
+    let mut script = Vec::new();
+    for name in names {
+        script.push(vec![write_call(&dir, name, "fn x() {}")]);
+    }
+    script.push(vec![token("done")]);
+    let client = MockAiClientScript::new(script);
+    // Six consecutive Checked-with-author verifier runs — one per edit, the
+    // shipped rule's fatal window, but spread over six distinct files.
+    let verifier = MockFileVerifier::new(vec![
+        checked(vec![diag("err1")]),
+        checked(vec![diag("err2")]),
+        checked(vec![diag("err3")]),
+        checked(vec![diag("err4")]),
+        checked(vec![diag("err5")]),
+        checked(vec![diag("err6")]),
+    ]);
+
+    let result = run_with_verifier(&dir, &client, &verifier, 10).await;
+
+    if let Some(briefing) = result.briefing {
+        assert!(
+            !matches!(
+                briefing.current_blocker,
+                Blocker::HardFail(HardFailSignal::VerifierFailurePersistent { .. })
+            ),
+            "a sweep editing a new file each turn must not trip verifier persistence"
+        );
+    }
+}
+
+#[tokio::test]
 async fn identical_tool_call_repetition_trips_hard_fail() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("f.txt"), "hi").unwrap();

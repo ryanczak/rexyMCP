@@ -34,7 +34,7 @@ use crate::config::{CommandConfig, GovernorConfig};
 use crate::context::budget::Budget;
 use crate::context::compactor::compact;
 use crate::error::{Error, Result};
-use crate::governor::hard_fail::{HardFailSignal, ToolCallSnapshot, evaluate};
+use crate::governor::hard_fail::{HardFailSignal, ToolCallSnapshot, VerifySample, evaluate};
 use crate::governor::scorer::Scorer;
 use crate::governor::verifier::{Baseline, Diagnostic, VerifierResult};
 use crate::parser::{Origin, ParseResult, ToolCall, parse};
@@ -192,7 +192,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Governor feedback state (07c).
     let mut baseline = Baseline::new();
     let mut baselined_exts: HashSet<String> = HashSet::new();
-    let mut recent_verifier_error_counts: Vec<usize> = Vec::new();
+    let mut recent_verifier_samples: Vec<VerifySample> = Vec::new();
     let mut last_author_diagnostics: Vec<Diagnostic> = Vec::new();
 
     // Empty-completion stall counter (M22 phase-01).
@@ -1274,7 +1274,10 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                             diagnostics: author.clone(),
                         },
                     );
-                    recent_verifier_error_counts.push(author.len());
+                    recent_verifier_samples.push(VerifySample {
+                        author_errors: author.len(),
+                        path: path.clone(),
+                    });
                     if author.is_empty() {
                         last_author_diagnostics.clear();
                     } else {
@@ -1321,7 +1324,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
         let hard_fail_signal = evaluate(
             &recent_tool_calls,
-            &recent_verifier_error_counts,
+            &recent_verifier_samples,
             Some((&tool_call.name, content.len())),
             &deps.governor,
         )
