@@ -17,8 +17,8 @@ outside the repo. The Architect designs; the Executor codes; **rexyMCP keeps the
 herd together and moving toward the goal.**
 
 Your *Architect* runs in **Claude Code** or any harness that supports MCP and skills. 
-rexyMCP ships the same skills and MCP tools to both, so the workflow is identical
-whichever you drive.
+rexyMCP ships skills and MCP tools so the workflow is identical regardless of which
+harness you use.
 
 ## News
 
