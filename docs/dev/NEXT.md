@@ -4,9 +4,15 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M47 / phase-01 — Refile persistence rule**
-(`docs/dev/milestones/M47-verifier-persistence-refile/phase-01-refile-persistence-rule.md`,
-status `todo`). Dispatch with `/rexymcp:dispatch phase-01`.
+**Active phase: M47 / phase-02 — Replay refile signal**
+(`docs/dev/milestones/M47-verifier-persistence-refile/phase-02-replay-refile-signal.md`,
+status `todo`). Dispatch with `/rexymcp:dispatch phase-02`.
+
+**M47 / phase-01 — Refile persistence rule: done 2026-09-21,
+`approved_first_try`** (code `8fc88e5`, approval `80f7ba5`), 125 turns on
+executor `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark`. One disclosed,
+architect-caused scope deviation (dispatched with a dirty tree; the
+executor's commit swept in uncommitted architect docs, verified unaltered).
 
 **Phase-02 is drafted ahead of phase-01's run** (`phase-02-replay-refile-signal.md`,
 status `todo`) at the human's request. It consumes the `VerifySample` +
