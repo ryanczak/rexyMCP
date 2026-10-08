@@ -1,7 +1,7 @@
 # Phase 03: Identical repetition fires on non-mutating windows
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~110 lines (a four-line deletion and a doc comment in `hard_fail.rs`; two tests inverted, two added; one agent-level test)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -285,4 +285,42 @@ None. No dependencies, no `Cargo.toml`, no config change
 
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
+### Update — 2026-10-08 16:36 (progress)
+
+Started phase 03 (executor run). Re-derived current state against master
+`de41795`: the exemption lives at `hard_fail.rs:184` (doc sentence) and
+`:192-195` (guard), `window_has_mutation` has two production callers
+(`:193`, `:322`) as drafted, both exemption tests are present
+(`:1398`, `:1655`), and the pinned counts match the doc — `#[test]` = 69,
+`#[tokio::test]` = 134. Proceeding with the spec tasks in order.
+
 <!-- entries appended below this line -->
+### Update — 2026-10-08 16:44 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim from the repo root; artifact is
+`target/e2e/m48-phase-03.txt`, pasted below byte-for-byte.
+
+```
+test governor::hard_fail::tests::describe_identical_repetition ... ok
+test governor::hard_fail::tests::identical_repetition_fires_on_whitespace_varied_read_only_window ... ok
+test governor::hard_fail::tests::identical_repetition_fires_on_read_only_window ... ok
+test governor::hard_fail::tests::identical_repetition_ignores_non_whitespace_argument_differences ... ok
+test governor::hard_fail::tests::detects_identical_repetition ... ok
+test governor::hard_fail::tests::identical_repetition_silent_below_threshold_on_read_only_window ... ok
+test governor::hard_fail::tests::identical_repetition_still_fires_for_write_tool ... ok
+test governor::hard_fail::tests::identical_repetition_fires_on_repeated_bash_command ... ok
+test governor::hard_fail::tests::identical_repetition_window_is_threshold_not_deque_length ... ok
+test governor::hard_fail::tests::identical_repetition_fires_on_whitespace_varied_arguments ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1045 filtered out; finished in 0.00s
+exit=0
+test agent::tests::repeated_identical_bash_trips_hard_fail ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1054 filtered out; finished in 0.01s
+exit=0
+test calibrate_governor::tests::identical_run_counts_longest_consecutive_identical ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 707 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+exit=0
+whm_sites=2
+```
+
+PASTE MATCH

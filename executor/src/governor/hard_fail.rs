@@ -181,16 +181,14 @@ pub fn evaluate(
 /// Identical repetition: the last `threshold` tool calls are all the same
 /// `(tool, arguments)` pair, with string-leaf whitespace normalized before
 /// comparison. Fires when `threshold` identical calls are seen.
-/// Read-only repetitions are exempt — left to `check_read_only_stall`.
+/// Fires regardless of whether the window mutated a file: N byte-identical
+/// consecutive calls carry no diagnostic information after the first repeat.
+/// The non-mutating exemption applies to `check_oscillation` only.
 fn check_identical_repetition(
     recent: &VecDeque<ToolCallSnapshot>,
     threshold: usize,
 ) -> Option<HardFailSignal> {
     if recent.len() < threshold {
-        return None;
-    }
-    // Read-only repetition is diagnosis, not thrash — left to check_read_only_stall.
-    if !window_has_mutation(recent, threshold) {
         return None;
     }
     let last_n: Vec<_> = recent.iter().rev().take(threshold).collect();
@@ -1395,7 +1393,7 @@ mod tests {
     }
 
     #[test]
-    fn identical_repetition_exempts_read_only_window() {
+    fn identical_repetition_fires_on_read_only_window() {
         let mut recent = VecDeque::new();
         let call = ToolCallSnapshot {
             tool: "read_file".to_string(),
@@ -1406,10 +1404,15 @@ mod tests {
         for _ in 0..threshold {
             recent.push_back(call.clone());
         }
-        assert!(
-            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
-            "read-only identical repetition must be exempt"
-        );
+        let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
+            .expect("identical repetition must fire on a read-only window");
+        assert!(matches!(
+            signal,
+            HardFailSignal::IdenticalToolCallRepetition {
+                tool,
+                consecutive_count: 6
+            } if tool == "read_file"
+        ));
     }
 
     #[test]
@@ -1465,6 +1468,48 @@ mod tests {
     }
 
     #[test]
+    fn identical_repetition_fires_on_repeated_bash_command() {
+        let mut recent = VecDeque::new();
+        let call = ToolCallSnapshot {
+            tool: "bash".to_string(),
+            arguments: serde_json::json!(
+                {"command": "cargo test --lib -- a b 2>&1 | grep -E '^test |^test result'"}
+            ),
+            succeeded: true,
+        };
+        let threshold = 6;
+        for _ in 0..threshold {
+            recent.push_back(call.clone());
+        }
+        let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
+            .expect("six identical bash commands must trip identical repetition");
+        assert!(matches!(
+            signal,
+            HardFailSignal::IdenticalToolCallRepetition {
+                tool,
+                consecutive_count: 6
+            } if tool == "bash"
+        ));
+    }
+
+    #[test]
+    fn identical_repetition_silent_below_threshold_on_read_only_window() {
+        let mut recent = VecDeque::new();
+        let call = ToolCallSnapshot {
+            tool: "read_file".to_string(),
+            arguments: serde_json::json!({"path": "a.txt"}),
+            succeeded: true,
+        };
+        for _ in 0..5 {
+            recent.push_back(call.clone());
+        }
+        assert!(
+            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
+            "five identical calls are below the threshold of six and must stay silent"
+        );
+    }
+
+    #[test]
     fn oscillation_fires_when_mutation_is_oldest_in_window() {
         let mut recent = VecDeque::new();
         let read = ToolCallSnapshot {
@@ -1513,11 +1558,18 @@ mod tests {
         for _ in 0..threshold {
             recent.push_back(read.clone());
         }
-        // The last `threshold` calls are all identical read-only calls — exempt
-        assert!(
-            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
-            "mutation outside the threshold window must not prevent exemption"
-        );
+        // The last `threshold` calls are all identical read-only calls, but the
+        // exemption is gone: the detector no longer asks whether the window
+        // mutated a file at all — it fires on the identical run alone.
+        let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
+            .expect("identical repetition must fire regardless of a mutation outside the window");
+        assert!(matches!(
+            signal,
+            HardFailSignal::IdenticalToolCallRepetition {
+                tool,
+                consecutive_count: 6
+            } if tool == "read_file"
+        ));
     }
 
     #[test]
@@ -1652,15 +1704,15 @@ mod tests {
     }
 
     #[test]
-    fn identical_repetition_still_exempts_read_only_window() {
+    fn identical_repetition_fires_on_whitespace_varied_read_only_window() {
         let mut recent = VecDeque::new();
         let paths = [
             "a.txt",
             " a.txt",
             "a.txt ",
             "  a.txt  ",
-            "a\n.txt",
-            "a .txt",
+            "\ta.txt",
+            "a.txt\t",
         ];
         for path in &paths {
             recent.push_back(ToolCallSnapshot {
@@ -1671,9 +1723,14 @@ mod tests {
                 succeeded: true,
             });
         }
-        assert!(
-            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
-            "read-only window must still be exempt even with whitespace-varied args"
-        );
+        let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
+            .expect("whitespace-normalised identical arguments must fire on a read-only window");
+        assert!(matches!(
+            signal,
+            HardFailSignal::IdenticalToolCallRepetition {
+                tool,
+                consecutive_count: 6
+            } if tool == "read_file"
+        ));
     }
 }
