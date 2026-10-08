@@ -1,7 +1,7 @@
 # Phase 01: Retire the cargo filter
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~550 lines, almost all deletions (≈230 production lines and 16 tests removed from `output_filter.rs`; two tests removed and one call site simplified in `bash.rs`; two small tests added)
 **Tags:** language=rust, kind=refactor, size=m
@@ -326,3 +326,40 @@ recovery file, off = legacy head/tail with no recovery file).
   the README sentences describing the structured compressor are updated at
   milestone close.
 - **Governor changes** — phases 02 and 03.
+
+### Update — 2026-10-08 08:54 (progress)
+
+Started phase-01. Flipped phase doc Status and the milestone README's
+phase-01 row to `in-progress`. Implementing the spec in order: delete the
+cargo path from `output_filter.rs` (Spec §1), point `bash.rs` at
+`compact_with_recovery` with a constant `"generic"` label (Spec §2), delete
+the 18 listed tests (Spec §3), update the `OutputFiltered` doc comment
+(Spec §4), add the two preservation tests (Spec §5–6), then run the E2E
+block verbatim (Spec §7).
+
+### Update — 2026-10-08 09:05 (end-to-end verification)
+
+All acceptance criteria met. Both new tests pass with `exit=0`;
+`cargo_fns=0` proves all six cargo-path functions are gone from the
+non-test head of `output_filter.rs`; `bash_cargo_refs=0` proves `bash.rs`
+no longer names any cargo-filter symbol; `bash_compact=1` proves the
+lossless path is called directly. Positive control is built in: the
+piped-cargo-style test asserts three specific `grep`-selected lines
+survive byte-identical through the `bash` tool — an output-dropping
+filter could not produce this — and the test-run `exit=0` lines prove the
+runs themselves executed. `target/e2e/m48-phase-01.txt`, pasted
+byte-for-byte:
+
+```
+test context::output_filter::tests::passing_test_lines_survive_the_boundary ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1049 filtered out; finished in 0.00s
+exit=0
+test tools::bash::tests::piped_cargo_style_output_is_not_filtered ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1049 filtered out; finished in 0.01s
+exit=0
+cargo_fns=0
+bash_cargo_refs=0
+bash_compact=1
+```
+
+PASTE MATCH
