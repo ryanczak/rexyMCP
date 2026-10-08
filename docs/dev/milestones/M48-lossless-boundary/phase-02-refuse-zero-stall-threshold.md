@@ -1,7 +1,7 @@
 # Phase 02: Refuse a zero stall threshold at config load
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~90 lines (one private validation fn + its call in `Config::load`; two doc comments; two template comments; two tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -320,3 +320,111 @@ exit=0
 ```
 
 PASTE MATCH
+
+### Update — 2026-10-08 16:26 (complete, server-authored)
+
+**Summary:** All five spec tasks are complete and committed.
+
+**Summary:** `Config::load` now refuses `read_only_stall_threshold = 0` — globally and per model — with an `Error::Config` that names the key, the section, and the default, via a private `Config::reject_zero_stall_threshold` called inside the `path.exists()` block right after `config = loaded;`. The two doc comments were rewritten to "refused at load" wording, the init template's comment for this key now says `must be > 0; 0 is refused at load` (the other four `0 disables` comments untouched), and the two new tests pin both the global and per-model refusal plus the positive path (`30` loads as 30) in the same test. `check_read_only_stall` keeps its zero guard; its doc comment now notes it is only reachable by constructing `GovernorConfig` directly.
+
+**Notes for review:**
+- One adaptation: the spec's sketch called the validator as a bare `reject_zero_stall_threshold(&config)` inside `impl Config`, but rustc requires `Self::reject_zero_stall_threshold(&config)` for an associated function — same placement, same name, no signature change. The count criteria still pass because both greps match the call text.
+- My first edit landed an unclosed function body (caught by the verifier at `config.rs:2130`); it was completed before any further work, and the final tree compiles clean — nothing else in the file was touched beyond the spec'd edits.
+- E2E ran verbatim: `zero_exit=1` with the error naming `read_only_stall_threshold` on the line before, `sixty_exit=0`, both new tests pass with `exit=0`; artifact pasted byte-for-byte, self-check prints `PASTE MATCH` (final line of the E2E Update Log entry).
+- Count criteria verified mechanically: `reject_zero_stall_threshold(` = 1 in the non-test head, call site = 1, `#[test]` = 65, template `0 disables` for this key = 0, `is refused at load` sum = 2 (one per file).
+- All four gates green (fmt `--check`, build, clippy `-D warnings`, 708 + 2 + 1050 + 0 tests, 0 failed); committed as `b8d63a4` with a clean working tree; phase doc Status and README row left at `in-progress`, no `(complete)` entry written.
+
+**Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+:tests::caps_at_max_results ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1050 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.10s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M48-lossless-boundary/README.md` — +1 -1
+- `docs/dev/milestones/M48-lossless-boundary/phase-02-refuse-zero-stall-threshold.md` — +42 -1
+- `executor/src/config.rs` — +113 -1
+- `executor/src/governor/hard_fail.rs` — +2 -1
+- `mcp/src/init.rs` — +1 -1
+
+**Commit:** b8d63a4053dce2cc564c1fd0cbc6a85fff35a506
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
