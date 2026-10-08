@@ -76,7 +76,7 @@ long `cargo test`) where the lossy half earned anything.
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Retire the cargo filter ([phase-01-retire-cargo-filter.md](phase-01-retire-cargo-filter.md)): delete the structured cargo path and its digest; `bash` calls `compact_with_recovery` directly; two tests pin that `test … ok` lines survive the boundary | done |
-| 02 | Refuse a zero stall threshold ([phase-02-refuse-zero-stall-threshold.md](phase-02-refuse-zero-stall-threshold.md)): `Config::load` rejects `read_only_stall_threshold = 0` globally and per model; init template and doc comments updated | review      |
+| 02 | Refuse a zero stall threshold ([phase-02-refuse-zero-stall-threshold.md](phase-02-refuse-zero-stall-threshold.md)): `Config::load` rejects `read_only_stall_threshold = 0` globally and per model; init template and doc comments updated | done |
 | 03 | Identical repetition on non-mutating windows ([phase-03-identical-repetition-unexempted.md](phase-03-identical-repetition-unexempted.md)): drop the exemption from `check_identical_repetition` only; invert the two exemption tests; add the issue's `bash` shape and an agent-level test | todo |
 
 Ordering: independent of one another; 01 first because it is the issue's

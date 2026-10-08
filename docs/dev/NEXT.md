@@ -4,9 +4,17 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M48 phase-02 —
-[docs/dev/milestones/M48-lossless-boundary/phase-02-refuse-zero-stall-threshold.md](milestones/M48-lossless-boundary/phase-02-refuse-zero-stall-threshold.md)
+**Active phase: M48 phase-03 —
+[docs/dev/milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md](milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md)
 (status `todo`, drafted 2026-10-08, awaiting `/rexymcp:dispatch`).**
+
+**M48 phase-02 — done 2026-10-08, `approved_first_try`** (145 turns,
+GLM-5.3-Flash). `Config::load` refuses `read_only_stall_threshold = 0`
+globally and per model; both new tests mutation-checked. Any downstream
+`rexymcp.toml` with that zero now fails to load until fixed (DaemonEye is the
+known case). Calibration: the architect omitted `## Update Log` from all
+three M48 phase docs (repaired at this review); the executor self-reported
+its model as "Claude Opus 4.6" (2nd occurrence, trend).
 
 **M48 phase-01 — done 2026-10-08, `approved_first_try`** (288 turns,
 GLM-5.3-Flash). The structured cargo filter is gone; `bash` output is

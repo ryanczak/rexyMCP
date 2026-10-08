@@ -280,3 +280,9 @@ None. No dependencies, no `Cargo.toml`, no config change
 - **`mcp/src/calibrate_governor.rs`** — already in agreement; do not touch.
 - **`identical_call_threshold`** — no retune, no new knob.
 - **`docs/architecture.md`, `README.md`, plugin skills** — architect-owned.
+
+## Update Log
+
+(Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+<!-- entries appended below this line -->

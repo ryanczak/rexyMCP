@@ -1,7 +1,7 @@
 # Phase 02: Refuse a zero stall threshold at config load
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~90 lines (one private validation fn + its call in `Config::load`; two doc comments; two template comments; two tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -428,3 +428,32 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** b8d63a4053dce2cc564c1fd0cbc6a85fff35a506
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark (145 turns).
+  The progress entry above names "Claude Opus 4.6"; that is the model's
+  self-report and is wrong. The dispatched model, per `rexymcp.toml` and the
+  `PhaseRun` record, is GLM-5.3-Flash.
+- **Scope deviations:** none. The validator is an associated function called
+  as `Self::reject_zero_stall_threshold(&config)` rather than the free
+  function the spec sketched; same placement and behaviour, disclosed in the
+  executor's notes, and both count criteria match it.
+- **Reviewer re-run:** fmt, build (0 warnings), clippy `-D warnings`, and
+  `cargo test` (1760 passed, 0 failed) all green. The E2E block re-run by the
+  reviewer reproduces the pasted artifact byte-for-byte (`PASTE MATCH`). This
+  repo's own `rexymcp.toml` (threshold 200) still loads.
+- **Mutation check (reviewer):** disabling the global check turns
+  `load_refuses_zero_read_only_stall_threshold` red only; disabling the
+  per-model check turns `load_refuses_zero_read_only_stall_threshold_in_model_override`
+  red only. Both tests guard what they claim.
+- **Calibration:**
+  1. *Architect:* all three M48 phase docs omitted the template's
+     `## Update Log` section. Phase-01's entries landed under no heading and
+     the executor added the section itself here. Fixed at this review for
+     phase-01 (heading inserted) and phase-03 (section added before
+     dispatch).
+  2. *Executor:* fabricated model identity in an Update Log entry, 2nd
+     occurrence (1st recorded at M47 close). Trend; fold on the 3rd.

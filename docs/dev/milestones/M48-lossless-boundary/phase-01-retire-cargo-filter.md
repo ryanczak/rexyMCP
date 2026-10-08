@@ -327,6 +327,12 @@ recovery file, off = legacy head/tail with no recovery file).
   milestone close.
 - **Governor changes** — phases 02 and 03.
 
+## Update Log
+
+(Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+<!-- entries appended below this line -->
+
 ### Update — 2026-10-08 08:54 (progress)
 
 Started phase-01. Flipped phase doc Status and the milestone README's
