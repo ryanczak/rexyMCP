@@ -1233,6 +1233,14 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+49. **M49 — Light-shape phase trial** *(planning; opened 2026-10-08)*. The
+    two test follow-ups M48 held, specified as behaviour and test names
+    only. Control experiment on architect front-loading: M48 spent ~356k
+    architect output tokens drafting and reviewing three phases against
+    ~61k executor output, and every M48 spec defect was in pre-derived
+    material the executor re-derived anyway. User direction: enable the
+    executor to do the work rather than feed it more artifacts.
+    `docs/dev/milestones/M49-light-shape-trial/README.md`.
 48. **M48 — Lossless boundary, loud backstop, exact repetition** *(done
     2026-10-08; opened from GitHub issue #13 and closed the same day at three
     phases, all `approved_first_try`, on executor GLM-5.3-Flash)*. A

@@ -4,7 +4,16 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.**
+**Active phase: M49 phase-01 —
+[docs/dev/milestones/M49-light-shape-trial/phase-01-m48-test-followups.md](milestones/M49-light-shape-trial/phase-01-m48-test-followups.md)
+(status `todo`, drafted 2026-10-08 in the light shape, awaiting `/rexymcp:dispatch`).**
+
+**M49 — Light-shape phase trial opened 2026-10-08.** One phase: the two
+test follow-ups held at M48 close, specified as behaviour and test names
+only. The experiment is whether a large-tier executor completes it without
+the line-quoted state, dictated test code and pinned counts that cost M48
+~356k architect output tokens. Compare at close.
+
 
 **M48 — Lossless Boundary, Loud Backstop, Exact Repetition closed
 2026-10-08 at three phases**, all `approved_first_try`, zero bugs, zero
