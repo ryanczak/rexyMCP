@@ -4,12 +4,29 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M48 phase-03 —
-[docs/dev/milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md](milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md)
-(done 2026-10-08, `approved_first_try`).** All three M48 phases are
-`done`; the milestone awaits close via `/rexymcp:architect` (retrospective,
-the README edits listed in the milestone README § Notes, and the two held
-test follow-ups).
+**Active phase: none.**
+
+**M48 — Lossless Boundary, Loud Backstop, Exact Repetition closed
+2026-10-08 at three phases**, all `approved_first_try`, zero bugs, zero
+bounces, zero assists, on executor GLM-5.3-Flash (288 + 145 + 175 turns).
+Command output crosses the boundary lossless, a zero
+`read_only_stall_threshold` is refused at load, and identical repetition
+fires on non-mutating windows. Retrospective in
+[M48/README.md § M48 retrospective](milestones/M48-lossless-boundary/README.md);
+`architecture.md` §48 done.
+
+**Open for the human:**
+- GitHub issue #13 is fixed but not closed.
+- DaemonEye's `rexymcp.toml` sets `read_only_stall_threshold = 0` and will
+  refuse to load on this build until changed.
+- Two held test follow-ups (harden the phase-01 regression test; delete dead
+  setup in a phase-03 test) — one small phase.
+- Fold candidates awaiting sign-off: see the M48 retrospective § Architect-side
+  defects (pre-dispatch check does not run dictated test code against the
+  pre-phase tree).
+
+**Calibration held as data:** executor fabricated model identity 2×
+(trend, fold on the 3rd); architect E2E-block syntax errors 2× (unchanged).
 
 **M48 phase-03 — done 2026-10-08, `approved_first_try`** (175 turns,
 GLM-5.3-Flash). `check_identical_repetition` fires on non-mutating windows;

@@ -772,7 +772,7 @@ answer to that constraint:
 | The model stalls in the tail — emits an empty or mid-`<think>`-truncated completion, or re-submits a no-op edit, instead of finishing | **Stall recovery** (M22–M24): an empty completion or a `finish_reason="length"` truncation is routed to a cause-specific recovery nudge rather than mis-read as "done" (consecutive empties escalate to a no-reasoning directive); a no-op `patch` (identical `old_str`/`new_str`) returns the file's current text + location and an occurrence count instead of a dead-end error; dedicated governor stalls (empty-completion, stuck-gate-feedback) cap the loop as the backstop |
 | The model edits a file and breaks the build | **Post-edit verifier** runs the project's typecheck/build after every edit and injects the diagnostics back into the turn (with language-appropriate detail — e.g. compiler suggested-fixes and structured test digests for Rust, TypeScript, and Python today) so the model fixes it without a wasted round-trip |
 | Small models lose track of the task or hallucinate scope | **Read-before-edit invariant**: a `patch` is refused on any file the model hasn't `read_file`'d this session (or whose mtime changed since), preventing blind overwrites; a working-set-aware refusal likewise blocks a `git checkout`/`restore` that would discard the model's own edits this session |
-| The context window fills up mid-phase | **Context budgeting + the M10 reclaim levers**: `max_context_pct` triggers value-ranked compaction (noisiest tool output first; the last 3 turns protected). An output filter trims and de-dups command output at the boundary (ANSI strip, a structured compressor for noisy build output, overflow spilled to a recovery file); a read-lifecycle lever evicts superseded file reads after an edit and dedupes re-reads. Every lever is metered and visible live |
+| The context window fills up mid-phase | **Context budgeting + the M10 reclaim levers**: `max_context_pct` triggers value-ranked compaction (noisiest tool output first; the last 3 turns protected). A lossless output filter normalizes command output at the boundary (ANSI strip, consecutive-duplicate collapse, overflow spilled to a recovery file; no line is ever dropped on content); a read-lifecycle lever evicts superseded file reads after an edit and dedupes re-reads. Every lever is metered and visible live |
 | The model uses `bash` irresponsibly | **Scope confinement** restricts every file and shell op to the target-repo root, and a bash classifier blocks the destructive command categories (`rm -rf`, `git push --force`, `git reset --hard`, `mkfs`, `curl … \| sh`, publish/upload, fork bombs, …) |
 | You don't know if a model is actually good for your codebase | **Per-run telemetry** records the objective outcome of every dispatch so you accumulate real evidence about which models and settings earn their keep |
 
@@ -910,7 +910,7 @@ oscillation_window              = 8       # sliding window scanned for an A,B,A,
 oscillation_distinct_max        = 2       # ≤ this many distinct calls filling that window → hard-fail (default 2)
 output_window                   = 6       # sliding window of tool outputs summed for the flood check (default 6; 0 disables)
 output_window_bytes             = 262144  # total bytes across that window → hard-fail (default 256 KiB) — catches multi-call floods each under runaway_output_bytes
-read_only_stall_threshold       = 60      # consecutive non-mutating tool calls → hard-fail; the SOLE backstop for read-only runs (the oscillation / identical-call detectors now exempt no-mutation windows). Resets on any patch/write_file; default 60, 0 disables. Tune to your model with `calibrate-governor`'s max_read_only_run distribution — sit above legit completion runs' P99, below genuine stuck loops.
+read_only_stall_threshold       = 60      # consecutive non-mutating tool calls → hard-fail; the volume backstop for read-only runs (the oscillation detector exempts no-mutation windows; identical-call repetition does not). Resets on any patch/write_file; default 60, must be > 0 — 0 is refused at load. Tune to your model with `calibrate-governor`'s max_read_only_run distribution — sit above legit completion runs' P99, below genuine stuck loops.
 novelty_window                  = 24      # trailing read-only calls examined for target novelty (default 24; 0 disables)
 novelty_distinct_floor          = 6       # ≤ this many distinct normalized targets (paths / grep scopes, line ranges and patterns stripped) filling that window → churn (default 6)
 novelty_action                  = "advisory" # what a fired novelty window does: "advisory" (default) records a NoveltySample and keeps running; "terminate" hard-fails with LowNoveltyStall. Advisory is the default because the 24/6 pair is un-calibrated — a data-free early kill must not pre-empt a run the turn budget would still fund.
@@ -936,7 +936,7 @@ temperature                    = 0.2      # any of these override the global val
 # oscillation_distinct_max     = 2
 # output_window                = 8
 # output_window_bytes          = 524288
-# read_only_stall_threshold    = 30       # raise for exploration-heavy phases; 0 disables per-model
+# read_only_stall_threshold    = 30       # raise for exploration-heavy phases; must be > 0 (0 is refused at load)
 # novelty_window               = 24
 # novelty_distinct_floor       = 6
 # novelty_action               = "terminate"  # per-model opt-in to the hard-fail once you've calibrated the pair above
@@ -952,7 +952,7 @@ temperature                    = 0.2      # any of these override the global val
 | `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `gate_retries`, and the optional `wall_clock_secs` ceiling (M26). |
 | `[telemetry]` | `dir` — the cross-project store. Omit to disable; `~` is expanded. |
 | `[architect]` | The per-role `dispatch_model` / `review_model` keys the `/rexymcp:auto` loop delegates those steps to (M27). |
-| `[context]` | `output_filter` kill-switch for the M10 boundary filter. |
+| `[context]` | `output_filter` kill-switch for the lossless boundary filter (on: normalize + recovery file; off: plain head/tail truncation). |
 | `[governor]` | Hard-fail thresholds: identical-call, verifier-persistence, runaway-output, empty-completion, stuck-gate-feedback, the no-progress read-only stall, and the oscillation / output-flood / low-novelty windows (the last of these advisory-only by default — see `novelty_action`). |
 | `[escalation]` | `max_assists` — the flat, tier-independent per-phase escalation budget for the `/rexymcp:auto` loop (M27). |
 | `[models."<id>"]` | Per-model overrides (exact-id match) for sampling (`temperature`/`seed`/`max_tokens`/`enable_thinking`/`reasoning_effort`), task-tracking, and every governor threshold. Any key omitted inherits the global value. |
@@ -990,8 +990,8 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
   back rustc machine-applicable fixes plus `cargo check` / `tsc --noEmit` /
   `ruff` diagnostics, and **fails open** when a toolchain binary is missing.
 - **Context optimization** (`context/`) — value-ranked compaction at the budget
-  ceiling, an output filter that trims/de-dups command output (overflow spilled
-  to a recovery file), and a read-lifecycle lever that evicts superseded reads
+  ceiling, a lossless output filter that strips ANSI and collapses duplicate
+  lines (overflow spilled to a recovery file), and a read-lifecycle lever that evicts superseded reads
   and dedupes re-reads. Every reclaimed token is metered.
 - **Structured task tracking** (`agent/tasks.rs`) — the loop seeds a checklist
   from the phase's `## Spec` and the executor flips items `pending → active →

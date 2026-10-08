@@ -1233,8 +1233,9 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-48. **M48 — Lossless boundary, loud backstop, exact repetition** *(planning;
-    opened 2026-10-08 from GitHub issue #13, three phases drafted)*. A
+48. **M48 — Lossless boundary, loud backstop, exact repetition** *(done
+    2026-10-08; opened from GitHub issue #13 and closed the same day at three
+    phases, all `approved_first_try`, on executor GLM-5.3-Flash)*. A
     downstream run re-executed `cargo test … | grep -E '^test |^test result'`
     482 times: the M10 Arc A cargo filter dropped the `test … ok` lines the
     `grep` had selected, the model could not distinguish "did not print" from
@@ -1258,7 +1259,12 @@ The project plan. Each entry becomes a milestone with its own
     `check_oscillation` keeps the exemption, and the `calibrate-governor`
     `identical_run` signal already counted without it. Evidence and the
     measurement script: `docs/dev/issues/2026-10-08-cargo-filter-strips-piped-output.md`.
-    Phases: `docs/dev/milestones/M48-lossless-boundary/README.md`.
+    Every phase carried an architect-side spec defect (a miscounted
+    criterion, a dictated regression test that passes on the pre-phase
+    code, a missing Update Log section, unverified spec facts); none
+    bounced, all are recorded in the retrospective with two small held test
+    follow-ups. Phases and retrospective:
+    `docs/dev/milestones/M48-lossless-boundary/README.md`.
 47. **M47 — Verifier persistence keyed on re-editing** *(done 2026-09-21;
     opened 2026-09-20 from GitHub issue #10, closed at two phases, both
     `approved_first_try`, on executor GLM-5.3-Flash)*. `VerifierFailurePersistent` fired on

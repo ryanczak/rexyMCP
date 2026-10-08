@@ -6,7 +6,7 @@ that switches the read-only backstop off is refused at load; and N
 byte-identical consecutive tool calls terminate the run whether or not the
 window mutated a file.
 
-**Status:** in-progress *(opened 2026-10-08)*
+**Status:** done *(opened and closed 2026-10-08 at three phases, all `approved_first_try`)*
 
 **Depends on:** M10 (the boundary filter being retired), M34
 (`NoProgressStall` and `read_only_stall_threshold`), M37 (the non-mutating
@@ -116,3 +116,58 @@ headline and the largest diff, 02 and 03 are each under 100 lines.
 - **Why no "filter changed your output" marker:** once nothing lossy runs
   there is nothing to warn about. The recovery-file marker already covers
   the head/tail cut.
+
+## M48 retrospective — closed 2026-10-08
+
+**Outcome: three phases, all `approved_first_try`, zero bugs, zero bounces,
+zero assists**, on executor `local-inference-lab/GLM-5.3-Flash-NVFP4-Spark`
+(288, 145 and 175 turns). Every exit criterion is met:
+
+| Exit criterion | Discharged by |
+|---|---|
+| Lossless boundary | phase-01: cargo path and digest deleted; `bash` calls `compact_with_recovery`; label always `"generic"` |
+| Loud backstop | phase-02: `Config::load` refuses `read_only_stall_threshold = 0` globally and per model; `doctor` on such a config exits 1 naming the key |
+| Exact repetition | phase-03: `check_identical_repetition` fires on non-mutating windows; oscillation keeps its exemption; replay already agreed |
+| Gates green | every phase boundary, re-run independently at each review |
+
+**Reviewer mutation checks.** Phase-02: disabling either half of the
+validator turns exactly its own test red. Phase-03: restoring the old guard
+turns five tests red, including the agent-level one. Phase-01 is the
+exception (below).
+
+**Architect-side defects — the milestone's real finding.** Every phase
+carried at least one spec error, all caught by the executor or at review,
+none causing a bounce:
+
+| Phase | Defect | Existing rule breached |
+|---|---|---|
+| 01 | test-count criterion counted `#[test]` strings inside a raw-string fixture (pinned 27; true 25) | "Run every count criterion" (greps count literals) |
+| 01 | dictated regression test uses `sh -c`, so it passes against the pre-phase code and does not reproduce issue #13 | "Coverage claims are inadmissible without mutation proof" — applied to the executor's tests, never to the architect's own dictated ones |
+| 01–03 | phase docs omitted the template's `## Update Log` section | "Follow the phase-doc template verbatim" (architect skill) |
+| 03 | whitespace paths that never normalized identically; a third exemption test missing from the invert list; a false claim that the harness registers `bash` | "Derive every spec fact from its source" |
+
+The pre-dispatch check ran every count and every E2E block, and it passed.
+It does not run the **test code the spec dictates** against the pre-phase
+tree, which is where three of the six defects lived.
+
+**Executor-side calibration.** Model self-identification fabricated in an
+Update Log entry ("Claude Opus 4.6"): 2nd occurrence (1st at M47). Trend;
+fold on the 3rd.
+
+**Held follow-ups (code, not architect-editable):**
+- harden `piped_cargo_style_output_is_not_filtered` with a `cargo --version
+  >/dev/null && ` prefix so it fails against the pre-phase code (verified);
+- delete the dead `registry` setup in `repeated_identical_bash_trips_hard_fail`.
+
+Both are a handful of lines in test code; a single small phase covers them.
+
+**Closed at milestone close by the architect:** the five README sentences
+describing the structured compressor, the two `0 disables` comments for
+`read_only_stall_threshold`, and the `[governor]` note that identical-call
+repetition exempts no-mutation windows. `readme_config_reference` still
+passes.
+
+**Open for the human:** GitHub issue #13 is fixed by this milestone but not
+closed; the downstream DaemonEye `rexymcp.toml` still sets
+`read_only_stall_threshold = 0` and will refuse to load on this build until
+it is changed.
