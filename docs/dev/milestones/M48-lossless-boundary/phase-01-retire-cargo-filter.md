@@ -1,7 +1,7 @@
 # Phase 01: Retire the cargo filter
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~550 lines, almost all deletions (≈230 production lines and 16 tests removed from `output_filter.rs`; two tests removed and one call site simplified in `bash.rs`; two small tests added)
 **Tags:** language=rust, kind=refactor, size=m
@@ -363,3 +363,104 @@ bash_compact=1
 ```
 
 PASTE MATCH
+
+### Update — 2026-10-08 16:08 (complete, server-authored)
+
+**Summary:** **Summary:** Retired the M10 Arc A structured cargo filter entirely. `output_filter.rs` lost `TestFailure`, `parse_test_failures`, `format_failure_digest`, `is_cargo_command`, `cargo_filter`, `is_cargo_noise` and `filter_for_command` (~590 lines gone; `normalize`/`compact_with_recovery`/`write_recovery` untouched); `bash.rs` now calls `compact_with_recovery` directly and writes `"filter": "generic"` unconditionally; the `OutputFiltered` doc comment was rewritten to the spec's wording and the 18 cargo-path tests were deleted. Added the two pinning tests — `passing_test_lines_survive_the_boundary` (byte-identical passthrough of `test … ok` + summary lines) and `piped_cargo_style_output_is_not_filtered` (grep-selected lines survive a real `bash` tool call, metadata asserts `generic`). E2E block ran verbatim; the artifact pasted byte-for-byte in the end-to-end Update Log entry ends `PASTE MATCH`, and all four gates are green (fmt, build, clippy `-D warnings`, 1758 tests / 0 failed). Committed as `2860dd2`; phase doc and README row left at `in-progress`, no `(complete)` entry written.
+
+**Notes for review:** (1) The E2E artifact was regenerated after the final code state; the earlier run's counts (`1048 filtered out`, test path without the `tests::` segment) are superseded — the pasted entry matches the current binary. (2) While deleting the cargo tests in `output_filter.rs` my line-range edits mangled the tail of the test module; the two recovery-rotation tests (`dedupe_can_drop_long_output_below_truncation_threshold`, `recovery_rotation_keeps_at_most_max_files`) were restored from `git show HEAD` verbatim and the module now compiles and passes with exactly the 10 surviving + 1 new test. Worth a close look at the final `output_filter.rs` diff around lines 270–350. (3) `bash_tests` counts 25 (`grep -c '#\[tokio::test\]'` = 22 plus `#\[test\]` = 3) matching the criterion's 27 − 2 + 1 − 1: the criterion's "(now 28)" baseline actually counted 28 including two tests this phase deletes, so the observed 25 is consistent. (4) `filter_on_records_output_filter_metadata` already asserted `"generic"` pre-phase, so it needed no edit.
+
+**Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+ing_task_to_active ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1048 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.10s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M48-lossless-boundary/README.md` — +1 -1
+- `docs/dev/milestones/M48-lossless-boundary/phase-01-retire-cargo-filter.md` — +38 -1
+- `executor/src/context/output_filter.rs` — +5 -589
+- `executor/src/store/sessions/event.rs` — +4 -3
+- `executor/src/tools/bash.rs` — +23 -74
+
+**Commit:** 2860dd2105792cf6f23ca1f5cd46eb991860da28
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
