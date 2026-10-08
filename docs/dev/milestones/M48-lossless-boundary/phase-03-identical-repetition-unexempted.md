@@ -1,7 +1,7 @@
 # Phase 03: Identical repetition fires on non-mutating windows
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~110 lines (a four-line deletion and a doc comment in `hard_fail.rs`; two tests inverted, two added; one agent-level test)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -432,3 +432,46 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** e66a3da88246e029fe59299be26c701db79dd15e
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark (175 turns)
+- **Scope deviations:** three, all disclosed by the executor, and all
+  corrections of architect spec errors rather than departures from intent:
+  1. The spec's whitespace-varied paths `"a\n.txt"` and `"a .txt"` normalize
+     to `"a .txt"`, not `"a.txt"` (`normalize_arguments` joins
+     `split_whitespace()` with a space), so the inverted test could never
+     fire as specified. The executor substituted `"\ta.txt"` and `"a.txt\t"`;
+     the reviewer confirmed all six shipped paths normalize to `"a.txt"`.
+  2. `identical_repetition_window_is_threshold_not_deque_length` also asserted
+     the old exemption and was missing from the spec's invert list. The
+     executor inverted it in place; it still pins that the comparison spans
+     the last `threshold` calls rather than the whole deque.
+  3. The spec claimed `bash` is registered in `run_with_verifier`'s harness;
+     it is not (`registry_over` holds `read_file`/`write_file`/`patch` only).
+     The executor built a local registry with `bash` that is never passed to
+     the run, so it is dead setup and the six calls hit an unregistered tool.
+     The test is still valid, since `bash` is a non-mutating `Run` tool by
+     name and the snapshot is recorded either way.
+- **Reviewer re-run:** fmt, build (0 warnings), clippy `-D warnings`, and
+  `cargo test` (1763 passed, 0 failed) green. The reviewer's E2E re-run
+  produces the same lines as the pasted artifact in a different order
+  (parallel test output order is nondeterministic).
+- **Mutation check (reviewer):** restoring the `window_has_mutation` guard in
+  a scratch worktree turns exactly five tests red:
+  `identical_repetition_fires_on_read_only_window`,
+  `identical_repetition_fires_on_whitespace_varied_read_only_window`,
+  `identical_repetition_fires_on_repeated_bash_command`,
+  `identical_repetition_window_is_threshold_not_deque_length`, and the agent
+  test `repeated_identical_bash_trips_hard_fail`. The below-threshold
+  negative pin and every oscillation test stay green.
+- **Calibration:**
+  1. *Architect:* three spec facts not derived from source (deviations 1-3
+     above). A breach of WORKFLOW § "Derive every spec fact from its source".
+     Together with phase-01's two defects, every M48 phase carried at least
+     one architect-side spec error; all were caught by the executor or at
+     review, none caused a bounce.
+  2. *Follow-up (minor, held):* delete the dead `registry` setup in
+     `repeated_identical_bash_trips_hard_fail`.

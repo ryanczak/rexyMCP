@@ -6,7 +6,16 @@ Single source of truth for which phase is active. The principal engineer
 
 **Active phase: M48 phase-03 —
 [docs/dev/milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md](milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md)
-(status `todo`, drafted 2026-10-08, awaiting `/rexymcp:dispatch`).**
+(done 2026-10-08, `approved_first_try`).** All three M48 phases are
+`done`; the milestone awaits close via `/rexymcp:architect` (retrospective,
+the README edits listed in the milestone README § Notes, and the two held
+test follow-ups).
+
+**M48 phase-03 — done 2026-10-08, `approved_first_try`** (175 turns,
+GLM-5.3-Flash). `check_identical_repetition` fires on non-mutating windows;
+oscillation keeps its exemption. Restoring the old guard turns five tests
+red. Three architect spec-fact errors, all corrected by the executor and
+disclosed.
 
 **M48 phase-02 — done 2026-10-08, `approved_first_try`** (145 turns,
 GLM-5.3-Flash). `Config::load` refuses `read_only_stall_threshold = 0`

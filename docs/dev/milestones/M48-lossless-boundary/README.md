@@ -77,7 +77,7 @@ long `cargo test`) where the lossy half earned anything.
 |----|-------|--------|
 | 01 | Retire the cargo filter ([phase-01-retire-cargo-filter.md](phase-01-retire-cargo-filter.md)): delete the structured cargo path and its digest; `bash` calls `compact_with_recovery` directly; two tests pin that `test … ok` lines survive the boundary | done |
 | 02 | Refuse a zero stall threshold ([phase-02-refuse-zero-stall-threshold.md](phase-02-refuse-zero-stall-threshold.md)): `Config::load` rejects `read_only_stall_threshold = 0` globally and per model; init template and doc comments updated | done |
-| 03 | Identical repetition on non-mutating windows ([phase-03-identical-repetition-unexempted.md](phase-03-identical-repetition-unexempted.md)): drop the exemption from `check_identical_repetition` only; invert the two exemption tests; add the issue's `bash` shape and an agent-level test | review      |
+| 03 | Identical repetition on non-mutating windows ([phase-03-identical-repetition-unexempted.md](phase-03-identical-repetition-unexempted.md)): drop the exemption from `check_identical_repetition` only; invert the two exemption tests; add the issue's `bash` shape and an agent-level test | done |
 
 Ordering: independent of one another; 01 first because it is the issue's
 headline and the largest diff, 02 and 03 are each under 100 lines.
@@ -90,6 +90,10 @@ headline and the largest diff, 02 and 03 are each under 100 lines.
   with `cargo --version >/dev/null && ` makes it a true regression test for
   issue #13 (verified to fail at `7714050`). Not folded into phase-02 or 03,
   which touch unrelated files.
+- **Phase-03 review follow-up (minor):** `repeated_identical_bash_trips_hard_fail`
+  builds a local registry with `bash` that is never passed to
+  `run_with_verifier`. The test is valid without it; the setup is dead and
+  can be deleted.
 - **Architect-owned follow-ups at close (not executor tasks):** README
   lines describing "a structured compressor for noisy build output"
   (§ Troubleshooting table, § Configuration reference `[context]` row, the
