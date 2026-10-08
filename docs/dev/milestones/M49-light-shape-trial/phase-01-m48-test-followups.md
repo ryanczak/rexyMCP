@@ -1,7 +1,7 @@
 # Phase 01: M48 test follow-ups
 
 **Milestone:** M49 — Light-shape phase trial
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~15 lines, test code only
 **Tags:** language=rust, kind=test, size=s
@@ -232,3 +232,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 8d6e9683e2da90e9258b32650373488e13d9b390
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark (136 turns)
+- **Scope deviations:** none. The code diff is the four specified lines.
+- **Review shape (light):** gates re-run once (all green, 1763 passed);
+  diff read; the executor's own evidence accepted. The executor verified
+  the regression claim itself, by compiling the pre-M48 filter and showing
+  the hardened test fails against it, so no reviewer scratch-worktree run.
+- **Calibration:** none. The executor named its own model correctly.
+

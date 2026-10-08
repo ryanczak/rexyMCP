@@ -28,7 +28,7 @@ milestone is the control experiment: same executor, a quarter of the spec.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | M48 test follow-ups ([phase-01-m48-test-followups.md](phase-01-m48-test-followups.md)) | review      |
+| 01 | M48 test follow-ups ([phase-01-m48-test-followups.md](phase-01-m48-test-followups.md)) | done |
 
 ## Notes
 
