@@ -770,8 +770,9 @@ The project plan. Each entry becomes a milestone with its own
     - **Arc A — boundary output filtering.** `executor/src/context/output_filter.rs`:
       generic ANSI-strip + consecutive-dup collapse + head/tail truncation tee'ing
       full output to a rotated recovery file (phase-01). A structured cargo filter
-      (phase-02) routes `cargo` invocations through a diagnostics-preserving
-      compressor. Per-lever `SessionEvent::OutputFiltered` records how many tokens
+      (phase-02) routed `cargo` invocations through a diagnostics-preserving
+      compressor — **retired in M48** after it dropped lines a piped `grep`
+      had selected (issue #13) while reclaiming 0.04 % of input tokens. Per-lever `SessionEvent::OutputFiltered` records how many tokens
       each filter reclaimed (phase-03).
     - **Arc B — semantic context lifecycle.** `read_file` dedupes re-reads of
       unchanged files to a compact reference (phase-06, `ReadDeduped` event).
@@ -1232,6 +1233,32 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+48. **M48 — Lossless boundary, loud backstop, exact repetition** *(planning;
+    opened 2026-10-08 from GitHub issue #13, three phases drafted)*. A
+    downstream run re-executed `cargo test … | grep -E '^test |^test result'`
+    482 times: the M10 Arc A cargo filter dropped the `test … ok` lines the
+    `grep` had selected, the model could not distinguish "did not print" from
+    "filtered", and nothing terminated it — the project's
+    `read_only_stall_threshold` was `0` ("disables", set by mistake) and the
+    identical-call detector has exempted non-mutating windows since M37.
+    Measured over 1154 local runs the whole boundary filter reclaims
+    **0.041 %** of input tokens (median 0.05 %, p90 1.8 % per run), so the
+    lossy half is retired outright rather than patched for pipelines: `bash`
+    output passes through `normalize` + `compact_with_recovery` only, the
+    `is_cargo_command`/`cargo_filter`/failure-digest symbols go, the
+    `[context] output_filter` switch and the `OutputFiltered` event stay
+    (label always `"generic"`). `Config::load` refuses
+    `read_only_stall_threshold = 0` globally and per model with an
+    `Error::Config` naming the key, so the backstop cannot be silently off;
+    the hard-fail function keeps its zero guard for tests that construct
+    `GovernorConfig` directly. `check_identical_repetition` fires on N
+    byte-identical consecutive calls regardless of mutation state — a partial,
+    user-instructed reversal of the M37 decision, on the grounds that exact
+    repetition carries no diagnostic information after the first repeat;
+    `check_oscillation` keeps the exemption, and the `calibrate-governor`
+    `identical_run` signal already counted without it. Evidence and the
+    measurement script: `docs/dev/issues/2026-10-08-cargo-filter-strips-piped-output.md`.
+    Phases: `docs/dev/milestones/M48-lossless-boundary/README.md`.
 47. **M47 — Verifier persistence keyed on re-editing** *(done 2026-09-21;
     opened 2026-09-20 from GitHub issue #10, closed at two phases, both
     `approved_first_try`, on executor GLM-5.3-Flash)*. `VerifierFailurePersistent` fired on

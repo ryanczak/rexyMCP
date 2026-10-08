@@ -4,7 +4,23 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.**
+**Active phase: M48 phase-01 —
+[docs/dev/milestones/M48-lossless-boundary/phase-01-retire-cargo-filter.md](milestones/M48-lossless-boundary/phase-01-retire-cargo-filter.md)
+(status `todo`, drafted 2026-10-08, awaiting `/rexymcp:dispatch`).**
+
+**M48 — Lossless Boundary, Loud Backstop, Exact Repetition opened
+2026-10-08** from [GitHub issue #13](https://github.com/ryanczak/rexyMCP/issues/13)
+(write-up: `docs/dev/issues/2026-10-08-cargo-filter-strips-piped-output.md`).
+Three independent phases, all drafted: 01 retires the lossy cargo filter
+(the boundary filter reclaims 0.04 % of input tokens over 1154 local runs;
+the lossless path stays), 02 makes `Config::load` refuse
+`read_only_stall_threshold = 0` (the downstream run that motivated the
+issue had the backstop switched off by a stray zero), 03 lets
+`check_identical_repetition` fire on non-mutating windows (partial reversal
+of the M37 user decision, on the 2026-10-08 instruction; oscillation keeps
+its exemption). Architect-owned README edits are listed in the milestone
+README § Notes for close.
+
 
 **M47 — Verifier Persistence Keyed on Re-editing closed 2026-09-21 at two
 phases**, both `approved_first_try`, zero bugs, zero bounces, zero assists,
