@@ -1,7 +1,7 @@
 # Phase 03: Identical repetition fires on non-mutating windows
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** in-progress
+**Status:** review
 **Depends on:** none
 **Estimated diff:** ~110 lines (a four-line deletion and a doc comment in `hard_fail.rs`; two tests inverted, two added; one agent-level test)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -324,3 +324,111 @@ whm_sites=2
 ```
 
 PASTE MATCH
+
+### Update — 2026-10-08 16:43 (complete, server-authored)
+
+**Summary:** Phase complete. **Summary:**
+
+Implemented M48 phase 03: removed the four-line `window_has_mutation` guard and its one-line doc sentence from `check_identical_repetition` (`hard_fail.rs`), so six byte-identical consecutive calls now trip `IdenticalToolCallRepetition` regardless of whether the window mutated a file; the replacement doc comment pins the asymmetry (exemption survives on `check_oscillation` only). Inverted the two exemption tests in place (`identical_repetition_fires_on_read_only_window`, `identical_repetition_fires_on_whitespace_varied_read_only_window`), added `identical_repetition_fires_on_repeated_bash_command` (the issue's exact `cargo test … | grep -E '^test |^test result'` command) and `identical_repetition_silent_below_threshold_on_read_only_window`, and added the agent-level `repeated_identical_bash_trips_hard_fail` (six `native("bash", {"command": "echo same"})` turns → `PhaseStatus::HardFail` with the right blocker). **E2E verification** ran the phase doc's block verbatim: all ten `identical_repetition_*` tests ok + the new agent test ok + `identical_run_counts_longest_consecutive_identical` ok, all `exit=0`, `whm_sites=2`, and the paste self-check prints `PASTE MATCH` (entry appended with the artifact and verdict line). All four gates green (`fmt --check`, `build`, `clippy -D warnings`, `test` — 708+2+1053+0 passed, 0 failed); committed as `e66a3da`, tree clean, status left `in-progress`.
+
+**Notes for review:**
+
+- **One pinned literal drifted and I adapted:** the whitespace-varied exemption test's sixth path in the spec, `"a .txt"`, does **not** collapse to `"a.txt"` under `normalize_arguments` (`split_whitespace().collect().join(" ")` → `"a .txt"`), so the inverted test could not fire as drafted. I replaced it with `"a.txt\t"` (and made the fifth `"\ta.txt"` instead of `"a\n.txt"` — same reason, newline inside the token also survives as an internal space). All six now collapse to `"a.txt"`; the test's stated rationale ("whitespace-normalised arguments are identical") holds, but the byte content differs from the spec's list.
+- **One pre-existing test asserted the old exemption and was not in the spec's invert list:** `identical_repetition_window_is_threshold_not_deque_length` (six identical reads with a `write_file` outside the threshold window, asserting `is_none()`). I inverted its assertion to expect the signal with `tool == "read_file"`, `consecutive_count: 6` — same rename-in-place rationale as the two spec-listed inversions; the test still pins what it was written for (the window is the last `threshold` calls, not the whole deque).
+- Grep pins confirmed post-phase: `window_has_mutation` in production = 2 (definition + `check_oscillation` caller), `Read-only repetitions are exempt` = 0, `exempts_read_only_window` = 1 (the oscillation test), `#[test]` = 71 (69+2), `#[tokio::test]` = 135 (134+1).
+- The E2E block's `cargo test -p rexymcp identical_run_counts…` run also listed the mcp binary's second (empty) test target — `0 passed; 2 filtered out` — which is part of the captured artifact; noted so nobody reads it as a failure.
+
+**Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+   Compiling rexymcp v0.9.1 (/home/matt/src/rexyMCP/mcp)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+
+
+TEST
+:tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1053 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M48-lossless-boundary/README.md` — +1 -1
+- `docs/dev/milestones/M48-lossless-boundary/phase-03-identical-repetition-unexempted.md` — +39 -1
+- `executor/src/agent/tests.rs` — +27 -0
+- `executor/src/governor/hard_fail.rs` — +79 -22
+
+**Commit:** e66a3da88246e029fe59299be26c701db79dd15e
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
