@@ -191,7 +191,12 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
     // Governor feedback state (07c).
     let mut baseline = Baseline::new();
-    let mut baselined_exts: HashSet<String> = HashSet::new();
+    // Files whose pre-existing diagnostics are already in `baseline`. Keyed
+    // per path, not per extension: keying by extension baselined only the
+    // first `.py` (say) a session edited, so every later file's existing
+    // lint was blamed on the model and it chased unrelated code into a
+    // VerifierFailurePersistent / Oscillation hard-fail.
+    let mut baselined_paths: HashSet<PathBuf> = HashSet::new();
     let mut recent_verifier_samples: Vec<VerifySample> = Vec::new();
     let mut last_author_diagnostics: Vec<Diagnostic> = Vec::new();
 
@@ -1062,15 +1067,14 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 Some(refusal) => (false, refusal, None),
                 None => {
                     if let Some(path) = &edit_path
-                        && let Some(ext) = path.extension().and_then(|e| e.to_str())
-                        && !baselined_exts.contains(ext)
+                        && !baselined_paths.contains(path)
                     {
                         let captured = deps
                             .verifier
                             .capture_baseline(std::slice::from_ref(path))
                             .await;
                         baseline.signatures.extend(captured.signatures);
-                        baselined_exts.insert(ext.to_string());
+                        baselined_paths.insert(path.clone());
                     }
                     // 07e — capture the file's pre-edit content (the "before" side
                     // of the diff) the first time it is edited, before the edit lands.

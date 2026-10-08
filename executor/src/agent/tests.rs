@@ -1030,6 +1030,7 @@ struct MockFileVerifier {
     results: Mutex<VecDeque<VerifierResult>>,
     baseline: Bl,
     verified: Mutex<Vec<PathBuf>>,
+    baselined: Mutex<Vec<PathBuf>>,
 }
 
 impl MockFileVerifier {
@@ -1038,6 +1039,7 @@ impl MockFileVerifier {
             results: Mutex::new(results.into_iter().collect()),
             baseline: Bl::new(),
             verified: Mutex::new(Vec::new()),
+            baselined: Mutex::new(Vec::new()),
         }
     }
 
@@ -1061,7 +1063,8 @@ impl FileVerifier for MockFileVerifier {
             .pop_front()
             .unwrap_or(VerifierResult::Unsupported)
     }
-    async fn capture_baseline(&self, _paths: &[PathBuf]) -> Bl {
+    async fn capture_baseline(&self, paths: &[PathBuf]) -> Bl {
+        self.baselined.lock().unwrap().extend(paths.iter().cloned());
         self.baseline.clone()
     }
 }
@@ -1121,6 +1124,28 @@ async fn run_with_verifier(
 fn write_call(dir: &TempDir, name: &str, body: &str) -> AiEvent {
     let path = dir.path().join(name).to_string_lossy().to_string();
     native("write_file", json!({ "path": path, "content": body }))
+}
+
+/// Regression: the baseline used to be captured once per *extension*, so a
+/// second `.py` file's pre-existing diagnostics were never baselined and were
+/// fed back to the model as its own. Each edited path must be baselined once.
+#[tokio::test]
+async fn baseline_is_captured_per_file_not_per_extension() {
+    let dir = TempDir::new().unwrap();
+    let client = MockAiClientScript::new(vec![
+        vec![write_call(&dir, "a.py", "a = 1\n")],
+        vec![write_call(&dir, "b.py", "b = 1\n")],
+        vec![write_call(&dir, "a.py", "a = 2\n")],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![checked(vec![]), checked(vec![]), checked(vec![])]);
+
+    run_with_verifier(&dir, &client, &verifier, 8).await;
+
+    let baselined = verifier.baselined.lock().unwrap().clone();
+    assert_eq!(baselined.len(), 2, "one baseline per distinct file: {baselined:?}");
+    assert!(baselined[0].ends_with("a.py"));
+    assert!(baselined[1].ends_with("b.py"));
 }
 
 #[tokio::test]
