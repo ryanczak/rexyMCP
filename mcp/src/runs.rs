@@ -367,7 +367,11 @@ mod tests {
         PhaseRun {
             ts,
             model: model.to_string(),
-            generation_params: GenerationParams { temperature, seed },
+            generation_params: GenerationParams {
+                temperature,
+                seed,
+                ..Default::default()
+            },
             phase_id: "phase-01".to_string(),
             phase_doc_path: None,
             tags: tags.iter().map(|s| s.to_string()).collect(),

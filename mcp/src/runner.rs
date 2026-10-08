@@ -301,6 +301,11 @@ async fn run_phase_with(
         generation_params: GenerationParams {
             temperature: cfg.executor.temperature,
             seed: cfg.executor.seed,
+            enable_thinking: Some(cfg.executor.enable_thinking),
+            reasoning_effort: cfg
+                .executor
+                .reasoning_effort
+                .filter(|_| cfg.executor.enable_thinking),
         },
         telemetry_dir: inp.telemetry_dir,
         progress: inp.progress,
@@ -372,6 +377,7 @@ pub async fn run_phase(inp: &RunPhaseConfig<'_>) -> rexymcp_executor::error::Res
             seed: client_cfg.executor.seed,
             max_tokens: client_cfg.executor.max_tokens,
             enable_thinking: client_cfg.executor.enable_thinking,
+            reasoning_effort: client_cfg.executor.reasoning_effort,
         },
     );
 
@@ -780,6 +786,7 @@ mod tests {
                 task_tracking: None,
                 max_tokens: None,
                 enable_thinking: None,
+                reasoning_effort: None,
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,
@@ -911,6 +918,7 @@ mod tests {
                 task_tracking: None,
                 max_tokens: None,
                 enable_thinking: None,
+                reasoning_effort: None,
                 identical_call_threshold: None,
                 verifier_persistence_threshold: None,
                 runaway_output_bytes: None,

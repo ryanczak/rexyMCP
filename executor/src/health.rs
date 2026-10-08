@@ -155,6 +155,7 @@ mod tests {
             seed: None,
             max_tokens: 8192,
             enable_thinking: false,
+            reasoning_effort: None,
             task_tracking: true,
             tier: None,
         };

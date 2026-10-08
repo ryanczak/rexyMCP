@@ -24,6 +24,13 @@ use crate::store::sessions::event::{SessionEvent, SessionRecord};
 pub struct GenerationParams {
     pub temperature: Option<f64>,
     pub seed: Option<u64>,
+    /// Whether the chat template's reasoning block was on. `None` in records
+    /// written before it was captured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
+    /// `chat_template_kwargs.reasoning_effort`, when one was sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<crate::config::ReasoningEffort>,
 }
 
 /// Pass/fail of the final command set, captured on clean completion. `None` for a

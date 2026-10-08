@@ -144,6 +144,8 @@ pub fn build_chat_body(
     }
     if !sampling.enable_thinking {
         body["chat_template_kwargs"] = json!({ "enable_thinking": false });
+    } else if let Some(effort) = sampling.reasoning_effort {
+        body["chat_template_kwargs"] = json!({ "reasoning_effort": effort.as_str() });
     }
     body
 }
@@ -793,6 +795,7 @@ mod tests {
                 seed: Some(42),
                 max_tokens: 8192,
                 enable_thinking: false,
+                reasoning_effort: None,
             },
         );
         assert_eq!(body["temperature"], 0.2);
@@ -818,6 +821,7 @@ mod tests {
                 seed: None,
                 max_tokens: 8192,
                 enable_thinking: false,
+                reasoning_effort: None,
             },
         );
         assert_eq!(body["temperature"], 0.7);
@@ -839,6 +843,7 @@ mod tests {
             None,
             SamplingParams {
                 enable_thinking: false,
+                reasoning_effort: None,
                 ..SamplingParams::default()
             },
         );
@@ -857,12 +862,55 @@ mod tests {
             None,
             SamplingParams {
                 enable_thinking: true,
+                reasoning_effort: None,
                 ..SamplingParams::default()
             },
         );
         assert!(
             body.get("chat_template_kwargs").is_none(),
             "chat_template_kwargs must be absent when enable_thinking is true"
+        );
+    }
+
+    #[test]
+    fn build_chat_body_sends_reasoning_effort_when_thinking_on() {
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                enable_thinking: true,
+                reasoning_effort: Some(crate::config::ReasoningEffort::Low),
+                ..SamplingParams::default()
+            },
+        );
+        assert_eq!(body["chat_template_kwargs"]["reasoning_effort"], "low");
+        assert!(
+            body["chat_template_kwargs"]
+                .get("enable_thinking")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn build_chat_body_ignores_reasoning_effort_when_thinking_off() {
+        let body = build_chat_body(
+            "m",
+            "sys",
+            vec![],
+            None,
+            SamplingParams {
+                enable_thinking: false,
+                reasoning_effort: Some(crate::config::ReasoningEffort::Medium),
+                ..SamplingParams::default()
+            },
+        );
+        assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false);
+        assert!(
+            body["chat_template_kwargs"]
+                .get("reasoning_effort")
+                .is_none()
         );
     }
 

@@ -25,13 +25,28 @@ pub fn tokens_per_sec(output_tokens: u32, gen_time_s: f64) -> Option<f64> {
 }
 
 /// Sampling-settings label: `"default"` / `"temp=T"` / `"seed=S"` /
-/// `"temp=T,seed=S"`. The exact strings `runs`/`scorecard` render.
+/// `"temp=T,seed=S"`, with `think=on` or `think=<effort>` appended when the
+/// run had thinking enabled (`think=on` replaces `default`). Thinking-off
+/// runs and records written before thinking was captured carry no suffix,
+/// so their labels are unchanged. The exact strings `runs`/`scorecard` render.
 pub fn settings_label(params: &GenerationParams) -> String {
-    match (params.temperature, params.seed) {
-        (None, None) => "default".to_string(),
-        (Some(t), None) => format!("temp={t}"),
-        (None, Some(s)) => format!("seed={s}"),
-        (Some(t), Some(s)) => format!("temp={t},seed={s}"),
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(t) = params.temperature {
+        parts.push(format!("temp={t}"));
+    }
+    if let Some(s) = params.seed {
+        parts.push(format!("seed={s}"));
+    }
+    if params.enable_thinking == Some(true) {
+        match params.reasoning_effort {
+            Some(effort) => parts.push(format!("think={}", effort.as_str())),
+            None => parts.push("think=on".to_string()),
+        }
+    }
+    if parts.is_empty() {
+        "default".to_string()
+    } else {
+        parts.join(",")
     }
 }
 
@@ -119,26 +134,76 @@ mod tests {
         let default_params = GenerationParams {
             temperature: None,
             seed: None,
+            ..Default::default()
         };
         assert_eq!(settings_label(&default_params), "default");
 
         let temp_only = GenerationParams {
             temperature: Some(0.2),
             seed: None,
+            ..Default::default()
         };
         assert_eq!(settings_label(&temp_only), "temp=0.2");
 
         let seed_only = GenerationParams {
             temperature: None,
             seed: Some(42),
+            ..Default::default()
         };
         assert_eq!(settings_label(&seed_only), "seed=42");
 
         let both = GenerationParams {
             temperature: Some(0.2),
             seed: Some(42),
+            ..Default::default()
         };
         assert_eq!(settings_label(&both), "temp=0.2,seed=42");
+    }
+
+    #[test]
+    fn settings_label_appends_thinking_effort_when_thinking_on() {
+        let low = GenerationParams {
+            temperature: Some(0.2),
+            seed: None,
+            enable_thinking: Some(true),
+            reasoning_effort: Some(crate::config::ReasoningEffort::Low),
+        };
+        assert_eq!(settings_label(&low), "temp=0.2,think=low");
+
+        let on_no_effort = GenerationParams {
+            temperature: None,
+            seed: None,
+            enable_thinking: Some(true),
+            reasoning_effort: None,
+        };
+        assert_eq!(settings_label(&on_no_effort), "think=on");
+
+        let xhigh_full = GenerationParams {
+            temperature: Some(0.2),
+            seed: Some(42),
+            enable_thinking: Some(true),
+            reasoning_effort: Some(crate::config::ReasoningEffort::Xhigh),
+        };
+        assert_eq!(settings_label(&xhigh_full), "temp=0.2,seed=42,think=xhigh");
+    }
+
+    #[test]
+    fn settings_label_unchanged_when_thinking_off_or_unrecorded() {
+        let off = GenerationParams {
+            temperature: Some(0.2),
+            seed: None,
+            enable_thinking: Some(false),
+            reasoning_effort: None,
+        };
+        assert_eq!(settings_label(&off), "temp=0.2");
+
+        let legacy = GenerationParams {
+            temperature: None,
+            seed: None,
+            enable_thinking: None,
+            reasoning_effort: None,
+        };
+        assert_eq!(settings_label(&legacy), "default");
     }
 
     #[test]

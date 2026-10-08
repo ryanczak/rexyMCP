@@ -5,6 +5,27 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 
+/// How hard a thinking model reasons, for chat templates that take a
+/// `reasoning_effort` kwarg (Qwen 3.8 Flash Next: `low` / `medium` / `xhigh`).
+/// Only sent when `enable_thinking` is true.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    Xhigh,
+}
+
+impl ReasoningEffort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::Xhigh => "xhigh",
+        }
+    }
+}
+
 /// Executor capability tier. Set via `rexymcp calibrate` and recorded in
 /// `[executor].tier`. Controls default `max_turns` and `gate_retries`
 /// (wired M26).
@@ -192,6 +213,7 @@ pub struct ModelOverride {
     pub seed: Option<u64>,
     pub max_tokens: Option<u32>,
     pub enable_thinking: Option<bool>,
+    pub reasoning_effort: Option<ReasoningEffort>,
     pub identical_call_threshold: Option<usize>,
     pub verifier_persistence_threshold: Option<usize>,
     pub runaway_output_bytes: Option<usize>,
@@ -304,6 +326,10 @@ pub struct ExecutorConfig {
     /// when true, the key is omitted and the endpoint applies its own default.
     #[serde(default = "default_enable_thinking")]
     pub enable_thinking: bool,
+    /// Reasoning effort sent as `chat_template_kwargs.reasoning_effort` when
+    /// `enable_thinking` is true. `None` omits it (the template's own default).
+    #[serde(default)]
+    pub reasoning_effort: Option<ReasoningEffort>,
     /// Whether the loop seeds a per-session task list from the phase doc's
     /// `## Spec` and emits `TaskUpdate` events as the executor flips state
     /// (M12 Arc A). Default on; set false for a control run with no task
@@ -349,6 +375,7 @@ impl Default for ExecutorConfig {
             seed: None,
             max_tokens: default_max_tokens(),
             enable_thinking: default_enable_thinking(),
+            reasoning_effort: None,
             task_tracking: default_task_tracking(),
             tier: None,
         }
@@ -524,6 +551,9 @@ impl Config {
         }
         if let Some(v) = over.enable_thinking {
             self.executor.enable_thinking = v;
+        }
+        if let Some(v) = over.reasoning_effort {
+            self.executor.reasoning_effort = Some(v);
         }
         if let Some(v) = over.identical_call_threshold {
             self.governor.identical_call_threshold = v;
@@ -1767,6 +1797,47 @@ runaway_output_bytes = 102400
 
         let cfg = Config::load(&path).unwrap();
         assert!(cfg.executor.enable_thinking);
+    }
+
+    #[test]
+    fn loads_reasoning_effort_and_per_model_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+enable_thinking = true
+reasoning_effort = "medium"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+
+[models."other"]
+reasoning_effort = "low"
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.executor.reasoning_effort, Some(ReasoningEffort::Medium));
+        let mut other = cfg.clone();
+        other.resolve_for_model("other");
+        assert_eq!(other.executor.reasoning_effort, Some(ReasoningEffort::Low));
+        std::fs::write(
+            &path,
+            "[executor]\nprovider = \"openai\"\nmodel = \"m\"\nbase_url = \"http://x/v1\"\nreasoning_effort = \"max\"\n[commands]\n[budget]\ncontext_length = 32768\nmax_context_pct = 70\nmax_turns = 40\n",
+        )
+        .unwrap();
+        assert!(
+            Config::load(&path).is_err(),
+            "an unknown effort must be refused"
+        );
     }
 
     #[test]

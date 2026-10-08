@@ -151,6 +151,7 @@ fn deps<'a>(
         generation_params: GenerationParams {
             temperature: None,
             seed: None,
+            ..Default::default()
         },
         telemetry_dir: None,
         progress: None,
@@ -2969,6 +2970,7 @@ fn deps_with_progress_simple<'a>(
         generation_params: GenerationParams {
             temperature: None,
             seed: None,
+            ..Default::default()
         },
         telemetry_dir: None,
         progress: Some(capture),
@@ -3046,6 +3048,7 @@ impl<'a> DepsBuilder<'a> {
             generation_params: GenerationParams {
                 temperature: None,
                 seed: None,
+                ..Default::default()
             },
             telemetry_dir: self.telemetry_dir,
             progress: Some(self.capture),
@@ -3236,6 +3239,7 @@ async fn callback_panic_is_not_caught() {
         generation_params: GenerationParams {
             temperature: None,
             seed: None,
+            ..Default::default()
         },
         telemetry_dir: None,
         progress: Some(&PanicCallback),
@@ -5332,6 +5336,7 @@ async fn loop_returns_cancelled_when_signal_flipped_between_turns() {
         generation_params: GenerationParams {
             temperature: None,
             seed: None,
+            ..Default::default()
         },
         telemetry_dir: None,
         progress: None,
@@ -5394,6 +5399,7 @@ async fn loop_returns_cancelled_when_signal_flipped_mid_stream() {
         generation_params: GenerationParams {
             temperature: None,
             seed: None,
+            ..Default::default()
         },
         telemetry_dir: None,
         progress: None,

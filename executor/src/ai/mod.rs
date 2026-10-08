@@ -199,6 +199,7 @@ pub struct SamplingParams {
     pub seed: Option<u64>,
     pub max_tokens: u32,
     pub enable_thinking: bool,
+    pub reasoning_effort: Option<crate::config::ReasoningEffort>,
 }
 
 impl Default for SamplingParams {
@@ -208,6 +209,7 @@ impl Default for SamplingParams {
             seed: None,
             max_tokens: 8192,
             enable_thinking: false,
+            reasoning_effort: None,
         }
     }
 }
@@ -224,6 +226,7 @@ pub fn make_client(cfg: &ExecutorConfig) -> Box<dyn AiClient> {
             seed: cfg.seed,
             max_tokens: cfg.max_tokens,
             enable_thinking: cfg.enable_thinking,
+            reasoning_effort: cfg.reasoning_effort,
         },
     ))
 }
@@ -282,6 +285,7 @@ mod tests {
             seed: None,
             max_tokens: 8192,
             enable_thinking: false,
+            reasoning_effort: None,
             task_tracking: true,
             tier: None,
         };
@@ -301,6 +305,7 @@ mod tests {
             seed: None,
             max_tokens: 8192,
             enable_thinking: false,
+            reasoning_effort: None,
             task_tracking: true,
             tier: None,
         };
@@ -320,6 +325,7 @@ mod tests {
             seed: None,
             max_tokens: 8192,
             enable_thinking: false,
+            reasoning_effort: None,
             task_tracking: true,
             tier: None,
         };

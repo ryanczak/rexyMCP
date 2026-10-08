@@ -21,6 +21,7 @@ base_url = "http://localhost:1234/v1"
 # temperature = 0.2               # sampling temperature (omit for endpoint default)
 # max_tokens = 8192               # per-response output token ceiling (default 8192)
 # enable_thinking = false          # render the model's <think> reasoning block (default false = off)
+# reasoning_effort = "medium"     # low | medium | xhigh, sent only when enable_thinking = true
 # first_token_timeout_secs = 600  # wait before first token in seconds (default 600)
 # stream_idle_timeout_secs = 240  # gap between tokens before timeout (default 240)
 # task_tracking = true            # seed + track a per-session task list from the phase Spec (M12)
@@ -57,6 +58,7 @@ novelty_action = "advisory"       # "advisory" (default): log low-novelty churn 
 # seed = 7                           # override [executor] seed
 # max_tokens = 8192                  # override [executor] max_tokens
 # enable_thinking = false            # override [executor] enable_thinking
+# reasoning_effort = "low"          # override [executor] reasoning_effort
 # identical_call_threshold = 8       # override [governor] identical_call_threshold
 # verifier_persistence_threshold = 8 # override [governor] verifier_persistence_threshold
 # runaway_output_bytes = 204800      # override [governor] runaway_output_bytes

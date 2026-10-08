@@ -419,7 +419,11 @@ fn make_run_with_settings(
     PhaseRun {
         ts: 1_717_000_000_000,
         model: model.to_string(),
-        generation_params: GenerationParams { temperature, seed },
+        generation_params: GenerationParams {
+            temperature,
+            seed,
+            ..Default::default()
+        },
         phase_id: "test".to_string(),
         phase_doc_path: None,
         tags: tags.iter().map(|s| s.to_string()).collect(),
