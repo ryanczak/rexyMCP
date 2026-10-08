@@ -1391,9 +1391,6 @@ async fn identical_tool_call_repetition_trips_hard_fail() {
 #[tokio::test]
 async fn repeated_identical_bash_trips_hard_fail() {
     let dir = TempDir::new().unwrap();
-    let scope = Scope::new(dir.path()).unwrap();
-    let mut registry = registry_over(scope.clone());
-    registry.register(bash_with_filter(scope, 30, true));
     let mk = || native("bash", json!({ "command": "echo same" }));
     let client = MockAiClientScript::new(vec![
         vec![mk()],

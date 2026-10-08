@@ -1,7 +1,7 @@
 # Phase 01: M48 test follow-ups
 
 **Milestone:** M49 — Light-shape phase trial
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~15 lines, test code only
 **Tags:** language=rust, kind=test, size=s
@@ -73,3 +73,14 @@ None.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-10-08 17:05 (progress)
+
+Started phase-01 (executor: GLM-5.3-Flash-NVFP4-Spark under rexyMCP). Flipped
+phase doc Status and the milestone README's phase-01 row to `in-progress`.
+Verified the pre-M48 routing claim against commit `2860dd2^` before editing:
+the old `filter_for_command` dispatched to `cargo_filter` when
+`is_cargo_command` matched, i.e. the deleted routing acted only on command
+text beginning with `cargo` (after trim), and the old `bash.rs` metadata
+labeled that path `"cargo"` rather than `"generic"` — so the fix is to make
+the test's command string begin with `cargo`. Implementing Spec §1 then §2.

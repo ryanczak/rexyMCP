@@ -733,7 +733,7 @@ mod tests {
         let tool = bash_with_filter(scope, 30, true);
         let result = tool
             .execute(json!({
-                "command": "sh -c 'printf \"test a ... ok\\ntest b ... ok\\ntest result: ok. 2 passed; 0 failed\\n\" | grep -E \"^test \"'"
+                "command": "cargo --version >/dev/null && sh -c 'printf \"test a ... ok\\ntest b ... ok\\ntest result: ok. 2 passed; 0 failed\\n\" | grep -E \"^test \"'"
             }))
             .await
             .unwrap();
