@@ -1,7 +1,7 @@
 # Phase 01: Retire the cargo filter
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~550 lines, almost all deletions (≈230 production lines and 16 tests removed from `output_filter.rs`; two tests removed and one call site simplified in `bash.rs`; two small tests added)
 **Tags:** language=rust, kind=refactor, size=m
@@ -464,3 +464,37 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 2860dd2105792cf6f23ca1f5cd46eb991860da28
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-08
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** local-inference-lab/GLM-5.3-Flash-NVFP4-Spark (288 turns)
+- **Scope deviations:** none. The executor's mid-phase edit mangled two
+  surviving tests in `output_filter.rs` and it restored them from `HEAD`; the
+  reviewer confirmed `dedupe_can_drop_long_output_below_truncation_threshold`,
+  `recovery_rotation_keeps_at_most_max_files` and
+  `compact_preserves_trailing_diagnostic_line` are byte-identical to the
+  pre-phase tree. The only non-content change there is one removed blank line
+  between two tests.
+- **Reviewer re-run:** fmt, build (0 warnings), clippy `-D warnings`, and
+  `cargo test` (1758 passed, 0 failed) all green. The E2E block re-run by the
+  reviewer reproduces the pasted artifact byte-for-byte (`PASTE MATCH`).
+- **Calibration (architect, 2 defects):**
+  1. *Miscounted criterion.* The `bash.rs` test-count criterion pinned 27 from
+     a "now 28" baseline. The 28 included two `#[test]` strings inside the raw
+     Rust fixture of the deleted `cargo_command_output_is_filtered_through_cargo_filter`
+     test, so the true baseline was 26 and the correct target 25, which is what
+     the tree has. A breach of WORKFLOW § "Run every count criterion" (text
+     greps count string literals, not just prose). The executor flagged it in
+     its notes rather than padding the count.
+  2. *Regression test does not reproduce the issue.* The spec dictated
+     `piped_cargo_style_output_is_not_filtered` with a command beginning
+     `sh -c`. The deleted dispatcher routed only on a leading `cargo`, so the
+     test **passes against the pre-phase code** (reviewer mutation run in a
+     scratch worktree at `7714050`). A variant beginning
+     `cargo --version >/dev/null && sh -c …` fails against the pre-phase code
+     and passes now. The guard against issue #13 today is the deletion itself
+     plus the zero-count criteria; the test pins the lossless path, not the
+     routing regression. Hardening the test is a one-line change, held as a
+     human decision (see milestone README § Notes).

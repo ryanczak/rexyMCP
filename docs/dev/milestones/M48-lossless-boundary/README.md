@@ -6,7 +6,7 @@ that switches the read-only backstop off is refused at load; and N
 byte-identical consecutive tool calls terminate the run whether or not the
 window mutated a file.
 
-**Status:** planning *(opened 2026-10-08)*
+**Status:** in-progress *(opened 2026-10-08)*
 
 **Depends on:** M10 (the boundary filter being retired), M34
 (`NoProgressStall` and `read_only_stall_threshold`), M37 (the non-mutating
@@ -75,7 +75,7 @@ long `cargo test`) where the lossy half earned anything.
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Retire the cargo filter ([phase-01-retire-cargo-filter.md](phase-01-retire-cargo-filter.md)): delete the structured cargo path and its digest; `bash` calls `compact_with_recovery` directly; two tests pin that `test … ok` lines survive the boundary | review      |
+| 01 | Retire the cargo filter ([phase-01-retire-cargo-filter.md](phase-01-retire-cargo-filter.md)): delete the structured cargo path and its digest; `bash` calls `compact_with_recovery` directly; two tests pin that `test … ok` lines survive the boundary | done |
 | 02 | Refuse a zero stall threshold ([phase-02-refuse-zero-stall-threshold.md](phase-02-refuse-zero-stall-threshold.md)): `Config::load` rejects `read_only_stall_threshold = 0` globally and per model; init template and doc comments updated | todo |
 | 03 | Identical repetition on non-mutating windows ([phase-03-identical-repetition-unexempted.md](phase-03-identical-repetition-unexempted.md)): drop the exemption from `check_identical_repetition` only; invert the two exemption tests; add the issue's `bash` shape and an agent-level test | todo |
 
@@ -84,6 +84,12 @@ headline and the largest diff, 02 and 03 are each under 100 lines.
 
 ## Notes
 
+- **Phase-01 review follow-up (human decision):** the shipped
+  `piped_cargo_style_output_is_not_filtered` passes against the pre-phase
+  code because its command starts with `sh -c`, not `cargo`. Prefixing it
+  with `cargo --version >/dev/null && ` makes it a true regression test for
+  issue #13 (verified to fail at `7714050`). Not folded into phase-02 or 03,
+  which touch unrelated files.
 - **Architect-owned follow-ups at close (not executor tasks):** README
   lines describing "a structured compressor for noisy build output"
   (§ Troubleshooting table, § Configuration reference `[context]` row, the

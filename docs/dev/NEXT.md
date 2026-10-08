@@ -4,9 +4,17 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M48 phase-01 —
-[docs/dev/milestones/M48-lossless-boundary/phase-01-retire-cargo-filter.md](milestones/M48-lossless-boundary/phase-01-retire-cargo-filter.md)
+**Active phase: M48 phase-02 —
+[docs/dev/milestones/M48-lossless-boundary/phase-02-refuse-zero-stall-threshold.md](milestones/M48-lossless-boundary/phase-02-refuse-zero-stall-threshold.md)
 (status `todo`, drafted 2026-10-08, awaiting `/rexymcp:dispatch`).**
+
+**M48 phase-01 — done 2026-10-08, `approved_first_try`** (288 turns,
+GLM-5.3-Flash). The structured cargo filter is gone; `bash` output is
+lossless. Two architect calibration defects recorded in the verdict: a
+test-count criterion miscounted `#[test]` strings inside a raw-string
+fixture, and the spec'd regression test does not reproduce issue #13
+(passes against the pre-phase code). The one-line hardening is held for a
+human decision in the milestone README § Notes.
 
 **M48 — Lossless Boundary, Loud Backstop, Exact Repetition opened
 2026-10-08** from [GitHub issue #13](https://github.com/ryanczak/rexyMCP/issues/13)
