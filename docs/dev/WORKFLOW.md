@@ -195,8 +195,9 @@ Read before starting:
 
 ## Current state
 
-<What exists in the repo today that this phase will modify. Specific file paths
-and line numbers. Quote the relevant code if short.>
+<One or two sentences naming the files and symbols this phase touches. No line
+numbers and no quoted code: the executor reads the repo and re-derives the
+state itself, and line-numbered quotes go stale and carry architect errors.>
 
 ## Spec
 
@@ -223,37 +224,28 @@ ids — do **not** key updates by the phase number. The section ends at the next
 
 ## Acceptance criteria
 
-Verifiable conditions — each one checkable by running a command or reading a file.
+Verifiable conditions, as behaviour: named tests, and where structure matters
+a property stated in words ("`X` no longer appears in production code",
+"the command string begins with `cargo`"). Prefer these over `grep -c`
+counts — a count must be derived against the post-phase tree, is wrong
+whenever a test name or doc comment also matches, and is the criterion
+shape the architect got wrong most often.
 
-- [ ] `<command>` produces `<expected output>`.
 - [ ] Test `<test_name>` passes.
+- [ ] <structural property, in words>.
+- [ ] All gates green.
 
-**Pre-dispatch check.** With the finished Spec in front of you, before
-dispatch:
-
-1. **Run the whole criteria block against the current tree** and require
-   every line that is not a labelled *preservation criterion* to fail. A line
-   that already passes certifies nothing.
-2. **Re-derive every pinned count after accounting for the artifacts this
-   Spec's own tasks create** — the test that must name the retired symbol, the
-   `use` line that imports the new function, the fixture that adds a row. A
-   count measured against the pre-phase tree is one the executor cannot reach.
-3. **Any self-check verdict (`PASTE MATCH`, `GUARD OK`, …) is a numbered
-   criterion here, not Task prose.** A verdict that lives only in a task can be
-   omitted with every task complete, and the check silently moves to review.
-4. **A criterion pinning an *absence* pins behaviour, not file text.**
-   `grep -c 'X' <file>` → 0 also counts the negative test that must name `X`;
-   pin the function's output or a mutation that must turn a named test red.
-
-These are triggers for rules this document already carries (§ "Every
-acceptance criterion must be satisfiable", § "Run every count criterion",
-§ "Specs pin behavior, not rendering"); they sit here because the rules kept
-being missed at drafting time, not at review.
+**Pre-dispatch check.** Run each criterion against the current tree; every
+line that is not a labelled *preservation criterion* must fail now. Any
+self-check verdict the executor must print (`PASTE MATCH`, …) is a numbered
+criterion here, not Task prose. That is the whole check.
 
 ## Test plan
 
-Concrete tests to write — names + what they assert. Typically unit tests against
-hermetic fakes (`TempDir`, `MockAiClient`, fixture replay).
+Test names and the behaviour each asserts — not the test code. The executor
+holds the compiler and writes tests that compile against the real tree; a
+dictated body is one the architect could not compile and is where test
+defects enter. Name the negative case alongside the positive one.
 
 - `test_<name>` in `<path>` — asserts <behavior>.
 
@@ -1374,6 +1366,8 @@ against the rest of its own spec.)*
 proves the "now" value; it does not prove the target is reachable once the
 phase's own tests, `use` lines and doc comments land. Prototype the intended
 delta in a scratch copy, run the criterion there, and paste what it printed.
+Under § "Spec behaviour, not derivation" this applies only to a mechanical
+criterion you have chosen to pin anyway; the default is to pin none.
 Reasoning the gap out has failed every time it was tried.
 
 **A criterion about a gate is validated by running that gate**, not by a
@@ -1417,6 +1411,10 @@ the obligation instead of the obligation.
 round-2 fix that satisfied every round-1 criterion and broke the common path.)*
 
 ### Run every count criterion; never derive it
+
+*(Scope, 2026-10-08: counts are no longer the default criterion shape — see
+§ "Spec behaviour, not derivation". This section governs any count you still
+pin.)*
 
 A phase doc that pins a count (`grep -c … returns 4`) is making a claim about
 the tree. **Run the command and paste its answer; never compute the number by
@@ -1537,3 +1535,27 @@ nor deletes a live one on pattern-momentum.
 milestone, plus two hard-fails on the exhausted-import case, where `cargo
 build` and `cargo clippy --all-targets` disagree about whether an unused
 test-module import matters — clippy is authoritative for import liveness.)*
+
+### Spec behaviour, not derivation
+
+A phase doc states **what must be true afterwards** and the constraints the
+change must respect. It does not pre-derive what the executor can derive
+from the repo: no line-numbered "current state", no test bodies, no pinned
+`grep -c` counts, no mutation runs performed by the architect. The executor
+holds the compiler, the tests and the tree, and verifying a premise against
+the source is its job, not the spec's.
+
+Keep what the executor genuinely cannot get: an external API excerpt, a
+gotcha that bit before, a constraint it would not infer (hermeticity, a
+forbidden mechanism). Cut everything that is a quotation of the repo.
+
+*(Folded 2026-10-08. A three-phase milestone drafted in the heavy shape
+carried an architect spec defect in every phase — a miscounted criterion, a
+dictated test that passed against the pre-phase code, quoted paths that
+never normalized as claimed, a false claim about a test harness — all in
+pre-derived material the executor re-derived and corrected anyway. The
+one-phase control drafted as behaviour and test names bounced nothing, used
+a third fewer executor turns, and the executor verified the premise against
+git history and ran the regression check itself, unprompted. The architect
+spent roughly six output tokens per executor output token on the heavy
+milestone.)*

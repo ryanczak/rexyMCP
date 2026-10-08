@@ -66,7 +66,7 @@ against the same build cache can race and produce spurious failures):
 3. `lint` — e.g. `<lint command from rexymcp.toml>`
 4. `test` — e.g. `<test command from rexymcp.toml>`
 
-Run each in the repo root. Capture the output. If any command fails, note
+Run each in the repo root, **once**. Capture the output. If any command fails, note
 it — the executor's `PhaseResult.command_outputs` is the executor's run;
 this is your independent re-run. If the executor passed a command but you
 fail, surface it as a possible environment-vs-spec mismatch.
@@ -101,10 +101,19 @@ Pay extra attention to the `unwrap()` / `expect()` / `panic!()` grep, the
 `#[allow]` check, and test coverage. These are the most common ways to paper
 over a failing diagnostic.
 
-## 5. Spot-check tests are real
+## 5. Spot-check tests are real — by reading the executor's evidence
 
-Pick one or two new tests from the phase. Confirm they would actually fail
-if the code under test were broken. A test that passes after mentally
+The executor's Update Log should already carry the proof: a positive
+control, a mutation it ran, or a run against the pre-phase code, with the
+red output pasted. **Read that evidence and accept it when it names the
+mutation and shows the failing run.** Do not reproduce it in a scratch
+worktree; a reviewer re-run of proof the executor already produced is the
+single largest avoidable architect cost at review. Reproduce only when the
+evidence is absent, is prose rather than output, or contradicts the diff —
+and then that absence is itself a finding.
+
+Then pick one or two new tests and confirm from the diff that they would
+fail if the code under test were broken. A test that passes after mentally
 deleting its assertion is a fake test — flag it.
 
 Look for:

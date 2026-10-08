@@ -337,14 +337,14 @@ This is your main steady-state activity. When drafting phase docs:
 - **Pin negative cases, not just positive ones** (per the same fold). For
   string-matching, path resolution, or escape/confinement semantics, give
   explicit *must-NOT-match* / *must-stay-hermetic* examples.
-- **Pre-inject** per §4 below.
-- **Run the pre-dispatch check** (`WORKFLOW.md` § "Acceptance criteria",
-  *Pre-dispatch check*): execute the whole criteria block against the current
-  tree and require every non-preservation line to fail; re-derive each pinned
-  count against the tree the Spec's own tasks will produce; put every
-  self-check verdict in the criteria, not in task prose. This is a literal
-  step, not a habit — the rules it triggers already existed and were missed
-  at drafting, repeatedly.
+- **Spec behaviour, not derivation** (`WORKFLOW.md` § "Spec behaviour, not
+  derivation"): no line-numbered current state, no test bodies, no pinned
+  counts. Name the files and symbols, the behaviour, the test names, and the
+  constraints. Pre-inject only what the executor cannot get itself — §4.
+- **Run the pre-dispatch check** (`WORKFLOW.md` § "Acceptance criteria"):
+  each criterion must fail against the current tree unless labelled a
+  preservation criterion. One pass; no count derivation, no dry runs of
+  dictated code.
 - **On `/rexymcp:architect next`**: draft the next phase doc in the active
   milestone, write it to disk, update `NEXT.md` to point at it, **stop** (the
   user explicitly dispatches via `/rexymcp:dispatch`).
@@ -353,97 +353,54 @@ This is your main steady-state activity. When drafting phase docs:
   Notes section, ask the user to sign off before starting the next milestone.
   **Never auto-advance.** Milestone boundaries are always a human gate.
 
-## 4. Pre-injection — the skill that decides whether this works
+## 4. Pre-injection — only what the executor cannot reach
 
-Pre-injection is the single most important habit this skill teaches you. The
-executor is a local LLM with no web access, no ability to ask you a
-clarifying question mid-phase, and often a smaller context window than you
-have right now. Whatever the executor needs to know, **the phase doc must
-contain it**. There is no live channel. You will never get a chance to
-clarify after dispatch.
+The executor is a local LLM with no web access and no way to ask you a
+question mid-phase. Whatever it genuinely cannot obtain, the phase doc must
+carry. But it **does** have the repository, the compiler, the tests and git
+history, and it reads them more accurately than you can quote them. The
+working rule: **if the executor can derive it from the repo, do not write
+it down.** Every quoted line number, pasted test body and pinned count is a
+place an architect error can enter, and the executor re-derives it anyway.
 
-The test is straightforward: while drafting a phase doc, every time you
-notice yourself thinking *"the executor will figure that out"* or *"they'll
-know what I mean,"* stop. That's the signal. Pre-inject the answer.
+Three things are worth pre-injecting:
 
-There are five things to pre-inject. They are not equally weighted — worked
-examples and few-shot tool-call exemplars carry the most real-world reduction
-in bounce rate; the others fill specific gaps.
+1. **Fetched reference / API docs.** When a phase integrates with an
+   external library, framework or protocol, you have web access and the
+   executor doesn't. Fetch the relevant docs, pick the sections that matter
+   for *this* phase, and paste the excerpt into the Spec. A 30-line excerpt
+   beats a URL the executor cannot open.
 
-1. **Worked examples — the highest-leverage form of pre-injection.** When
-   the phase asks the executor to do something non-trivial, find the
-   *closest analogue* already in the codebase and quote it in the phase doc
-   with `file:line` references. Not "see the pattern in `foo.rs`" — actually
-   quote the pattern, in a fenced code block, with one sentence saying "do
-   the same shape for the new type." The executor reading the quote can
-   pattern-match; the executor *not* reading the quote (because the link
-   wasn't actionable in their tool set) is implementing from scratch.
+2. **Gotchas.** A class of mistake that has bitten before, named with the
+   specific example: "Do NOT match `shutdown` as a bare substring — a bug was
+   once filed when `cargo test shutdown` was blocked by the bash classifier."
+   One or two sentences; the executor does the rest.
 
-2. **Codebase idioms.** Projects accumulate conventions: how errors are
-   wrapped, how tests are named, how modules are organized, how config gets
-   loaded. The executor doesn't know any of yours by default. When a phase
-   touches one of these conventions, **name it and show it**. "Errors
-   propagate as `crate::error::Error::Internal(msg)` — see
-   `executor/src/security/scope.rs` line 45 for the pattern." Not "follow
-   the project's error pattern."
+3. **Constraints it would not infer.** Hermeticity of a test, a mechanism the
+   executor contract forbids, a file it must not touch, a public symbol
+   another crate imports. State the constraint, not the implementation.
 
-3. **Gotchas.** Things that broke before will break again. When you know a
-   phase is brushing up against a class of mistake that has bit us, name it
-   with the specific example. "Do NOT match `shutdown` as a bare substring —
-   bug-05-1 fired when `cargo test shutdown` was blocked by the bash
-   classifier. The fix is a command-position regex." The bug-doc artifact is
-   itself a form of pre-injection — the architect saying "here's exactly
-   what to fix, here's exactly how" — but a *forward-looking* gotcha in a
-   fresh phase doc prevents the bug from happening in the first place.
+What you no longer pre-inject: worked examples quoted from the repo with
+line numbers (name the analogue symbol in one clause instead), codebase
+idioms shown as quoted code (name the convention), and tool-call exemplars
+unless the target model has produced parse failures on this project.
 
-4. **Few-shot tool-call exemplars.** The forgiving parser handles six
-   formats, but the executor is more confident (and faster) when it sees one
-   or two examples of the exact format that works. If the target model
-   produces Hermes-style tool-call tags with JSON, paste an example. If it
-   produces fenced JSON, paste that. The example doubles as a contract:
-   "this is what the runtime will accept; produce something this shape."
+### Anti-patterns
 
-5. **Fetched reference / API docs.** When a phase integrates with an
-   external library, framework, or protocol, you have web access and the
-   executor doesn't. **Fetch the relevant docs, identify the sections that
-   matter for *this specific phase*, and paste the excerpts into the phase
-   doc** (typically under a "Reference excerpts" subsection or inline in the
-   Spec). Use `WebFetch` and `WebSearch` for this — it's what makes this
-   injection type possible. A 30-line excerpt beats a 30-page documentation
-   site the executor can't reach.
+- **Linking instead of quoting** an external doc. The executor can't fetch
+  URLs.
+- **Quoting the repo.** A line-numbered quote is stale the moment an earlier
+  phase edits the file, and the executor will read the real file anyway.
+- **Dictating test code.** You cannot compile it; the executor can.
+- **Pinning a count.** It must be derived against the post-phase tree and is
+  wrong whenever prose or a test name also matches the grep.
+- **Citing phase numbers.** M-numbers are this-repo-specific; name the symbol.
 
-### Pre-injection anti-patterns
+### Volume
 
-These all share the same failure mode: they look like pre-injection but they
-outsource the work back to the executor.
-
-- **Linking instead of quoting.** "See https://example.com/docs for the API."
-  The executor can't fetch URLs. The link is a distraction.
-- **"Follow the existing pattern" without showing it.** This is the most
-  common failure mode. It assumes the executor will (a) find the pattern,
-  (b) recognize it as the pattern, (c) extract the right level of
-  abstraction. Three independent failure points where there should be zero.
-- **Pinning a behavior whose exact wire format only you can produce.** If
-  the phase needs a JSON schema, an OpenAPI snippet, or a tool-call envelope,
-  write the actual snippet into the phase doc. Don't say "use the standard
-  tool-call envelope" — there are several standards.
-- **Citing rexyMCP-internal phase numbers in pre-injection material.**
-  M-numbers and phase IDs are this-repo-specific. When pre-injecting a
-  pattern from elsewhere in the codebase, cite by file/symbol/line, not by
-  "M4 phase-07a." If you find yourself wanting to cite a phase doc, you
-  probably want to quote the relevant *code* the phase produced.
-
-### Volume vs quality
-
-Pre-injection is not bulk. A focused 5-line worked example outperforms a
-50-line wall of context the executor's context budget can't afford. The local
-LLM's window is often 32k–128k; every token you spend on the spec is a token
-the executor can't spend reasoning. **Inject what's load-bearing for this
-phase. Skip everything else.**
-
-The wrong heuristic is "more pre-injection is better." The right one is "if
-removing this paragraph would make the executor guess, keep it; if removing
-it changes nothing, cut it."
+A focused phase doc is under a hundred lines. If removing a paragraph would
+make the executor *guess*, keep it; if removing it means the executor
+*reads a file*, cut it.
 
 ## 5. Status management
 
@@ -485,7 +442,8 @@ that makes the split work.
    yourself "because it's important," the telemetry gap is invisible — you
    produce a successful artifact and nobody notices the data point you
    skipped. **If a phase looks too important to dispatch, the right response
-   is to invest more in the spec (pre-injection), not to bypass dispatch.**
+   is to state the behaviour and constraints more precisely, not to bypass
+   dispatch.**
 
 2. **You do not auto-advance.** After approving a phase, *stop*. Do not
    draft the next one in the same turn. The gate exists so the human can
