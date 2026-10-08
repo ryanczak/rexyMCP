@@ -4,15 +4,18 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: M49 phase-01 —
-[docs/dev/milestones/M49-light-shape-trial/phase-01-m48-test-followups.md](milestones/M49-light-shape-trial/phase-01-m48-test-followups.md)
-(status `todo`, drafted 2026-10-08 in the light shape, awaiting `/rexymcp:dispatch`).**
+**Active phase: none.**
 
-**M49 — Light-shape phase trial opened 2026-10-08.** One phase: the two
-test follow-ups held at M48 close, specified as behaviour and test names
-only. The experiment is whether a large-tier executor completes it without
-the line-quoted state, dictated test code and pinned counts that cost M48
-~356k architect output tokens. Compare at close.
+**M49 — Light-shape phase trial closed 2026-10-08**, one phase,
+`approved_first_try`, 136 turns, no spec defects, from a ~75-line phase doc
+(M48 averaged ~480). The executor verified the spec's premise and ran the
+regression check itself. Retrospective in
+[M49/README.md](milestones/M49-light-shape-trial/README.md).
+
+**Open for the human:** adopt the light shape as the default (architect
+skill pre-injection section + WORKFLOW.md phase-doc template), or run it on
+a feature phase first. Earlier open items (issue #13, DaemonEye's zero
+threshold) stand.
 
 
 **M48 — Lossless Boundary, Loud Backstop, Exact Repetition closed

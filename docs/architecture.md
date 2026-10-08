@@ -1233,7 +1233,7 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-49. **M49 — Light-shape phase trial** *(planning; opened 2026-10-08)*. The
+49. **M49 — Light-shape phase trial** *(done 2026-10-08; one phase, `approved_first_try`, no spec defects, ~75-line phase doc vs M48's ~480)*. The
     two test follow-ups M48 held, specified as behaviour and test names
     only. Control experiment on architect front-loading: M48 spent ~356k
     architect output tokens drafting and reviewing three phases against
