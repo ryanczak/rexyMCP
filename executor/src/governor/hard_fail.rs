@@ -348,7 +348,8 @@ pub fn check_oscillation(
 /// *exactly* repeated calls) and `check_oscillation` (needs a *small distinct*
 /// set) both miss when the calls vary. The trailing run resets on any mutating
 /// call, so ordinary read-heavy exploration *between* edits never trips it.
-/// `threshold == 0` disables.
+/// `threshold == 0` disables (reachable only by constructing `GovernorConfig`
+/// directly — the config is refused at load).
 pub fn check_read_only_stall(
     recent: &VecDeque<ToolCallSnapshot>,
     threshold: usize,

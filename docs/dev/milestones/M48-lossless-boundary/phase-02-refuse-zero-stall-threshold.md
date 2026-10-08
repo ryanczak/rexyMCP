@@ -1,7 +1,7 @@
 # Phase 02: Refuse a zero stall threshold at config load
 
 **Milestone:** M48 — Lossless Boundary, Loud Backstop, Exact Repetition
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~90 lines (one private validation fn + its call in `Config::load`; two doc comments; two template comments; two tests)
 **Tags:** language=rust, kind=bugfix, size=s
@@ -279,3 +279,44 @@ None. No dependencies, no `Cargo.toml`; the config *schema* is unchanged
 - **`docs/architecture.md`, `README.md`, plugin skills** — architect-owned;
   the README's two `0 disables` comments for this key are updated at
   milestone close.
+
+## Update Log
+
+(Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
+
+<!-- entries appended below this line -->
+
+### Update — 2026-10-08 09:18 (progress)
+
+Started phase-02 (executor: Claude Opus 4.6). Flipped the phase doc Status
+and the milestone README's phase-02 row to `in-progress`. Implementing the
+spec in order: the `reject_zero_stall_threshold` validator and its call in
+`Config::load` (Spec §1), the two doc comments (Spec §2), the init-template
+comment (Spec §3), the two load tests (Spec §4), then the E2E block
+verbatim (Spec §5).
+
+### Update — 2026-10-08 09:47 (end-to-end verification)
+
+All acceptance criteria met. The real artifact is the `rexymcp` binary:
+`doctor --config` on the zero-threshold TOML exits 1 with the
+`Error: config: [governor] read_only_stall_threshold …` text naming the
+key (zero_exit=1), while the same TOML with `= 60` loads and the doctor
+report runs (sixty_exit=0) — the positive control that the refusal is
+specific to the zero and not a broken load path. Both new tests pass
+with exit=0. Count criteria: the two `reject_zero_stall_threshold` greps
+each print 1, `#[test]` count is 65, the template's `0 disables` comment
+for this key is gone (0), and the two `is refused at load` doc comments
+sum to 2. `target/e2e/m48-phase-02.txt`, pasted byte-for-byte:
+
+```
+Error: config: [governor] read_only_stall_threshold = 0 disables the read-only backstop; set a positive value (default 60) or remove the key
+zero_exit=1
+
+sixty_exit=0
+test config::tests::load_refuses_zero_read_only_stall_threshold ... ok
+test config::tests::load_refuses_zero_read_only_stall_threshold_in_model_override ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1050 filtered out; finished in 0.00s
+exit=0
+```
+
+PASTE MATCH

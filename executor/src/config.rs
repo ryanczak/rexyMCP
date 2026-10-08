@@ -161,7 +161,8 @@ pub struct GovernorConfig {
     /// Consecutive read-only tool calls (no `patch`/`write_file` among them)
     /// before `NoProgressStall` hard-fail — a high pure-runaway backstop below
     /// `max_turns`. The novelty detector (below) is the early catch; this only
-    /// bounds volume. The run resets on any file edit. `0` disables. Default 60.
+    /// bounds volume. The run resets on any file edit. `0` is refused at load.
+    /// Default 60.
     pub read_only_stall_threshold: usize,
     /// Sliding window of trailing read-only calls examined for target novelty.
     /// Over the last `novelty_window` read-only calls, if the count of distinct
@@ -490,6 +491,7 @@ impl Config {
             let loaded: Config =
                 toml::from_str(&content).map_err(|e| Error::Config(e.to_string()))?;
             config = loaded;
+            Self::reject_zero_stall_threshold(&config)?;
         }
 
         if !config.telemetry.enabled {
@@ -503,6 +505,27 @@ impl Config {
         Ok(config)
     }
 
+    /// `read_only_stall_threshold = 0` switches off the only terminator for
+    /// non-mutating loops; it is refused rather than honoured so a stray zero
+    /// cannot silently leave a run to `max_turns`.
+    fn reject_zero_stall_threshold(config: &Config) -> Result<()> {
+        if config.governor.read_only_stall_threshold == 0 {
+            return Err(Error::Config(
+                "[governor] read_only_stall_threshold = 0 disables the read-only \
+                 backstop; set a positive value (default 60) or remove the key"
+                    .to_string(),
+            ));
+        }
+        for (model, over) in &config.models {
+            if over.read_only_stall_threshold == Some(0) {
+                return Err(Error::Config(format!(
+                    "[models.\"{model}\"] read_only_stall_threshold = 0 disables the \
+                     read-only backstop; set a positive value (default 60) or remove the key"
+                )));
+            }
+        }
+        Ok(())
+    }
     pub fn apply_overrides(&mut self, get: impl Fn(&str) -> Option<String>) {
         if let Some(v) = get("REXYMCP_PROVIDER") {
             self.executor.provider = v;
@@ -1077,6 +1100,95 @@ output_filter = false
             !cfg.context.output_filter,
             "output_filter should be false when explicitly set"
         );
+    }
+
+    #[test]
+    fn load_refuses_zero_read_only_stall_threshold() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+
+[governor]
+read_only_stall_threshold = 0
+"#,
+        )
+        .unwrap();
+        let err = Config::load(&path).unwrap_err();
+        match &err {
+            Error::Config(msg) => assert!(
+                msg.contains("[governor] read_only_stall_threshold"),
+                "expected the message to name the key, got: {msg}"
+            ),
+            other => panic!("expected Error::Config, got {other:?}"),
+        }
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+
+[governor]
+read_only_stall_threshold = 30
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.governor.read_only_stall_threshold, 30);
+    }
+
+    #[test]
+    fn load_refuses_zero_read_only_stall_threshold_in_model_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"[executor]
+provider = "openai"
+model = "m"
+base_url = "http://localhost:1234/v1"
+
+[commands]
+
+[budget]
+context_length = 32768
+max_context_pct = 70
+max_turns = 40
+
+[models."other"]
+read_only_stall_threshold = 0
+"#,
+        )
+        .unwrap();
+        let err = Config::load(&path).unwrap_err();
+        match &err {
+            Error::Config(msg) => {
+                assert!(
+                    msg.contains("other") && msg.contains("read_only_stall_threshold"),
+                    "expected the message to name the model id and the key, got: {msg}"
+                );
+            }
+            other => panic!("expected Error::Config, got {other:?}"),
+        }
     }
 
     #[test]
