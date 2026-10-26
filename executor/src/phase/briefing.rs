@@ -244,6 +244,7 @@ mod tests {
             tool: tool.to_string(),
             arguments: args,
             succeeded,
+            changed_tree: false,
         }
     }
 

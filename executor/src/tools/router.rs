@@ -22,10 +22,14 @@ pub fn categorize(tool_name: &str) -> Option<Category> {
     })
 }
 
-/// Does this built-in tool mutate files on disk? The single source of truth for
-/// "the model made file progress" — the no-progress stall governor and the
-/// escalation briefing both ask this instead of each keeping a private list that
-/// can (and did) drift from the `Category::Write` set above.
+/// Does this built-in tool mutate files on disk by itself? `bash` is `false`
+/// here — its file effects are invisible to the tool name — so "the model made
+/// file progress" is `ToolCallSnapshot::made_file_progress`, which ORs this
+/// with the call's tree-fingerprint result (see `agent::tree_fingerprint`).
+/// Kept as the per-tool classifier the escalation briefing and the calibration
+/// replay (tool-name-only) ask; the governor detectors go through the snapshot
+/// method instead of calling this directly, so the two definitions cannot
+/// drift.
 pub fn mutates_files(tool_name: &str) -> bool {
     categorize(tool_name) == Some(Category::Write)
 }

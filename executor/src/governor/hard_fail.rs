@@ -12,6 +12,24 @@ pub struct ToolCallSnapshot {
     pub tool: String,
     pub arguments: serde_json::Value,
     pub succeeded: bool,
+    /// True when the call ran in the project root and the walk fingerprint
+    /// taken around it observed a file added, removed or changed. Set by the
+    /// loop for dispatched `bash` calls only (see `agent::tree_fingerprint`);
+    /// `#[serde(default)]` so snapshots logged before this field existed still
+    /// deserialize. Always `false` on a log replay.
+    #[serde(default)]
+    pub changed_tree: bool,
+}
+
+impl ToolCallSnapshot {
+    /// The one definition of "the model made file progress": the tool itself
+    /// mutates files (`patch`/`write_file`/…, per `tools::mutates_files`) **or**
+    /// the call changed the working tree (a dispatched `bash` call whose
+    /// before/after fingerprints differ). The no-progress stall detector and
+    /// the oscillation read-only exemption both ask this.
+    pub fn made_file_progress(&self) -> bool {
+        crate::tools::mutates_files(&self.tool) || self.changed_tree
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -284,11 +302,14 @@ pub fn check_repeated_gate_feedback(
     }
 }
 
-/// True when the last `window` calls contain at least one file-mutating call.
+/// True when the last `window` calls contain at least one call that made file
+/// progress (`ToolCallSnapshot::made_file_progress` — a file-mutating tool, or
+/// a call that changed the working tree, which for a `bash` call is the only
+/// way its edit shows up).
 ///
 /// The oscillation detectors fire on *thrash* — a model churning edits without
-/// converging. A window with no mutating call is not thrash: it is diagnosis
-/// (repeated `sed -n`/`cat`/`grep` while reading toward a fix), which
+/// converging. A window with no file-progress call is not thrash: it is
+/// diagnosis (repeated `sed -n`/`cat`/`grep` while reading toward a fix), which
 /// `check_read_only_stall` already terminates at its own, far looser threshold.
 /// Firing the tight detectors on it kills runs mid-diagnosis.
 ///
@@ -298,7 +319,7 @@ fn window_has_mutation(recent: &VecDeque<ToolCallSnapshot>, window: usize) -> bo
         .iter()
         .rev()
         .take(window)
-        .any(|c| crate::tools::mutates_files(&c.tool))
+        .any(|c| c.made_file_progress())
 }
 
 /// Oscillation stall: the last `window` tool calls collapse to only a small set
@@ -339,15 +360,17 @@ pub fn check_oscillation(
 }
 
 /// No-progress read-only stall: the executor has made `threshold` consecutive
-/// tool calls without a single file-mutating call (any `Category::Write` tool —
-/// `patch`/`write_file`/`patch_lines`/`delete_file`/`move_file`) among
-/// them — the signature of a verify-loop (repeated `grep`/test/`git status`
-/// calls that make no code progress) that `check_identical_repetition` (needs
-/// *exactly* repeated calls) and `check_oscillation` (needs a *small distinct*
-/// set) both miss when the calls vary. The trailing run resets on any mutating
-/// call, so ordinary read-heavy exploration *between* edits never trips it.
-/// `threshold == 0` disables (reachable only by constructing `GovernorConfig`
-/// directly — the config is refused at load).
+/// tool calls without a single one making file progress
+/// (`ToolCallSnapshot::made_file_progress` — a `Category::Write` tool, or a
+/// call whose before/after tree fingerprints differ, which is how a `bash`
+/// call's edit shows up) among them — the signature of a verify-loop (repeated
+/// `grep`/test/`git status` calls that make no code progress) that
+/// `check_identical_repetition` (needs *exactly* repeated calls) and
+/// `check_oscillation` (needs a *small distinct* set) both miss when the calls
+/// vary. The trailing run resets on any file-progress call, so ordinary
+/// read-heavy exploration *between* edits never trips it. `threshold == 0`
+/// disables (reachable only by constructing `GovernorConfig` directly — the
+/// config is refused at load).
 pub fn check_read_only_stall(
     recent: &VecDeque<ToolCallSnapshot>,
     threshold: usize,
@@ -357,7 +380,7 @@ pub fn check_read_only_stall(
     }
     let mut run = 0usize;
     for call in recent.iter().rev() {
-        if crate::tools::mutates_files(&call.tool) {
+        if call.made_file_progress() {
             break;
         }
         run += 1;
@@ -416,8 +439,9 @@ pub struct NoveltyMeasurement {
 
 /// Measure target-novelty over the trailing read-only run. Returns `None` when
 /// novelty is disabled (`window == 0`) or the run is shorter than `window`
-/// (measurement not yet meaningful). The trailing run resets on any
-/// file-mutating call, exactly as the stall detector does.
+/// (measurement not yet meaningful). The trailing run resets on any call that
+/// made file progress (`ToolCallSnapshot::made_file_progress`), exactly as the
+/// stall detector does.
 pub fn measure_novelty(
     recent: &VecDeque<ToolCallSnapshot>,
     window: usize,
@@ -427,7 +451,7 @@ pub fn measure_novelty(
     }
     let mut run: Vec<&ToolCallSnapshot> = Vec::new();
     for call in recent.iter().rev() {
-        if crate::tools::mutates_files(&call.tool) {
+        if call.made_file_progress() {
             break;
         }
         run.push(call);
@@ -551,6 +575,7 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "x.rs", "old": "a", "new": "b"}),
             succeeded: true,
+            changed_tree: false,
         };
         for _ in 0..6 {
             recent.push_back(snap.clone());
@@ -596,11 +621,13 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a"}),
             succeeded: true,
+            changed_tree: false,
         });
         recent.push_back(ToolCallSnapshot {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "b"}),
             succeeded: true,
+            changed_tree: false,
         });
         assert!(
             evaluate(
@@ -621,6 +648,7 @@ mod tests {
                 tool: "patch".to_string(),
                 arguments: serde_json::json!({"path": format!("file_{i}.rs")}),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         assert!(evaluate(&recent, &[], None, &GovernorConfig::default()).is_none());
@@ -633,6 +661,7 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "x.rs"}),
             succeeded: true,
+            changed_tree: false,
         };
         for _ in 0..2 {
             recent.push_back(snap.clone());
@@ -676,6 +705,7 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "x.rs"}),
             succeeded: false,
+            changed_tree: false,
         };
         for _ in 0..6 {
             recent.push_back(snap.clone());
@@ -865,11 +895,13 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let b = ToolCallSnapshot {
             tool: "write_file".to_string(),
             arguments: serde_json::json!({"path": "b.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         // A, B, A, B — 4 calls, 2 distinct
         for _ in 0..2 {
@@ -893,11 +925,13 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let b = ToolCallSnapshot {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "b.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         recent.push_back(a.clone());
         recent.push_back(b.clone());
@@ -913,6 +947,7 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "x.rs"}),
             succeeded: true,
+            changed_tree: false,
         };
         for _ in 0..4 {
             recent.push_back(snap.clone());
@@ -929,6 +964,7 @@ mod tests {
                 tool: "read_file".to_string(),
                 arguments: serde_json::json!({"path": format!("file_{i}.txt")}),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         assert!(check_oscillation(&recent, 4, 2).is_none());
@@ -941,11 +977,13 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let b = ToolCallSnapshot {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "b.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         for _ in 0..4 {
             recent.push_back(a.clone());
@@ -1034,6 +1072,7 @@ mod tests {
             tool: tool.to_string(),
             arguments: serde_json::json!({"q": format!("query_{i}")}),
             succeeded: true,
+            changed_tree: false,
         }
     }
 
@@ -1064,6 +1103,7 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "x.rs"}),
             succeeded: true,
+            changed_tree: false,
         });
         for i in 30..35 {
             recent.push_back(read_only_call(i));
@@ -1097,6 +1137,7 @@ mod tests {
             tool: "write_file".to_string(),
             arguments: serde_json::json!({"path": "x.rs"}),
             succeeded: true,
+            changed_tree: false,
         });
         for i in 0..10 {
             recent.push_back(read_only_call(i));
@@ -1120,6 +1161,7 @@ mod tests {
                 tool: tool.to_string(),
                 arguments: serde_json::json!({"path": "x.rs"}),
                 succeeded: true,
+                changed_tree: false,
             });
             for i in 30..35 {
                 recent.push_back(read_only_call(i));
@@ -1150,6 +1192,7 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": path, "start_line": start, "end_line": start + 20}),
             succeeded: true,
+            changed_tree: false,
         }
     }
 
@@ -1161,6 +1204,7 @@ mod tests {
                 None => serde_json::json!({"pattern": pattern}),
             },
             succeeded: true,
+            changed_tree: false,
         }
     }
 
@@ -1255,6 +1299,7 @@ mod tests {
                 tool: "bash".to_string(),
                 arguments: serde_json::json!({"command": format!("sed -n '{},{}p' session.rs", i, i + 5)}),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         let signal = check_low_novelty_stall(&recent, 24, 6).unwrap();
@@ -1279,6 +1324,7 @@ mod tests {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "session.rs"}),
             succeeded: true,
+            changed_tree: false,
         });
         for i in 0..5 {
             recent.push_back(read("session.rs", i));
@@ -1375,11 +1421,13 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let b = ToolCallSnapshot {
             tool: "bash".to_string(),
             arguments: serde_json::json!({"command": "cat b.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         // A, B, A, B — 4 calls, 2 distinct, all read-only
         for _ in 0..2 {
@@ -1399,6 +1447,7 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let threshold = 6;
         for _ in 0..threshold {
@@ -1422,11 +1471,13 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let b = ToolCallSnapshot {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "b.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         // A, B, A, B — 4 calls, 2 distinct, one is a write
         for _ in 0..2 {
@@ -1451,6 +1502,7 @@ mod tests {
             tool: "write_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let threshold = 6;
         for _ in 0..threshold {
@@ -1476,6 +1528,7 @@ mod tests {
                 {"command": "cargo test --lib -- a b 2>&1 | grep -E '^test |^test result'"}
             ),
             succeeded: true,
+            changed_tree: false,
         };
         let threshold = 6;
         for _ in 0..threshold {
@@ -1499,6 +1552,7 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         for _ in 0..5 {
             recent.push_back(call.clone());
@@ -1516,11 +1570,13 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let write = ToolCallSnapshot {
             tool: "patch".to_string(),
             arguments: serde_json::json!({"path": "b.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         // Oldest in window is the write; all newer are reads — A,B,A,B pattern
         // with write at position 0 (oldest)
@@ -1547,11 +1603,13 @@ mod tests {
             tool: "write_file".to_string(),
             arguments: serde_json::json!({"path": "old.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let read = ToolCallSnapshot {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         recent.push_back(write); // outside the threshold window
         let threshold = 6;
@@ -1579,6 +1637,7 @@ mod tests {
             tool: "read_file".to_string(),
             arguments: serde_json::json!({"path": "a.txt"}),
             succeeded: true,
+            changed_tree: false,
         };
         let cfg = GovernorConfig::default();
         for _ in 0..cfg.read_only_stall_threshold {
@@ -1659,6 +1718,7 @@ mod tests {
                     "new_str": "fn bar() {}",
                 }),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
@@ -1695,6 +1755,7 @@ mod tests {
                     "content": content,
                 }),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         assert!(
@@ -1721,6 +1782,7 @@ mod tests {
                     "path": path,
                 }),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         let signal = evaluate(&recent, &[], None, &GovernorConfig::default())
@@ -1732,5 +1794,122 @@ mod tests {
                 consecutive_count: 6
             } if tool == "read_file"
         ));
+    }
+
+    // --- M50 phase-01: bash tree-change counts as progress ---
+
+    fn bash_call(changed_tree: bool) -> ToolCallSnapshot {
+        ToolCallSnapshot {
+            tool: "bash".to_string(),
+            arguments: serde_json::json!({"command": "echo hi"}),
+            succeeded: true,
+            changed_tree,
+        }
+    }
+
+    #[test]
+    fn read_only_stall_resets_on_tree_changing_bash() {
+        let mut recent = VecDeque::new();
+        // Ten read-only calls, a tree-changing bash, then ten more: the run
+        // counts only the calls after the bash.
+        for i in 0..10 {
+            recent.push_back(read_only_call(i));
+        }
+        recent.push_back(bash_call(true));
+        for i in 10..20 {
+            recent.push_back(read_only_call(i));
+        }
+        let signal = check_read_only_stall(&recent, 10).unwrap();
+        assert!(
+            matches!(
+                signal,
+                HardFailSignal::NoProgressStall {
+                    consecutive_read_only: 10
+                }
+            ),
+            "expected a run of 10 (only the calls after the bash), got {signal:?}"
+        );
+        assert!(check_read_only_stall(&recent, 11).is_none());
+    }
+
+    #[test]
+    fn read_only_stall_counts_bash_without_tree_change() {
+        let mut recent = VecDeque::new();
+        for i in 0..10 {
+            recent.push_back(read_only_call(i));
+        }
+        recent.push_back(bash_call(false));
+        for i in 10..20 {
+            recent.push_back(read_only_call(i));
+        }
+        let signal = check_read_only_stall(&recent, 21).unwrap();
+        assert!(
+            matches!(
+                signal,
+                HardFailSignal::NoProgressStall {
+                    consecutive_read_only: 21
+                }
+            ),
+            "a bash call that changed nothing stays in the run: expected 21, got {signal:?}"
+        );
+    }
+
+    #[test]
+    fn oscillation_applies_to_tree_changing_bash_window() {
+        // A,B,A,B window of bash calls (A and B differ by command) — exempt
+        // while nothing changed the tree, firing once one call did.
+        let mut recent = VecDeque::new();
+        for command in ["echo a", "echo b", "echo a", "echo b"] {
+            recent.push_back(ToolCallSnapshot {
+                tool: "bash".to_string(),
+                arguments: serde_json::json!({"command": command}),
+                succeeded: true,
+                changed_tree: false,
+            });
+        }
+        assert!(
+            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
+            "a bash A,B,A,B window with no tree change stays exempt"
+        );
+
+        let mut recent = VecDeque::new();
+        for (i, command) in ["echo a", "echo b", "echo a", "echo b"]
+            .into_iter()
+            .enumerate()
+        {
+            recent.push_back(ToolCallSnapshot {
+                tool: "bash".to_string(),
+                arguments: serde_json::json!({"command": command}),
+                succeeded: true,
+                changed_tree: i == 1,
+            });
+        }
+        let signal = check_oscillation(&recent, 4, 2)
+            .expect("one tree-changing call in the window un-exempts the oscillation detectors");
+        assert!(matches!(signal, HardFailSignal::Oscillation { .. }));
+    }
+
+    #[test]
+    fn tool_call_snapshot_deserializes_without_changed_tree() {
+        let json = r#"{"tool":"bash","arguments":{"command":"ls"},"succeeded":true}"#;
+        let snap: ToolCallSnapshot = serde_json::from_str(json).unwrap();
+        assert!(
+            !snap.changed_tree,
+            "a snapshot serialized before the field existed deserializes with false"
+        );
+        assert!(!snap.made_file_progress());
+    }
+
+    #[test]
+    fn made_file_progress_is_mutating_tool_or_tree_change() {
+        assert!(bash_call(true).made_file_progress());
+        assert!(!bash_call(false).made_file_progress());
+        let patch_call = ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "x.rs"}),
+            succeeded: true,
+            changed_tree: false,
+        };
+        assert!(patch_call.made_file_progress());
     }
 }

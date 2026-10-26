@@ -5489,3 +5489,88 @@ async fn gen_time_recorded_with_advancing_clock() {
         runs[0].wall_clock_s,
     );
 }
+
+// ── M50 phase-01: a tree-changing bash call resets the read-only stall run ──
+
+/// Script four distinct read-only bash calls, a middle bash call running
+/// `middle`, four more distinct read-only bash calls, then a final message.
+/// The raw stall threshold (6) sits between the run after the middle call (4)
+/// and the whole run (9), so only the middle call's tree change decides the
+/// outcome. Identical repetition (distinct commands), oscillation and novelty
+/// are neutralised so the stall is the only detector in play.
+async fn run_bash_stall_script(dir: &TempDir, middle: &str) -> PhaseResult {
+    let read = |i: usize| native("bash", json!({ "command": format!("echo read-{i}") }));
+    let mut turns: Vec<Vec<AiEvent>> = (0..4).map(|i| vec![read(i)]).collect();
+    turns.push(vec![native("bash", json!({ "command": middle }))]);
+    turns.extend((4..8).map(|i| vec![read(i)]));
+    turns.push(vec![token("done")]);
+    let client = MockAiClientScript::new(turns);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let scope = Scope::new(dir.path()).unwrap();
+    let mut registry = registry_over(scope.clone());
+    registry.register(bash_with_filter(scope, 30, true));
+    let d = LoopDeps {
+        client: &client,
+        registry: &registry,
+        tools: &[],
+        budget: &Budget::new(1_000_000),
+        max_turns: 20,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig {
+            read_only_stall_threshold: 6,
+            novelty_distinct_floor: 0,
+            oscillation_window: 0,
+            ..GovernorConfig::default()
+        },
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    execute_phase(&input(), d).await.unwrap()
+}
+
+#[tokio::test]
+async fn bash_edit_resets_read_only_stall() {
+    let dir = TempDir::new().unwrap();
+
+    let result = run_bash_stall_script(&dir, "printf 'x\\n' > made.txt").await;
+
+    assert!(
+        dir.path().join("made.txt").exists(),
+        "the middle bash call must really write into the project root"
+    );
+    assert!(
+        !matches!(
+            result.briefing.as_ref().map(|b| &b.current_blocker),
+            Some(Blocker::HardFail(HardFailSignal::NoProgressStall { .. }))
+        ),
+        "a bash call that changed the tree resets the read-only run, got {:?}",
+        result.briefing.map(|b| b.current_blocker)
+    );
+    assert_eq!(result.status, PhaseStatus::Complete);
+}
+
+#[tokio::test]
+async fn read_only_bash_still_trips_stall() {
+    let dir = TempDir::new().unwrap();
+
+    let result = run_bash_stall_script(&dir, "echo quiet").await;
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    assert!(matches!(
+        result.briefing.unwrap().current_blocker,
+        Blocker::HardFail(HardFailSignal::NoProgressStall { .. })
+    ));
+}

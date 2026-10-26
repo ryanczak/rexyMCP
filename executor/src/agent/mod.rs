@@ -18,6 +18,7 @@ mod metrics;
 mod outcome;
 pub mod tasks;
 mod tools;
+pub mod tree_fingerprint;
 
 pub use cancel::{CancelHandle, CancelSignal};
 
@@ -1053,13 +1054,14 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         let dedupe =
             redundant_read_reference(&tool_call, &messages, &working_set, deps.project_root);
 
-        let (succeeded, content, tool_meta) = if let Some((reference, _, _)) = &dedupe {
-            (true, reference.clone(), None)
+        let (succeeded, content, tool_meta, changed_tree) = if let Some((reference, _, _)) = &dedupe
+        {
+            (true, reference.clone(), None, false)
         } else {
             match destructive_restore_refusal(&tool_call, &pre_edit_content, deps.project_root)
                 .or_else(|| read_before_edit_refusal(&tool_call, &working_set, deps.project_root))
             {
-                Some(refusal) => (false, refusal, None),
+                Some(refusal) => (false, refusal, None, false),
                 None => {
                     if let Some(path) = &edit_path
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
@@ -1080,6 +1082,13 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         pre_edit_content.insert(path.clone(), std::fs::read_to_string(path).ok());
                     }
                     // Step 5 — dispatch (native and text share this path).
+                    // A `bash` call is fingerprinted before and after: if the
+                    // working tree changed, the snapshot counts as file
+                    // progress (`made_file_progress`), so a bash-side edit
+                    // resets the no-progress stall run and un-exempts the
+                    // oscillation window like an edit tool does.
+                    let tree_before = (tool_call.name == "bash")
+                        .then(|| tree_fingerprint::fingerprint(deps.project_root));
                     {
                         let emit = EmitCtx {
                             progress: deps.progress,
@@ -1092,7 +1101,13 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         };
                         emit_progress(&emit, format!("tool:{}", tool_call.name));
                     }
-                    dispatch(deps.registry, &tool_call).await
+                    let (succeeded, content, tool_meta) = dispatch(deps.registry, &tool_call).await;
+                    let changed_tree = tree_before.is_some_and(|before| {
+                        !before
+                            .changed_paths(&tree_fingerprint::fingerprint(deps.project_root))
+                            .is_empty()
+                    });
+                    (succeeded, content, tool_meta, changed_tree)
                 }
             }
         };
@@ -1117,6 +1132,7 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
             tool: tool_call.name.clone(),
             arguments: tool_call.arguments.clone(),
             succeeded,
+            changed_tree,
         });
         recent_output_bytes.push_back(content.len());
         append_tool_exchange(&mut messages, &tool_call, &content, turns);

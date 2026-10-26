@@ -498,6 +498,7 @@ fn replay(records: &[SessionRecord]) -> RunReplay {
                     tool: tool_call.name.clone(),
                     arguments: tool_call.arguments.clone(),
                     succeeded: true, // the 06a stall signals key on tool+args, not success
+                    changed_tree: false, // the log does not record it; replay is tool-name-only
                 })
             }
             SessionEvent::Verify { diagnostics } => {
@@ -647,6 +648,7 @@ mod tests {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": format!("file{}.rs", i)}),
                 succeeded: true,
+                changed_tree: false,
             });
         }
         let run = RunReplay {
@@ -673,21 +675,25 @@ mod tests {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "b.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "patch".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "c.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
         ];
         let run = RunReplay {
@@ -952,11 +958,13 @@ mod tests {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "b.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
         ];
         let run = RunReplay {
@@ -1002,26 +1010,31 @@ mod tests {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "b.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "b.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "b.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
         ];
         let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new(), Vec::new());
@@ -1048,11 +1061,13 @@ mod tests {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
             ToolCallSnapshot {
                 tool: "patch".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             },
         ];
         let run = make_replay_with_verify_and_completion(calls, Vec::new(), Vec::new(), Vec::new());
@@ -1081,6 +1096,7 @@ mod tests {
                     tool,
                     arguments: args,
                     succeeded: true,
+                    changed_tree: false,
                 }
             })
             .collect();
@@ -1131,6 +1147,7 @@ mod tests {
                 tool: "read_file".into(),
                 arguments: serde_json::json!({"path": "a.rs"}),
                 succeeded: true,
+                changed_tree: false,
             }],
             Vec::new(),
             Vec::new(),
