@@ -1,7 +1,7 @@
 # Phase 02: Bash edits in the reported diff
 
 **Milestone:** M50 — Tree-based progress
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-01
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -169,3 +169,104 @@ test agent::tests::read_only_bash_adds_nothing_to_diff ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1079 filtered out; finished in 0.03s
 read_only_bash_adds_nothing_to_diff exit=0
 ```
+
+### Update — 2026-10-26 23:15 (complete, server-authored)
+
+**Summary:** **Summary:** Implemented M50 phase-02. Added `executor/src/agent/head_content.rs` — a never-erroring `git show HEAD:./<rel>` lookup (run with cwd = project root so a subdirectory root resolves correctly; `None` on non-repo, no-commit, untracked, or non-UTF-8), with 6 tests including the pinned subdirectory-root case. In the loop (`agent/mod.rs`), the `bash` call's before/after tree fingerprint now yields the changed path list (not just the bool), and each path not already in `pre_edit_content` joins the diff working set with its HEAD content as the "before" side — a file first touched by an edit tool keeps its pre-edit snapshot, so tool+bash edits stay one entry. All four named loop tests plus the read-only negative pass over a real `bash` tool and a real git repo in a `TempDir` (host config neutralized with `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_NOSYSTEM` and inline identity per the Test plan).
+
+**Notes for review:** (1) Preservation held — 1078 executor tests pass (1074 pre-phase + 4 new loop tests; the 6 `head_content` unit tests are among the new total), and the whole-workspace run is 708 + 2 + 1078 passed / 0 failed / 2 ignored. (2) Gates all green as separate invocations: `cargo fmt --all --check` exit 0, `cargo build` zero warnings, `cargo clippy --all-targets --all-features -- -D warnings` exit 0, `cargo test` exit 0. (3) The E2E block ran verbatim after the final code state; artifact pasted byte-for-byte into the `### Update — 2026-10-26 16:15 (end-to-end verification)` entry — every named test `ok`, every `exit=0`, non-zero passed counts. (4) Spec-literal grep confirmed `HEAD:./` landed at `head_content.rs:20`. (5) Deviation: none material — the join loop drops the redundant `tool_call.name == "bash"` guard (the changed-paths list is empty for every non-bash tool), which is a comment-noted simplification within the authorized file. (6) Status left at `in-progress` in the phase doc and README row; no `(complete)` entry written, per the contract. Committed as `3ac6cab` (code + status flips) and `f503a8a` (E2E entry); `git status --short` is clean.
+
+**Executor:** nvidia/GLM-5.3-Flash-FP4-Local
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+s::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test agent::tests::bash_edit_resets_read_only_stall ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1078 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.11s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M50-tree-based-progress/README.md` — +1 -1
+- `docs/dev/milestones/M50-tree-based-progress/phase-02-bash-edits-in-diff.md` — +41 -1
+- `executor/src/agent/head_content.rs` — +233 -0
+- `executor/src/agent/mod.rs` — +26 -6
+- `executor/src/agent/tests.rs` — +234 -0
+
+**Commit:** f503a8aaff34b26f85b97ce834da262a95a1c010
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
