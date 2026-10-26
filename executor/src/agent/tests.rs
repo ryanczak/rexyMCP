@@ -5574,3 +5574,237 @@ async fn read_only_bash_still_trips_stall() {
         Blocker::HardFail(HardFailSignal::NoProgressStall { .. })
     ));
 }
+
+// ── M50 phase-02: bash-changed files join the phase diff working set ──
+
+/// A git repo in `dir` with `committed` files committed at HEAD. Every `git`
+/// call sets `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1` so the
+/// host's config cannot leak in, and passes the identity +
+/// `commit.gpgsign=false` on the commit itself.
+fn git_init_with_committed(dir: &TempDir, committed: &[(&str, &str)]) {
+    for (name, body) in committed {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+    }
+    let mut init = std::process::Command::new("git");
+    init.args(["init", "--quiet"])
+        .current_dir(dir.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    assert!(
+        init.status().unwrap().success(),
+        "git init failed in {}",
+        dir.path().display()
+    );
+    let mut add = std::process::Command::new("git");
+    add.args(["add", "."])
+        .current_dir(dir.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    assert!(add.status().unwrap().success(), "git add failed");
+    let mut commit = std::process::Command::new("git");
+    commit
+        .args([
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "initial",
+        ])
+        .current_dir(dir.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    assert!(
+        commit.status().unwrap().success(),
+        "git commit failed in {}",
+        dir.path().display()
+    );
+}
+
+/// A loop run whose registry has the edit tools plus `bash`, ending with a
+/// plain completion. Used by the bash-diff tests.
+async fn run_with_bash(dir: &TempDir, client: &dyn AiClient) -> PhaseResult {
+    let scope = Scope::new(dir.path()).unwrap();
+    let mut registry = registry_over(scope.clone());
+    registry.register(bash_with_filter(scope, 30, true));
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 8,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    execute_phase(&input(), d).await.unwrap()
+}
+
+#[tokio::test]
+async fn bash_edit_appears_in_phase_diff() {
+    let dir = TempDir::new().unwrap();
+    git_init_with_committed(&dir, &[("src/lib.rs", "line1\nline2\nline3\n")]);
+
+    let path = "src/lib.rs";
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "bash",
+            json!({ "command": "printf 'line1\\nLINE2\\nline3\\n' > src/lib.rs" }),
+        )],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let changed: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with(path))
+        .collect();
+    assert_eq!(
+        changed.len(),
+        1,
+        "files_changed: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        changed[0].change_summary, "+1 -1",
+        "files_changed: {:?}",
+        result.files_changed
+    );
+    assert!(
+        result.diff.contains("-line2") && result.diff.contains("+LINE2"),
+        "diff: {}",
+        result.diff
+    );
+}
+
+#[tokio::test]
+async fn bash_created_file_appears_as_new_in_phase_diff() {
+    let dir = TempDir::new().unwrap();
+    git_init_with_committed(&dir, &[("src/lib.rs", "keep\n")]);
+
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "bash",
+            json!({ "command": "printf 'added1\\nadded2\\n' > created.txt" }),
+        )],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let changed: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with("created.txt"))
+        .collect();
+    assert_eq!(
+        changed.len(),
+        1,
+        "files_changed: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        changed[0].change_summary, "+2 -0",
+        "a bash-created file must be all additions: {:?}",
+        result.files_changed
+    );
+    assert!(result.diff.contains("+added1") && result.diff.contains("+added2"));
+    assert!(
+        !result.diff.contains("-added"),
+        "a new file must show no deletions, diff: {}",
+        result.diff
+    );
+}
+
+#[tokio::test]
+async fn file_edited_by_tool_and_bash_appears_once() {
+    let dir = TempDir::new().unwrap();
+    git_init_with_committed(&dir, &[("shared.txt", "original\n")]);
+
+    let path = dir.path().join("shared.txt").to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "tool edit\n" }),
+        )],
+        vec![native(
+            "bash",
+            json!({ "command": "printf 'bash edit\\n' >> shared.txt" }),
+        )],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let matching: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with("shared.txt"))
+        .collect();
+    assert_eq!(
+        matching.len(),
+        1,
+        "one file edited by both an edit tool and bash must be one entry: {:?}",
+        result.files_changed
+    );
+    // The "before" side is the tool's pre-edit capture (the committed
+    // "original\n"), not the intermediate tool-edited state.
+    assert!(
+        result.diff.contains("-original") && result.diff.contains("+bash edit"),
+        "diff must run against the original content: {}",
+        result.diff
+    );
+    assert!(
+        !result.diff.contains("-tool edit"),
+        "the intermediate tool-edited state must not appear as a removal: {}",
+        result.diff
+    );
+}
+
+#[tokio::test]
+async fn read_only_bash_adds_nothing_to_diff() {
+    let dir = TempDir::new().unwrap();
+    git_init_with_committed(&dir, &[("src/lib.rs", "untouched\n")]);
+
+    let client = MockAiClientScript::new(vec![
+        vec![native("bash", json!({ "command": "ls" }))],
+        vec![native("bash", json!({ "command": "cat src/lib.rs" }))],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert!(
+        result.files_changed.is_empty(),
+        "read-only bash calls must not populate files_changed, got {:?}",
+        result.files_changed
+    );
+    assert!(result.diff.is_empty());
+}

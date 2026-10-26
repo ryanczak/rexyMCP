@@ -37,7 +37,7 @@ Those stalls are not a model-quality signal.
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Bash tree changes count as progress ([phase-01-bash-tree-progress.md](phase-01-bash-tree-progress.md)) | done |
-| 02 | Bash edits in the reported diff (drafted after 01) | todo |
+| 02 | Bash edits in the reported diff ([phase-02-bash-edits-in-diff.md](phase-02-bash-edits-in-diff.md)) | in-progress |
 
 ## Notes
 

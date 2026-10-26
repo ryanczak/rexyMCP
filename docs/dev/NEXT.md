@@ -4,7 +4,7 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none — M50 phase-02 (bash edits in the reported diff) to be drafted.** Phase-01 done 2026-10-26 (`escalated`: two stalls, then architect takeover for the loop tests; see its Review verdict).
+**Active phase: [M50 phase-02 — Bash edits in the reported diff](milestones/M50-tree-based-progress/phase-02-bash-edits-in-diff.md)** (`todo`). Phase-01 done 2026-10-26 (`escalated`: two stalls, then architect takeover for the loop tests; see its Review verdict).
 
 **M50 — Tree-based progress opened 2026-10-26** from issue #14: a `bash`
 call that changes the working tree counts as file progress for the governors

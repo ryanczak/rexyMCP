@@ -13,6 +13,7 @@ pub mod prompt;
 pub mod verify;
 
 mod cancel;
+mod head_content;
 mod log;
 mod metrics;
 mod outcome;
@@ -1086,7 +1087,9 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                     // working tree changed, the snapshot counts as file
                     // progress (`made_file_progress`), so a bash-side edit
                     // resets the no-progress stall run and un-exempts the
-                    // oscillation window like an edit tool does.
+                    // oscillation window like an edit tool does, and the
+                    // changed paths join `pre_edit_content` (diffed against
+                    // HEAD) so the phase diff reports bash edits too.
                     let tree_before = (tool_call.name == "bash")
                         .then(|| tree_fingerprint::fingerprint(deps.project_root));
                     {
@@ -1102,11 +1105,28 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         emit_progress(&emit, format!("tool:{}", tool_call.name));
                     }
                     let (succeeded, content, tool_meta) = dispatch(deps.registry, &tool_call).await;
-                    let changed_tree = tree_before.is_some_and(|before| {
-                        !before
-                            .changed_paths(&tree_fingerprint::fingerprint(deps.project_root))
-                            .is_empty()
-                    });
+                    let bash_changed_paths: Vec<PathBuf> = match &tree_before {
+                        None => Vec::new(),
+                        Some(before) => {
+                            before.changed_paths(&tree_fingerprint::fingerprint(deps.project_root))
+                        }
+                    };
+                    let changed_tree = !bash_changed_paths.is_empty();
+                    // A bash-changed file joins the diff working set with its
+                    // HEAD content as the "before" side — unless an edit tool
+                    // already captured a pre-edit snapshot for it (one entry
+                    // per file, whichever touched it first; the earlier
+                    // "before" is the honest one). `bash_changed_paths` is
+                    // empty for every non-`bash` tool, so no tool-name guard.
+                    for rel in &bash_changed_paths {
+                        let abs = deps.project_root.join(rel);
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            pre_edit_content.entry(abs)
+                        {
+                            let before = head_content::head_content(deps.project_root, rel);
+                            e.insert(before);
+                        }
+                    }
                     (succeeded, content, tool_meta, changed_tree)
                 }
             }
