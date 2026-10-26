@@ -1,7 +1,7 @@
 # Phase 02: Bash edits in the reported diff
 
 **Milestone:** M50 — Tree-based progress
-**Status:** review
+**Status:** done
 **Depends on:** phase-01
 **Estimated diff:** ~250 lines
 **Tags:** language=rust, kind=bugfix, size=m
@@ -270,3 +270,22 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** f503a8aaff34b26f85b97ce834da262a95a1c010
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-26
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** nvidia/GLM-5.3-Flash-FP4-Local (212 turns)
+- **Scope deviations:** none. Two extra lookup tests (`…_in_repo_without_commits`,
+  `…_for_non_utf8_blob`) cover cases the Spec named.
+- **Calibration:** the executor's mutation evidence was prose, so the reviewer
+  reproduced it: forcing `head_content` to `None` fails
+  `head_content_returns_committed_text` and `bash_edit_appears_in_phase_diff`.
+  `file_edited_by_tool_and_bash_appears_once` pins one entry per file, but
+  because HEAD equals the tool's capture in its setup it cannot tell
+  keep-existing from overwrite. That only matters for dirty-at-start trees,
+  which are out of scope. The executor's "1074 pre-phase" count was wrong
+  (1068). Nit: the hermetic git setup is repeated across five tests.
+  Follow-up outside this milestone: `edit_target` covers only `write_file`
+  and `patch`, so `patch_lines` / `delete_file` / `move_file` edits never
+  reach `pre_edit_content` and are missing from the phase diff.
