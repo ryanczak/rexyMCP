@@ -4,7 +4,13 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.**
+**Active phase: [M50 phase-01 — Bash tree changes count as progress](milestones/M50-tree-based-progress/phase-01-bash-tree-progress.md)** (`todo`).
+
+**M50 — Tree-based progress opened 2026-10-26** from issue #14: a `bash`
+call that changes the working tree counts as file progress for the governors
+(phase-01) and in the reported diff (phase-02, drafted after 01). Design
+decisions in [M50/README.md](milestones/M50-tree-based-progress/README.md).
+
 
 **M49 — Light-shape phase trial closed 2026-10-08**, one phase,
 `approved_first_try`, 136 turns, no spec defects, from a ~75-line phase doc

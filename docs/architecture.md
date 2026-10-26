@@ -1233,6 +1233,20 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+50. **M50 — Tree-based progress** *(in progress; opened 2026-10-26 from
+    [issue #14](https://github.com/ryanczak/rexyMCP/issues/14))*. The
+    governors' "made file progress" test keys on the tool name
+    (`tools::mutates_files`), so a `bash` call that edits files never resets
+    the no-progress stall run, and runs editing through bash (now required
+    for mechanical range cuts) draw false `NoProgressStall` hard-fails.
+    **01** fingerprints the project root (non-ignored files by path, size,
+    mtime) around each dispatched `bash` call; a snapshot made progress if
+    its tool mutates files or its call changed the tree, one predicate for
+    both the stall detector and the oscillation exemption. **02** puts
+    bash-changed files into the `PhaseResult` diff and progress numstat,
+    taking their before-content from git HEAD. Refusing bash-side writes was
+    rejected: it conflicts with the shell-range-cut policy.
+    `docs/dev/milestones/M50-tree-based-progress/README.md`.
 49. **M49 — Light-shape phase trial** *(done 2026-10-08; one phase, `approved_first_try`, no spec defects, ~75-line phase doc vs M48's ~480)*. The
     two test follow-ups M48 held, specified as behaviour and test names
     only. Control experiment on architect front-loading: M48 spent ~356k
