@@ -136,3 +136,36 @@ Started phase-02 (executor). Flipped status to `in-progress` and the milestone
 README row to match. Reading the touched modules (`agent/mod.rs`,
 `agent/tree_fingerprint.rs`, `agent/outcome.rs`, `agent/tests.rs`) before
 writing the HEAD-content lookup helper.
+
+### Update — 2026-10-26 16:15 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim after the final code state (artifact
+`target/e2e/m50-phase-02.txt`, pasted below). Positive control: each filter
+shows its named test line plus a non-zero `passed` count, and each loop test
+exercises the real `bash` tool against a real git repo in a `TempDir` (a
+committed file rewritten, a file created, a file touched by both an edit tool
+and bash, and read-only calls that must add nothing) — the assertions would
+fail if `head_content` returned nothing or if the join missed the working set.
+
+```
+test agent::head_content::tests::head_content_is_none_outside_git_repo ... ok
+test agent::head_content::tests::head_content_is_none_in_repo_without_commits ... ok
+test agent::head_content::tests::head_content_is_none_for_non_utf8_blob ... ok
+test agent::head_content::tests::head_content_is_none_for_untracked_file ... ok
+test agent::head_content::tests::head_content_returns_committed_text ... ok
+test agent::head_content::tests::head_content_resolves_from_subdirectory_root ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1074 filtered out; finished in 0.00s
+head_content_ exit=0
+test agent::tests::bash_edit_appears_in_phase_diff ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1079 filtered out; finished in 0.02s
+bash_edit_appears_in_phase_diff exit=0
+test agent::tests::bash_created_file_appears_as_new_in_phase_diff ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1079 filtered out; finished in 0.02s
+bash_created_file_appears_as_new_in_phase_diff exit=0
+test agent::tests::file_edited_by_tool_and_bash_appears_once ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1079 filtered out; finished in 0.03s
+file_edited_by_tool_and_bash_appears_once exit=0
+test agent::tests::read_only_bash_adds_nothing_to_diff ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1079 filtered out; finished in 0.03s
+read_only_bash_adds_nothing_to_diff exit=0
+```
