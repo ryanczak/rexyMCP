@@ -41,7 +41,7 @@ Those stalls are not a model-quality signal.
 |----|-------|--------|
 | 01 | Bash tree changes count as progress ([phase-01-bash-tree-progress.md](phase-01-bash-tree-progress.md)) | done |
 | 02 | Bash edits in the reported diff ([phase-02-bash-edits-in-diff.md](phase-02-bash-edits-in-diff.md)) | done |
-| 03 | Every edit tool in the reported diff ([phase-03-all-edit-tools-in-diff.md](phase-03-all-edit-tools-in-diff.md)) | in-progress |
+| 03 | Every edit tool in the reported diff ([phase-03-all-edit-tools-in-diff.md](phase-03-all-edit-tools-in-diff.md)) | review      |
 
 ## Notes
 
