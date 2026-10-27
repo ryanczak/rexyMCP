@@ -1,7 +1,7 @@
 # Phase 04: `patch_lines` is an edit-class call
 
 **Milestone:** M50 — Tree-based progress
-**Status:** review
+**Status:** done
 **Depends on:** phase-03
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -262,3 +262,22 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 2303b060bfb29043d5599f7b9074d57532e36a26
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-27
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** nvidia/GLM-5.3-Flash-FP4-Local (112 turns). The executor's
+  `(started)` entry says "Claude"; that is wrong.
+- **Scope deviations:** none. The executor added `registry_over_with_patch_lines`
+  / `run_with_verifier_and_patch_lines` because `run_with_all_edit_tools` takes
+  no verifier, which the post-edit verify test needs. Accepted. The conditional
+  `executor_contract.md` authorization did not trigger (the contract has no
+  prior-read tool list).
+- **Calibration:** the mutation evidence was prose for the fourth time this
+  milestone, so the reviewer reproduced it. Removing the `patch_lines` gate
+  arm fails `gate_refuses_patch_lines_of_unread_file`,
+  `gate_refuses_patch_lines_when_mtime_changed` and
+  `patch_lines_without_prior_read_is_refused`. Removing `patch_lines` from the
+  working-set refresh fails
+  `patch_lines_after_read_then_patch_lines_again_is_allowed`.
