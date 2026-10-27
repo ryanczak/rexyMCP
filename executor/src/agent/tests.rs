@@ -23,6 +23,13 @@ fn registry_over(scope: Scope) -> ToolRegistry {
     r
 }
 
+/// `registry_over` plus `patch_lines`, so gate / post-edit tests can exercise it.
+fn registry_over_with_patch_lines(scope: Scope) -> ToolRegistry {
+    let mut r = registry_over(scope.clone());
+    r.register(patch_lines(scope));
+    r
+}
+
 /// `registry_over` plus the three edit tools phase-03 added to the diff's
 /// capture set (`patch_lines`, `delete_file`, `move_file`).
 fn registry_over_with_remaining_edit_tools(scope: Scope) -> ToolRegistry {
@@ -1093,6 +1100,44 @@ fn checked(diagnostics: Vec<Diagnostic>) -> VerifierResult {
     VerifierResult::Checked { diagnostics }
 }
 
+/// A loop run over `dir` driving `client` with an injected `verifier` and a
+/// registry that includes `patch_lines`, so M50 phase-04's gate/verify tests can
+/// exercise that tool.
+async fn run_with_verifier_and_patch_lines(
+    dir: &TempDir,
+    client: &dyn AiClient,
+    verifier: &dyn FileVerifier,
+    max_turns: usize,
+) -> PhaseResult {
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over_with_patch_lines(scope);
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    execute_phase(&input(), d).await.unwrap()
+}
+
 /// A loop run over `dir` driving `client` with an injected `verifier`.
 async fn run_with_verifier(
     dir: &TempDir,
@@ -1889,6 +1934,105 @@ async fn patch_after_reading_is_allowed() {
         std::fs::read_to_string(&file).unwrap(),
         "edited",
         "patch after a read should apply"
+    );
+}
+
+// ── M50 phase-04: patch_lines joins the edit class ───────────────────────
+
+#[tokio::test]
+async fn patch_lines_without_prior_read_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("t.txt");
+    std::fs::write(&file, "original").unwrap();
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "patch_lines",
+            json!({ "path": path, "start_line": 1, "end_line": 1, "new_content": "edited\n" }),
+        )],
+        vec![token("ok")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    run_with_verifier_and_patch_lines(&dir, &client, &verifier, 8).await;
+
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "original",
+        "refused patch_lines must not modify the file"
+    );
+    let second = &client.calls()[1].messages;
+    let refused = second.iter().any(|m| {
+        m.tool_results.as_ref().is_some_and(|trs| {
+            trs.iter().any(|t| {
+                t.tool_name == "patch_lines"
+                    && t.content.contains("refusing to patch_lines")
+                    && t.content.contains("have not read")
+            })
+        })
+    });
+    assert!(
+        refused,
+        "the refusal naming the refused operation should be fed back to the model"
+    );
+}
+
+#[tokio::test]
+async fn patch_lines_after_read_then_patch_lines_again_is_allowed() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("t.txt");
+    std::fs::write(&file, "line one\nline two\nline three\n").unwrap();
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "patch_lines",
+            json!({ "path": path, "start_line": 1, "end_line": 1, "new_content": "first edit\n" }),
+        )],
+        vec![native(
+            "patch_lines",
+            json!({ "path": path, "start_line": 2, "end_line": 2, "new_content": "second edit\n" }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![]);
+
+    let result = run_with_verifier_and_patch_lines(&dir, &client, &verifier, 8).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let on_disk = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        on_disk.contains("first edit") && on_disk.contains("second edit"),
+        "two successive patch_lines on the same file must both apply, got: {on_disk:?}"
+    );
+    assert!(
+        !on_disk.contains("line one"),
+        "the first patch_lines should have replaced line one: {on_disk:?}"
+    );
+}
+
+#[tokio::test]
+async fn patch_lines_triggers_post_edit_verify() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("t.txt");
+    std::fs::write(&file, "line one\nline two\n").unwrap();
+    let path = file.to_string_lossy().to_string();
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "patch_lines",
+            json!({ "path": path, "start_line": 1, "end_line": 1, "new_content": "edited\n" }),
+        )],
+        vec![token("done")],
+    ]);
+    let verifier = MockFileVerifier::new(vec![checked(vec![])]);
+
+    run_with_verifier_and_patch_lines(&dir, &client, &verifier, 8).await;
+
+    assert_eq!(
+        verifier.verified_paths(),
+        vec![file.clone()],
+        "the verifier must run on the patch_lines target"
     );
 }
 

@@ -27,6 +27,8 @@ Those stalls are not a model-quality signal.
 - Files changed through `patch_lines`, `delete_file` or `move_file` appear
   there too (added 2026-10-26 at phase-02 review: the pre-edit capture only
   covered `write_file` and `patch`).
+- A `patch_lines` of a file not read this session, or read before it
+  changed, is refused like a `patch` (added 2026-10-27 at phase-03 review).
 - All four gates green.
 
 ## Architecture references
@@ -42,6 +44,7 @@ Those stalls are not a model-quality signal.
 | 01 | Bash tree changes count as progress ([phase-01-bash-tree-progress.md](phase-01-bash-tree-progress.md)) | done |
 | 02 | Bash edits in the reported diff ([phase-02-bash-edits-in-diff.md](phase-02-bash-edits-in-diff.md)) | done |
 | 03 | Every edit tool in the reported diff ([phase-03-all-edit-tools-in-diff.md](phase-03-all-edit-tools-in-diff.md)) | done |
+| 04 | `patch_lines` is an edit-class call ([phase-04-patch-lines-edit-class.md](phase-04-patch-lines-edit-class.md)) | in-progress |
 
 ## Notes
 
@@ -67,3 +70,8 @@ Design decisions, 2026-10-26 (user):
    about each bash call.
 4. **Secondary fix in the issue (refuse bash-side writes) is rejected.** It
    conflicts with the shell-range-cut policy.
+5. **`patch_lines` joins the edit class; `delete_file` and `move_file` do
+   not** (user, 2026-10-27, from phase-03's review note). `patch_lines` over a
+   drifted file has silently cut live code before, so it gets the
+   read-before-edit gate and the post-edit treatment `patch` gets. A delete or
+   move does not rewrite content the model never saw, so they stay ungated.

@@ -1214,11 +1214,16 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
 
         // Record the working set: a read makes a file edit-eligible; a successful
         // patch or whole-file write_file (not an append) refreshes its mtime so a
-        // follow-up edit needs no re-read. An append does NOT — the model has still
-        // not seen the file's full content, so a later overwrite must re-read.
-        let refreshes_working_set = matches!(tool_call.name.as_str(), "read_file" | "patch")
-            || (tool_call.name == "write_file"
-                && tool_call.arguments.get("append").and_then(|v| v.as_bool()) != Some(true));
+        // follow-up edit needs no re-read. `patch_lines` refreshes too — it just
+        // rewrote the file, so the model's next patch/patch_lines on it must not
+        // be refused for staleness the model itself caused. An append does NOT —
+        // the model has still not seen the file's full content, so a later
+        // overwrite must re-read.
+        let refreshes_working_set = matches!(
+            tool_call.name.as_str(),
+            "read_file" | "patch" | "patch_lines"
+        ) || (tool_call.name == "write_file"
+            && tool_call.arguments.get("append").and_then(|v| v.as_bool()) != Some(true));
         if succeeded
             && refreshes_working_set
             && let Some(path) = resolve_path(&tool_call, deps.project_root)

@@ -38,10 +38,15 @@ fn resolve_key_path(tool_call: &ToolCall, key: &str, project_root: &Path) -> Opt
     })
 }
 
-/// The file an edit-class (`write_file` / `patch`) call targets, resolved against
-/// the project root. `None` for non-edit calls or calls missing a `"path"` arg.
+/// The file an edit-class (`write_file` / `patch` / `patch_lines`) call targets,
+/// resolved against the project root. `None` for non-edit calls or calls missing
+/// a `"path"` arg. `delete_file` and `move_file` are not edit-class: a delete or
+/// move does not rewrite content the model never saw, so they stay ungated.
 pub(super) fn edit_target(tool_call: &ToolCall, project_root: &Path) -> Option<PathBuf> {
-    if tool_call.name != "write_file" && tool_call.name != "patch" {
+    if tool_call.name != "write_file"
+        && tool_call.name != "patch"
+        && tool_call.name != "patch_lines"
+    {
         return None;
     }
     resolve_path(tool_call, project_root)
@@ -72,16 +77,18 @@ pub(super) fn diff_targets(tool_call: &ToolCall, project_root: &Path) -> Vec<Pat
     }
 }
 
-/// The read-before-edit gate (07d, extended M26 for `write_file`). Refuse an
-/// edit-class call on a file the model has not read this session, or one whose
-/// on-disk mtime no longer matches what was read. `None` = allowed.
+/// The read-before-edit gate (07d, extended M26 for `write_file`, M50 phase-04
+/// for `patch_lines`). Refuse an edit-class call on a file the model has not
+/// read this session, or one whose on-disk mtime no longer matches what was
+/// read. `None` = allowed.
 ///
-/// `patch` is always gated. `write_file` is gated **only when it would
-/// overwrite an existing file**: a create (target absent on disk) and an
-/// append (`append: true`) are allowed unconditionally — neither blind-clobbers
-/// content the model never read. The on-disk `metadata`/`exists` stats mirror
-/// the mtime branch's existing filesystem touch, so every arm stays
-/// `TempDir`-testable.
+/// `patch` and `patch_lines` are always gated — both rewrite content the model
+/// may never have seen, and `patch_lines` has no create or append case.
+/// `write_file` is gated **only when it would overwrite an existing file**: a
+/// create (target absent on disk) and an append (`append: true`) are allowed
+/// unconditionally — neither blind-clobbers content the model never read. The
+/// on-disk `metadata`/`exists` stats mirror the mtime branch's existing
+/// filesystem touch, so every arm stays `TempDir`-testable.
 pub(super) fn read_before_edit_refusal(
     tool_call: &ToolCall,
     working_set: &HashMap<PathBuf, SystemTime>,
@@ -89,6 +96,7 @@ pub(super) fn read_before_edit_refusal(
 ) -> Option<String> {
     let verb = match tool_call.name.as_str() {
         "patch" => "patch",
+        "patch_lines" => "patch_lines",
         "write_file" => "overwrite",
         _ => return None,
     };
@@ -1373,6 +1381,134 @@ mod tests {
         assert!(
             msg.contains("patch"),
             "refusal message should contain 'patch', got: {msg}"
+        );
+    }
+
+    fn make_patch_lines_call(path: &str) -> ToolCall {
+        make_call(
+            "patch_lines",
+            json!({ "path": path, "start_line": 1, "end_line": 2, "new_content": "x\n" }),
+        )
+    }
+
+    // ── M50 phase-04: patch_lines joins the edit class ────────────────────
+
+    #[test]
+    fn gate_refuses_patch_lines_of_unread_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_patch_lines_call(&path);
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_some(),
+            "patch_lines of an unread file should be refused"
+        );
+        let msg = result.unwrap();
+        assert!(
+            msg.contains("patch_lines"),
+            "refusal message should name the refused operation, got: {msg}"
+        );
+        assert!(
+            msg.contains("have not read"),
+            "refusal message should say the file was not read, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn gate_allows_patch_lines_of_read_unchanged_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_patch_lines_call(&path);
+        let mut working_set = HashMap::new();
+        record_mtime(&mut working_set, &file);
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_none(),
+            "patch_lines of a read, unchanged file should be allowed: {result:?}"
+        );
+    }
+
+    #[test]
+    fn gate_refuses_patch_lines_when_mtime_changed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let call = make_patch_lines_call(&path);
+        // Deliberately stale mtime (epoch) — the file changed since the read.
+        let mut working_set = HashMap::new();
+        working_set.insert(file.clone(), SystemTime::UNIX_EPOCH);
+        let result = read_before_edit_refusal(&call, &working_set, dir.path());
+        assert!(
+            result.is_some(),
+            "patch_lines with a stale mtime should be refused"
+        );
+        let msg = result.unwrap();
+        assert!(
+            msg.contains("patch_lines") && msg.contains("changed on disk"),
+            "refusal message should name patch_lines and the drift, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn gate_leaves_delete_and_move_ungated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+        let working_set: HashMap<PathBuf, SystemTime> = HashMap::new();
+
+        let delete_call = make_call("delete_file", json!({ "path": path.clone() }));
+        assert!(
+            read_before_edit_refusal(&delete_call, &working_set, dir.path()).is_none(),
+            "delete_file on an unread file must not be refused"
+        );
+
+        let move_call = make_call(
+            "move_file",
+            json!({ "from": path, "to": dir.path().join("moved.txt") }),
+        );
+        assert!(
+            read_before_edit_refusal(&move_call, &working_set, dir.path()).is_none(),
+            "move_file on an unread file must not be refused"
+        );
+    }
+
+    #[test]
+    fn edit_target_includes_patch_lines_only() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("existing.txt");
+        std::fs::write(&file, "original").unwrap();
+        let path = file.to_string_lossy().to_string();
+
+        assert_eq!(
+            edit_target(&make_patch_lines_call(&path), dir.path()),
+            Some(file.clone()),
+            "patch_lines must be an edit-class call"
+        );
+        assert_eq!(
+            edit_target(
+                &make_call("delete_file", json!({ "path": path })),
+                dir.path()
+            ),
+            None,
+            "delete_file must not be edit-class"
+        );
+        assert_eq!(
+            edit_target(
+                &make_call(
+                    "move_file",
+                    json!({ "from": "a.txt", "to": dir.path().join("b.txt") })
+                ),
+                dir.path()
+            ),
+            None,
+            "move_file must not be edit-class"
         );
     }
 
