@@ -1,7 +1,7 @@
 # Phase 04: `patch_lines` is an edit-class call
 
 **Milestone:** M50 — Tree-based progress
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03
 **Estimated diff:** ~120 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -163,3 +163,102 @@ test agent::tests::patch_lines_edit_appears_in_phase_diff ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1094 filtered out; finished in 0.01s
 patch_lines_edit_appears_in_phase_diff exit=0
 ```
+
+### Update — 2026-10-27 01:07 (complete, server-authored)
+
+**Summary:** **Summary + Notes for review:** `patch_lines` is now an edit-class call. In `executor/src/agent/tools.rs`, `edit_target` includes `patch_lines` (returns its path) while `delete_file`/`move_file` stay excluded, and `read_before_edit_refusal` refuses a `patch_lines` of an unread file or one whose on-disk mtime no longer matches the read — the refusal message names `patch_lines` via the same `verb` interpolation `patch`/`write_file` use, and `patch_lines` is unconditionally gated (no create/append escape, per spec). In the loop (`executor/src/agent/mod.rs`) a successful `patch_lines` now refreshes the working set's mtime, so two successive `patch_lines` on the same file both apply instead of the second being refused for staleness the model caused, and a `patch_lines` target now flows through the existing baseline capture, superseded-read eviction, post-write hooks, and post-edit verify via `edit_path`. All eight new tests from the § Test plan pass alongside the pre-existing `patch_lines_edit_appears_in_phase_diff` (unmodified — its script reads first, so the preservation criterion holds); the § End-to-end verification block ran verbatim, its artifact is pasted into the phase doc's `### Update — 2026-10-27 01:10 (end-to-end verification)` entry with every test `ok` and `exit=0`, and all four gates are green (fmt, build, clippy `-D warnings`, `cargo test`: 1093 + 708 passed, 0 failed). One deviation to note: the spec said the loop tests could use the registry "as in `run_with_all_edit_tools`", but that helper has no verifier injection — I added `registry_over_with_patch_lines` and `run_with_verifier_and_patch_lines` (registry = `read_file`/`write_file`/`patch`/`patch_lines`) so the mock verifier could observe `patch_lines`; also, the phase doc's conditional authorization for `executor/templates/executor_contract.md` did not trigger — the template nowhere lists which tools require a prior read, so I left it untouched. Status remains `in-progress` per the lifecycle contract; the working tree is clean at commit `2303b06`.
+
+**Executor:** nvidia/GLM-5.3-Flash-FP4-Local
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+ols::symbols::tests::references_single_file_path ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test governor::verifier::tests::verify_rust_returns_checked_empty_on_clean_code ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test agent::tests::bash_edit_resets_read_only_stall ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1093 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.11s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M50-tree-based-progress/README.md` — +1 -1
+- `docs/dev/milestones/M50-tree-based-progress/phase-04-patch-lines-edit-class.md` — +48 -1
+- `executor/src/agent/mod.rs` — +10 -5
+- `executor/src/agent/tests.rs` — +144 -0
+- `executor/src/agent/tools.rs` — +148 -12
+
+**Commit:** 2303b060bfb29043d5599f7b9074d57532e36a26
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).

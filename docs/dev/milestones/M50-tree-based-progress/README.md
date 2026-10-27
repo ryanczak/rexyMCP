@@ -44,7 +44,7 @@ Those stalls are not a model-quality signal.
 | 01 | Bash tree changes count as progress ([phase-01-bash-tree-progress.md](phase-01-bash-tree-progress.md)) | done |
 | 02 | Bash edits in the reported diff ([phase-02-bash-edits-in-diff.md](phase-02-bash-edits-in-diff.md)) | done |
 | 03 | Every edit tool in the reported diff ([phase-03-all-edit-tools-in-diff.md](phase-03-all-edit-tools-in-diff.md)) | done |
-| 04 | `patch_lines` is an edit-class call ([phase-04-patch-lines-edit-class.md](phase-04-patch-lines-edit-class.md)) | in-progress |
+| 04 | `patch_lines` is an edit-class call ([phase-04-patch-lines-edit-class.md](phase-04-patch-lines-edit-class.md)) | review      |
 
 ## Notes
 
