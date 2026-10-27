@@ -4,7 +4,17 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: [M50 phase-04 — `patch_lines` is an edit-class call](milestones/M50-tree-based-progress/phase-04-patch-lines-edit-class.md)** (`todo`). Phases 02 and 03 done (`approved_first_try`). Phase-01 done 2026-10-26 (`escalated`: two stalls, then architect takeover for the loop tests; see its Review verdict).
+**Active phase: none.**
+
+**M50 — Tree-based progress closed 2026-10-27** at four phases (01
+`escalated`, 02–04 `approved_first_try`), fixing issue #14 plus the diff gaps
+for `patch_lines`/`delete_file`/`move_file`, and making `patch_lines`
+edit-class. Retrospective in
+[M50/README.md](milestones/M50-tree-based-progress/README.md).
+
+**Open for the human:** fold "captured mutation evidence" into WORKFLOW.md
+(four of four phases gave prose only); close issue #14; restart `rexymcp
+serve` onto the rebuilt binary. Phase-01 done 2026-10-26 (`escalated`: two stalls, then architect takeover for the loop tests; see its Review verdict).
 
 **M50 — Tree-based progress opened 2026-10-26** from issue #14: a `bash`
 call that changes the working tree counts as file progress for the governors

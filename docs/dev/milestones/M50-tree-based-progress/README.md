@@ -3,7 +3,7 @@
 **Goal:** A `bash` call that changes the working tree counts as file progress,
 for the governors and for the phase's reported diff, the same as an edit tool.
 
-**Status:** in-progress
+**Status:** done *(opened 2026-10-26, closed 2026-10-27; four phases)*
 
 **Depends on:** M49.
 
@@ -75,3 +75,57 @@ Design decisions, 2026-10-26 (user):
    drifted file has silently cut live code before, so it gets the
    read-before-edit gate and the post-edit treatment `patch` gets. A delete or
    move does not rewrite content the model never saw, so they stay ungated.
+
+## M50 retrospective — closed 2026-10-27
+
+**Outcome:** issue #14 is fixed, and so are two diff gaps found along the way.
+A `bash` call that changes the tree now counts as file progress for the stall
+detector, the oscillation exemption and novelty. Files changed by `bash`,
+`patch_lines`, `delete_file` and `move_file` now appear in the phase diff and
+the progress numstat. `patch_lines` is now edit-class: it is gated by
+read-before-edit and verified after each edit.
+
+| Phase | Verdict | Executor turns | Notes |
+|---|---|---|---|
+| 01 bash tree progress | `escalated` | 120 + 120 + 120, then takeover | first stall was the bug itself; two genuine stalls after |
+| 02 bash edits in diff | `approved_first_try` | 212 | |
+| 03 every edit tool in diff | `approved_first_try` | 116 | added mid-milestone at phase-02 review |
+| 04 `patch_lines` edit-class | `approved_first_try` | 112 | added mid-milestone (user decision 5) |
+
+**What went wrong in phase-01, all of it spec-side:**
+- The Test plan said "a small `read_only_stall_threshold`" without naming how
+  a loop test sets one. Two runs spent 120 calls each hunting for it, and the
+  refined re-dispatch that named it still stalled. The executor re-audited
+  finished work despite an explicit "do not re-read" note.
+- The spec missed that the loop writes its own session log under
+  `<root>/.rexymcp/`. In a repo that does not gitignore it, every `bash` call
+  would have read as a tree change and the stall detector would never fire on
+  bash. The architect's negative loop test caught this at takeover, and the
+  fingerprint now prunes the root's `.rexymcp/` unconditionally.
+- The first run's stall was the bug being fixed (scripted bash edits under
+  the old governor). It is not a model-quality signal.
+
+**What worked:** phases 02–04 used short docs (~100–130 lines) that named the
+analogue helper from the previous phase (`run_bash_stall_script`,
+`run_with_bash`, `run_with_all_edit_tools`) instead of describing the harness.
+All three landed first try, in falling turn counts.
+
+**Calibration, for the human:**
+1. **Prose-only mutation evidence: four of four phases.** Every executor
+   Update Log claimed its tests "would fail" without pasting a failing run. The
+   reviewer reproduced each one (all were real). WORKFLOW.md's E2E guidance
+   asks for captured output, but nothing asks for a captured *mutation* run, so
+   the review skill's "accept the executor's evidence" path never applied.
+   Three occurrences is a fix by the calibration rule; the candidate fold is to
+   seed a "mutation-check, captured" task the way the E2E capture is seeded.
+   Held for your decision (contract doc).
+2. **Leaked reasoning in `completion_summary`** (phase-03, `</think>…` ahead of
+   the Summary). One occurrence; held.
+3. **Executor self-misreporting:** a wrong pre-phase test count (02) and an
+   Update Log naming the executor "Claude" (04). Minor; held.
+
+**Follow-ups outside this milestone:**
+- `rexymcp calibrate-governor` replays snapshots from session logs, which do
+  not record `changed_tree`, so its replays are still tool-name-only.
+- The running `rexymcp serve` must be restarted onto the rebuilt binary to get
+  any of this.
