@@ -1,7 +1,7 @@
 # Phase 03: Every edit tool in the reported diff
 
 **Milestone:** M50 — Tree-based progress
-**Status:** review
+**Status:** done
 **Depends on:** phase-02
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=bugfix, size=s
@@ -281,3 +281,23 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 4ed8f4663a597bcb26cd8defa6f6bbd2c0c99c2c
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-10-27
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** nvidia/GLM-5.3-Flash-FP4-Local (116 turns)
+- **Scope deviations:** none. One extra helper test
+  (`diff_targets_resolve_absolute_paths_through_unchanged`). For a `move_file`
+  call missing `to`, `from` is still captured. That's harmless: the dispatch
+  fails, the file is unchanged, and the diff skips it. Accepted.
+- **Calibration:** the executor's mutation evidence was prose again (third
+  time this milestone), so the reviewer reproduced it: narrowing
+  `diff_targets` to `write_file` | `patch` fails the `patch_lines`,
+  `delete_file` and `move_file` loop tests, while the negative test still
+  passes. The executor's view (Notes for review 6): `patch_lines`, `delete_file`
+  and `move_file` still skip the read-before-edit gate and the post-edit
+  verify. Held as a follow-up. New observation: this run's
+  `completion_summary` began with leaked reasoning text (`</think>…`) ahead of
+  the real Summary, which suggests the completion-summary extraction does not
+  strip a reasoning block. Held for recurrence.
