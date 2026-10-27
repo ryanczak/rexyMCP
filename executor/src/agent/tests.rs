@@ -7,7 +7,9 @@ use crate::ai::types::{AiEvent, Message, TokenBreakdown, ToolSchema};
 use crate::phase::{Blocker, PhaseStatus};
 use crate::security::scope::Scope;
 use crate::store::telemetry::PhaseRun;
-use crate::tools::{bash_with_filter, patch, read_file, write_file};
+use crate::tools::{
+    bash_with_filter, delete_file, move_file, patch, patch_lines, read_file, write_file,
+};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
@@ -18,6 +20,16 @@ fn registry_over(scope: Scope) -> ToolRegistry {
     r.register(read_file(scope.clone()));
     r.register(write_file(scope.clone()));
     r.register(patch(scope));
+    r
+}
+
+/// `registry_over` plus the three edit tools phase-03 added to the diff's
+/// capture set (`patch_lines`, `delete_file`, `move_file`).
+fn registry_over_with_remaining_edit_tools(scope: Scope) -> ToolRegistry {
+    let mut r = registry_over(scope.clone());
+    r.register(patch_lines(scope.clone()));
+    r.register(delete_file(scope.clone()));
+    r.register(move_file(scope));
     r
 }
 
@@ -5804,6 +5816,209 @@ async fn read_only_bash_adds_nothing_to_diff() {
     assert!(
         result.files_changed.is_empty(),
         "read-only bash calls must not populate files_changed, got {:?}",
+        result.files_changed
+    );
+    assert!(result.diff.is_empty());
+}
+
+// ── M50 phase-03: patch_lines / delete_file / move_file join the phase diff ──
+
+/// A loop run over the registry that includes every edit tool (`run_with_bash`
+/// minus `bash`), ending with a plain completion. The "before" side of each
+/// diff is captured from disk pre-edit, so no git repo is needed.
+async fn run_with_all_edit_tools(dir: &TempDir, client: &dyn AiClient) -> PhaseResult {
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over_with_remaining_edit_tools(scope);
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns: 8,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor: GovernorConfig::default(),
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    execute_phase(&input(), d).await.unwrap()
+}
+
+#[tokio::test]
+async fn patch_lines_edit_appears_in_phase_diff() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("notes.txt");
+    std::fs::write(&file, "line 1\nline 2\nline 3\nline 4\n").unwrap();
+    let path = file.to_string_lossy().to_string();
+
+    // The read-before-edit gate requires a prior read of the file.
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "patch_lines",
+            json!({ "path": path, "start_line": 2, "end_line": 3, "new_content": "replaced two\n" }),
+        )],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_all_edit_tools(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let changed: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with("notes.txt"))
+        .collect();
+    assert_eq!(
+        changed.len(),
+        1,
+        "a patch_lines edit must appear in files_changed: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        changed[0].change_summary, "+1 -2",
+        "two lines removed, one added: {:?}",
+        result.files_changed
+    );
+    assert!(
+        result.diff.contains("-line 2") && result.diff.contains("+replaced two"),
+        "diff: {}",
+        result.diff
+    );
+}
+
+#[tokio::test]
+async fn deleted_file_appears_as_removals_in_phase_diff() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("doomed.txt");
+    std::fs::write(&file, "gone 1\ngone 2\ngone 3\n").unwrap();
+    let path = file.to_string_lossy().to_string();
+
+    let client = MockAiClientScript::new(vec![
+        vec![native("delete_file", json!({ "path": path }))],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_all_edit_tools(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let changed: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with("doomed.txt"))
+        .collect();
+    assert_eq!(
+        changed.len(),
+        1,
+        "a delete_file target must appear in files_changed: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        changed[0].change_summary, "+0 -3",
+        "a deleted file reports as pure removals: {:?}",
+        result.files_changed
+    );
+    assert!(
+        result.diff.contains("-gone 1") && result.diff.contains("-gone 3"),
+        "diff: {}",
+        result.diff
+    );
+}
+
+#[tokio::test]
+async fn moved_file_appears_as_removal_and_addition() {
+    let dir = TempDir::new().unwrap();
+    let from = dir.path().join("old_name.txt");
+    std::fs::write(&from, "payload line\n").unwrap();
+    let to = dir.path().join("subdir");
+    std::fs::create_dir(&to).unwrap();
+    let to = to.join("new_name.txt");
+
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "move_file",
+            json!({
+                "from": from.to_string_lossy(),
+                "to": to.to_string_lossy()
+            }),
+        )],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_all_edit_tools(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let from_entry: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with("old_name.txt"))
+        .collect();
+    let to_entry: Vec<_> = result
+        .files_changed
+        .iter()
+        .filter(|f| f.path.ends_with("new_name.txt"))
+        .collect();
+    assert_eq!(
+        from_entry.len(),
+        1,
+        "the `from` side of a move must appear: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        to_entry.len(),
+        1,
+        "the `to` side of a move must appear: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        from_entry[0].change_summary, "+0 -1",
+        "the `from` side reports as pure removals: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        to_entry[0].change_summary, "+1 -0",
+        "the `to` side reports as pure additions: {:?}",
+        result.files_changed
+    );
+    assert!(
+        result.diff.contains("-payload line") && result.diff.contains("+payload line"),
+        "diff: {}",
+        result.diff
+    );
+}
+
+#[tokio::test]
+async fn failed_delete_adds_nothing_to_diff() {
+    let dir = TempDir::new().unwrap();
+    let path = dir
+        .path()
+        .join("never_existed.txt")
+        .to_string_lossy()
+        .to_string();
+
+    let client = MockAiClientScript::new(vec![
+        vec![native("delete_file", json!({ "path": path }))],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_all_edit_tools(&dir, &client).await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert!(
+        result.files_changed.is_empty(),
+        "a failed delete_file must not populate files_changed, got {:?}",
         result.files_changed
     );
     assert!(result.diff.is_empty());

@@ -23,7 +23,14 @@ pub(super) fn output_preview(content: &str) -> String {
 /// Resolve a tool call's `"path"` argument against the project root. `None` if
 /// the call has no string `"path"`.
 pub(super) fn resolve_path(tool_call: &ToolCall, project_root: &Path) -> Option<PathBuf> {
-    let path = PathBuf::from(tool_call.arguments.get("path").and_then(|v| v.as_str())?);
+    resolve_key_path(tool_call, "path", project_root)
+}
+
+/// Resolve tool-call argument `key` (a string path) against the project root —
+/// absolute paths pass through, relative ones join `project_root`. `None` if
+/// the call has no string value under `key`.
+fn resolve_key_path(tool_call: &ToolCall, key: &str, project_root: &Path) -> Option<PathBuf> {
+    let path = PathBuf::from(tool_call.arguments.get(key).and_then(|v| v.as_str())?);
     Some(if path.is_absolute() {
         path
     } else {
@@ -38,6 +45,31 @@ pub(super) fn edit_target(tool_call: &ToolCall, project_root: &Path) -> Option<P
         return None;
     }
     resolve_path(tool_call, project_root)
+}
+
+/// Every path whose pre-edit content the phase diff needs for this call: the
+/// `path` of `write_file` / `patch` / `patch_lines` / `delete_file`, and both
+/// `from` and `to` of `move_file`. Empty for every other tool and for a call
+/// missing the argument. Resolves the way `edit_target` does (no
+/// canonicalization) so the keys match `pre_edit_content`'s other entries.
+pub(super) fn diff_targets(tool_call: &ToolCall, project_root: &Path) -> Vec<PathBuf> {
+    match tool_call.name.as_str() {
+        "write_file" | "patch" | "patch_lines" | "delete_file" => {
+            resolve_key_path(tool_call, "path", project_root)
+                .into_iter()
+                .collect()
+        }
+        "move_file" => {
+            let mut out = Vec::new();
+            for key in ["from", "to"] {
+                if let Some(p) = resolve_key_path(tool_call, key, project_root) {
+                    out.push(p);
+                }
+            }
+            out
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The read-before-edit gate (07d, extended M26 for `write_file`). Refuse an
@@ -1341,6 +1373,70 @@ mod tests {
         assert!(
             msg.contains("patch"),
             "refusal message should contain 'patch', got: {msg}"
+        );
+    }
+
+    // ── diff_targets (M50 phase-03) ───────────────────────────────────────
+
+    fn make_call(name: &str, args: serde_json::Value) -> ToolCall {
+        ToolCall {
+            name: name.to_string(),
+            arguments: args,
+            origin: crate::parser::Origin::Native,
+        }
+    }
+
+    #[test]
+    fn diff_targets_cover_every_edit_tool() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+
+        let path_call =
+            |name: &str| make_call(name, json!({ "path": "src/lib.rs", "content": "x" }));
+        for name in ["write_file", "patch", "patch_lines", "delete_file"] {
+            assert_eq!(
+                diff_targets(&path_call(name), root),
+                vec![root.join("src/lib.rs")],
+                "{name} should yield its path"
+            );
+        }
+
+        let move_call = make_call("move_file", json!({ "from": "old.txt", "to": "new.txt" }));
+        assert_eq!(
+            diff_targets(&move_call, root),
+            vec![root.join("old.txt"), root.join("new.txt")],
+            "move_file should yield both from and to"
+        );
+    }
+
+    #[test]
+    fn diff_targets_resolve_absolute_paths_through_unchanged() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let abs = dir.path().join("abs.txt").to_string_lossy().to_string();
+        let call = make_call("delete_file", json!({ "path": abs }));
+        assert_eq!(
+            diff_targets(&call, dir.path()),
+            vec![dir.path().join("abs.txt")]
+        );
+    }
+
+    #[test]
+    fn diff_targets_empty_for_non_edit_tools() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+
+        assert!(diff_targets(&make_call("read_file", json!({ "path": "a.txt" })), root).is_empty());
+        assert!(diff_targets(&make_call("bash", json!({ "command": "ls" })), root).is_empty());
+        assert!(diff_targets(&make_call("search", json!({ "pattern": "x" })), root).is_empty());
+        assert!(
+            diff_targets(&make_call("write_file", json!({ "content": "x" })), root).is_empty(),
+            "a write_file call with no path yields nothing"
+        );
+        assert_eq!(
+            diff_targets(&make_call("move_file", json!({ "from": "a.txt" })), root),
+            vec![root.join("a.txt")],
+            "a move_file missing `to` still captures `from`; a failed dispatch \
+             leaves the file unchanged, so the diff skips it"
         );
     }
 }

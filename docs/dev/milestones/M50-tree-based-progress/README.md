@@ -24,6 +24,9 @@ Those stalls are not a model-quality signal.
   detector's read-only exemption.
 - Files a `bash` call changed appear in the `PhaseResult` `diff` and
   `files_changed` and in the progress numstat.
+- Files changed through `patch_lines`, `delete_file` or `move_file` appear
+  there too (added 2026-10-26 at phase-02 review: the pre-edit capture only
+  covered `write_file` and `patch`).
 - All four gates green.
 
 ## Architecture references
@@ -38,6 +41,7 @@ Those stalls are not a model-quality signal.
 |----|-------|--------|
 | 01 | Bash tree changes count as progress ([phase-01-bash-tree-progress.md](phase-01-bash-tree-progress.md)) | done |
 | 02 | Bash edits in the reported diff ([phase-02-bash-edits-in-diff.md](phase-02-bash-edits-in-diff.md)) | done |
+| 03 | Every edit tool in the reported diff ([phase-03-all-edit-tools-in-diff.md](phase-03-all-edit-tools-in-diff.md)) | in-progress |
 
 ## Notes
 

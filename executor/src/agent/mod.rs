@@ -54,8 +54,8 @@ use outcome::{
 };
 use progress::{EmitCtx, ProgressCallback, emit_progress};
 use tools::{
-    append_tool_exchange, assistant_text, destructive_restore_refusal, dispatch, edit_target,
-    evict_superseded_reads, output_preview, read_before_edit_refusal, record_mtime,
+    append_tool_exchange, assistant_text, destructive_restore_refusal, diff_targets, dispatch,
+    edit_target, evict_superseded_reads, output_preview, read_before_edit_refusal, record_mtime,
     redundant_read_reference, render_diagnostics, resolve_path, user_text,
 };
 use verify::FileVerifier;
@@ -1075,12 +1075,17 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                         baseline.signatures.extend(captured.signatures);
                         baselined_exts.insert(ext.to_string());
                     }
-                    // 07e — capture the file's pre-edit content (the "before" side
-                    // of the diff) the first time it is edited, before the edit lands.
-                    if let Some(path) = &edit_path
-                        && !pre_edit_content.contains_key(path)
-                    {
-                        pre_edit_content.insert(path.clone(), std::fs::read_to_string(path).ok());
+                    // 07e — capture pre-edit content (the "before" side of the
+                    // diff) the first time a file is touched, before the edit
+                    // lands. `diff_targets` covers every tool that mutates a
+                    // file by name — `write_file`, `patch`, `patch_lines`,
+                    // `delete_file`, and both ends of `move_file` — so a
+                    // deletion reports as removals and a move as a removal at
+                    // `from` plus an addition at `to`.
+                    for path in diff_targets(&tool_call, deps.project_root) {
+                        pre_edit_content
+                            .entry(path.clone())
+                            .or_insert_with(|| std::fs::read_to_string(&path).ok());
                     }
                     // Step 5 — dispatch (native and text share this path).
                     // A `bash` call is fingerprinted before and after: if the
