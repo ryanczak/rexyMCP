@@ -111,9 +111,19 @@ impl Tool for Bash {
             Severity::Block => {
                 return Ok(ToolResult {
                     output: String::new(),
+                    // The wording matters: the 2026-11-08 incident was a
+                    // refused `pkill` that "rephrase or narrow" coached into
+                    // a `for … do kill -9` loop. A Block is the operation
+                    // being unavailable, not the spelling being wrong.
                     error: Some(
-                        "refused: command matches a blocked-command pattern \
-                         (rm -rf, sudo, git push, curl | sh, …) — rephrase or narrow the operation"
+                        "refused: this operation is not available to the executor \
+                         (a destructive or process-killing command: rm -rf, sudo, git push, \
+                         curl | sh, kill -9, pkill, a kill of pids found with pgrep or ps, …). \
+                         Do not retry it in another form — a loop, xargs, sh -c, another \
+                         signal or a script file is the same operation and is refused the \
+                         same way. Signal only processes this session started, by a pid you \
+                         recorded ($!), and if the task needs the operation, stop and report \
+                         it in Notes for review."
                             .to_string(),
                     ),
                     metadata: None,
@@ -560,7 +570,11 @@ mod tests {
         assert!(result.error.is_some());
         let err = result.error.as_ref().unwrap();
         assert!(err.contains("refused"));
-        assert!(err.contains("blocked-command pattern"));
+        assert!(err.contains("not available to the executor"));
+        assert!(
+            err.contains("Do not retry it in another form"),
+            "a Block must not invite a rephrase: {err}"
+        );
 
         let test_file = dir.path().join("should_not_exist.txt");
         assert!(
