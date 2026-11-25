@@ -316,6 +316,11 @@ Three entry types — use whichever fits.
 now, anything surprising. No need to log every micro-step.>
 ```
 
+Do **not** write an `**Executor:**` or model-name line in executor-authored
+Update Log entries — the server stamps the true model identity in the
+server-authored completion entry (folded 2026-11-25 after recurring model-id
+self-misreporting across M43–M51).
+
 ### Blocker (stop and wait)
 
 ```markdown

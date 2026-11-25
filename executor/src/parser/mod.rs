@@ -18,6 +18,13 @@ use serde_json::Value;
 /// An unterminated `<think>` block discards everything after the opening tag — a
 /// reasoning-only response that got truncated has nothing worth keeping. A
 /// trailing newline after `</think>` is also consumed since backends append one.
+///
+/// Some reasoning templates pre-inject `<think>` into the prompt, so the model's
+/// completion begins mid-thought and emits one or more unmatched closing
+/// `</think>` tags with no preceding `<think>`. After matched pairs are
+/// removed, any bare (unquoted / unbackticked) `</think>` drops everything up
+/// through that closing tag (plus an optional trailing newline). Quoted or
+/// backticked mentions such as `` `</think>` `` in prose or code are preserved.
 pub fn strip_think_blocks(s: &str) -> String {
     const OPEN: &str = "<think>";
     const CLOSE: &str = "</think>";
@@ -36,7 +43,25 @@ pub fn strip_think_blocks(s: &str) -> String {
         rest = next;
     }
     out.push_str(rest);
+
+    if let Some((idx, _)) = out
+        .rmatch_indices(CLOSE)
+        .find(|&(start, _)| !is_quoted_or_backticked(&out, start, start + CLOSE.len()))
+    {
+        let mut tail = &out[idx + CLOSE.len()..];
+        if let Some(stripped) = tail.strip_prefix('\n') {
+            tail = stripped;
+        }
+        return tail.to_string();
+    }
+
     out
+}
+
+fn is_quoted_or_backticked(s: &str, start: usize, end: usize) -> bool {
+    let prev = s[..start].chars().next_back();
+    let next = s[end..].chars().next();
+    matches!(prev, Some('`' | '\'' | '"')) && prev == next
 }
 
 pub mod detect;
@@ -257,6 +282,31 @@ mod tests {
             strip_think_blocks(input),
             "<tool_call>{\"name\":\"x\"}</tool_call>"
         );
+    }
+
+    #[test]
+    fn strip_think_blocks_drops_unmatched_closing_tag_prefix() {
+        assert_eq!(
+            strip_think_blocks("template-opened reasoning</think>\nanswer"),
+            "answer"
+        );
+        assert_eq!(
+            strip_think_blocks("</think>Done. Final summary.</think>\n**Summary:** real summary"),
+            "**Summary:** real summary"
+        );
+        assert_eq!(strip_think_blocks("just thinking</think>\n"), "");
+    }
+
+    #[test]
+    fn strip_think_blocks_preserves_quoted_or_backticked_closing_tag() {
+        let prose = "Fixed `strip_think_blocks` for `</think>` tags.";
+        assert_eq!(strip_think_blocks(prose), prose);
+
+        let code = "assert_eq!(tag, \"</think>\");";
+        assert_eq!(strip_think_blocks(code), code);
+
+        let mixed = "</think>Done.</think>\nFixed `strip_think_blocks` for `</think>` tags.";
+        assert_eq!(strip_think_blocks(mixed), prose);
     }
 
     use crate::security::scope::Scope;

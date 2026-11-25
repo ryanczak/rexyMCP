@@ -73,8 +73,10 @@ multi-field completion tail; the server does that part so you don't stall on it.
    flip it to `review` early, the server sees an already-finalized doc, writes
    nothing, and you are back to owning the bookkeeping tail this split removes.
 2. **Started entry:** append **one** progress entry to the phase's Update Log
-   naming yourself. This is your attribution in the doc and the only Update Log
-   entry you write.
+   recording that work has begun. Do **not** write an `**Executor:**` or
+   model-name line — the server stamps the true model identity in its
+   completion entry. This (plus any end-to-end verification entry) is the only
+   Update Log entry you write.
 3. **Work:** implement the Spec tasks in order. Add a progress entry only when
    something surprising happens.
 4. **Blocker:** if you cannot proceed, append a blocker entry and **stop**. Leave
@@ -113,7 +115,8 @@ architect's guidance, the work already on disk (a diff), and the prior task
 progress. Build on that work: read the current state of the files the diff
 touched before editing them, keep tasks already marked `done`, and pick up where
 the prior run stopped. The Update Log's prior entries stay as they are — append a
-new started entry naming yourself, then continue. Everything else in this
+new started entry (omit any `**Executor:**` or model-name line — the server
+stamps model identity), then continue. Everything else in this
 lifecycle is unchanged: you still own the code and the start-of-phase status, and
 the server still authors the completion tail.
 

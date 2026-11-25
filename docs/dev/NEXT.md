@@ -22,14 +22,19 @@ gate commands (07). Retrospective in
 [M51/README.md](milestones/M51-governor-repetition-and-cycles/README.md);
 `architecture.md` §51 done and `README.md` synced.
 
-**Open for the human:**
-- Reinstall `rexymcp` (`cargo install --path mcp`) and restart `rexymcp serve`
-  to pick up M51 in the live MCP server.
-- Close GitHub issues #18 and #19.
-- Sign-off candidates (held at threshold): runtime cleanup of unmatched
-  `</think>` fragments (6×) and duplicated `**Summary:**` prefixes (3×) in
-  server-authored completion entries; `WORKFLOW.md` fold dropping `**Executor:**`
-  from executor-authored Update Log templates (5×+ misreporting).
+**Resolved post-close (2026-11-25, on human go-ahead):**
+- GitHub issues #18 and #19 closed; `rexymcp` reinstalled onto PATH.
+- Runtime fixes landed: `strip_think_blocks` now drops unmatched bare `</think>`
+  prefixes (preserving quoted/backticked mentions); `finalize::baseline_entry`
+  deduplicates leading `**Summary:**`/`**Summary**` headings.
+- Calibration fold landed in `executor/templates/executor_contract.md`,
+  `docs/dev/WORKFLOW.md`, and `plugin/templates/WORKFLOW.md` (and synced to
+  DaemonEye): executor-authored Update Log entries omit `**Executor:**` /
+  model-name lines so the server-authored completion tail owns model attribution
+  exclusively.
+
+**Open for the human:** refresh/restart any running `rexymcp serve` onto the
+reinstalled binary; choose the next milestone.
 
 **M51 phase-07 — done 2026-11-24, `approved_first_try`** (code `ea09bf7`,
 approval `61495a9`, GLM-5.3-Flash). Ships `executor/src/process_group.rs`

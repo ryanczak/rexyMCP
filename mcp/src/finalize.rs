@@ -97,12 +97,40 @@ fn flip_status_to_review(doc: &str) -> String {
     result
 }
 
+/// Strip a redundant leading `**Summary:**`, `**Summary**:`, or `**Summary**`
+/// heading from an executor's completion message so `baseline_entry` does not
+/// render `**Summary:** **Summary:** ...`.
+fn strip_leading_summary_prefix(s: &str) -> &str {
+    let mut rest = s.trim();
+    loop {
+        let next = if let Some(tail) = rest.strip_prefix("**Summary:**") {
+            Some(tail)
+        } else if let Some(tail) = rest.strip_prefix("**Summary**:") {
+            Some(tail)
+        } else if let Some(tail) = rest.strip_prefix("**Summary**") {
+            if tail.is_empty() || tail.starts_with(char::is_whitespace) || tail.starts_with(':') {
+                Some(tail.strip_prefix(':').unwrap_or(tail))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        match next {
+            Some(tail) => rest = tail.trim_start(),
+            None => break,
+        }
+    }
+    rest
+}
+
 /// Build the baseline completion entry.
 fn baseline_entry(result: &PhaseResult, now_ms: u64, code_sha: &str, model: &str) -> String {
-    let summary = if result.completion_summary.trim().is_empty() {
+    let cleaned = strip_leading_summary_prefix(&result.completion_summary);
+    let summary = if cleaned.is_empty() {
         "(no summary provided by executor)".to_string()
     } else {
-        result.completion_summary.trim().to_string()
+        cleaned.to_string()
     };
 
     let gates = gate_line(&result.command_outputs);
@@ -1077,5 +1105,57 @@ mod tests {
         // Full expected output (byte-for-byte)
         let expected = "# Phase 01: Well-formed bookkeeping output\n\n**Milestone:** M42 — Bookkeeping Format Hygiene\n**Status:** review\n**Depends on:** none\n\n## Update Log\n\n<!-- entries appended below this line -->\n\n### Update — 2026-07-24 23:09 (started)\n\nStarted implementation by AI executor.\n\n### Update — 2026-07-24 23:16 (complete, server-authored)\n\n**Summary:** Done.\n\n**Acceptance criteria:** all ticked above.\n\n**Notes:** server-authored completion entry.\n";
         assert_eq!(final_doc, expected);
+    }
+
+    #[test]
+    fn baseline_entry_deduplicates_leading_summary_prefix() {
+        for raw in [
+            "**Summary:** Implemented the fix.",
+            "**Summary**: Implemented the fix.",
+            "**Summary**\n\nImplemented the fix.",
+            "**Summary:** **Summary:** Implemented the fix.",
+        ] {
+            let mut result = PhaseResult::complete(rexymcp_executor::phase::Artifacts {
+                files_changed: Vec::new(),
+                diff: String::new(),
+                command_outputs: CommandOutputs::default(),
+                update_log: String::new(),
+                log_path: None,
+                completion_summary: raw.to_string(),
+            });
+            result.completion_summary = raw.to_string();
+            let entry = baseline_entry(&result, 0, "abc123", "test-model");
+            assert!(
+                entry.contains("**Summary:** Implemented the fix.\n"),
+                "prefix must be deduplicated for {raw:?}, got:\n{entry}"
+            );
+            assert!(
+                !entry.contains("**Summary:** **Summary"),
+                "must not duplicate Summary heading for {raw:?}, got:\n{entry}"
+            );
+        }
+
+        let empty_after_strip = PhaseResult::complete(rexymcp_executor::phase::Artifacts {
+            files_changed: Vec::new(),
+            diff: String::new(),
+            command_outputs: CommandOutputs::default(),
+            update_log: String::new(),
+            log_path: None,
+            completion_summary: "**Summary:**   ".to_string(),
+        });
+        let entry = baseline_entry(&empty_after_strip, 0, "abc123", "test-model");
+        assert!(entry.contains("**Summary:** (no summary provided by executor)\n"));
+    }
+
+    #[test]
+    fn strip_leading_summary_prefix_preserves_other_text() {
+        assert_eq!(
+            strip_leading_summary_prefix("Summary of changes made."),
+            "Summary of changes made."
+        );
+        assert_eq!(
+            strip_leading_summary_prefix("**SummaryNote:** kept intact"),
+            "**SummaryNote:** kept intact"
+        );
     }
 }
