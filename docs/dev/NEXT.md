@@ -4,7 +4,38 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-07-process-group-cleanup.md`
+**Active phase:** none
+
+**M51 — Governor repetition, cycles & process hygiene closed 2026-11-24** at
+seven phases (01 and 04–07 `approved_first_try`, 02–03 `approved_after_1`; 2
+bugs verified, 0 escalations, 0 takeovers; 1,248 total executor turns on
+`GLM-5.3-Flash`), addressing [issue #18](https://github.com/ryanczak/rexyMCP/issues/18)
+and [issue #19](https://github.com/ryanczak/rexyMCP/issues/19) plus #18's two
+companion observations. Ships: contract batching rule + classifier tests (01),
+shared bash plumbing/timing normalizer (02), recoverable repeat nudge +
+`SessionEvent::NudgeInjected` + `PhaseRun` nudge telemetry (03),
+plumbing-normalized `ReadOnlyCycle` nudge-then-terminate + `calibrate-governor`
+replay with `LowNoveltyStall` kept advisory (04), per-task `TaskNoEditStall` +
+opt-in `[budget] checkpoint_turns` (05), async `continue_phase` with `run_id` /
+cancel parity (06), and zero-`unsafe` Unix process-group cleanup for `bash` and
+gate commands (07). Retrospective in
+[M51/README.md](milestones/M51-governor-repetition-and-cycles/README.md);
+`architecture.md` §51 done and `README.md` synced.
+
+**Open for the human:**
+- Reinstall `rexymcp` (`cargo install --path mcp`) and restart `rexymcp serve`
+  to pick up M51 in the live MCP server.
+- Close GitHub issues #18 and #19.
+- Sign-off candidates (held at threshold): runtime cleanup of unmatched
+  `</think>` fragments (6×) and duplicated `**Summary:**` prefixes (3×) in
+  server-authored completion entries; `WORKFLOW.md` fold dropping `**Executor:**`
+  from executor-authored Update Log templates (5×+ misreporting).
+
+**M51 phase-07 — done 2026-11-24, `approved_first_try`** (code `ea09bf7`,
+approval `61495a9`, GLM-5.3-Flash). Ships `executor/src/process_group.rs`
+(`configure_process_group`, `kill_process_group` with `pgid == 0` guard,
+`ProcessGroupGuard` RAII drop) wired into `tools/bash.rs` and
+`agent/command.rs` (`RealCommandRunner::run`, plus `Stdio::null()` stdin).
 
 **M51 phase-06 — done 2026-11-24, `approved_first_try`** (code `f138b87`,
 approval `8d07737`, GLM-5.3-Flash). `continue_phase` now spawns asynchronously

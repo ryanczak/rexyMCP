@@ -24,6 +24,34 @@ harness you use.
 
 A bunch of recent change that need to be called out because they change some core mechanics: 
 
+- **Governor repetition nudges, read-only cycle detection, async `continue_phase` & process-group hygiene (M51).**
+  - **Batching + recoverable repeat nudges:** the embedded executor contract now
+    teaches batching repeated shell work (`xargs -P`, `for` loops), and a shared
+    bash output-plumbing / output-timing normalizer (`| tail`, `| head`,
+    `| wc -l`, `2>&1`, `> /tmp/x && cat /tmp/x`, simple quotes, wall-clock
+    durations) powers a recoverable **repeat nudge**
+    (`[governor] repeat_nudge_threshold`, default `3`, `0` disables) ahead of
+    `IdenticalToolCallRepetition`, emitting `SessionEvent::NudgeInjected` and
+    recording `nudges_injected` / `nudges_heeded` in `PhaseRun` telemetry.
+  - **Plumbing-normalized `ReadOnlyCycle` detector:** catches cyclic read-only /
+    bash loops (such as alternating `grep … | wc -l` and `grep … | head -2`)
+    without collapsing distinct `read_file` line ranges or `search` patterns
+    (`read_only_cycle_window = 16`, `read_only_cycle_distinct_max = 4`; nudges
+    once, then terminates if unchanged; replayed by `rexymcp calibrate-governor`
+    as `read_only_cycle_min_distinct`). `LowNoveltyStall` stays advisory by
+    default.
+  - **Per-task no-edit cap & opt-in soft checkpoint:** `[governor]
+    task_no_edit_threshold` (default `40`, `0` disables) bounds edit-free turns
+    while a tracked task stays `active` (`TaskNoEditStall`, ignoring redundant
+    re-activations), and `[budget] checkpoint_turns` (default `0`, opt-in)
+    pauses cleanly at a turn checkpoint as a resumable `BudgetExceeded`
+    preserving partial work on disk and recommending `continue_phase`.
+  - **Async `continue_phase` & process-group cleanup:** `continue_phase` now
+    spawns asynchronously via `JobRegistry` and returns `{ run_id }` (polled
+    with `get_run_status`, stoppable via `stop_phase` / `.rexymcp/stop`),
+    matching `execute_phase`. On Unix, `bash` tool commands and final-gate
+    commands run in their own process group behind an RAII guard so timeouts and
+    cancellations signal `-pgid` and never orphan test children.
 - **The verifier-persistence detector stops killing wiring sweeps (M47).**
   `VerifierFailurePersistent` used to fire on N consecutive post-edit verifies
   with a non-decreasing error count — a notion of progress that a legitimate
@@ -543,7 +571,7 @@ The `rmcp` stdio server (`rexymcp serve`) exposes **ten** tools to Claude Code:
 | Tool | What it does |
 |---|---|
 | `execute_phase` | Run the executor against a phase doc + target repo. **As of M30 it is an async job**: it spawns the run and returns `{ run_id }` immediately — reap the terminal `PhaseResult` by polling `get_run_status`. The `repo_path` is corroborated against the project-dir env var (`CLAUDE_PROJECT_DIR` / `ANTIGRAVITY_PROJECT_DIR`) — a mismatch refuses the call. Params: `phase_doc_path`, `repo_path`, optional `model`. |
-| `get_run_status` | Reap a spawned `execute_phase` run by `run_id` — a bounded long-poll (~15s): `running` while in flight, `done` + the terminal `PhaseResult` once it completes / hard-fails / is cancelled, `failed` + error on an infra error, or `unknown`. Re-poll while running. Param: `run_id`. (M30) |
+| `get_run_status` | Reap a spawned `execute_phase` or `continue_phase` run by `run_id` — a bounded long-poll (~15s): `running` while in flight, `done` + the terminal `PhaseResult` once it completes / hard-fails / is cancelled, `failed` + error on an infra error, or `unknown`. Re-poll while running. Param: `run_id`. (M30, extended M51) |
 | `stop_phase` | Stop a spawned run by `run_id`: fires its cooperative cancel so it aborts at the next turn boundary (or mid model-stream) and comes back a `cancelled` `PhaseResult` — reason `claude_stop`, the partial diff, working tree left dirty. The human's client-agnostic equivalent is the `rexymcp stop` CLI (a `.rexymcp/stop` sentinel). Param: `run_id`. (M30) |
 | `continue_phase` | The **resume** escalation lever: re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh executor context built from the phase doc + the returned briefing + one architect `guidance` directive + the current working-tree diff, with `task_states` restored from the session log. Keeps the completed work without replaying the context rot that stalled the run. **As of M51 it is an async job like `execute_phase`**: it spawns the run and returns `{ run_id }` immediately — reap the terminal `PhaseResult` by polling `get_run_status`, and stop it with `stop_phase`. Params: `phase_doc_path`, `repo_path`, `guidance`, optional `model`. |
 | `executor_health` | Check connectivity to the configured LLM endpoint and list models. Optional `base_url` override. |
@@ -625,7 +653,7 @@ are no short aliases.
 | `rexymcp health` | Connectivity check against the configured endpoint; lists models. | `--config <path>`, `--base-url <url>` |
 | `rexymcp doctor` | Verify the toolchain is installed: Tier-0 `[commands]` binaries (required — a missing one exits non-zero) and Tier-1 verifier enhancers (`cargo` / `tsc` / `ruff`, advisory / fail-open). | `--config <path>`, `--json` |
 | `rexymcp calibrate <TIER>` | Write tier-derived budget defaults (`tier`, `max_turns`, `gate_retries`, `[escalation]`) to the config, preserving comments and explicit overrides. | `<TIER>` = `LARGE`\|`MEDIUM`\|`SMALL`; `--config <path>` |
-| `rexymcp calibrate-governor` | Calibrate governor thresholds empirically by replaying the recorded session-log corpus — surfaces a per-model view of where the identical-call / oscillation / output-flood / verifier-persistence detectors would trip (both the shipped `verifier_persistence_run` and the re-keyed `verifier_refile_run`), so you can tune the `[governor]` values to your real runs instead of guessing. | `--repo <path>` (default `.`), `--sessions-dir`, `--model`, `--novelty-window <n>` (default 24), `--min-runs <n>`, `--json` |
+| `rexymcp calibrate-governor` | Calibrate governor thresholds empirically by replaying the recorded session-log corpus — surfaces a per-model view of where the identical-call / oscillation / plumbing-normalized read-only cycle (`read_only_cycle_min_distinct`) / output-flood / verifier-persistence detectors would trip (both the shipped `verifier_persistence_run` and the re-keyed `verifier_refile_run`), so you can tune the `[governor]` values to your real runs instead of guessing. | `--repo <path>` (default `.`), `--sessions-dir`, `--model`, `--novelty-window <n>` (default 24), `--min-runs <n>`, `--json` |
 | `rexymcp run-phase` | Run a single phase from the shell; prints the `PhaseResult` as JSON. No MCP client required. Honors the `.rexymcp/stop` sentinel. | `--config`, `--phase-doc`, `--repo` (all required), `--model` |
 | `rexymcp stop` | Signal a running executor to stop — writes a `.rexymcp/stop` sentinel in the target repo that the serve-side watcher (and a blocking `run-phase`) honor, cancelling every live run there. The human's out-of-band interrupt (M30). | `--repo <path>` (default `.`) |
 | `rexymcp serve` | Start the MCP stdio server. | `--config <path>` (required) |
@@ -766,7 +794,7 @@ answer to that constraint:
 | Challenge | rexyMCP's answer |
 |---|---|
 | Small models emit malformed tool calls — trailing commas, fenced JSON, near-miss key names | **Forgiving parser** recognizes six output formats (Hermes, fenced/loose JSON, YAML, XML-variant, plain text) and applies repair transforms (fuzzy name match, param aliasing, type coercion, default-fill, JSON repair, string-escape) before giving up — and when it must give up, it feeds *model-visible* feedback instead of silently aborting the turn |
-| The model loops, retrying the same broken edit | **Governor loop detector** trips on N identical consecutive tool calls (default 6) — plus an A,B,A,B oscillation detector and a windowed cumulative-output flood detector (M26) — and converts it to a `hard_fail` briefing before it burns the turn budget. "Identical" is judged on **whitespace-normalized** arguments (M45), so a loop that re-issues the same edit with the indentation or a line break shuffled still trips instead of slipping past on a cosmetic difference; arguments that differ substantively stay distinct. An optional wall-clock ceiling terminates a wedged run |
+| The model loops, retrying the same broken edit or cycling read-only shell commands | **Governor loop detector & recoverable nudges** (M26, M45, M51): injects one recoverable **repeat nudge** at `repeat_nudge_threshold` (default 3, plumbing- and timing-normalized) ahead of `IdenticalToolCallRepetition` (whitespace-normalized exact-match backstop, default 6), catches plumbing-normalized read-only cycles (`ReadOnlyCycle`, nudging once before terminating if unchanged), bounds edit-free turns on a stuck active task (`TaskNoEditStall`, default 40), and runs A,B,A,B oscillation + windowed output-flood detectors — converting stuck runs into a `hard_fail` briefing before burning the turn budget. Optional `wall_clock_secs` ceiling and `checkpoint_turns` soft checkpoint bound long runs cleanly |
 | A truncated tool call drops a required arg and the raw serde error is a dead end | **Recovery-oriented tool errors**: instead of surfacing `missing field \`path\``, the tool names the missing field, echoes what *was* supplied, and hands back an example call shape + next step (M28); a no-op `patch` returns the file's current text, location, and occurrence count (M24) — the model gets something to act on rather than a wall |
 | Correct code dies in the bookkeeping tail — the model can't reliably fill in the Update Log / Status flip | **Server-authored bookkeeping** (M27): on a clean `complete`, the *server* writes the phase's Status flip and a baseline Update Log entry from data it already holds (splicing in the summary the model returned) and makes a separate `docs:` commit. The executor's job ends at green code |
 | The model stalls in the tail — emits an empty or mid-`<think>`-truncated completion, or re-submits a no-op edit, instead of finishing | **Stall recovery** (M22–M24): an empty completion or a `finish_reason="length"` truncation is routed to a cause-specific recovery nudge rather than mis-read as "done" (consecutive empties escalate to a no-reasoning directive); a no-op `patch` (identical `old_str`/`new_str`) returns the file's current text + location and an occurrence count instead of a dead-end error; dedicated governor stalls (empty-completion, stuck-gate-feedback) cap the loop as the backstop |
@@ -991,9 +1019,13 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
   the repo root (no `..`, absolute-path, or symlink escape); a bash classifier
   blocks the destructive command categories; a read-before-edit rule (in the
   agent loop) refuses a `patch` on an unseen or changed file.
-- **Governor** (`governor/`) — trips a `hard_fail` on identical-call loops,
-  persistent verifier failure, or runaway single-tool output, each on a
-  configurable threshold; scores per-tool reliability with Laplace smoothing.
+- **Governor** (`governor/`) — normalizes trailing bash plumbing and timing
+  output (`normalize.rs`), injects recoverable repeat and read-only-cycle nudges
+  ahead of termination (`NudgeInjected`), trips a `hard_fail` on
+  `IdenticalToolCallRepetition`, `ReadOnlyCycle`, `TaskNoEditStall`,
+  `VerifierFailurePersistent`, `RunawayOutput`, `Oscillation`,
+  `CumulativeOutputFlood`, `NoProgressStall`, or (opt-in) `LowNoveltyStall`,
+  and scores per-tool reliability with Laplace smoothing.
 - **Verifier** (`agent/verify.rs`) — runs after every successful edit against a
   session-start baseline (so ambient errors aren't blamed on the model), feeds
   back rustc machine-applicable fixes plus `cargo check` / `tsc --noEmit` /
@@ -1011,9 +1043,12 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
   stuck, the loop assembles a tight brief (goal, acceptance criteria,
   diagnostics, ≤5 working files, what was tried, current blocker, budget
   remaining) and hands control back to Claude instead of burning the budget.
-- **Final command gate** (`agent/command.rs`) — on clean completion, runs the
-  configured commands in order **format → build → lint → test** and only reports
-  success if they pass.
+- **Final command gate** (`agent/command.rs`) & **process-group cleanup**
+  (`process_group.rs`) — on clean completion, runs the configured commands in
+  order **format → build → lint → test** and only reports success if they pass.
+  Both `bash` tool commands and gate commands spawn in their own Unix process
+  group behind an RAII `ProcessGroupGuard` so timeouts and cancellations signal
+  `-pgid` and never orphan test children (M51).
 - **`PhaseResult`** (`phase/result.rs`) — the single value that crosses the MCP
   boundary: `status` (`complete` / `hard_fail` / `budget_exceeded` / `cancelled`),
   files changed, the diff, per-command outputs, an Update Log entry, an optional
@@ -1028,13 +1063,14 @@ The `executor` crate is the headless single-phase agent loop. The turn cycle is
   turns, wall-clock, token breakdown, context window, `length_finish_rate`,
   decomposed reliability components (parse-failure rate, repairs-per-call,
   tool-success rate, verifier-retries), context-efficiency (peak context % and
-  tokens reclaimed by source), `project_id`/`milestone_id`, tier telemetry, and
-  — at review — the Architect's verdict.
+  tokens reclaimed by source), `nudges_injected` / `nudges_heeded` (M51),
+  `project_id`/`milestone_id`, tier telemetry, and — at review — the Architect's
+  verdict.
 - **JSONL session log** (`store/sessions/`) — every turn (prompts, parsed tool
-  calls, tool results, verifier runs, progress, compaction/reclaim events, task
-  updates) is written to `session-<id>.jsonl`, so a lean `PhaseResult` never
-  means lost detail. The `executor_log_search` / `executor_log_tail` / `get_turn`
-  MCP tools read it back.
+  calls, tool results, verifier runs, progress, compaction/reclaim events,
+  recoverable `NudgeInjected` events, task updates) is written to
+  `session-<id>.jsonl`, so a lean `PhaseResult` never means lost detail. The
+  `executor_log_search` / `executor_log_tail` / `get_turn` MCP tools read it back.
 
 ---
 
@@ -1047,7 +1083,8 @@ plugin/     plugin package (Claude Code & Google Antigravity)
   ├── .claude-plugin/
   │     └── plugin.json           Claude Code plugin manifest (name, version, description)
   ├── plugin.json                 Antigravity plugin manifest
-  ├── .mcp.json                   MCP server registration → `rexymcp serve --config ./rexymcp.toml`
+  ├── mcp_config.json             Antigravity MCP server registration → `rexymcp serve --config ../rexymcp.toml`
+  ├── .mcp.json                   Claude Code MCP server registration → `rexymcp serve --config ./rexymcp.toml`
   ├── skills/
   │     ├── architect/SKILL.md    /rexymcp:architect
   │     ├── dispatch/SKILL.md     /rexymcp:dispatch

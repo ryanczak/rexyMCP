@@ -1,18 +1,21 @@
 # rexyMCP — Architecture
 
-> **Status:** Living design doc. M1–M33 are fully implemented and closed (M18's
+> **Status:** Living design doc. M1–M51 are implemented and closed (M18's
 > thread 4 / cold-start calibration battery is shelved by design, outside its
-> committed scope; M27's stretch phase-07 advisory routing was not taken).
-> **No milestone is currently active** (M33 closed 2026-07-16; M32 closed
-> 2026-07-10; M28's optional phase-02 also taken and closed 2026-07-10). The most recent arcs: **M28**
-> (edit-tool arg recovery), **M29** (cleanup), **M30** (executor
-> interruption — async `execute_phase` jobs, `stop_phase`, the `.rexymcp/stop`
-> sentinel, and the `cancelled` outcome), and **M31** (rmcp v2 upgrade —
-> `rmcp` 2.2.0 on the MCP 2025-11-25 spec line, plus structured tool output
-> for `execute_phase`/`continue_phase`). This document is the source
-> of truth for the *intended* design; the code under `executor/` and `mcp/` is
-> the source of truth for what actually runs. Milestones are listed in the
-> **Status** section at the bottom — that list is the project plan.
+> committed scope; M27's stretch phase-07 advisory routing and M44 phase-02 were
+> not taken). **No milestone is currently active** (M51 closed 2026-11-24). The
+> most recent arcs: **M46** (token-first accounting), **M47** (re-edit-keyed
+> verifier persistence + `verifier_refile_run`), **M48** (lossless boundary
+> output, loud zero-threshold refusal, exact repetition on non-mutating
+> windows), **M50** (tree-based progress & full edit-tool diff capture), and
+> **M51** (contract batching rule, shared bash plumbing/timing normalizer,
+> recoverable repeat & `ReadOnlyCycle` nudges with `NudgeInjected` telemetry,
+> per-task `TaskNoEditStall`, opt-in `[budget] checkpoint_turns`, async
+> `continue_phase` with `run_id`/cancel parity, and Unix process-group cleanup
+> for `bash` and gate commands). This document is the source of truth for the
+> *intended* design; the code under `executor/` and `mcp/` is the source of
+> truth for what actually runs. Milestones are listed in the **Status** section
+> at the bottom — that list is the project plan.
 
 ## What rexyMCP is
 
@@ -125,26 +128,38 @@ hits a budget cap:
 4. Run the model output through the forgiving parser → `ToolCall` or a
    `ParseFailure` that is fed back to the model as repair guidance.
 5. Dispatch the tool through the governor → registry; all filesystem/bash access
-   is scoped to the target-repo root.
+   is scoped to the target-repo root. On Unix, `bash` and gate commands spawn
+   in their own process group behind an RAII `ProcessGroupGuard` (`process_group.rs`)
+   so timeouts and cancellations signal `-pgid` and never orphan grandchildren
+   (M51).
 5a. **Post-write hook.** After every successful edit-class tool call (`write_file`,
-   `patch`), run the project's configured `lint_fix` command (if set) then the
-   `format` command (if set), both best-effort (failures discarded, never a
-   hard-fail). This ensures the on-disk file is always in the formatter's expected
-   state before the verifier reads it, regardless of turn ordering — a spec
-   instruction to "run the formatter" cannot achieve this because a later write
-   undoes it.
+   `patch`, `patch_lines`), run the project's configured `lint_fix` command (if
+   set) then the `format_fix` command (if set), both best-effort (failures
+   discarded, never a hard-fail). This ensures the on-disk file is always in the
+   formatter's expected state before the verifier reads it, regardless of turn
+   ordering — a spec instruction to "run the formatter" cannot achieve this
+   because a later write undoes it.
 6. After edit-class tools, run the verifier (the project's typecheck/build). On
    failure, feed the diagnostics back for a retry.
-7. The hard-fail detector watches for stuck states — identical-call and
-   oscillation loops, a **low-novelty (churn) stall** (over a window of
-   read-only calls the executor keeps re-probing a small set of *normalized
-   targets* — files/grep scopes with line ranges and patterns stripped — rather
-   than covering new ground, so wide legitimate exploration passes while tight
-   churn fails fast), a **no-progress read-only stall** (a high raw-volume
-   backstop of N consecutive tool calls with no file edit among them),
-   repeated verifier failures, empty-completion and stuck-gate stalls,
-   runaway/cumulative-flood output, and budget overflow. If it trips, assemble a
-   **briefing** and stop.
+7. The hard-fail detector watches for stuck states — identical-call
+   (whitespace-normalized) and oscillation loops, a plumbing-normalized
+   **`ReadOnlyCycle`** (M51: strips trailing bash pipes/temp-captures/quotes
+   without collapsing distinct `read_file` slices or `search` patterns; nudges
+   once before terminating if unchanged, replayed in `calibrate-governor` as
+   `read_only_cycle_min_distinct`), a **per-task no-edit stall**
+   (`TaskNoEditStall`, M51: bounds edit-free turns while a tracked task stays
+   `active`, ignoring redundant re-activations), an advisory-by-default
+   **low-novelty (churn) stall** (`NoveltySample` / optional `LowNoveltyStall`),
+   a **no-progress read-only stall** (high raw-volume backstop), repeated
+   verifier failures (keyed on re-editing a file already in the streak, M47),
+   empty-completion and stuck-gate stalls, runaway/cumulative-flood output, and
+   budget overflow. Ahead of `IdenticalToolCallRepetition`, a recoverable
+   **repeat nudge** (`repeat_nudge_threshold`, M51) injects one steering message
+   on consecutive plumbing- and timing-normalized repeats with identical output
+   and logs `SessionEvent::NudgeInjected`. If a hard-fail trips, assemble a
+   **briefing** and stop. An opt-in **`[budget] checkpoint_turns`** soft
+   checkpoint (default `0`, M51) likewise returns a resumable `BudgetExceeded`
+   briefing recommending `continue_phase` with partial edits preserved on disk.
 8. When the model signals completion (`NoToolCall`), run the project's full
    command set (`{FORMAT_COMMAND}`/`{BUILD_COMMAND}`/`{LINT_COMMAND}`/
    `{TEST_COMMAND}`). If any gate exits non-zero, inject its output as a user
@@ -297,6 +312,7 @@ PhaseRun {
   parse_failure_rate, repairs_per_call, // from the forgiving parser
   verifier_retries, tool_success_rate,  // from the governor
   length_finish_rate,                   // fraction of completions that hit max_tokens (truncation signal)
+  nudges_injected, nudges_heeded,       // recoverable repeat/cycle nudges (#[serde(default)], M51)
   // efficiency
   turns, wall_clock_s, tokens,          // TokenBreakdown (in/out/cached)
   // endpoint-reported provenance (best-effort; None when the server omits them)
@@ -394,27 +410,33 @@ An MCP **stdio** server built on the `rmcp` crate. It exposes these tools:
   `{ run_id }` immediately; the terminal `PhaseResult` is reaped with
   `get_run_status`. (The CLI `rexymcp run-phase` stays blocking and returns the
   `PhaseResult` directly.)
-- **`get_run_status`** (M30) — args: `run_id` (string). Bounded long-poll (≈15s)
-  on a spawned `execute_phase` run: returns `{ state: "running" }` while the run
-  is in flight, the terminal `PhaseResult` once it completes / hard-fails / is
-  cancelled, an infra `{ state: "failed", error }` if the run errored, or
-  `{ state: "unknown" }` for an unrecognized `run_id`. This is how the architect
-  (or the async skill loop, phase-05) reaps a spawned run.
-- **`stop_phase`** (M30) — args: `run_id` (string). Fires the spawned run's
-  cooperative `CancelSignal` so it aborts at the next turn boundary (or mid
-  model-stream) and returns a `PhaseResult` with status `cancelled`,
-  `cancellation.reason` `claude_stop`, and the partial diff (working tree left
-  dirty). Returns `{ stopped: true }` if the `run_id` was known, `{ stopped:
-  false }` otherwise. The cancel is cooperative and asynchronous — the caller
-  polls `get_run_status` to observe the terminal `cancelled` result. This is the
-  architect's mid-flight abort, at poll granularity; the human's client-agnostic
-  path is the `.rexymcp/stop` sentinel (`rexymcp stop`, phase-04).
-- **`continue_phase`** (M27) — args: `phase_doc_path`, `repo_path`, `guidance`
-  (the architect's targeted directive), optional `model`. The **resume** lever:
-  re-enters a `hard_fail`/`budget_exceeded` phase **briefing-seeded** — a fresh
-  executor context from the phase doc + returned briefing + guidance + current
-  working-tree diff, with `task_states` restored from the session log. Returns a
-  `PhaseResult` like `execute_phase`.
+- **`get_run_status`** (M30, extended M51) — args: `run_id` (string). Bounded
+  long-poll (≈15s) on a spawned `execute_phase` or `continue_phase` run: returns
+  `{ state: "running" }` while the run is in flight, the terminal `PhaseResult`
+  once it completes / hard-fails / is cancelled, an infra `{ state: "failed",
+  error }` if the run errored, or `{ state: "unknown" }` for an unrecognized
+  `run_id`. This is how the architect (or the async skill loop) reaps a spawned
+  run.
+- **`stop_phase`** (M30, extended M51) — args: `run_id` (string). Fires the
+  spawned `execute_phase` or `continue_phase` run's cooperative `CancelSignal`
+  so it aborts at the next turn boundary (or mid model-stream) and returns a
+  `PhaseResult` with status `cancelled`, `cancellation.reason` `claude_stop`,
+  and the partial diff (working tree left dirty). Returns `{ stopped: true }` if
+  the `run_id` was known, `{ stopped: false }` otherwise. The cancel is
+  cooperative and asynchronous — the caller polls `get_run_status` to observe
+  the terminal `cancelled` result. This is the architect's mid-flight abort, at
+  poll granularity; the human's client-agnostic path is the `.rexymcp/stop`
+  sentinel (`rexymcp stop`, phase-04).
+- **`continue_phase`** (M27, async M51) — args: `phase_doc_path`, `repo_path`,
+  `guidance` (the architect's targeted directive), optional `prior_log_path` /
+  `model`. The **resume** lever: re-enters a `hard_fail`/`budget_exceeded`/
+  `cancelled` phase **briefing-seeded** — a fresh executor context from the
+  phase doc + returned briefing + guidance + current working-tree diff, with
+  `task_states` restored from the session log. As of M51 it is an **async job**
+  matching `execute_phase`: spawns via `JobRegistry` with a live `CancelSignal`
+  and `.rexymcp/stop` watcher, returns `{ run_id }` (`SpawnedRun` output schema)
+  immediately, is polled with `get_run_status`, and is stoppable with
+  `stop_phase`.
 - **`executor_health`** — args: optional endpoint override. Pings the configured
   OpenAI-compatible endpoint and lists available models. Lets the architect
   confirm the executor is reachable before dispatching.
@@ -511,7 +533,8 @@ A Claude Code **plugin** bundles the MCP server with the workflow that drives it
     `STANDARDS.md`, rerun the project's commands, then approve or file a bug.
   - `escalate` — given a returned briefing, pick a lever: re-dispatch with a
     refined spec (default for weak models — see "Escalation"), session takeover,
-    or **resume** (briefing-seeded `continue_phase`, shipped M27).
+    or **resume** (briefing-seeded `continue_phase`, shipped M27; detect-and-adapt
+    async `{ run_id }` / `get_run_status` / `stop_phase` flow as of M51).
   - `auto` (M27) — the opt-in **autonomous milestone loop**. Composes the four
     skills above — draft → dispatch → review → escalate/re-dispatch — hands-off
     across a whole milestone with full review rigor and no per-phase pause,
@@ -1233,25 +1256,36 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
-51. **M51 — Governor repetition, cycles & process hygiene** *(planning, opened
-    2026-11-24 from [issue #18](https://github.com/ryanczak/rexyMCP/issues/18)
-    and [issue #19](https://github.com/ryanczak/rexyMCP/issues/19))*. Local
-    executors (GLM-5.3-Flash) repeat or cycle read-only shell commands instead
-    of batching them, and the governor either stays silent until it hard-fails
-    working code (#19) or misses multi-command read-only cycles and per-task
-    no-edit stalls until `max_turns` (#18). Seven planned phases: **01**
-    executor-contract batching rule + worked examples + classifier tests (#19
-    Proposal 1); **02** shared bash output-plumbing and output-timing
-    normalizers (reused by repeat nudges, cycle detection, and `normalize_target`);
-    **03** recoverable repeat nudge before hard-fail + `NudgeInjected` event &
-    `PhaseRun` telemetry (#19 Proposal 2); **04** plumbing-normalized
-    `ReadOnlyCycle` detector (distinct from `LowNoveltyStall`, which stays
-    advisory) + calibration replay (#18 Ask 1); **05** per-task no-edit cap +
-    opt-in `[budget] checkpoint_turns` (default `0`, returning resumable
-    `BudgetExceeded`) (#18 Asks 2 & 3); **06** async `continue_phase` (`run_id`
-    + `JobRegistry` + cancel, matching `execute_phase`) (#18 related #1);
-    **07** process-group cleanup for `bash` and gate commands so deadlocked
-    test children are never orphaned (#18 related #2).
+51. **M51 — Governor repetition, cycles & process hygiene** *(done 2026-11-24;
+    opened 2026-11-24 from [issue #18](https://github.com/ryanczak/rexyMCP/issues/18)
+    and [issue #19](https://github.com/ryanczak/rexyMCP/issues/19), seven phases:
+    01 and 04–07 `approved_first_try`, 02–03 `approved_after_1`, zero escalations,
+    zero takeovers)*. Local executors (GLM-5.3-Flash) repeated or cycled
+    read-only shell commands instead of batching them, and the governor either
+    stayed silent until hard-failing working code (#19) or missed multi-command
+    read-only cycles and per-task no-edit stalls until `max_turns` (#18).
+    **01** added the `### Batch repeated work` rule with `xargs -P` / `for`
+    worked examples to `executor_contract.md` and classifier tests (#19 Proposal
+    1); **02** shipped `executor/src/governor/normalize.rs` (shared bash
+    output-plumbing and output-timing normalizers, wired into `normalize_target`
+    while leaving `check_identical_repetition` exact); **03** added the
+    recoverable repeat nudge (`[governor] repeat_nudge_threshold`, default `3`,
+    `0` disables) ahead of `IdenticalToolCallRepetition`, plus
+    `SessionEvent::NudgeInjected` and `PhaseRun` `nudges_injected`/`nudges_heeded`
+    (#19 Proposal 2); **04** added the plumbing-normalized `ReadOnlyCycle`
+    detector (`read_only_cycle_window = 16`, `read_only_cycle_distinct_max = 4`,
+    staged nudge-first-then-terminate, replayed in `calibrate-governor` as
+    `read_only_cycle_min_distinct`) while leaving `LowNoveltyStall` advisory
+    (#18 Ask 1); **05** added the per-task no-edit cap
+    (`task_no_edit_threshold = 40` → `HardFailSignal::TaskNoEditStall`, ignoring
+    redundant re-activations) and opt-in `[budget] checkpoint_turns` (default
+    `0`, returning resumable `BudgetExceeded` preserving partial edits) (#18
+    Asks 2 & 3); **06** made `continue_phase` an async `JobRegistry` job with
+    `{ run_id }`, live `CancelSignal`, `.rexymcp/stop` watcher, `SpawnedRun`
+    output schema, and updated `escalate/SKILL.md` (#18 related #1); **07** added
+    zero-`unsafe` Unix process-group isolation (`executor/src/process_group.rs`,
+    `ProcessGroupGuard` with `pgid == 0` safety guard) to `bash` and
+    `RealCommandRunner` gate commands (#18 related #2).
     `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md`.
 50. **M50 — Tree-based progress** *(done 2026-10-27; opened 2026-10-26 from
     [issue #14](https://github.com/ryanczak/rexyMCP/issues/14), four phases:
