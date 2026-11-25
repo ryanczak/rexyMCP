@@ -315,6 +315,11 @@ mod tests {
                 status: "success".into(),
                 turns: 10,
             },
+            SessionEvent::NudgeInjected {
+                kind: "repeat".into(),
+                tool: "bash".into(),
+                consecutive_count: 3,
+            },
         ];
         for event in variants {
             let record = make_record(event, 0);
@@ -325,6 +330,36 @@ mod tests {
             );
             let round_tripped: SessionRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(record.turn, round_tripped.turn);
+        }
+    }
+
+    #[test]
+    fn nudge_injected_variant_round_trips_with_event_type_tag() {
+        let record = make_record(
+            SessionEvent::NudgeInjected {
+                kind: "repeat".into(),
+                tool: "bash".into(),
+                consecutive_count: 4,
+            },
+            7,
+        );
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(
+            json.contains("\"event_type\":\"nudge_injected\""),
+            "NudgeInjected must serialize with the nudge_injected tag: {json}"
+        );
+        let rt: SessionRecord = serde_json::from_str(&json).unwrap();
+        match rt.event {
+            SessionEvent::NudgeInjected {
+                kind,
+                tool,
+                consecutive_count,
+            } => {
+                assert_eq!(kind, "repeat");
+                assert_eq!(tool, "bash");
+                assert_eq!(consecutive_count, 4);
+            }
+            other => panic!("expected NudgeInjected, got {other:?}"),
         }
     }
 

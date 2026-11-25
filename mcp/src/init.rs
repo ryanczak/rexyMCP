@@ -49,6 +49,7 @@ read_only_stall_threshold = 60    # consecutive non-mutating tool calls → hard
 novelty_window = 24               # trailing read-only calls examined for target novelty (0 disables)
 novelty_distinct_floor = 6        # ≤ this many distinct normalized targets in the window → churn
 novelty_action = "advisory"       # "advisory" (default): log low-novelty churn but keep running; "terminate": hard-fail on it
+repeat_nudge_threshold = 3        # consecutive identical calls with identical (timing-normalized) outputs → one steering nudge (0 disables)
 
 # [models."<model-id>"]              # per-model knob overrides; key is the exact
 #                                    # active model id (no prefix/substring match).
@@ -72,6 +73,7 @@ novelty_action = "advisory"       # "advisory" (default): log low-novelty churn 
 # novelty_window = 24                # override [governor] novelty_window
 # novelty_distinct_floor = 6         # override [governor] novelty_distinct_floor
 # novelty_action = "terminate"       # override [governor] novelty_action
+# repeat_nudge_threshold = 3         # override [governor] repeat_nudge_threshold
 
 [commands]
 # format = "cargo fmt --all"

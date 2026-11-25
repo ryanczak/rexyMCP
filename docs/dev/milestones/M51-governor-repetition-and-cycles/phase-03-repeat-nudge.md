@@ -1,7 +1,7 @@
 # Phase 03: Recoverable repeat nudge + `NudgeInjected` event & telemetry
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -199,3 +199,49 @@ No new dependencies.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-25 02:35 (progress)
+
+Started phase-03. Flipped status to in-progress. Beginning with the config knob, then the event, telemetry, loop integration, and tests.
+
+### Update — 2026-11-25 02:55 (progress)
+
+All four spec tasks implemented: config knob (with template/README guard tests green), `SessionEvent::NudgeInjected` + exhaustive consumer arms, `PhaseRun` nudge counters with `#[serde(default)]`, and one-shot repeat-nudge injection after the Step-7 hard-fail checks. All 6 new agent-loop tests plus the config and telemetry tests pass; existing governor tests untouched and green.
+
+### Update — 2026-11-25 02:58 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim; artifact file `target/e2e/m51-phase-03.txt`:
+
+```
+test config::tests::repeat_nudge_threshold_defaults_to_three_and_allows_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.00s
+repeat_nudge_threshold_defaults_to_three_and_allows_zero exit=0
+test store::telemetry::tests::phase_run_without_nudge_fields_deserializes_to_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.00s
+phase_run_without_nudge_fields_deserializes_to_zero exit=0
+test agent::tests::repeat_nudge_injects_once_and_resets_on_different_call ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.04s
+repeat_nudge_injects_once_and_resets_on_different_call exit=0
+test agent::tests::repeat_nudge_collapses_replumbed_bash_without_hard_fail ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+repeat_nudge_collapses_replumbed_bash_without_hard_fail exit=0
+test agent::tests::repeat_nudge_silent_when_outputs_differ ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+repeat_nudge_silent_when_outputs_differ exit=0
+test agent::tests::repeat_nudge_disabled_when_threshold_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+repeat_nudge_disabled_when_threshold_zero exit=0
+test agent::tests::identical_repetition_hard_fail_still_fires_after_nudge ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+identical_repetition_hard_fail_still_fires_after_nudge exit=0
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 708 filtered out; finished in 0.00s
+test readme_documents_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+readme_governor exit=0
+test init::tests::template_spells_out_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 707 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+init_governor exit=0
+```
+
+Every listed test `ok` with `exit=0` and a non-zero passed count. Positive control: the E2E run includes the two negative agent-loop cases (`repeat_nudge_silent_when_outputs_differ`, `repeat_nudge_disabled_when_threshold_zero`) and the positive ones in the same session — the suite discriminates nudge/no-nudge, so a green result is not silence. Literal grep: `"event_type":"nudge_injected"` round-trip asserted in `executor/src/store/sessions/jsonl.rs::nudge_injected_variant_round_trips_with_event_type_tag` (ok); `nudge_injected` arms present in `executor/src/agent/tests.rs:1038` and `mcp/src/log_query.rs:33`.

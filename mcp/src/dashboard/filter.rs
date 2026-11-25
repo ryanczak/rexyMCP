@@ -62,6 +62,7 @@ impl ActivityFilter {
             SessionEvent::ReadDeduped { .. } => self.read_deduped,
             SessionEvent::TaskUpdate { .. } => self.task_update,
             SessionEvent::NoveltySample { .. } => self.metrics,
+            SessionEvent::NudgeInjected { .. } => self.hard_fail,
         }
     }
 

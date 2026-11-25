@@ -190,6 +190,14 @@ pub struct PhaseRun {
     /// `rexymcp calibrate`.
     #[serde(default)]
     pub tier_telemetry: TierTelemetry,
+    /// Recoverable repeat-nudge telemetry (M51 phase-03): how many steering
+    /// nudges the loop injected, and how many were heeded (the next call after
+    /// a nudge differed from the nudged call). `#[serde(default)]` so legacy
+    /// JSONL records without these fields deserialize to `0`.
+    #[serde(default)]
+    pub nudges_injected: usize,
+    #[serde(default)]
+    pub nudges_heeded: usize,
 }
 
 /// Version stamped on every record this build writes; readers ignore records
@@ -1361,6 +1369,29 @@ mod tests {
         let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
         assert_eq!(run.tier_telemetry, TierTelemetry::default());
         assert_eq!(run.tier_telemetry.tier, None);
+    }
+
+    #[test]
+    fn phase_run_without_nudge_fields_deserializes_to_zero() {
+        // A legacy JSONL line lacking nudges_injected / nudges_heeded — as
+        // emitted before M51 phase-03. Must deserialize with both counters 0.
+        let legacy_json = r#"{"ts":1,"model":"t","generation_params":{},"phase_id":"p","tags":[],"status":"c","escalated":false,"gates":{},"parse_failure_rate":0.0,"repairs_per_call":0.0,"verifier_retries":0,"tool_success_rate":1.0,"turns":1,"wall_clock_s":1.0,"tokens":{}}"#;
+        let run: PhaseRun = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(run.nudges_injected, 0);
+        assert_eq!(run.nudges_heeded, 0);
+    }
+
+    #[test]
+    fn phase_run_nudge_fields_roundtrip() {
+        let mut run = sample();
+        run.nudges_injected = 2;
+        run.nudges_heeded = 1;
+        let json = serde_json::to_string(&run).unwrap();
+        assert!(json.contains("\"nudges_injected\":2"));
+        assert!(json.contains("\"nudges_heeded\":1"));
+        let back: PhaseRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.nudges_injected, 2);
+        assert_eq!(back.nudges_heeded, 1);
     }
 
     #[test]

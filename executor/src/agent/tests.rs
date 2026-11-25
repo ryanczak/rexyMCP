@@ -1035,6 +1035,7 @@ fn event_kind(event: &SessionEvent) -> &'static str {
         SessionEvent::ReadDeduped { .. } => "read_deduped",
         SessionEvent::TaskUpdate { .. } => "task_update",
         SessionEvent::NoveltySample { .. } => "novelty_sample",
+        SessionEvent::NudgeInjected { .. } => "nudge_injected",
     }
 }
 
@@ -6166,4 +6167,324 @@ async fn failed_delete_adds_nothing_to_diff() {
         result.files_changed
     );
     assert!(result.diff.is_empty());
+}
+
+// ── M51 phase-03: recoverable repeat nudge ───────────────────────────
+
+/// A loop run with `bash` registered and a custom governor config, ending with
+/// a plain completion (or whatever the script drives). Returns the result plus
+/// the telemetry dir path so tests can read the emitted `PhaseRun`.
+async fn run_with_bash_governor(
+    dir: &TempDir,
+    client: &dyn AiClient,
+    governor: GovernorConfig,
+    telemetry_dir: Option<&Path>,
+    max_turns: usize,
+) -> PhaseResult {
+    let scope = Scope::new(dir.path()).unwrap();
+    let mut registry = registry_over(scope.clone());
+    registry.register(bash_with_filter(scope, 30, true));
+    let budget = Budget::new(1_000_000);
+    let d = LoopDeps {
+        client,
+        registry: &registry,
+        tools: &[],
+        budget: &budget,
+        max_turns,
+        project_root: dir.path(),
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir,
+        progress: None,
+        context_window: None,
+        governor,
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        cancel: CancelSignal::never(),
+    };
+    execute_phase(&input(), d).await.unwrap()
+}
+
+/// Nudge messages newly added per model call: the conversation history is
+/// monotonic, so a nudge injected once reappears in every later call's message
+/// list. Counting only the delta against the previous call isolates actual
+/// injections.
+fn nudge_messages(client: &MockAiClientScript) -> Vec<String> {
+    let calls: Vec<_> = client.calls();
+    let mut injections = Vec::new();
+    let mut prev_count = 0usize;
+    for call in &calls {
+        let count = call
+            .messages
+            .iter()
+            .filter(|m| {
+                m.role == "user"
+                    && m.content.contains("You have run this command")
+                    && m.content.contains("with the same result")
+            })
+            .count();
+        if count > prev_count {
+            for _ in 0..(count - prev_count) {
+                injections.push("nudge".to_string());
+            }
+        }
+        prev_count = count;
+    }
+    injections
+}
+
+fn nudge_events(dir: &TempDir) -> Vec<(String, String, usize)> {
+    records(dir.path())
+        .iter()
+        .filter_map(|r| match &r.event {
+            SessionEvent::NudgeInjected {
+                kind,
+                tool,
+                consecutive_count,
+            } => Some((kind.clone(), tool.clone(), *consecutive_count)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn repeat_nudge_injects_once_and_resets_on_different_call() {
+    let dir = TempDir::new().unwrap();
+    let telem = dir.path().join("telem");
+    let mk = || native("bash", json!({ "command": "echo same" }));
+    let client = MockAiClientScript::new(vec![
+        vec![mk()],
+        vec![mk()],
+        vec![mk()], // streak hits threshold 3 → nudge injected
+        vec![native("bash", json!({ "command": "echo other" }))], // differs → heeded
+        vec![mk()],
+        vec![mk()], // new streak only reaches 2 → below threshold
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash_governor(
+        &dir,
+        &client,
+        GovernorConfig {
+            identical_call_threshold: 50,
+            ..GovernorConfig::default()
+        },
+        Some(&telem),
+        12,
+    )
+    .await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    let nudges = nudge_messages(&client);
+    assert_eq!(
+        nudges.len(),
+        1,
+        "exactly one nudge message must reach the model, got {nudges:?}"
+    );
+    assert_eq!(
+        nudge_events(&dir),
+        vec![("repeat".to_string(), "bash".to_string(), 3)],
+        "one NudgeInjected event with the streak count"
+    );
+    let runs = read_runs(&telem);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].nudges_injected, 1);
+    assert_eq!(runs[0].nudges_heeded, 1);
+}
+
+#[tokio::test]
+async fn repeat_nudge_collapses_replumbed_bash_without_hard_fail() {
+    let dir = TempDir::new().unwrap();
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "bash",
+            json!({ "command": "echo plumbed | tail -4" }),
+        )],
+        vec![native(
+            "bash",
+            json!({ "command": "echo plumbed | tail -4 > /tmp/x && cat /tmp/x" }),
+        )],
+        vec![native(
+            "bash",
+            json!({ "command": "echo plumbed 2>&1 | tail -6" }),
+        )],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash_governor(
+        &dir,
+        &client,
+        GovernorConfig {
+            identical_call_threshold: 6,
+            ..GovernorConfig::default()
+        },
+        None,
+        8,
+    )
+    .await;
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "re-plumbed variants must not trip IdenticalToolCallRepetition, got {:?}",
+        result.briefing.map(|b| b.current_blocker)
+    );
+    let nudges = nudge_messages(&client);
+    assert_eq!(
+        nudges.len(),
+        1,
+        "one nudge for the collapsed streak: {nudges:?}"
+    );
+    assert_eq!(nudge_events(&dir).len(), 1);
+}
+
+#[tokio::test]
+async fn repeat_nudge_silent_when_outputs_differ() {
+    let dir = TempDir::new().unwrap();
+    let mk = |i: usize| native("bash", json!({ "command": format!("echo run-{i}") }));
+    let client = MockAiClientScript::new(vec![
+        vec![mk(1)],
+        vec![mk(2)],
+        vec![mk(3)],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash_governor(
+        &dir,
+        &client,
+        GovernorConfig {
+            identical_call_threshold: 50,
+            novelty_distinct_floor: 0,
+            ..GovernorConfig::default()
+        },
+        None,
+        8,
+    )
+    .await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert!(
+        nudge_messages(&client).is_empty(),
+        "different outputs must not nudge"
+    );
+    assert!(nudge_events(&dir).is_empty());
+}
+
+#[tokio::test]
+async fn repeat_nudge_disabled_when_threshold_zero() {
+    let dir = TempDir::new().unwrap();
+    let mk = || native("bash", json!({ "command": "echo same" }));
+    let client = MockAiClientScript::new(vec![
+        vec![mk()],
+        vec![mk()],
+        vec![mk()],
+        vec![token("done")],
+    ]);
+
+    let result = run_with_bash_governor(
+        &dir,
+        &client,
+        GovernorConfig {
+            repeat_nudge_threshold: 0,
+            identical_call_threshold: 50,
+            ..GovernorConfig::default()
+        },
+        None,
+        8,
+    )
+    .await;
+
+    assert_eq!(result.status, PhaseStatus::Complete);
+    assert!(
+        nudge_messages(&client).is_empty(),
+        "repeat_nudge_threshold = 0 must disable the nudge"
+    );
+    assert!(nudge_events(&dir).is_empty());
+}
+
+#[tokio::test]
+async fn identical_repetition_hard_fail_still_fires_after_nudge() {
+    let dir = TempDir::new().unwrap();
+    let mk = || native("bash", json!({ "command": "echo same" }));
+    let client = MockAiClientScript::new(vec![
+        vec![mk()],
+        vec![mk()],
+        vec![mk()], // nudge at call 3
+        vec![mk()], // no re-nudge (calls 4, 5)
+        vec![mk()],
+        vec![mk()], // hard-fail at identical_call_threshold = 6
+        vec![token("unreached")],
+    ]);
+
+    let result = run_with_bash_governor(
+        &dir,
+        &client,
+        GovernorConfig {
+            repeat_nudge_threshold: 3,
+            identical_call_threshold: 6,
+            read_only_stall_threshold: 0,
+            novelty_distinct_floor: 0,
+            ..GovernorConfig::default()
+        },
+        None,
+        12,
+    )
+    .await;
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    assert!(matches!(
+        result.briefing.unwrap().current_blocker,
+        Blocker::HardFail(HardFailSignal::IdenticalToolCallRepetition { .. })
+    ));
+    let nudges = nudge_messages(&client);
+    assert_eq!(
+        nudges.len(),
+        1,
+        "exactly one nudge injected at call 3, none at calls 4/5: {nudges:?}"
+    );
+    assert_eq!(nudge_events(&dir).len(), 1);
+    assert_eq!(nudge_events(&dir)[0].2, 3, "streak count at injection");
+}
+
+#[tokio::test]
+async fn repeat_nudge_phase_run_reports_injected_and_heeded() {
+    let dir = TempDir::new().unwrap();
+    let telem = dir.path().join("telem");
+    let mk = || native("bash", json!({ "command": "echo same" }));
+    let client = MockAiClientScript::new(vec![
+        vec![mk()],
+        vec![mk()],
+        vec![mk()],
+        vec![mk()],
+        vec![mk()],
+        vec![mk()], // hard-fail at 6 with threshold 3: nudge at 3, never heeded
+        vec![token("unreached")],
+    ]);
+
+    let result = run_with_bash_governor(
+        &dir,
+        &client,
+        GovernorConfig {
+            repeat_nudge_threshold: 3,
+            identical_call_threshold: 6,
+            read_only_stall_threshold: 0,
+            novelty_distinct_floor: 0,
+            ..GovernorConfig::default()
+        },
+        Some(&telem),
+        12,
+    )
+    .await;
+
+    assert_eq!(result.status, PhaseStatus::HardFail);
+    let runs = read_runs(&telem);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].nudges_injected, 1);
+    assert_eq!(runs[0].nudges_heeded, 0);
 }

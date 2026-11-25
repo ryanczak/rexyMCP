@@ -30,6 +30,7 @@ pub fn event_type_str(event: &SessionEvent) -> &'static str {
         SessionEvent::ReadDeduped { .. } => "read_deduped",
         SessionEvent::TaskUpdate { .. } => "task_update",
         SessionEvent::NoveltySample { .. } => "novelty_sample",
+        SessionEvent::NudgeInjected { .. } => "nudge_injected",
     }
 }
 

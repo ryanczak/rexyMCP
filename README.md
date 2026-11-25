@@ -914,6 +914,7 @@ read_only_stall_threshold       = 60      # consecutive non-mutating tool calls 
 novelty_window                  = 24      # trailing read-only calls examined for target novelty (default 24; 0 disables)
 novelty_distinct_floor          = 6       # ≤ this many distinct normalized targets (paths / grep scopes, line ranges and patterns stripped) filling that window → churn (default 6)
 novelty_action                  = "advisory" # what a fired novelty window does: "advisory" (default) records a NoveltySample and keeps running; "terminate" hard-fails with LowNoveltyStall. Advisory is the default because the 24/6 pair is un-calibrated — a data-free early kill must not pre-empt a run the turn budget would still fund.
+repeat_nudge_threshold          = 3       # consecutive identical tool calls with identical (timing-normalized) outputs → inject ONE steering nudge ("write one loop instead of N runs"); 0 disables. Recoverable: `IdenticalToolCallRepetition` still hard-fails at `identical_call_threshold` as the backstop.
 
 # ── /rexymcp:auto per-phase escalation budget ─────────────────────
 [escalation]
@@ -940,6 +941,7 @@ temperature                    = 0.2      # any of these override the global val
 # novelty_window               = 24
 # novelty_distinct_floor       = 6
 # novelty_action               = "terminate"  # per-model opt-in to the hard-fail once you've calibrated the pair above
+# repeat_nudge_threshold       = 3       # per-model override; 0 disables the repeat nudge for this model
 ```
 
 **Section reference:**

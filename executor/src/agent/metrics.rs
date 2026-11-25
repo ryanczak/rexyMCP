@@ -17,6 +17,8 @@ pub(super) struct RunMetrics {
     pub(super) length_finishes: usize,
     pub(super) total_finishes: usize,
     pub(super) gen_ms: u64,
+    pub(super) nudges_injected: usize,
+    pub(super) nudges_heeded: usize,
 }
 
 impl RunMetrics {
@@ -33,6 +35,8 @@ impl RunMetrics {
             length_finishes: 0,
             total_finishes: 0,
             gen_ms: 0,
+            nudges_injected: 0,
+            nudges_heeded: 0,
         }
     }
 
@@ -133,6 +137,8 @@ pub(super) fn emit_phase_run(
         project_id: input.project_id.clone(),
         milestone_id: input.milestone_id.clone(),
         tier_telemetry: telemetry::TierTelemetry { tier: input.tier },
+        nudges_injected: metrics.nudges_injected,
+        nudges_heeded: metrics.nudges_heeded,
     };
     let _ = telemetry::append(dir, &run);
 }

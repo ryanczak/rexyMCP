@@ -37,6 +37,7 @@ use crate::context::budget::Budget;
 use crate::context::compactor::compact;
 use crate::error::{Error, Result};
 use crate::governor::hard_fail::{HardFailSignal, ToolCallSnapshot, VerifySample, evaluate};
+use crate::governor::normalize::{normalize_output_for_repeat, normalize_tool_args_for_repeat};
 use crate::governor::scorer::Scorer;
 use crate::governor::verifier::{Baseline, Diagnostic, VerifierResult};
 use crate::parser::{Origin, ParseResult, ToolCall, parse};
@@ -221,6 +222,14 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // M34: novelty sample dedup state — consecutive identical distinct_targets
     // emit once; a measurement gap (run shorter than window) rearms.
     let mut last_novelty_distinct: Option<usize> = None;
+
+    // Recoverable repeat-nudge state (M51 phase-03): trailing repeat streak over
+    // (tool, timing-normalized args) + timing-normalized output.
+    let mut repeat_key: Option<(String, serde_json::Value)> = None;
+    let mut repeat_norm_out: Option<String> = None;
+    let mut repeat_streak: usize = 0;
+    let mut nudged_this_streak = false;
+    let mut pending_nudge_key: Option<(String, serde_json::Value)> = None;
 
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
@@ -1162,6 +1171,31 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         recent_output_bytes.push_back(content.len());
         append_tool_exchange(&mut messages, &tool_call, &content, turns);
 
+        // Recoverable repeat-nudge streak update (M51 phase-03). The streak is
+        // over (tool, timing-normalized args) + timing-normalized output, so
+        // re-plumbed bash variants and re-timed runs still count as repeats
+        // while genuinely different commands or outcomes reset it.
+        let repeat_norm = normalize_output_for_repeat(&content);
+        let key = (
+            tool_call.name.clone(),
+            normalize_tool_args_for_repeat(&tool_call.name, &tool_call.arguments),
+        );
+        if let Some(pending) = pending_nudge_key.take()
+            && pending != key
+        {
+            metrics.nudges_heeded += 1;
+        }
+        let repeated =
+            repeat_key.as_ref() == Some(&key) && repeat_norm_out.as_deref() == Some(&*repeat_norm);
+        if repeated {
+            repeat_streak += 1;
+        } else {
+            repeat_streak = 1;
+            nudged_this_streak = false;
+        }
+        repeat_key = Some(key.clone());
+        repeat_norm_out = Some(repeat_norm);
+
         // Per-lever reclaim event (M10 Arc A): record how much the boundary
         // filter shrank this bash call's output. Emit only on a real reduction.
         if let Some(meta) = &tool_meta
@@ -1440,6 +1474,38 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 signal,
                 artifacts,
             ));
+        }
+
+        // Recoverable repeat nudge (M51 phase-03), after Step 7 so the
+        // hard-fail at `identical_call_threshold` still wins when reached.
+        // One nudge per streak: once injected, `nudged_this_streak` suppresses
+        // repeats until a different call or outcome resets the streak. The
+        // nudge is pending until the next call: heeded iff that call differs.
+        if deps.governor.repeat_nudge_threshold > 0
+            && repeat_streak >= deps.governor.repeat_nudge_threshold
+            && !nudged_this_streak
+        {
+            let nudge = format!(
+                "You have run this command {repeat_streak} times with the same result. \
+Running it again will give the same answer. If you need repetitions (a stress loop, \
+a sweep), write one loop or script that does all of them and run it once. Otherwise, \
+move on to the next task."
+            );
+            messages.push(user_text(&nudge, turns));
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::NudgeInjected {
+                    kind: "repeat".to_string(),
+                    tool: tool_call.name.clone(),
+                    consecutive_count: repeat_streak,
+                },
+            );
+            metrics.nudges_injected += 1;
+            nudged_this_streak = true;
+            pending_nudge_key = repeat_key.clone();
         }
 
         // Step 9 — turn cap.

@@ -436,6 +436,8 @@ mod tests {
             project_id: None,
             milestone_id: None,
             tier_telemetry: Default::default(),
+            nudges_injected: 0,
+            nudges_heeded: 0,
         }
     }
 
@@ -480,6 +482,8 @@ mod tests {
             project_id: None,
             milestone_id: None,
             tier_telemetry: Default::default(),
+            nudges_injected: 0,
+            nudges_heeded: 0,
         }
     }
 

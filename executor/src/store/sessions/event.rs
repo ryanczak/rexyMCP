@@ -148,4 +148,14 @@ pub enum SessionEvent {
         window: usize,
         distinct_targets: usize,
     },
+    /// Emitted when the loop injects one recoverable steering nudge (M51
+    /// phase-03) — currently only the `repeat` kind, when the same command
+    /// with the same timing-normalized output repeats past
+    /// `[governor] repeat_nudge_threshold`. `consecutive_count` is the repeat
+    /// streak that triggered it.
+    NudgeInjected {
+        kind: String,
+        tool: String,
+        consecutive_count: usize,
+    },
 }

@@ -293,6 +293,18 @@ pub(crate) fn record_lines_with_lang(
             false,
             None,
         ),
+        SessionEvent::NudgeInjected {
+            kind,
+            tool,
+            consecutive_count,
+        } => (
+            format!(
+                "nudge injected ({kind}): {tool} repeated {consecutive_count}× with the same result"
+            ),
+            Color::Yellow,
+            false,
+            None,
+        ),
     };
 
     let header_text = format!("[t{}] {}", rec.turn, summary);
