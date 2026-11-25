@@ -1,7 +1,7 @@
 # Phase 07: Process-group cleanup for `bash` and gate commands
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-06
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=reliability, size=s
@@ -180,3 +180,52 @@ No new dependencies. No `unsafe`.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-25 04:39 (started)
+
+**Executor:** Claude (executor run)
+**Status flipped:** todo → in-progress (phase doc + milestone README).
+**Next:** implement `executor/src/process_group.rs`, wire into `tools/bash.rs` and `agent/command.rs`, add the § Test plan tests, then capture § End-to-end verification.
+
+### Update — 2026-11-25 04:39 (end-to-end verification)
+
+Ran the § End-to-end verification block verbatim; artifact pasted below from
+`target/e2e/m51-phase-07.txt` (captured mechanically, not retyped). Every listed
+test prints `ok` with `exit=0` and a non-zero passed count; `no_unsafe exit=0`.
+Positive control: each kill test waits until the grandchild has verifiably
+written its PID into a `TempDir` file *before* the kill/drop fires, then asserts
+the PID is dead/zombie via `ps -o state= -p <pid>` in a bounded 500 ms poll —
+if the process-group kill were not live, the `sleep 60` grandchild would still
+report state `S` and the test would fail.
+
+```
+test process_group::tests::kill_process_group_zero_is_noop ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.00s
+kill_process_group_zero_is_noop exit=0
+test process_group::tests::disarmed_guard_does_not_kill_process_group_on_drop ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.10s
+disarmed_guard_does_not_kill_process_group_on_drop exit=0
+test tools::bash::tests::timeout_kills_grandchild_in_process_group ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 1.01s
+timeout_kills_grandchild_in_process_group exit=0
+test tools::bash::tests::dropped_bash_future_kills_grandchild_in_process_group ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.01s
+dropped_bash_future_kills_grandchild_in_process_group exit=0
+test agent::command::tests::real_command_runner_kills_grandchild_when_dropped ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.01s
+real_command_runner_kills_grandchild_when_dropped exit=0
+test agent::command::tests::real_command_runner_normal_exit_captures_output_and_null_stdin ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.00s
+real_command_runner_normal_exit_captures_output_and_null_stdin exit=0
+test tools::bash::tests::times_out_advisory_failure ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 1.01s
+times_out_advisory_failure exit=0
+test tools::bash::tests::bash_child_stdin_is_dev_null ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 0.01s
+bash_child_stdin_is_dev_null exit=0
+no_unsafe exit=0
+```
+
+Gate commands (separate invocations, all green): `cargo fmt --all --check`,
+`cargo build`, `cargo clippy --all-targets --all-features -- -D warnings`,
+`cargo test` (1148 + 712 passed, 0 failed).

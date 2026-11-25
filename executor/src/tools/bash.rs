@@ -165,6 +165,8 @@ impl Tool for Bash {
             }
         }
 
+        crate::process_group::configure_process_group(&mut cmd);
+
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -177,7 +179,7 @@ impl Tool for Bash {
         };
 
         let start = std::time::Instant::now();
-        let child_id = child.id();
+        let mut pg_guard = crate::process_group::ProcessGroupGuard::new(child.id());
 
         let result = tokio::time::timeout(
             Duration::from_secs(timeout_secs as u64),
@@ -189,6 +191,7 @@ impl Tool for Bash {
 
         match result {
             Ok(Ok(output)) => {
+                pg_guard.disarm();
                 let stdout_str = String::from_utf8_lossy(&output.stdout);
                 let stderr_str = String::from_utf8_lossy(&output.stderr);
 
@@ -243,17 +246,16 @@ impl Tool for Bash {
                     metadata: Some(metadata),
                 })
             }
-            Ok(Err(e)) => Ok(ToolResult {
-                output: String::new(),
-                error: Some(format!("command execution failed: {e}")),
-                metadata: None,
-            }),
+            Ok(Err(e)) => {
+                pg_guard.disarm();
+                Ok(ToolResult {
+                    output: String::new(),
+                    error: Some(format!("command execution failed: {e}")),
+                    metadata: None,
+                })
+            }
             Err(_) => {
-                if let Some(id) = child_id {
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &id.to_string()])
-                        .output();
-                }
+                pg_guard.kill_now();
                 let elapsed_ms = start.elapsed().as_millis();
 
                 let metadata = json!({
@@ -800,5 +802,92 @@ mod tests {
             meta.get("output_filter").is_none(),
             "output_filter should not be present when filter is off"
         );
+    }
+
+    #[cfg(unix)]
+    async fn wait_for_pid_file(dir: &Path, name: &str) -> u32 {
+        let path = dir.join(name);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(pid) = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+            {
+                return pid;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "grandchild never recorded its PID in {}",
+                path.display()
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    #[cfg(unix)]
+    fn process_state(pid: u32) -> Option<String> {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if s.is_empty() { None } else { Some(s) }
+    }
+
+    #[cfg(unix)]
+    fn assert_dead(pid: u32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        loop {
+            match process_state(pid) {
+                None => return,
+                Some(state) if state.starts_with('Z') => return,
+                Some(_) if std::time::Instant::now() >= deadline => {
+                    panic!("pid {pid} still alive after process-group kill");
+                }
+                Some(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_kills_grandchild_in_process_group() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = make_bash(dir.path(), 30);
+        let result = tool
+            .execute(json!({
+                "command": "sleep 60 & echo $! > gc.pid; wait",
+                "timeout_secs": 1
+            }))
+            .await
+            .unwrap();
+
+        assert!(result.error.is_some());
+        assert!(result.error.as_ref().unwrap().contains("timed out"));
+        assert!(result.metadata.unwrap()["timed_out"].as_bool().unwrap());
+
+        let pid = wait_for_pid_file(dir.path(), "gc.pid").await;
+        assert_dead(pid);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dropped_bash_future_kills_grandchild_in_process_group() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let tool = make_bash(dir.path(), 30);
+        let dir_path = dir.path().to_path_buf();
+
+        let handle = tokio::spawn(async move {
+            tool.execute(json!({
+                "command": "sleep 60 & echo $! > gc.pid; wait",
+                "timeout_secs": 30
+            }))
+            .await
+        });
+
+        let pid = wait_for_pid_file(&dir_path, "gc.pid").await;
+        handle.abort();
+        let _ = handle.await;
+        assert_dead(pid);
     }
 }

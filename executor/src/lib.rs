@@ -7,6 +7,7 @@ pub mod governor;
 pub mod health;
 pub mod parser;
 pub mod phase;
+pub(crate) mod process_group;
 pub mod security;
 pub mod store;
 pub mod tools;

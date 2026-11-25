@@ -30,14 +30,28 @@ pub struct RealCommandRunner;
 #[async_trait]
 impl CommandRunner for RealCommandRunner {
     async fn run(&self, command: &str, cwd: &Path) -> CommandResult {
-        match tokio::process::Command::new("sh")
-            .arg("-c")
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.arg("-c")
             .arg(command)
             .current_dir(cwd)
-            .output()
-            .await
-        {
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        crate::process_group::configure_process_group(&mut cmd);
+
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                return CommandResult {
+                    output: format!("failed to run `{command}`: {e}"),
+                    success: false,
+                };
+            }
+        };
+        let mut pg_guard = crate::process_group::ProcessGroupGuard::new(child.id());
+        match child.wait_with_output().await {
             Ok(out) => {
+                pg_guard.disarm();
                 let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 if !stderr.is_empty() {
@@ -325,6 +339,92 @@ mod tests {
         assert!(
             msg.contains("Pending task"),
             "pending task must appear: {msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    async fn wait_for_pid_file(dir: &Path, name: &str) -> u32 {
+        let path = dir.join(name);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(pid) = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+            {
+                return pid;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "grandchild never recorded its PID in {}",
+                path.display()
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    #[cfg(unix)]
+    fn process_state(pid: u32) -> Option<String> {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if s.is_empty() { None } else { Some(s) }
+    }
+
+    #[cfg(unix)]
+    fn assert_dead(pid: u32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        loop {
+            match process_state(pid) {
+                None => return,
+                Some(state) if state.starts_with('Z') => return,
+                Some(_) if std::time::Instant::now() >= deadline => {
+                    panic!("pid {pid} still alive after process-group kill");
+                }
+                Some(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn real_command_runner_kills_grandchild_when_dropped() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let runner = RealCommandRunner;
+        let cwd = dir.path().to_path_buf();
+
+        let handle =
+            tokio::spawn(
+                async move { runner.run("sleep 60 & echo $! > gc.pid; wait", &cwd).await },
+            );
+
+        let pid = wait_for_pid_file(dir.path(), "gc.pid").await;
+        handle.abort();
+        let _ = handle.await;
+        assert_dead(pid);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn real_command_runner_normal_exit_captures_output_and_null_stdin() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let runner = RealCommandRunner;
+        let result = runner.run("cat; echo out; echo err >&2", dir.path()).await;
+
+        assert!(
+            result.success,
+            "cat with closed stdin exits 0; result = {result:?}"
+        );
+        assert!(
+            result.output.contains("out"),
+            "stdout should be captured: {:?}",
+            result.output
+        );
+        assert!(
+            result.output.contains("err"),
+            "stderr should be captured: {:?}",
+            result.output
         );
     }
 }
