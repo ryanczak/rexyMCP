@@ -4,7 +4,14 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-01-contract-batching-rule.md`
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-02-command-output-normalization.md`
+
+**M51 phase-01 — done 2026-11-24, `approved_first_try`** (code `8679154`,
+approval `73302af`, GLM-5.3-Flash). Contract batching rule (`### Batch repeated
+work` + `xargs -P 24` and `for` examples) landed in `executor_contract.md`,
+`placeholder_set_is_exactly_the_four_authorized` handles empty `{}`, and
+`bash_classify` pins positive and negative batching-loop tests. Phase 02
+drafted and ready for dispatch.
 
 **M51 — Governor repetition, cycles & process hygiene opened 2026-11-24** from
 [issue #18](https://github.com/ryanczak/rexyMCP/issues/18) and
