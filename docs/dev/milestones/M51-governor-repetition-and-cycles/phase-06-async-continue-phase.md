@@ -1,7 +1,7 @@
 # Phase 06: Async `continue_phase` (`run_id` + cancel + skill update)
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** phase-05
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -329,3 +329,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** f138b87dd7b14dc674be837e4b96628e70d93445
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** none
+- **Calibration:** completion summary again carried the recurring leaked `</think>` fragment (6th occurrence, held for M51 close).
