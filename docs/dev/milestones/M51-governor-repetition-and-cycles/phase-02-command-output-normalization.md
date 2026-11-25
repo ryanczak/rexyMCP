@@ -183,6 +183,81 @@ No new dependencies.
 
 <!-- entries appended below this line -->
 
+### Update — 2026-11-25 02:14 (started, resume after bug-02-1)
+
+**Executor:** Executor (phase-02 fix run)
+
+Resuming phase-02 after bounce on [bug-02-1.md](bugs/bug-02-1.md). Rewrote the
+`strip_trailing_plumbing` regexes: `TEMP_CAT` now matches `&&`/`;` separators
+and restricts capture-and-cat and `tee` paths to `/tmp/...` / `$TMPDIR/...`
+(via an `is_temp_path` guard); `TAIL_PIPE` no longer consumes past the trailing
+stage (`[^|;&>]*$`), so substantive stages and non-temp redirects after
+`| tail` / `| cat` survive. All ten `.unwrap()` calls in
+`executor/src/governor/normalize.rs` are replaced with `.expect(...)` messages
+stating the compile-time-literal invariant; the two `caps.get(0).unwrap()`
+calls are removed entirely (the capture path is now taken from named capture
+groups with a `filter_map`, no indexing panic). The two bug-02-1 tests
+(`strips_temp_capture_and_cat_with_double_ampersand_and_tmpdir`,
+`does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe`) and the
+full prior test set pass.
+
+### Update — 2026-11-25 02:20 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim against the real artifacts
+(`executor/src/governor/normalize.rs`, `executor/src/governor/hard_fail.rs`).
+Artifact file: `target/e2e/m51-phase-02.txt`, contents as captured mechanically:
+
+```
+no_unwrap exit=1
+test governor::normalize::tests::strips_trailing_tail_head_wc_and_stderr_plumbing ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+strips_trailing_tail_head_wc_and_stderr_plumbing exit=0
+test governor::normalize::tests::strips_temp_capture_and_cat_with_double_ampersand_and_tmpdir ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+strips_temp_capture_and_cat_with_double_ampersand_and_tmpdir exit=0
+test governor::normalize::tests::does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe exit=0
+test governor::normalize::tests::normalizes_simple_quote_differences ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+normalizes_simple_quote_differences exit=0
+test governor::normalize::tests::preserves_substantive_pipes_and_non_temp_redirects ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+preserves_substantive_pipes_and_non_temp_redirects exit=0
+test governor::normalize::tests::tool_args_normalizer_only_strips_plumbing_for_bash ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+tool_args_normalizer_only_strips_plumbing_for_bash exit=0
+test governor::normalize::tests::output_normalizer_ignores_bash_status_and_cargo_timings ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+output_normalizer_ignores_bash_status_and_cargo_timings exit=0
+test governor::normalize::tests::output_normalizer_preserves_exit_code_and_test_counts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+output_normalizer_preserves_exit_code_and_test_counts exit=0
+test governor::hard_fail::tests::novelty_collapses_replumbed_bash_grep_variants ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+novelty_collapses_replumbed_bash_grep_variants exit=0
+test governor::hard_fail::tests::identical_repetition_does_not_collapse_output_plumbing ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1118 filtered out; finished in 0.00s
+identical_repetition_does_not_collapse_output_plumbing exit=0
+```
+
+`no_unwrap exit=1` (zero `.unwrap(` matches in `normalize.rs` — the bug-02-1
+Definition-of-done item that failed with 10 matches yesterday), all ten listed
+tests print `ok` with `exit=0`, and every `test result` line shows a non-zero
+passed count (1 passed each). Positive control: the negative-case tests
+(`does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe`,
+`preserves_substantive_pipes_and_non_temp_redirects`,
+`output_normalizer_preserves_exit_code_and_test_counts`) assert `!=` on inputs
+the buggy regexes collapsed yesterday (`echo foo | cat | grep bar` vs `... baz`,
+`cargo test | tail -4 > src/a.txt` vs `... src/b.txt`), so a regression to the
+bug-02-1 behavior fails them; `novelty_collapses_replumbed_bash_grep_variants`
+asserts `distinct_targets == 2`, which a no-op would report as 4.
+
+Gate results (separate invocations): `cargo fmt --all --check` clean;
+`cargo build` — `Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.12s`;
+`cargo clippy --all-targets --all-features -- -D warnings` — `Finished` with no
+warnings; `cargo test` — 708 + 2 + 1117 passed, 0 failed (doc-tests included).
+
 ### Update — 2026-11-25 01:30 (started)
 
 **Executor:** Executor (phase-02 run)

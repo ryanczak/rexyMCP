@@ -55,10 +55,16 @@ pub fn normalize_tool_args_for_repeat(tool: &str, args: &serde_json::Value) -> s
 /// (`finished in 0.42s`, `Finished ... in 0.12s`). Exit codes, test
 /// pass/fail counts, error messages and all other output are preserved.
 pub fn normalize_output_for_repeat(output: &str) -> String {
-    static STATUS_DURATION: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(✓|✗) (exit \d+|exit signal) \(\d+\.\d+s\)").unwrap());
-    static CARGO_DURATION: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"\bin \d+\.\d+s\b").unwrap());
+    static STATUS_DURATION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(✓|✗) (exit \d+|exit signal) \(\d+\.\d+s\)").expect(
+            "STATUS_DURATION pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
+    static CARGO_DURATION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\bin \d+\.\d+s\b").expect(
+            "CARGO_DURATION pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
     let no_status = STATUS_DURATION.replace_all(output, "$1 $2");
     CARGO_DURATION
         .replace_all(&no_status, "in <t>")
@@ -69,40 +75,66 @@ fn collapse_whitespace(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Strip one trailing plumbing segment from the right, if present.
-pub(crate) fn strip_trailing_plumbing(cmd: &str) -> String {
-    static TAIL_PIPE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"\s*\|\s*(tail|head|wc|cat)\b.*$").unwrap());
+/// A path is a temp capture target only when it lives under `/tmp` or
+/// `$TMPDIR`; project-relative paths (`src/a.txt`) are substantive redirects
+/// and must survive normalization.
+fn is_temp_path(path: &str) -> bool {
+    path == "/tmp" || path.starts_with("/tmp/") || path == "$TMPDIR" || path.starts_with("$TMPDIR/")
+}
+
+fn unquote(path: &str) -> &str {
+    path.trim_matches(['"', '\''])
+}
+
+/// Strip one trailing plumbing segment from the right, if present. Each
+/// stripper is anchored to end-of-input so a genuinely trailing segment is
+/// removed and everything upstream (substantive stages, non-temp redirects)
+/// survives; the fixed-point loop in `normalize_bash_command` peels multi-part
+/// plumbing (`cmd 2>&1 | tail -6 > /tmp/x && cat /tmp/x`) one segment per pass.
+fn strip_trailing_plumbing(cmd: &str) -> String {
+    static TAIL_PIPE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\s*\|\s*(tail|head|wc|cat)\b[^|;&>]*$").expect(
+            "TAIL_PIPE pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
     static TEMP_CAT: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-            r#"(?:\s*(?:2>&1\s*)?>\s*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))(?:\s*2>&1)?\s*[;&]\s*cat\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))|\s*\|\s*tee\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+)))$"#,
+            r#"(?:\s*(?:2>&1\s*)?>\s*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))(?:\s*2>&1)?\s*(?:&&|;)\s*cat\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))|\s*\|\s*tee\s+(?:"([^"]+)"|'([^']+)'|([^\s;&|]+)))$"#,
         )
-        .unwrap()
+        .expect(
+            "TEMP_CAT pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
     });
-    static STDERR_REDIRECT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*2>&1$").unwrap());
-    static DEVNULL_REDIRECT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"\s*(2?>\s*/dev/null|2>/dev/null)$").unwrap());
+    static STDERR_REDIRECT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\s*2>&1$").expect(
+            "STDERR_REDIRECT pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
+    static DEVNULL_REDIRECT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\s*2?>/dev/null$").expect(
+            "DEVNULL_REDIRECT pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
 
-    if let Some(caps) = TEMP_CAT.captures(cmd) {
-        let capture_path = [1usize, 2, 3].iter().filter_map(|g| caps.get(*g)).next();
-        let cat_path = [4usize, 5, 6].iter().filter_map(|g| caps.get(*g)).next();
-        let tee_path = [7usize, 8, 9].iter().filter_map(|g| caps.get(*g)).next();
-        if let (Some(capture), Some(cat)) = (capture_path, cat_path)
-            && capture.as_str().trim_matches(['"', '\'']) == cat.as_str().trim_matches(['"', '\''])
+    if let Some(caps) = TEMP_CAT.captures(cmd)
+        && let Some(whole) = caps.get(0)
+    {
+        let capture_path = [1usize, 2, 3].iter().filter_map(|&g| caps.get(g)).next();
+        let cat_path = [4usize, 5, 6].iter().filter_map(|&g| caps.get(g)).next();
+        let tee_path = [7usize, 8, 9].iter().filter_map(|&g| caps.get(g)).next();
+        let head = collapse_whitespace(&cmd[..whole.start()]);
+        if let (Some(capture), Some(cat)) = (capture_path, cat_path) {
+            let same_path = unquote(capture.as_str()) == unquote(cat.as_str());
+            if same_path && is_temp_path(capture.as_str()) && is_temp_path(cat.as_str()) {
+                return head;
+            }
+        } else if let Some(tee) = tee_path
+            && is_temp_path(tee.as_str())
         {
-            let head = &cmd[..caps.get(0).unwrap().start()];
-            return collapse_whitespace(head);
-        }
-        if let Some(_tee) = tee_path {
-            let head = &cmd[..caps.get(0).unwrap().start()];
-            let head = head.trim_end_matches('|');
-            return collapse_whitespace(head);
+            return head;
         }
     }
     if let Some(m) = TAIL_PIPE.find(cmd) {
-        // Only strip when the pipe stage is genuinely trailing (no later
-        // redirect handling needed — the redirect strippers run first via the
-        // fixed-point loop).
         let head = &cmd[..m.start()];
         if !head.trim_end().ends_with('|') {
             return collapse_whitespace(head);
@@ -122,8 +154,16 @@ pub(crate) fn strip_trailing_plumbing(cmd: &str) -> String {
 /// spaces or quote/pipe/semicolon characters, so quoting-only differences read
 /// equal.
 fn normalize_simple_quotes(cmd: &str) -> String {
-    static SINGLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"'([^'\s";&|]*)'"#).unwrap());
-    static DOUBLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""([^"\s';&|]*)""#).unwrap());
+    static SINGLE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"'([^'\s";&|]*)'"#).expect(
+            "SINGLE pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
+    static DOUBLE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#""([^"\s';&|]*)""#).expect(
+            "DOUBLE pattern is a compile-time literal; a literal this simple compiles by construction",
+        )
+    });
     let single = SINGLE.replace_all(cmd, "$1");
     DOUBLE.replace_all(&single, "$1").into_owned()
 }
@@ -149,6 +189,47 @@ mod tests {
                 "variant: {variant}"
             );
         }
+    }
+
+    #[test]
+    fn strips_temp_capture_and_cat_with_double_ampersand_and_tmpdir() {
+        let base = "echo foo";
+        for variant in [
+            "echo foo > /tmp/x && cat /tmp/x",
+            r#"echo foo > "$TMPDIR/x" && cat "$TMPDIR/x""#,
+            "echo foo 2>&1 > /tmp/x && cat /tmp/x",
+            "echo foo | tee /tmp/x",
+        ] {
+            assert_eq!(
+                normalize_bash_command(variant),
+                normalize_bash_command(base),
+                "variant: {variant}"
+            );
+        }
+    }
+
+    #[test]
+    fn does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe() {
+        assert_ne!(
+            normalize_bash_command("echo foo | cat | grep bar"),
+            normalize_bash_command("echo foo | cat | grep baz"),
+            "substantive stage after | cat must not be stripped"
+        );
+        assert_ne!(
+            normalize_bash_command("cargo test | tail -4 > src/a.txt"),
+            normalize_bash_command("cargo test | tail -4 > src/b.txt"),
+            "non-temp redirect after | tail must not be stripped"
+        );
+        assert_ne!(
+            normalize_bash_command("echo a > src/x.rs; cat src/x.rs"),
+            normalize_bash_command("echo a > src/y.rs; cat src/y.rs"),
+            "non-temp capture-and-cat must not be stripped"
+        );
+        assert_ne!(
+            normalize_bash_command("cargo test | tee src/a.txt"),
+            normalize_bash_command("cargo test | tee src/b.txt"),
+            "non-temp tee target must not be stripped"
+        );
     }
 
     #[test]
