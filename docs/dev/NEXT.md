@@ -4,7 +4,14 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-06-async-continue-phase.md`
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-07-process-group-cleanup.md`
+
+**M51 phase-06 — done 2026-11-24, `approved_first_try`** (code `f138b87`,
+approval `8d07737`, GLM-5.3-Flash). `continue_phase` now spawns asynchronously
+via `JobRegistry` with a live `CancelSignal` and stop-sentinel watcher, returns
+`{ run_id }` (with `SpawnedRun` output schema), and updates `escalate/SKILL.md`
+and `README.md` with the async poll/stop contract. Phase 07 drafted and ready
+for dispatch.
 
 **M51 phase-05 — done 2026-11-24, `approved_first_try`** (code `40e8548`,
 approval `fb27b98`, GLM-5.3-Flash). Ships `[governor] task_no_edit_threshold`
