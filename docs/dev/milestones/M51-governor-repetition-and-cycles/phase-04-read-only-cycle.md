@@ -1,7 +1,7 @@
 # Phase 04: Plumbing-normalized `ReadOnlyCycle` detector & calibration replay
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** phase-03
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -430,3 +430,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 1d593732c29bf3dbad26b26b8efdd5d345291729
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** undisclosed benign rustdoc-only update on `SessionEvent::NudgeInjected` in `executor/src/store/sessions/event.rs` (+7/-4) to document the new `read_only_cycle` kind; kept as-is.
+- **Calibration:** `read_only_cycle_nudges_once_then_terminates_if_unchanged` and `read_only_cycle_nudge_heeded_by_new_command_does_not_hard_fail` passed `None` for `telemetry_dir` (so `PhaseRun` `nudges_heeded` on the cycle-nudge heed branch wasn't separately asserted, though `metrics.nudges_heeded += 1` is wired cleanly and the counter-reset invariant IS caught on turn 9); completion summary again echoed a duplicated `**Summary:**` prefix (2nd occurrence).
