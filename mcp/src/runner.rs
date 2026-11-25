@@ -801,6 +801,8 @@ mod tests {
                 novelty_distinct_floor: None,
                 novelty_action: None,
                 repeat_nudge_threshold: None,
+                read_only_cycle_window: None,
+                read_only_cycle_distinct_max: None,
             },
         );
         let mock = MockAiClient::new(vec!["Done.".to_string()]);
@@ -934,6 +936,8 @@ mod tests {
                 novelty_distinct_floor: None,
                 novelty_action: None,
                 repeat_nudge_threshold: None,
+                read_only_cycle_window: None,
+                read_only_cycle_distinct_max: None,
             },
         );
 

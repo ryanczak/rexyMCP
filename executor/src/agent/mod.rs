@@ -231,6 +231,12 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     let mut nudged_this_streak = false;
     let mut pending_nudge_key: Option<(String, serde_json::Value)> = None;
 
+    // Recoverable read-only cycle state (M51 phase-04), independent of the
+    // repeat-nudge state above: count of trailing calls since the last file
+    // progress and the normalized keys the model was nudged out of.
+    let mut cycle_calls_since_reset: usize = 0;
+    let mut cycle_nudge_keys: Option<Vec<(String, serde_json::Value)>> = None;
+
     // Step 1 (observability) — open the session log. Best-effort: `.ok()` drops a
     // setup failure on purpose (a non-writable repo must not fail the phase —
     // logging is a side effect that never changes what the loop returns). The
@@ -1196,6 +1202,32 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
         repeat_key = Some(key.clone());
         repeat_norm_out = Some(repeat_norm);
 
+        // Recoverable read-only cycle state update (M51 phase-04). If a cycle
+        // nudge was injected and the model's next call stays inside the nudged
+        // cycle without file progress, the run terminates below (Step 7 via
+        // `cycle_hard_fail`); any other call — an edit, or a command outside
+        // the cycle — counts the nudge as heeded. The reset to 1 on a non-edit
+        // heed keeps stale pre-nudge calls from re-triggering the detector on
+        // the very next turn when the new command is still within
+        // `distinct_max` of the old keys.
+        let made_file_progress = crate::tools::mutates_files(&tool_call.name) || changed_tree;
+        let mut cycle_hard_fail: Option<crate::governor::hard_fail::HardFailSignal> = None;
+        if let Some(keys) = cycle_nudge_keys.take() {
+            if !made_file_progress && keys.contains(&key) {
+                cycle_hard_fail = Some(crate::governor::hard_fail::HardFailSignal::ReadOnlyCycle {
+                    window: deps.governor.read_only_cycle_window,
+                    distinct_calls: keys.len(),
+                });
+            } else {
+                metrics.nudges_heeded += 1;
+                cycle_calls_since_reset = if made_file_progress { 0 } else { 1 };
+            }
+        } else if made_file_progress {
+            cycle_calls_since_reset = 0;
+        } else {
+            cycle_calls_since_reset += 1;
+        }
+
         // Per-lever reclaim event (M10 Arc A): record how much the boundary
         // filter shrank this bash call's output. Emit only on a real reduction.
         if let Some(meta) = &tool_meta
@@ -1437,7 +1469,8 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 &recent_tool_calls,
                 deps.governor.read_only_stall_threshold,
             )
-        });
+        })
+        .or(cycle_hard_fail);
         if let Some(signal) = hard_fail_signal {
             log_event(
                 &log_handle,
@@ -1506,6 +1539,45 @@ move on to the next task."
             metrics.nudges_injected += 1;
             nudged_this_streak = true;
             pending_nudge_key = repeat_key.clone();
+        }
+
+        // Recoverable read-only cycle nudge (M51 phase-04), after Step 7 and
+        // after the repeat nudge so earlier signals take precedence. Injected
+        // once per cycle: while `cycle_nudge_keys` is set, the loop above
+        // either hard-fails (model stayed inside the cycle) or resets it
+        // (model heeded).
+        if deps.governor.read_only_cycle_window > 0
+            && deps.governor.read_only_cycle_distinct_max > 0
+            && cycle_nudge_keys.is_none()
+            && cycle_calls_since_reset >= deps.governor.read_only_cycle_window
+            && let Some(keys) = crate::governor::hard_fail::read_only_cycle_keys(
+                &recent_tool_calls,
+                deps.governor.read_only_cycle_window,
+            )
+            && keys.len() <= deps.governor.read_only_cycle_distinct_max
+        {
+            let distinct = keys.len();
+            let window = deps.governor.read_only_cycle_window;
+            let nudge = format!(
+                "You are cycling through the same {distinct} read-only commands across \
+the last {window} calls without making edits. Stop re-running these commands and either \
+apply an edit, run a single batched command, or move to the next task. Continuing this \
+cycle will terminate the run."
+            );
+            messages.push(user_text(&nudge, turns));
+            log_event(
+                &log_handle,
+                &redactor,
+                deps.clock,
+                turns,
+                SessionEvent::NudgeInjected {
+                    kind: "read_only_cycle".to_string(),
+                    tool: tool_call.name.clone(),
+                    consecutive_count: deps.governor.read_only_cycle_window,
+                },
+            );
+            metrics.nudges_injected += 1;
+            cycle_nudge_keys = Some(keys);
         }
 
         // Step 9 — turn cap.

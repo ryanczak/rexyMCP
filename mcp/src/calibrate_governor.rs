@@ -7,7 +7,8 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use rexymcp_executor::governor::hard_fail::{
-    ToolCallSnapshot, VerifySample, measure_novelty, verifier_persistence_streaks,
+    ToolCallSnapshot, VerifySample, measure_novelty, measure_read_only_cycle,
+    verifier_persistence_streaks,
 };
 use rexymcp_executor::store::metrics::{fmt_tokens, percentile};
 use rexymcp_executor::store::sessions::event::{SessionEvent, SessionRecord};
@@ -18,6 +19,7 @@ use rexymcp_executor::tools;
 /// sequence the governor saw. `outcome` is the `SessionEnd.status` string
 /// (`complete` / `hard_fail` / `budget_exceeded` / `cancelled`); a log with no
 /// `SessionEnd` (crashed / in-flight) is labeled `"unknown"`.
+#[derive(Default)]
 struct RunReplay {
     model: String,
     outcome: String,
@@ -64,6 +66,10 @@ enum Signal {
     EmptyCompletionRun,
     /// Max windowed output-bytes sum (mirrors live `check_windowed_output`).
     OutputFloodWindowedBytes,
+    /// Minimum distinct plumbing-normalized read-only keys over the trailing
+    /// `READ_ONLY_CYCLE_WINDOW` calls at any turn (mirrors live
+    /// `measure_read_only_cycle`; M51 phase-04). Lower = a tighter cycle.
+    ReadOnlyCycleMinDistinct,
 }
 
 impl Signal {
@@ -77,13 +83,16 @@ impl Signal {
             Signal::VerifierRefileRun => "verifier_refile_run",
             Signal::EmptyCompletionRun => "empty_completion_run",
             Signal::OutputFloodWindowedBytes => "output_flood_windowed_bytes",
+            Signal::ReadOnlyCycleMinDistinct => "read_only_cycle_min_distinct",
         }
     }
 
     /// Which tail of the distribution is the concern.
     fn direction(self) -> TailDirection {
         match self {
-            Signal::OscillationMinDistinct => TailDirection::LowerIsWorse,
+            Signal::OscillationMinDistinct | Signal::ReadOnlyCycleMinDistinct => {
+                TailDirection::LowerIsWorse
+            }
             _ => TailDirection::HigherIsWorse,
         }
     }
@@ -203,12 +212,33 @@ impl Signal {
                 }
                 vec![max]
             }
+            Signal::ReadOnlyCycleMinDistinct => {
+                // Replay turn-by-turn through the live detector: at each turn,
+                // measure the trailing read-only window. Keep the minimum
+                // distinct count observed (lower = a tighter cycle); `None`
+                // measurements (window not yet full / reset by file progress)
+                // are skipped, so a run that never reaches a full read-only
+                // window samples as empty.
+                let mut deque: VecDeque<ToolCallSnapshot> = VecDeque::new();
+                let mut min: Option<usize> = None;
+                for c in &run_.tool_calls {
+                    deque.push_back(c.clone());
+                    if let Some(distinct) = measure_read_only_cycle(&deque, READ_ONLY_CYCLE_WINDOW)
+                    {
+                        min = Some(min.map_or(distinct, |m: usize| m.min(distinct)));
+                    }
+                }
+                min.map(|m| vec![m]).unwrap_or_default()
+            }
         }
     }
 }
 
 const OSCILLATION_WINDOW: usize = 8;
 const OUTPUT_FLOOD_WINDOW: usize = 6;
+/// Trailing read-only window for the `read_only_cycle_min_distinct` signal
+/// (mirrors `[governor] read_only_cycle_window` default).
+const READ_ONLY_CYCLE_WINDOW: usize = 16;
 
 const SIGNALS: &[Signal] = &[
     Signal::NoveltyDistinct,
@@ -219,6 +249,7 @@ const SIGNALS: &[Signal] = &[
     Signal::VerifierRefileRun,
     Signal::EmptyCompletionRun,
     Signal::OutputFloodWindowedBytes,
+    Signal::ReadOnlyCycleMinDistinct,
 ];
 
 /// Deliverable report row for JSON output.
@@ -252,6 +283,7 @@ fn format_report(rows: &[ReportRow]) -> String {
         "verifier_refile_run",
         "empty_completion_run",
         "output_flood_windowed_bytes",
+        "read_only_cycle_min_distinct",
     ];
     for signal in signals {
         let mut signal_rows: Vec<_> = rows.iter().filter(|r| r.signal == *signal).collect();
@@ -271,6 +303,8 @@ fn format_report(rows: &[ReportRow]) -> String {
             "signal: empty_completion_run  (lower bound — excludes length-truncated turns)"
         } else if *signal == "oscillation_min_distinct" {
             "signal: oscillation_min_distinct  (lower-is-worse — low values indicate oscillation)"
+        } else if *signal == "read_only_cycle_min_distinct" {
+            "signal: read_only_cycle_min_distinct  (lower-is-worse — low values indicate a plumbing-normalized read-only cycle)"
         } else {
             &format!("signal: {}", signal)
         };
@@ -542,7 +576,7 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
-    fn make_session_file(
+    pub(super) fn make_session_file(
         dir: &Path,
         name: &str,
         model: &str,
@@ -1750,6 +1784,112 @@ mod tests {
         assert!(
             out.contains("verifier_persistence_run"),
             "the shipped signal's block must stay beside the new one: {out}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod read_only_cycle_tests {
+    use super::tests::make_session_file;
+    use super::*;
+
+    use rexymcp_executor::governor::hard_fail::ToolCallSnapshot;
+    use tempfile::TempDir;
+
+    fn snap(tool: &str, args: serde_json::Value) -> ToolCallSnapshot {
+        ToolCallSnapshot {
+            tool: tool.into(),
+            arguments: args,
+            succeeded: true,
+            changed_tree: false,
+        }
+    }
+
+    fn run_with_calls(calls: Vec<ToolCallSnapshot>) -> RunReplay {
+        RunReplay {
+            model: "m".into(),
+            outcome: "complete".into(),
+            tool_calls: calls,
+            ..RunReplay::default()
+        }
+    }
+
+    #[test]
+    fn read_only_cycle_min_distinct_replays_via_measure_read_only_cycle() {
+        // A 16-call re-plumbed 2-command grep cycle: min distinct = 2.
+        let cmds = [
+            "grep -rn 'foo' src/a.rs | wc -l",
+            "grep -rn 'bar' src/b.rs | head -2",
+        ];
+        let calls: Vec<_> = (0..16)
+            .map(|i| snap("bash", serde_json::json!({"command": cmds[i % 2]})))
+            .collect();
+        let run = run_with_calls(calls);
+        assert_eq!(
+            Signal::ReadOnlyCycleMinDistinct.samples(&run, 24),
+            vec![2],
+            "the 2-command re-plumbed cycle must sample as [2]"
+        );
+        assert_eq!(
+            Signal::ReadOnlyCycleMinDistinct.direction(),
+            TailDirection::LowerIsWorse
+        );
+
+        // Below 16 read-only calls: no full window → empty samples.
+        let calls: Vec<_> = (0..15)
+            .map(|i| snap("bash", serde_json::json!({"command": cmds[i % 2]})))
+            .collect();
+        let run = run_with_calls(calls);
+        assert!(
+            Signal::ReadOnlyCycleMinDistinct
+                .samples(&run, 24)
+                .is_empty(),
+            "fewer than 16 read-only calls must not sample"
+        );
+
+        // An edit resetting the trailing run below the window: the samples
+        // taken BEFORE the edit (a full 16-call cycle) remain, but nothing
+        // after — the last pre-edit cycle samples [2], and post-edit calls
+        // never refill the window.
+        let mut calls: Vec<_> = (0..16)
+            .map(|i| snap("bash", serde_json::json!({"command": cmds[i % 2]})))
+            .collect();
+        calls.push(snap("patch", serde_json::json!({"path": "x.rs"})));
+        calls.extend((0..8).map(|i| snap("bash", serde_json::json!({"command": cmds[i % 2]}))));
+        let run = run_with_calls(calls);
+        assert_eq!(
+            Signal::ReadOnlyCycleMinDistinct.samples(&run, 24),
+            vec![2],
+            "samples must stop at the edit: the pre-edit cycle samples [2], post-edit calls never refill the window"
+        );
+    }
+
+    #[test]
+    fn read_only_cycle_signal_appears_in_report() {
+        let tmp = TempDir::new().unwrap();
+        let cmds = [
+            "grep -rn 'foo' src/a.rs | wc -l",
+            "grep -rn 'bar' src/b.rs | head -2",
+        ];
+        let calls: Vec<(String, serde_json::Value)> = (0..16)
+            .map(|i| ("bash".into(), serde_json::json!({"command": cmds[i % 2]})))
+            .collect();
+        make_session_file(tmp.path(), "cycle", "model_x", "complete", &calls);
+        let args = CalibrateGovernorArgs {
+            sessions_dir: tmp.path(),
+            model_filter: None,
+            novelty_window: 24,
+            min_runs: 0,
+            json: false,
+        };
+        let out = run(&args);
+        assert!(
+            out.contains("signal: read_only_cycle_min_distinct"),
+            "report must include the read_only_cycle_min_distinct block: {out}"
+        );
+        assert!(
+            out.contains("P50  P10  P1"),
+            "lower-is-worse block must show the low-tail header P50/P10/P1: {out}"
         );
     }
 }

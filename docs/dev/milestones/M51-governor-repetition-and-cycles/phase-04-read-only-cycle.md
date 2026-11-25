@@ -1,7 +1,7 @@
 # Phase 04: Plumbing-normalized `ReadOnlyCycle` detector & calibration replay
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-03
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -240,3 +240,82 @@ No new dependencies.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-24 19:20 (started)
+
+**Executor:** executor-run (headless)
+**Scope:** Tasks 1–5 from the Spec; beginning with config knobs, then detector signal, agent-loop staging, calibration replay, and end-to-end evidence.
+
+### Update — 2026-11-24 19:52 (end-to-end verification)
+
+Ran the § End-to-end verification block verbatim; artifact below (mechanically
+captured into `target/e2e/m51-phase-04.txt`). Positive control: every listed test
+asserts a non-trivial outcome (a fired `ReadOnlyCycle` signal with
+`distinct_calls: 2`, a nudge event with `kind: "read_only_cycle"`, heeded
+counters, or `vec![2]` calibration samples) — each would fail if the detector
+did not run; the negative cases assert no signal on distinct slices/patterns and
+no nudge at `window = 0`. Every listed test prints `ok` with `exit=0` and a
+non-zero passed count.
+
+```
+test config::tests::read_only_cycle_knobs_default_and_allow_zero_and_override ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.00s
+read_only_cycle_knobs_default_and_allow_zero_and_override exit=0
+test governor::hard_fail::read_only_cycle_tests::read_only_cycle_catches_replumbed_grep_cycle ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.00s
+read_only_cycle_catches_replumbed_grep_cycle exit=0
+test governor::hard_fail::read_only_cycle_tests::read_only_cycle_does_not_collapse_distinct_read_file_slices_or_search_patterns ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.00s
+read_only_cycle_does_not_collapse_distinct_read_file_slices_or_search_patterns exit=0
+test governor::hard_fail::read_only_cycle_tests::read_only_cycle_resets_on_file_progress_and_disabled_at_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.00s
+read_only_cycle_resets_on_file_progress_and_disabled_at_zero exit=0
+test agent::tests::read_only_cycle_nudges_once_then_terminates_if_unchanged ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.05s
+read_only_cycle_nudges_once_then_terminates_if_unchanged exit=0
+test agent::tests::read_only_cycle_nudge_heeded_by_new_command_does_not_hard_fail ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.05s
+read_only_cycle_nudge_heeded_by_new_command_does_not_hard_fail exit=0
+test agent::tests::read_only_cycle_nudge_heeded_by_edit_resets_and_completes ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.05s
+read_only_cycle_nudge_heeded_by_edit_resets_and_completes exit=0
+test agent::tests::read_only_cycle_disabled_when_window_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1136 filtered out; finished in 0.05s
+read_only_cycle_disabled_when_window_zero exit=0
+test calibrate_governor::read_only_cycle_tests::read_only_cycle_min_distinct_replays_via_measure_read_only_cycle ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+read_only_cycle_min_distinct_replays_via_measure_read_only_cycle exit=0
+test calibrate_governor::read_only_cycle_tests::read_only_cycle_signal_appears_in_report ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+read_only_cycle_signal_appears_in_report exit=0
+test readme_documents_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+readme_documents_every_governor_knob exit=0
+test readme_documents_every_per_model_override ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+readme_documents_every_per_model_override exit=0
+test init::tests::template_spells_out_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+template_spells_out_every_governor_knob exit=0
+test init::tests::template_offers_every_per_model_override ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+template_offers_every_per_model_override exit=0
+```
+
+Gates (separate invocations, all clean):
+
+- `cargo fmt --all` then `cargo fmt --all --check` → OK
+- `cargo build` → Finished, no warnings
+- `cargo clippy --all-targets --all-features -- -D warnings` → Finished, no warnings
+- `cargo test` → 710 + 2 (rexymcp), 1135 + 0 (rexymcp-executor), 0 failed
+
+Literal grep (spec-pinned names land in the files the phase populates):
+`read_only_cycle_window` present in `executor/src/config.rs` (12),
+`mcp/src/init.rs` (2), `README.md` (2), `mcp/src/runner.rs` (2);
+`HardFailSignal::ReadOnlyCycle` / `read_only_cycle_keys` / `measure_read_only_cycle`
+/ `check_read_only_cycle` present in `executor/src/governor/hard_fail.rs`,
+`executor/src/agent/mod.rs`, and `mcp/src/calibrate_governor.rs`.

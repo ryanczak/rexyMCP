@@ -70,6 +70,10 @@ pub enum HardFailSignal {
         window: usize,
         distinct_targets: usize,
     },
+    ReadOnlyCycle {
+        window: usize,
+        distinct_calls: usize,
+    },
 }
 
 impl HardFailSignal {
@@ -129,6 +133,14 @@ impl HardFailSignal {
             } => {
                 format!(
                     "only {distinct_targets} distinct read targets across the last {window} read-only calls (low-novelty churn)"
+                )
+            }
+            Self::ReadOnlyCycle {
+                window,
+                distinct_calls,
+            } => {
+                format!(
+                    "only {distinct_calls} distinct normalized read-only calls across the last {window} calls (read-only cycle)"
                 )
             }
         }
@@ -390,6 +402,78 @@ pub fn check_read_only_stall(
     if run >= threshold {
         Some(HardFailSignal::NoProgressStall {
             consecutive_read_only: run as u32,
+        })
+    } else {
+        None
+    }
+}
+
+/// Plumbing-normalized read-only cycle: collect the distinct `(tool,
+/// arguments)` keys of the last `window` read-only calls (normalized via
+/// `normalize_tool_args_for_repeat`, which collapses re-plumbed bash pipelines
+/// and quoted-arg variants but keeps distinct `read_file` line ranges and
+/// `search` patterns apart). Returns `None` when `window == 0` or when fewer
+/// than `window` read-only calls precede the last file-progress call;
+/// otherwise the deduplicated keys, in first-seen order.
+pub fn read_only_cycle_keys(
+    recent: &VecDeque<ToolCallSnapshot>,
+    window: usize,
+) -> Option<Vec<(String, serde_json::Value)>> {
+    if window == 0 {
+        return None;
+    }
+    let mut keys: Vec<(String, serde_json::Value)> = Vec::new();
+    let mut seen = 0usize;
+    for call in recent.iter().rev() {
+        if call.made_file_progress() {
+            break;
+        }
+        seen += 1;
+        if seen > window {
+            break;
+        }
+        let key = (
+            call.tool.clone(),
+            super::normalize::normalize_tool_args_for_repeat(&call.tool, &call.arguments),
+        );
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    if seen < window {
+        return None;
+    }
+    Some(keys)
+}
+
+/// Distinct normalized read-only keys in the trailing `window` (see
+/// `read_only_cycle_keys`); `None` when no full read-only window precedes the
+/// last file-progress call.
+pub fn measure_read_only_cycle(
+    recent: &VecDeque<ToolCallSnapshot>,
+    window: usize,
+) -> Option<usize> {
+    read_only_cycle_keys(recent, window).map(|keys| keys.len())
+}
+
+/// Fire `HardFailSignal::ReadOnlyCycle` when the trailing `window` read-only
+/// calls collapse to at most `distinct_max` distinct normalized keys. A
+/// single-command re-plumbed loop (`distinct_calls == 1`) is caught here even
+/// though `check_identical_repetition` sees distinct raw calls. `window == 0`
+/// or `distinct_max == 0` disables.
+pub fn check_read_only_cycle(
+    recent: &VecDeque<ToolCallSnapshot>,
+    window: usize,
+    distinct_max: usize,
+) -> Option<HardFailSignal> {
+    if window == 0 || distinct_max == 0 {
+        return None;
+    }
+    let distinct_calls = measure_read_only_cycle(recent, window)?;
+    if distinct_calls <= distinct_max {
+        Some(HardFailSignal::ReadOnlyCycle {
+            window,
+            distinct_calls,
         })
     } else {
         None
@@ -1969,5 +2053,144 @@ mod tests {
             evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
             "re-plumbed bash variants must not trip IdenticalToolCallRepetition"
         );
+    }
+}
+
+#[cfg(test)]
+mod read_only_cycle_tests {
+    use super::*;
+
+    fn bash_call(cmd: &str) -> ToolCallSnapshot {
+        ToolCallSnapshot {
+            tool: "bash".to_string(),
+            arguments: serde_json::json!({"command": cmd}),
+            succeeded: true,
+            changed_tree: false,
+        }
+    }
+
+    #[test]
+    fn read_only_cycle_catches_replumbed_grep_cycle() {
+        let commands = [
+            "grep -rn \"foo\" src/a.rs | wc -l",
+            "grep -rn 'foo' src/a.rs | head -2",
+            "grep -rn \"bar\" src/b.rs | wc -l",
+            "grep -rn 'bar' src/b.rs | head -2",
+        ];
+        let mut recent = VecDeque::new();
+        for i in 0..16 {
+            recent.push_back(bash_call(commands[i % commands.len()]));
+        }
+        let distinct =
+            measure_read_only_cycle(&recent, 16).expect("16 read-only calls fill the window");
+        assert_eq!(
+            distinct, 2,
+            "re-plumbed variants must collapse to one key per command"
+        );
+        let signal = check_read_only_cycle(&recent, 16, 4).unwrap();
+        assert_eq!(
+            signal,
+            HardFailSignal::ReadOnlyCycle {
+                window: 16,
+                distinct_calls: 2
+            }
+        );
+        assert_eq!(
+            signal.describe(),
+            "only 2 distinct normalized read-only calls across the last 16 calls (read-only cycle)"
+        );
+    }
+
+    #[test]
+    fn read_only_cycle_does_not_collapse_distinct_read_file_slices_or_search_patterns() {
+        let mut recent = VecDeque::new();
+        for i in 0..16 {
+            recent.push_back(ToolCallSnapshot {
+                tool: "read_file".to_string(),
+                arguments: serde_json::json!({
+                    "path": "src/a.rs",
+                    "start_line": i + 1,
+                    "end_line": i + 2
+                }),
+                succeeded: true,
+                changed_tree: false,
+            });
+        }
+        let distinct =
+            measure_read_only_cycle(&recent, 16).expect("16 read-only calls fill the window");
+        assert_eq!(
+            distinct, 16,
+            "distinct line ranges must not collapse into one key"
+        );
+        assert!(
+            check_read_only_cycle(&recent, 16, 4).is_none(),
+            "16 distinct slices are not a cycle"
+        );
+
+        let mut searches = VecDeque::new();
+        for i in 0..16 {
+            searches.push_back(ToolCallSnapshot {
+                tool: "search".to_string(),
+                arguments: serde_json::json!({"pattern": format!("pattern_{i}")}),
+                succeeded: true,
+                changed_tree: false,
+            });
+        }
+        let distinct =
+            measure_read_only_cycle(&searches, 16).expect("16 read-only calls fill the window");
+        assert_eq!(
+            distinct, 16,
+            "distinct search patterns must not collapse into one key"
+        );
+        assert!(check_read_only_cycle(&searches, 16, 4).is_none());
+    }
+
+    #[test]
+    fn read_only_cycle_resets_on_file_progress_and_disabled_at_zero() {
+        let commands = [
+            "grep -rn \"foo\" src/a.rs | wc -l",
+            "grep -rn 'foo' src/a.rs | head -2",
+        ];
+        let mut recent = VecDeque::new();
+        for i in 0..16 {
+            recent.push_back(bash_call(commands[i % commands.len()]));
+        }
+        recent.push_back(ToolCallSnapshot {
+            tool: "patch".to_string(),
+            arguments: serde_json::json!({"path": "x.rs", "old": "a", "new": "b"}),
+            succeeded: true,
+            changed_tree: false,
+        });
+        for i in 0..8 {
+            recent.push_back(bash_call(commands[i % commands.len()]));
+        }
+        // Only 8 read-only calls since the patch — below the 16 window.
+        assert!(measure_read_only_cycle(&recent, 16).is_none());
+        assert!(check_read_only_cycle(&recent, 16, 4).is_none());
+
+        // A `changed_tree: true` bash call counts as progress too.
+        let mut changed = VecDeque::new();
+        for i in 0..16 {
+            changed.push_back(bash_call(commands[i % commands.len()]));
+        }
+        changed.push_back(ToolCallSnapshot {
+            tool: "bash".to_string(),
+            arguments: serde_json::json!({"command": "cargo build"}),
+            succeeded: true,
+            changed_tree: true,
+        });
+        for i in 0..8 {
+            changed.push_back(bash_call(commands[i % commands.len()]));
+        }
+        assert!(measure_read_only_cycle(&changed, 16).is_none());
+
+        // Both knobs disabled at 0.
+        let mut full = VecDeque::new();
+        for i in 0..16 {
+            full.push_back(bash_call(commands[i % commands.len()]));
+        }
+        assert!(check_read_only_cycle(&full, 0, 4).is_none());
+        assert!(check_read_only_cycle(&full, 16, 0).is_none());
+        assert!(read_only_cycle_keys(&full, 0).is_none());
     }
 }

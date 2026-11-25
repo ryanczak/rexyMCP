@@ -6525,3 +6525,133 @@ async fn repeat_nudge_phase_run_reports_injected_and_heeded() {
     assert_eq!(runs[0].nudges_injected, 1);
     assert_eq!(runs[0].nudges_heeded, 0);
 }
+
+// --- read-only cycle nudge (M51 phase-04) ---
+
+fn cycle_bash(script: &[&str], calls: usize) -> Vec<Vec<AiEvent>> {
+    let mut turns: Vec<Vec<AiEvent>> = (0..calls)
+        .map(|i| {
+            let cmd = script[i % script.len()];
+            vec![native("bash", json!({ "command": cmd }))]
+        })
+        .collect();
+    turns.push(vec![token("done")]);
+    turns
+}
+
+fn cycle_governor(window: usize, distinct_max: usize) -> GovernorConfig {
+    GovernorConfig {
+        read_only_cycle_window: window,
+        read_only_cycle_distinct_max: distinct_max,
+        // Keep the other repetition guards out of the way: the cycle here is
+        // deliberately re-plumbed and non-identical, but identical_call_threshold
+        // still needs headroom and the no-progress stall needs disabling.
+        identical_call_threshold: 50,
+        read_only_stall_threshold: 0,
+        novelty_distinct_floor: 0,
+        ..GovernorConfig::default()
+    }
+}
+
+#[tokio::test]
+async fn read_only_cycle_nudges_once_then_terminates_if_unchanged() {
+    let dir = TempDir::new().unwrap();
+    let script = [
+        "grep -rn 'foo' src/a.rs | wc -l",
+        "grep -rn 'bar' src/b.rs | head -2",
+    ];
+    let client = MockAiClientScript::new(cycle_bash(&script, 9));
+
+    let result = run_with_bash_governor(&dir, &client, cycle_governor(8, 4), None, 14).await;
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::HardFail,
+        "the 9th call inside the nudged cycle must terminate the run"
+    );
+    assert!(matches!(
+        result.briefing.unwrap().current_blocker,
+        Blocker::HardFail(HardFailSignal::ReadOnlyCycle {
+            window: 8,
+            distinct_calls: 2
+        })
+    ));
+    assert_eq!(
+        nudge_events(&dir),
+        vec![("read_only_cycle".to_string(), "bash".to_string(), 8)],
+        "exactly one read_only_cycle nudge with the window as consecutive_count"
+    );
+}
+
+#[tokio::test]
+async fn read_only_cycle_nudge_heeded_by_new_command_does_not_hard_fail() {
+    let dir = TempDir::new().unwrap();
+    let script = [
+        "grep -rn 'foo' src/a.rs | wc -l",
+        "grep -rn 'bar' src/b.rs | head -2",
+    ];
+    let mut turns = cycle_bash(&script, 8);
+    // Turn 9: a brand-new read command outside the cycle → heeded.
+    turns.insert(8, vec![native("bash", json!({ "command": "ls -la docs" }))]);
+    let client = MockAiClientScript::new(turns);
+
+    let result = run_with_bash_governor(&dir, &client, cycle_governor(8, 4), None, 14).await;
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "heeding the nudge with a new command must not hard-fail even though \
+         {{A,B,C}}.len() <= distinct_max"
+    );
+    assert_eq!(
+        nudge_events(&dir).len(),
+        1,
+        "one cycle nudge, none after the heed"
+    );
+    assert_eq!(nudge_events(&dir)[0].0, "read_only_cycle");
+}
+
+#[tokio::test]
+async fn read_only_cycle_nudge_heeded_by_edit_resets_and_completes() {
+    let dir = TempDir::new().unwrap();
+    let script = [
+        "grep -rn 'foo' src/a.rs | wc -l",
+        "grep -rn 'bar' src/b.rs | head -2",
+    ];
+    let mut turns = cycle_bash(&script, 8);
+    // Turn 9: an edit → heeded, file progress resets the counter.
+    turns.insert(8, vec![write_call(&dir, "x.txt", "b\n")]);
+    let client = MockAiClientScript::new(turns);
+
+    let result = run_with_bash_governor(&dir, &client, cycle_governor(8, 4), None, 14).await;
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "heeding the nudge with an edit must complete cleanly"
+    );
+    assert_eq!(nudge_events(&dir).len(), 1);
+    assert_eq!(nudge_events(&dir)[0].0, "read_only_cycle");
+}
+
+#[tokio::test]
+async fn read_only_cycle_disabled_when_window_zero() {
+    let dir = TempDir::new().unwrap();
+    let script = [
+        "grep -rn 'foo' src/a.rs | wc -l",
+        "grep -rn 'bar' src/b.rs | head -2",
+    ];
+    let client = MockAiClientScript::new(cycle_bash(&script, 8));
+
+    let result = run_with_bash_governor(&dir, &client, cycle_governor(0, 4), None, 12).await;
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "window = 0 disables the detector: no nudge, no hard-fail"
+    );
+    assert!(
+        nudge_events(&dir).is_empty(),
+        "zero cycle nudges must be injected"
+    );
+}
