@@ -171,6 +171,26 @@ Spec ambiguity, missing referenced files, impossible acceptance criteria, or
 architectural inconsistencies you discover are also blockers — not invitations to
 improvise.
 
+### Batch repeated work
+
+If you would run the same or nearly the same command more than 3 times — a
+stress loop, a sweep over files, one check per case — write **one** shell loop,
+or a script in `$TMPDIR`, that does all of it. Run it **once** and paste its
+summary line. Never repeat a tool call to collect repetitions.
+
+Example — parallel stress loop that prints the failure count:
+
+```bash
+BIN=$(cargo test --lib --no-run 2>&1 | grep -o 'target/debug/deps/<crate>-[0-9a-f]*' | head -1)
+seq 300 | xargs -P 24 -I{} sh -c "$BIN --exact <test> -q >/dev/null 2>&1 || echo F" | grep -c F
+```
+
+Example — one check per file, one summary:
+
+```bash
+for f in src/**/*.rs; do grep -q 'pattern' "$f" || echo "missing: $f"; done
+```
+
 **Prefer the file tools over the shell for reading, too.** To view a file — a
 whole file or a specific line range — use `read_file` (it takes `start_line` /
 `end_line`, 1-indexed inclusive), not `sed -n`/`cat`/`head`/`tail` via `bash`.

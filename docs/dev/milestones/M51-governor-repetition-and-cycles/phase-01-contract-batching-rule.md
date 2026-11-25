@@ -1,7 +1,7 @@
 # Phase 01: Contract batching rule & classifier coverage
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** none
 **Estimated diff:** ~70 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -134,3 +134,40 @@ No new dependencies.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-24 17:11 (progress)
+
+Started phase 01. Read STANDARDS.md, the phase doc, and the milestone README;
+confirmed a clean tree. Flipping status to in-progress and updating the
+milestone README's phase table, then adding the `### Batch repeated work`
+subsection to `executor/templates/executor_contract.md`, tightening the
+placeholder guard in `executor/src/agent/contract.rs` for empty `{}` in
+`xargs -I{}`, and adding the classifier tests in
+`executor/src/security/bash_classify.rs`.
+
+### Update — 2026-11-24 17:15 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim. Positive control: the heading grep on
+`executor/templates/executor_contract.md` returns the real line number (174)
+with `exit=0` — it would fail with exit 1 if the heading were missing — and
+each named test filter reports `1 passed` (non-zero) with `exit=0`, which
+would read `0 passed` if the tests did not exist. Artifact pasted verbatim
+below from `target/e2e/m51-phase-01.txt`:
+
+```
+174:### Batch repeated work
+heading exit=0
+test agent::contract::tests::contract_contains_batch_repeated_work_rule ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1108 filtered out; finished in 0.00s
+contract_contains_batch_repeated_work_rule exit=0
+test agent::contract::tests::placeholder_set_is_exactly_the_four_authorized ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1108 filtered out; finished in 0.00s
+placeholder_set_is_exactly_the_four_authorized exit=0
+test security::bash_classify::tests::allows_contract_batching_examples ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1108 filtered out; finished in 0.01s
+allows_contract_batching_examples exit=0
+test security::bash_classify::tests::blocks_kill_inside_batching_examples ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1108 filtered out; finished in 0.01s
+blocks_kill_inside_batching_examples exit=0
+```
+

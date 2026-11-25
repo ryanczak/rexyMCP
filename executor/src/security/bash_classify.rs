@@ -828,6 +828,43 @@ mod tests {
     }
 
     #[test]
+    fn allows_contract_batching_examples() {
+        // (a) The two-line stress loop from the contract's `### Batch repeated
+        // work` subsection: build the test binary, then hammer one test in
+        // parallel with xargs and print the failure count.
+        let stress_loop = "BIN=$(cargo test --lib --no-run 2>&1 | grep -o 'target/debug/deps/<crate>-[0-9a-f]*' | head -1) && seq 300 | xargs -P 24 -I{} sh -c \"$BIN --exact <test> -q >/dev/null 2>&1 || echo F\" | grep -c F";
+        assert_eq!(classify(stress_loop), Severity::Allow);
+
+        // (b) One check per file, one summary.
+        assert_eq!(
+            classify(
+                "for f in src/**/*.rs; do grep -q 'pattern' \"$f\" || echo \"missing: $f\"; done"
+            ),
+            Severity::Allow
+        );
+
+        // (c) Writing and running a temporary script in $TMPDIR.
+        assert_eq!(
+            classify(
+                "cat > \"$TMPDIR/check.sh\" <<'EOF'\nfor f in src/**/*.rs; do grep -q 'pattern' \"$f\" || echo \"missing: $f\"; done\nEOF\nsh \"$TMPDIR/check.sh\""
+            ),
+            Severity::Allow
+        );
+    }
+
+    #[test]
+    fn blocks_kill_inside_batching_examples() {
+        assert_eq!(
+            classify("seq 10 | xargs -P 4 -I{} sh -c \"kill -9 {}\""),
+            Severity::Block
+        );
+        assert_eq!(
+            classify("for p in 1 2; do pkill -x bash; done"),
+            Severity::Block
+        );
+    }
+
+    #[test]
     fn refuses_in_place_source_edits() {
         // The M35 failure shape and its relatives.
         assert_eq!(

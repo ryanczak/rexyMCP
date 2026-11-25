@@ -127,18 +127,75 @@ mod tests {
             .replace("{LINT_COMMAND}", "")
             .replace("{TEST_COMMAND}", "");
 
+        // `xargs -I{}` uses empty `{}` as a literal shell token, not a
+        // placeholder; only a non-empty `{…}` counts as unauthorized.
         let has_other_placeholder = remaining.split('{').skip(1).any(|after| {
             after.contains('}')
                 && after
                     .split('}')
                     .next()
-                    .map(|inner| inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+                    .map(|inner| {
+                        !inner.is_empty()
+                            && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    })
                     .unwrap_or(false)
         });
 
         assert!(
             !has_other_placeholder,
             "template contains placeholders other than the four authorized ones"
+        );
+    }
+
+    #[test]
+    fn detects_a_non_empty_unauthorized_placeholder() {
+        let doctored = TEMPLATE.replace("{FORMAT_COMMAND}", "{MERCURY_COMMAND}");
+
+        let remaining = doctored
+            .replace("{BUILD_COMMAND}", "")
+            .replace("{LINT_COMMAND}", "")
+            .replace("{TEST_COMMAND}", "");
+
+        let has_other_placeholder = remaining.split('{').skip(1).any(|after| {
+            after.contains('}')
+                && after
+                    .split('}')
+                    .next()
+                    .map(|inner| {
+                        !inner.is_empty()
+                            && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    })
+                    .unwrap_or(false)
+        });
+
+        assert!(
+            has_other_placeholder,
+            "a non-empty unauthorized placeholder must still be detected"
+        );
+    }
+
+    #[test]
+    fn contract_contains_batch_repeated_work_rule() {
+        let commands = CommandConfig::default();
+        let output = assemble_executor_contract(&commands);
+
+        assert!(
+            output.contains("### Batch repeated work"),
+            "contract must contain the '### Batch repeated work' heading"
+        );
+        assert!(
+            output.contains("seq 300 | xargs -P 24 -I{} sh -c \"$BIN --exact <test> -q >/dev/null 2>&1 || echo F\" | grep -c F"),
+            "contract must contain the xargs -P 24 stress-loop example"
+        );
+        assert!(
+            output.contains(
+                "for f in src/**/*.rs; do grep -q 'pattern' \"$f\" || echo \"missing: $f\"; done"
+            ),
+            "contract must contain the file-sweep example"
+        );
+        assert!(
+            output.contains("$TMPDIR"),
+            "contract must mention $TMPDIR for the scripted variant"
         );
     }
 
