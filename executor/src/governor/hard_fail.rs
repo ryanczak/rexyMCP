@@ -74,6 +74,10 @@ pub enum HardFailSignal {
         window: usize,
         distinct_calls: usize,
     },
+    TaskNoEditStall {
+        task_id: String,
+        consecutive_turns: u32,
+    },
 }
 
 impl HardFailSignal {
@@ -141,6 +145,14 @@ impl HardFailSignal {
             } => {
                 format!(
                     "only {distinct_calls} distinct normalized read-only calls across the last {window} calls (read-only cycle)"
+                )
+            }
+            Self::TaskNoEditStall {
+                task_id,
+                consecutive_turns,
+            } => {
+                format!(
+                    "task {task_id} ran {consecutive_turns} consecutive turns with no file edit (task no-edit stall)"
                 )
             }
         }
@@ -406,6 +418,30 @@ pub fn check_read_only_stall(
     } else {
         None
     }
+}
+
+/// Per-task no-edit stall: fire when the currently `Active` task has survived
+/// `threshold` consecutive edit-free turns. Unlike `check_read_only_stall`
+/// (which resets on any edit anywhere), this bounds a stuck task: an edit on
+/// an unrelated file resets it, a task switch resets it, but a redundant
+/// `update_task(same_id, "active")` does not. `threshold == 0` disables, as
+/// does having no active task (`active_task_id == None`).
+pub fn check_task_no_edit_stall(
+    active_task_id: Option<&str>,
+    no_edit_turns: usize,
+    threshold: usize,
+) -> Option<HardFailSignal> {
+    if threshold == 0 {
+        return None;
+    }
+    let id = active_task_id?;
+    if no_edit_turns < threshold {
+        return None;
+    }
+    Some(HardFailSignal::TaskNoEditStall {
+        task_id: id.to_string(),
+        consecutive_turns: no_edit_turns as u32,
+    })
 }
 
 /// Plumbing-normalized read-only cycle: collect the distinct `(tool,
@@ -1211,6 +1247,33 @@ mod tests {
             recent.push_back(read_only_call(i));
         }
         assert!(check_read_only_stall(&recent, 20).is_none());
+    }
+
+    #[test]
+    fn task_no_edit_stall_fires_at_threshold_and_disabled_at_zero_or_no_active_task() {
+        // Fires at exactly the threshold with the expected describe() text.
+        let signal =
+            check_task_no_edit_stall(Some("1"), 3, 3).expect("fires at no_edit_turns == threshold");
+        assert!(matches!(
+            signal,
+            HardFailSignal::TaskNoEditStall {
+                ref task_id,
+                consecutive_turns: 3
+            } if task_id == "1"
+        ));
+        assert_eq!(
+            signal.describe(),
+            "task 1 ran 3 consecutive turns with no file edit (task no-edit stall)"
+        );
+
+        // Below threshold → None.
+        assert!(check_task_no_edit_stall(Some("1"), 2, 3).is_none());
+
+        // threshold == 0 disables, even at a high turn count.
+        assert!(check_task_no_edit_stall(Some("1"), 40, 0).is_none());
+
+        // No active task → None.
+        assert!(check_task_no_edit_stall(None, 40, 40).is_none());
     }
 
     #[test]

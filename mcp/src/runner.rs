@@ -291,6 +291,7 @@ async fn run_phase_with(
         max_turns: inp.cfg.budget.max_turns as usize,
         gate_retries: inp.cfg.budget.effective_gate_retries(inp.cfg.executor.tier),
         wall_clock_secs: inp.cfg.budget.wall_clock_secs,
+        checkpoint_turns: inp.cfg.budget.checkpoint_turns as usize,
         project_root: inp.repo_path,
         model: inp.model,
         session_id: &session_id,
@@ -803,6 +804,7 @@ mod tests {
                 repeat_nudge_threshold: None,
                 read_only_cycle_window: None,
                 read_only_cycle_distinct_max: None,
+                task_no_edit_threshold: None,
             },
         );
         let mock = MockAiClient::new(vec!["Done.".to_string()]);
@@ -938,6 +940,7 @@ mod tests {
                 repeat_nudge_threshold: None,
                 read_only_cycle_window: None,
                 read_only_cycle_distinct_max: None,
+                task_no_edit_threshold: None,
             },
         );
 

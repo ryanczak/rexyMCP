@@ -885,6 +885,7 @@ max_context_pct  = 70                     # % of the window to fill before compa
 max_turns        = 200                    # hard turn cap before budget_exceeded   (default 200)
 # gate_retries   = 2                      # gate-retry loops before budget_exceeded; omitted → derive from tier (M26)
 # wall_clock_secs = 1800                  # optional wall-clock ceiling; omitted → no time limit (M26)
+# checkpoint_turns = 50                   # optional soft turn checkpoint: reaching this turn without completing → resumable budget_exceeded ("review partial work and resume with continue_phase"); omitted → disabled (M51)
 
 # ── Cross-project telemetry store (enables the scorecard) ─────────
 [telemetry]
@@ -911,12 +912,13 @@ oscillation_distinct_max        = 2       # ≤ this many distinct calls filling
 output_window                   = 6       # sliding window of tool outputs summed for the flood check (default 6; 0 disables)
 output_window_bytes             = 262144  # total bytes across that window → hard-fail (default 256 KiB) — catches multi-call floods each under runaway_output_bytes
 read_only_stall_threshold       = 60      # consecutive non-mutating tool calls → hard-fail; the volume backstop for read-only runs (the oscillation detector exempts no-mutation windows; identical-call repetition does not). Resets on any patch/write_file; default 60, must be > 0 — 0 is refused at load. Tune to your model with `calibrate-governor`'s max_read_only_run distribution — sit above legit completion runs' P99, below genuine stuck loops.
+read_only_cycle_window          = 16      # trailing read-only calls examined for a plumbing-normalized cycle (re-plumbed bash pipes, quoted-arg variants; default 16; 0 disables). When the last `window` read-only calls collapse to ≤ `read_only_cycle_distinct_max` distinct normalized keys → inject ONE recoverable cycle nudge; continuing the cycle after the nudge hard-fails with `ReadOnlyCycle`.
+read_only_cycle_distinct_max    = 4       # ≤ this many distinct normalized read-only calls in the cycle window still counts as a cycle (includes 1-command re-plumbed loops that evade identical-call repetition; default 4; 0 disables)
+task_no_edit_threshold          = 40      # consecutive edit-free turns while a task stays active → hard-fail (TaskNoEditStall). Resets on any file edit or task switch; a redundant update_task(same_id, "active") does not reset it. Default 40, 0 disables — bounds a stuck task the run-level read_only_stall_threshold (reset by any edit) would keep funding.
 novelty_window                  = 24      # trailing read-only calls examined for target novelty (default 24; 0 disables)
 novelty_distinct_floor          = 6       # ≤ this many distinct normalized targets (paths / grep scopes, line ranges and patterns stripped) filling that window → churn (default 6)
 novelty_action                  = "advisory" # what a fired novelty window does: "advisory" (default) records a NoveltySample and keeps running; "terminate" hard-fails with LowNoveltyStall. Advisory is the default because the 24/6 pair is un-calibrated — a data-free early kill must not pre-empt a run the turn budget would still fund.
 repeat_nudge_threshold          = 3       # consecutive identical tool calls with identical (timing-normalized) outputs → inject ONE steering nudge ("write one loop instead of N runs"); 0 disables. Recoverable: `IdenticalToolCallRepetition` still hard-fails at `identical_call_threshold` as the backstop.
-read_only_cycle_window          = 16      # trailing read-only calls examined for a plumbing-normalized cycle (re-plumbed bash pipes, quoted-arg variants; 0 disables). When the last `window` read-only calls collapse to ≤ `read_only_cycle_distinct_max` distinct normalized keys → inject ONE recoverable cycle nudge; continuing the cycle after the nudge hard-fails with `ReadOnlyCycle`.
-read_only_cycle_distinct_max    = 4       # ≤ this many distinct normalized read-only calls in the cycle window still counts as a cycle (includes 1-command re-plumbed loops that evade identical-call repetition; 0 disables)
 
 # ── /rexymcp:auto per-phase escalation budget ─────────────────────
 [escalation]
@@ -946,6 +948,7 @@ temperature                    = 0.2      # any of these override the global val
 # repeat_nudge_threshold       = 3       # per-model override; 0 disables the repeat nudge for this model
 # read_only_cycle_window       = 16      # per-model override; 0 disables the read-only cycle detector for this model
 # read_only_cycle_distinct_max = 4       # per-model override; 0 disables the read-only cycle detector for this model
+# task_no_edit_threshold      = 60      # per-model override; 0 disables the per-task no-edit guard for this model
 ```
 
 **Section reference:**
@@ -955,11 +958,11 @@ temperature                    = 0.2      # any of these override the global val
 | `[project]` | `id` — per-project UUID (from `rexymcp init`) that scopes telemetry to this project regardless of path. |
 | `[executor]` | The local model + connection: `provider`, `model`, `base_url`, `api_key`, the two streaming timeouts, sampling (`temperature`, `seed`, `max_tokens`), `enable_thinking`, `reasoning_effort`, `task_tracking`, and `tier`. |
 | `[commands]` | The `format` / `build` / `lint` / `test` (+ optional `lint_fix`) commands run as the final gate. |
-| `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `gate_retries`, and the optional `wall_clock_secs` ceiling (M26). |
+| `[budget]` | `context_length`, `max_context_pct`, `max_turns`, `gate_retries`, the optional `wall_clock_secs` ceiling (M26), and the optional `checkpoint_turns` soft checkpoint (M51). |
 | `[telemetry]` | `dir` — the cross-project store. Omit to disable; `~` is expanded. |
 | `[architect]` | The per-role `dispatch_model` / `review_model` keys the `/rexymcp:auto` loop delegates those steps to (M27). |
 | `[context]` | `output_filter` kill-switch for the lossless boundary filter (on: normalize + recovery file; off: plain head/tail truncation). |
-| `[governor]` | Hard-fail thresholds: identical-call, verifier-persistence, runaway-output, empty-completion, stuck-gate-feedback, the no-progress read-only stall, and the oscillation / output-flood / low-novelty windows (the last of these advisory-only by default — see `novelty_action`). |
+| `[governor]` | Hard-fail thresholds: identical-call, verifier-persistence, runaway-output, empty-completion, stuck-gate-feedback, the no-progress read-only stall, the per-task no-edit stall (`task_no_edit_threshold`, M51), the recoverable read-only cycle nudge, and the oscillation / output-flood / low-novelty windows (the last of these advisory-only by default — see `novelty_action`). |
 | `[escalation]` | `max_assists` — the flat, tier-independent per-phase escalation budget for the `/rexymcp:auto` loop (M27). |
 | `[models."<id>"]` | Per-model overrides (exact-id match) for sampling (`temperature`/`seed`/`max_tokens`/`enable_thinking`/`reasoning_effort`), task-tracking, and every governor threshold. Any key omitted inherits the global value. |
 

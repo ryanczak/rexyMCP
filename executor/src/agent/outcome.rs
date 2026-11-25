@@ -39,6 +39,12 @@ pub(super) fn turns_line(max_turns: usize) -> String {
     format!("0 of {max_turns} turns remaining")
 }
 
+pub(super) fn checkpoint_line(turns: usize, checkpoint: usize, max_turns: usize) -> String {
+    format!(
+        "soft checkpoint reached at turn {turns} of {max_turns} (checkpoint_turns = {checkpoint}); review partial work and resume with continue_phase"
+    )
+}
+
 pub(super) fn cancelled_result(stage: &str, turns: usize, artifacts: Artifacts) -> PhaseResult {
     PhaseResult::cancelled(
         Cancellation {

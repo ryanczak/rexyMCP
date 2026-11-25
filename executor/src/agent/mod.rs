@@ -51,7 +51,8 @@ use command::{CommandRunner, run_command_set, run_post_write_hooks};
 use log::{log_event, log_session_end};
 use metrics::{RunMetrics, emit_phase_run};
 use outcome::{
-    budget_exceeded_result, build_artifacts, cancelled_result, hard_fail_result, turns_line,
+    budget_exceeded_result, build_artifacts, cancelled_result, checkpoint_line, hard_fail_result,
+    turns_line,
 };
 use progress::{EmitCtx, ProgressCallback, emit_progress};
 use tools::{
@@ -114,6 +115,12 @@ pub struct LoopDeps<'a> {
     /// `budget_exceeded`. Resolved from `[budget] wall_clock_secs` at the call
     /// site.
     pub wall_clock_secs: u64,
+    /// Optional soft turn checkpoint. When > 0, reaching turn
+    /// `checkpoint_turns` without completing returns `budget_exceeded` with a
+    /// briefing recommending `continue_phase`, preserving partial work on
+    /// disk. `0` (the default) disables it. Resolved from
+    /// `[budget] checkpoint_turns` at the call site.
+    pub checkpoint_turns: usize,
     pub project_root: &'a Path,
     /// Model identifier, for the `SessionStart` record.
     pub model: &'a str,
@@ -174,6 +181,19 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
     // Only consulted when `task_tracking && !seeded.is_empty()`.
     let mut task_states: HashMap<String, crate::store::sessions::event::TaskState> =
         seeded.iter().map(|t| (t.id.clone(), t.state)).collect();
+
+    // Per-task no-edit guard (M51 phase-05): the currently Active task, and
+    // how many consecutive edit-free turns it has survived. Initialized from
+    // the seeded (post-resume) states so a resumed run with an active task is
+    // bounded too.
+    let mut active_task_id: Option<String> = seeded
+        .iter()
+        .find(|t| t.state == crate::store::sessions::event::TaskState::Active)
+        .map(|t| t.id.clone());
+    let mut task_no_edit_turns: usize = 0;
+    // Whether this turn's task_update metadata actually changed the tracked
+    // task set (a real activation / completion, not a redundant re-assert).
+    let mut task_changed = false;
     let system = format!(
         "{}{}{}",
         prompt::datetime_header((deps.clock)()),
@@ -1276,7 +1296,48 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 },
             );
             task_states.insert(id.to_string(), state);
+
+            // Per-task no-edit guard bookkeeping (M51 phase-05): only a real
+            // task switch counts — a redundant `update_task(same_id, "active")`
+            // on the already-active task must not reset the counter.
+            match state {
+                crate::store::sessions::event::TaskState::Active => {
+                    if active_task_id.as_deref() != Some(id) {
+                        active_task_id = Some(id.to_string());
+                        task_no_edit_turns = 0;
+                        task_changed = true;
+                    }
+                }
+                crate::store::sessions::event::TaskState::Done
+                | crate::store::sessions::event::TaskState::Pending => {
+                    if active_task_id.as_deref() == Some(id) {
+                        active_task_id = seeded
+                            .iter()
+                            .find(|t| {
+                                t.id != id
+                                    && task_states.get(&t.id).is_some_and(|s| {
+                                        *s == crate::store::sessions::event::TaskState::Active
+                                    })
+                            })
+                            .map(|t| t.id.clone());
+                        task_no_edit_turns = 0;
+                        task_changed = true;
+                    }
+                }
+            }
         }
+
+        // Per-task no-edit counter (M51 phase-05), evaluated after the
+        // task_update block so a freshly activated task starts at 0 on its
+        // activation turn rather than 1.
+        if made_file_progress {
+            task_no_edit_turns = 0;
+        } else if active_task_id.is_some() && !task_changed {
+            task_no_edit_turns += 1;
+        } else if active_task_id.is_none() {
+            task_no_edit_turns = 0;
+        }
+        task_changed = false;
 
         // Record the working set: a read makes a file edit-eligible; a successful
         // patch or whole-file write_file (not an append) refreshes its mtime so a
@@ -1470,7 +1531,14 @@ pub async fn execute_phase(input: &PhaseInput, deps: LoopDeps<'_>) -> Result<Pha
                 deps.governor.read_only_stall_threshold,
             )
         })
-        .or(cycle_hard_fail);
+        .or(cycle_hard_fail)
+        .or_else(|| {
+            crate::governor::hard_fail::check_task_no_edit_stall(
+                active_task_id.as_deref(),
+                task_no_edit_turns,
+                deps.governor.task_no_edit_threshold,
+            )
+        });
         if let Some(signal) = hard_fail_signal {
             log_event(
                 &log_handle,
@@ -1580,7 +1648,9 @@ cycle will terminate the run."
             cycle_nudge_keys = Some(keys);
         }
 
-        // Step 9 — turn cap.
+        // Step 9 — turn cap (hard cap wins when checkpoint_turns >= max_turns),
+        // then the optional soft checkpoint (M51 phase-05): a resumable
+        // budget_exceeded that preserves partial edits on disk.
         if turns >= deps.max_turns {
             log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
             emit_phase_run(
@@ -1605,6 +1675,32 @@ cycle will terminate the run."
                 &recent_tool_calls,
                 deps.project_root,
                 turns_line(deps.max_turns),
+                artifacts,
+            ));
+        } else if deps.checkpoint_turns > 0 && turns >= deps.checkpoint_turns {
+            log_session_end(&log_handle, &redactor, deps.clock, "budget_exceeded", turns);
+            emit_phase_run(
+                &deps,
+                input,
+                "budget_exceeded",
+                Gates::default(),
+                &metrics,
+                &scorer,
+                turns,
+            );
+            let artifacts = build_artifacts(
+                &pre_edit_content,
+                deps.project_root,
+                log_path.clone(),
+                "budget_exceeded",
+                turns,
+                CommandOutputs::default(),
+            );
+            return Ok(budget_exceeded_result(
+                input,
+                &recent_tool_calls,
+                deps.project_root,
+                checkpoint_line(turns, deps.checkpoint_turns, deps.max_turns),
                 artifacts,
             ));
         }

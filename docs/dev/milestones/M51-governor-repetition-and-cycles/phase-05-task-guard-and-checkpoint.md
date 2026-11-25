@@ -1,7 +1,7 @@
 # Phase 05: Per-task no-edit guard & optional soft checkpoint
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-04
 **Estimated diff:** ~340 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -212,3 +212,66 @@ No new dependencies.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-25 03:45 (started)
+
+**By:** executor (M51 phase-05)
+
+Flipped the phase status to `in-progress` (doc + milestone README). Beginning
+Spec task 1: config knobs (`task_no_edit_threshold`, `checkpoint_turns`).
+
+### Update — 2026-11-25 04:10 (end-to-end verification)
+
+Ran the phase doc's § End-to-end verification block verbatim; artifact pasted
+from `target/e2e/m51-phase-05.txt` (redirected output, not retyped):
+
+```
+test config::tests::task_no_edit_and_checkpoint_knobs_default_allow_zero_and_override ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.00s
+task_no_edit_and_checkpoint_knobs_default_allow_zero_and_override exit=0
+test governor::hard_fail::tests::task_no_edit_stall_fires_at_threshold_and_disabled_at_zero_or_no_active_task ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.00s
+task_no_edit_stall_fires_at_threshold_and_disabled_at_zero_or_no_active_task exit=0
+test agent::tests::task_no_edit_stall_fires_on_stuck_active_task_and_ignores_redundant_active ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.01s
+task_no_edit_stall_fires_on_stuck_active_task_and_ignores_redundant_active exit=0
+test agent::tests::task_no_edit_stall_resets_on_edit_and_task_switch ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.02s
+task_no_edit_stall_resets_on_edit_and_task_switch exit=0
+test agent::tests::task_no_edit_stall_disabled_when_threshold_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.02s
+task_no_edit_stall_disabled_when_threshold_zero exit=0
+test agent::tests::checkpoint_turns_returns_resumable_budget_exceeded_preserving_partial_edits ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.01s
+checkpoint_turns_returns_resumable_budget_exceeded_preserving_partial_edits exit=0
+test agent::tests::checkpoint_turns_zero_disabled_and_completion_before_checkpoint_succeeds ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.02s
+checkpoint_turns_zero_disabled_and_completion_before_checkpoint_succeeds exit=0
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 710 filtered out; finished in 0.00s
+test readme_documents_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+readme_documents_every_governor_knob exit=0
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 710 filtered out; finished in 0.00s
+test readme_documents_every_per_model_override ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+readme_documents_every_per_model_override exit=0
+test init::tests::template_spells_out_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+template_spells_out_every_governor_knob exit=0
+test init::tests::template_offers_every_per_model_override ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+template_offers_every_per_model_override exit=0
+```
+
+Positive control: each of the 11 targeted tests prints `ok` with a non-zero
+passed count and `exit=0` — a count that would read `0 passed` / non-zero exit
+if the new code paths did not exist. Literal grep: `task_no_edit_threshold`
+and `checkpoint_turns` appear 29 times across `mcp/src/init.rs`, `README.md`,
+and `executor/src/config.rs` (29 matches, not zero).
+
+Gates: `cargo fmt --all` clean; `cargo build` zero warnings;
+`cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` — executor lib 1142 passed, rexymcp bin 710 passed,
+readme_config_reference 2 passed, 0 failures anywhere.

@@ -31,6 +31,7 @@ context_length = 32768            # model context window in tokens
 max_context_pct = 70              # trigger compaction above this % (0–100)
 max_turns = 200                   # hard cap on executor turns per phase
 wall_clock_secs = 0               # optional wall-clock ceiling in seconds (0 disables)
+checkpoint_turns = 0              # optional soft turn checkpoint: reaching this turn without completing → resumable budget_exceeded ("review partial work and resume with continue_phase"); 0 disables
 
 # [escalation]
 # max_assists = 3                 # autonomous architect assists per phase (/rexymcp:auto loop)
@@ -52,6 +53,7 @@ novelty_action = "advisory"       # "advisory" (default): log low-novelty churn 
 repeat_nudge_threshold = 3        # consecutive identical calls with identical (timing-normalized) outputs → one steering nudge (0 disables)
 read_only_cycle_window = 16       # trailing read-only calls examined for a plumbing-normalized cycle (0 disables)
 read_only_cycle_distinct_max = 4  # ≤ this many distinct normalized calls in the cycle window → one recoverable cycle nudge (0 disables)
+task_no_edit_threshold = 40       # consecutive edit-free turns while a task stays active → hard-fail (TaskNoEditStall); resets on any file edit or task switch; a redundant update_task(same_id, "active") does not reset it (0 disables)
 
 # [models."<model-id>"]              # per-model knob overrides; key is the exact
 #                                    # active model id (no prefix/substring match).
@@ -78,6 +80,7 @@ read_only_cycle_distinct_max = 4  # ≤ this many distinct normalized calls in t
 # repeat_nudge_threshold = 3         # override [governor] repeat_nudge_threshold
 # read_only_cycle_window = 16        # override [governor] read_only_cycle_window
 # read_only_cycle_distinct_max = 4   # override [governor] read_only_cycle_distinct_max
+# task_no_edit_threshold = 40        # override [governor] task_no_edit_threshold (0 disables)
 
 [commands]
 # format = "cargo fmt --all"

@@ -179,6 +179,7 @@ fn deps<'a>(
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     }
 }
@@ -1006,6 +1007,7 @@ async fn injected_clock_sets_record_ts() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
 
@@ -1134,6 +1136,7 @@ async fn run_with_verifier_and_patch_lines(
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -1170,6 +1173,7 @@ async fn run_with_verifier(
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -1540,6 +1544,7 @@ async fn oscillation_across_alternating_reads_trips_hard_fail() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let result = execute_phase(&input(), d).await.unwrap();
@@ -1618,6 +1623,7 @@ async fn novelty_samples_are_emitted_deduped_and_rearm_after_edit() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap();
@@ -1690,6 +1696,7 @@ async fn run_low_novelty_churn(action: crate::config::NoveltyAction) -> (TempDir
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     // Await inside the helper so the LoopDeps borrows end before `dir` is returned.
@@ -1777,6 +1784,7 @@ async fn cumulative_output_flood_trips_hard_fail() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let result = execute_phase(&input(), d).await.unwrap();
@@ -2394,6 +2402,7 @@ async fn run_full_with_context_window(
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -3160,6 +3169,7 @@ fn deps_with_progress_simple<'a>(
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     }
 }
@@ -3238,6 +3248,7 @@ impl<'a> DepsBuilder<'a> {
             task_tracking: true,
             gate_retries: u32::MAX,
             wall_clock_secs: 0,
+            checkpoint_turns: 0,
             cancel: CancelSignal::never(),
         }
     }
@@ -3429,6 +3440,7 @@ async fn callback_panic_is_not_caught() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap();
@@ -4237,6 +4249,7 @@ async fn loop_emits_output_filtered_event_for_filtered_bash() {
             task_tracking: true,
             gate_retries: u32::MAX,
             wall_clock_secs: 0,
+            checkpoint_turns: 0,
             cancel: CancelSignal::never(),
         },
     )
@@ -4436,6 +4449,7 @@ async fn loop_seeds_task_updates_from_spec() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let input = PhaseInput {
@@ -4503,6 +4517,7 @@ async fn loop_emits_no_task_updates_when_spec_absent() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let input = PhaseInput {
@@ -4650,6 +4665,7 @@ async fn loop_emits_task_update_when_model_flips_task() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let input = PhaseInput {
@@ -5155,6 +5171,7 @@ async fn self_revert_of_edited_file_is_refused() {
             task_tracking: true,
             gate_retries: u32::MAX,
             wall_clock_secs: 0,
+            checkpoint_turns: 0,
             cancel: CancelSignal::never(),
         },
     )
@@ -5321,6 +5338,7 @@ async fn wall_clock_ceiling_trips_budget_exceeded() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 1,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let result = execute_phase(&input(), d).await.unwrap();
@@ -5365,6 +5383,7 @@ async fn wall_clock_disabled_when_zero_completes() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     let result = execute_phase(&input(), d).await.unwrap();
@@ -5526,6 +5545,7 @@ async fn loop_returns_cancelled_when_signal_flipped_between_turns() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: signal,
     };
     let input = input();
@@ -5589,6 +5609,7 @@ async fn loop_returns_cancelled_when_signal_flipped_mid_stream() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: signal,
     };
     let result = execute_phase(&input(), deps).await.unwrap();
@@ -5631,6 +5652,7 @@ async fn gen_time_recorded_with_advancing_clock() {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
 
@@ -5693,6 +5715,7 @@ async fn run_bash_stall_script(dir: &TempDir, middle: &str) -> PhaseResult {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -5812,6 +5835,7 @@ async fn run_with_bash(dir: &TempDir, client: &dyn AiClient) -> PhaseResult {
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -5996,6 +6020,7 @@ async fn run_with_all_edit_tools(dir: &TempDir, client: &dyn AiClient) -> PhaseR
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -6206,6 +6231,7 @@ async fn run_with_bash_governor(
         task_tracking: true,
         gate_retries: u32::MAX,
         wall_clock_secs: 0,
+        checkpoint_turns: 0,
         cancel: CancelSignal::never(),
     };
     execute_phase(&input(), d).await.unwrap()
@@ -6653,5 +6679,357 @@ async fn read_only_cycle_disabled_when_window_zero() {
     assert!(
         nudge_events(&dir).is_empty(),
         "zero cycle nudges must be injected"
+    );
+}
+
+// ── M51 phase-05: per-task no-edit guard ────────────────────────────────
+
+/// Registry with read_file / write_file / update_task, seeded from a spec doc
+/// with two tasks so the model can activate, complete, and switch tasks.
+fn registry_with_update_task_and_edits(scope: Scope) -> ToolRegistry {
+    let phase_doc = "## Spec\n\n1. **First task** — do this\n2. **Second task** — do that\n";
+    let seeded = crate::agent::tasks::seed_from_spec(phase_doc);
+    let mut r = ToolRegistry::new();
+    r.register(read_file(scope.clone()));
+    r.register(write_file(scope.clone()));
+    r.register(crate::tools::update_task(seeded));
+    r
+}
+
+fn task_input() -> PhaseInput {
+    PhaseInput {
+        phase_doc: "## Spec\n\n1. **First task** — do this\n2. **Second task** — do that\n"
+            .to_string(),
+        ..input()
+    }
+}
+
+fn governor_with_task_no_edit_threshold(threshold: usize) -> GovernorConfig {
+    GovernorConfig {
+        task_no_edit_threshold: threshold,
+        // Read-only fillers between task updates would otherwise trip the
+        // default empty-completion and read-only stalls before the task guard
+        // under test.
+        empty_completion_threshold: 50,
+        read_only_stall_threshold: 0,
+        ..GovernorConfig::default()
+    }
+}
+
+fn deps_for<'a>(
+    client: &'a dyn AiClient,
+    registry: &'a ToolRegistry,
+    budget: &'a Budget,
+    max_turns: usize,
+    root: &'a Path,
+    governor: GovernorConfig,
+) -> LoopDeps<'a> {
+    LoopDeps {
+        client,
+        registry,
+        tools: &[],
+        budget,
+        max_turns,
+        project_root: root,
+        model: "test-model",
+        session_id: SESSION_ID,
+        clock: &clock_zero,
+        verifier: &NoopVerifier,
+        commands: &EMPTY_COMMANDS,
+        runner: &NoopRunner,
+        generation_params: GenerationParams::default(),
+        telemetry_dir: None,
+        progress: None,
+        context_window: None,
+        governor,
+        task_tracking: true,
+        gate_retries: u32::MAX,
+        wall_clock_secs: 0,
+        checkpoint_turns: 0,
+        cancel: CancelSignal::never(),
+    }
+}
+
+fn task_no_edit_stall_signal(result: &PhaseResult) -> Option<(String, u32)> {
+    let briefing = result.briefing.as_ref()?;
+    match &briefing.current_blocker {
+        Blocker::HardFail(HardFailSignal::TaskNoEditStall {
+            task_id,
+            consecutive_turns,
+        }) => Some((task_id.clone(), *consecutive_turns)),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn task_no_edit_stall_fires_on_stuck_active_task_and_ignores_redundant_active() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_with_update_task_and_edits(scope);
+    let path = dir.path().join("f.txt").to_string_lossy().to_string();
+
+    // Turn 1: activate task "1" (counter starts at 0 on the activation turn).
+    // Turn 2: read-only call (counter → 1).
+    // Turn 3: read-only call (counter → 2).
+    // Turn 4: redundant update_task("1", "active") — must NOT reset (stays 2).
+    // Turn 5: read-only call (counter → 3 → stall fires).
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "update_task",
+            json!({ "id": "1", "state": "active" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "update_task",
+            json!({ "id": "1", "state": "active" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+    ]);
+
+    let budget = Budget::new(1_000_000);
+    let d = deps_for(
+        &client,
+        &registry,
+        &budget,
+        12,
+        dir.path(),
+        governor_with_task_no_edit_threshold(3),
+    );
+
+    let result = execute_phase(&task_input(), d).await.unwrap();
+
+    assert_eq!(
+        task_no_edit_stall_signal(&result),
+        Some(("1".to_string(), 3)),
+        "redundant active re-assert must not reset the counter; got {:?}",
+        result.briefing.as_ref().map(|b| b.current_blocker.clone())
+    );
+}
+
+#[tokio::test]
+async fn task_no_edit_stall_resets_on_edit_and_task_switch() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_with_update_task_and_edits(scope);
+    let path = dir.path().join("f.txt").to_string_lossy().to_string();
+
+    // Turn 1: activate task "1". Turn 2-3: read-only (counter → 2).
+    // Turn 4: write_file resets the counter. Turn 5-6: read-only (→ 2 again).
+    // Turn 7: complete task "1" → switch resets. Turn 8: activate task "2".
+    // Turn 9: complete task "2" → switch resets again. Turn 10: done.
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "update_task",
+            json!({ "id": "1", "state": "active" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "an actual edit resetting the counter" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("update_task", json!({ "id": "1", "state": "done" }))],
+        vec![native(
+            "update_task",
+            json!({ "id": "2", "state": "active" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("update_task", json!({ "id": "2", "state": "done" }))],
+        vec![token("all done")],
+    ]);
+
+    let budget = Budget::new(1_000_000);
+    let d = deps_for(
+        &client,
+        &registry,
+        &budget,
+        14,
+        dir.path(),
+        governor_with_task_no_edit_threshold(3),
+    );
+
+    let result = execute_phase(&task_input(), d).await.unwrap();
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "edits and task switches reset the counter so no stall fires; briefing: {:?}",
+        result.briefing.map(|b| b.current_blocker)
+    );
+}
+
+#[tokio::test]
+async fn task_no_edit_stall_disabled_when_threshold_zero() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_with_update_task_and_edits(scope);
+    let path = dir.path().join("f.txt").to_string_lossy().to_string();
+
+    // Four edit-free turns on an active task; threshold 0 disables the guard.
+    // Tasks 1 and 2 are both completed before the final completion so the
+    // task-coverage gate passes.
+    let client = MockAiClientScript::new(vec![
+        vec![native(
+            "update_task",
+            json!({ "id": "1", "state": "active" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("update_task", json!({ "id": "1", "state": "done" }))],
+        vec![native(
+            "update_task",
+            json!({ "id": "2", "state": "active" }),
+        )],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("update_task", json!({ "id": "2", "state": "done" }))],
+        vec![token("all done")],
+    ]);
+
+    let budget = Budget::new(1_000_000);
+    let d = deps_for(
+        &client,
+        &registry,
+        &budget,
+        10,
+        dir.path(),
+        governor_with_task_no_edit_threshold(0),
+    );
+
+    let result = execute_phase(&task_input(), d).await.unwrap();
+
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "threshold 0 disables the per-task guard; blocker: {:?}; budget: {:?}; files: {:?}",
+        result.briefing.as_ref().map(|b| b.current_blocker.clone()),
+        result.briefing.as_ref().map(|b| b.budget_remaining.clone()),
+        result.files_changed
+    );
+}
+
+// ── M51 phase-05: opt-in soft checkpoint ────────────────────────────────
+
+#[tokio::test]
+async fn checkpoint_turns_returns_resumable_budget_exceeded_preserving_partial_edits() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let path = dir.path().join("f.txt").to_string_lossy().to_string();
+
+    // Turn 1: a read (the read-before-edit gate requires it). Turn 2: an edit
+    // (partial work to preserve); the checkpoint at turn 2 fires right after.
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native(
+            "write_file",
+            json!({ "path": path, "content": "partial work preserved on disk" }),
+        )],
+    ]);
+
+    let budget = Budget::new(1_000_000);
+    let mut d = deps_for(
+        &client,
+        &registry,
+        &budget,
+        10,
+        dir.path(),
+        GovernorConfig::default(),
+    );
+    d.checkpoint_turns = 2;
+
+    let result = execute_phase(&input(), d).await.unwrap();
+
+    assert_eq!(result.status, PhaseStatus::BudgetExceeded);
+    let briefing = result.briefing.as_ref().unwrap();
+    assert!(matches!(briefing.current_blocker, Blocker::BudgetExceeded));
+    assert!(
+        briefing.budget_remaining.contains("soft checkpoint"),
+        "budget_remaining must name the soft checkpoint, got: {}",
+        briefing.budget_remaining
+    );
+    assert!(
+        briefing.budget_remaining.contains("continue_phase"),
+        "budget_remaining must recommend continue_phase, got: {}",
+        briefing.budget_remaining
+    );
+    assert!(
+        result
+            .files_changed
+            .iter()
+            .any(|f| f.path.ends_with("f.txt")),
+        "partial edit must survive in files_changed: {:?}",
+        result.files_changed
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+        "partial work preserved on disk",
+        "the partial edit must be preserved on disk"
+    );
+}
+
+#[tokio::test]
+async fn checkpoint_turns_zero_disabled_and_completion_before_checkpoint_succeeds() {
+    // Case 1: checkpoint_turns = 0 runs past turn 2 and completes.
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("f.txt"), "hello").unwrap();
+    let scope = Scope::new(dir.path()).unwrap();
+    let registry = registry_over(scope);
+    let path = dir.path().join("f.txt").to_string_lossy().to_string();
+
+    let client = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![native("read_file", json!({ "path": path }))],
+        vec![token("all done")],
+    ]);
+    let budget = Budget::new(1_000_000);
+    let d = deps_for(
+        &client,
+        &registry,
+        &budget,
+        10,
+        dir.path(),
+        GovernorConfig::default(),
+    );
+
+    let result = execute_phase(&input(), d).await.unwrap();
+    assert_eq!(
+        result.status,
+        PhaseStatus::Complete,
+        "checkpoint_turns = 0 is disabled: the run passes turn 2 and completes"
+    );
+
+    // Case 2: checkpoint_turns = 2, but the run completes cleanly on turn 2
+    // — Complete, not BudgetExceeded.
+    let dir2 = TempDir::new().unwrap();
+    let scope2 = Scope::new(dir2.path()).unwrap();
+    let registry2 = registry_over(scope2);
+    let client2 = MockAiClientScript::new(vec![
+        vec![native("read_file", json!({ "path": path }))],
+        vec![token("all done")],
+    ]);
+    let budget2 = Budget::new(1_000_000);
+    let mut d2 = deps_for(
+        &client2,
+        &registry2,
+        &budget2,
+        10,
+        dir2.path(),
+        GovernorConfig::default(),
+    );
+    d2.checkpoint_turns = 2;
+
+    let result2 = execute_phase(&input(), d2).await.unwrap();
+    assert_eq!(
+        result2.status,
+        PhaseStatus::Complete,
+        "clean completion on or before the checkpoint turn must return Complete; briefing: {:?}",
+        result2.briefing.map(|b| b.current_blocker)
     );
 }
