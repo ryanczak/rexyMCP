@@ -1,7 +1,7 @@
 # Phase 03: Recoverable repeat nudge + `NudgeInjected` event & telemetry
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -514,3 +514,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 156396f41b350916230e7513d5132f2810762a38
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (`bug-03-1`, major — `repeat_nudge_silent_when_outputs_differ` varied the command instead of issuing identical calls; fixed in `156396f` using a `TempDir` counter file, in-test `Parsed` equality + distinct `ToolResult` assertions, and mutation-checked positive control)
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** compiler-required test-initializer updates in `mcp/src/profile.rs` (+4) and `mcp/src/runner.rs` (+2), plus `executor/src/store/sessions/jsonl.rs` (+35) round-trip test for `SessionEvent::NudgeInjected` — all benign and disclosed in Notes for review.
+- **Calibration:** `bug-03-1` caught a fake negative test at review (fixed cleanly on round 2); round-1 completion summary carried the recurring leaked `</think>` fragment (4th occurrence, held for M51 close); round-2 completion summary echoed a duplicated `**Summary:**` prefix.
