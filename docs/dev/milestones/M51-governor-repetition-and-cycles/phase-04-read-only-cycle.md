@@ -1,7 +1,7 @@
 # Phase 04: Plumbing-normalized `ReadOnlyCycle` detector & calibration replay
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-03
 **Estimated diff:** ~360 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -319,3 +319,114 @@ Literal grep (spec-pinned names land in the files the phase populates):
 `HardFailSignal::ReadOnlyCycle` / `read_only_cycle_keys` / `measure_read_only_cycle`
 / `check_read_only_cycle` present in `executor/src/governor/hard_fail.rs`,
 `executor/src/agent/mod.rs`, and `mcp/src/calibrate_governor.rs`.
+
+### Update — 2026-11-25 03:34 (complete, server-authored)
+
+**Summary:** **Summary:** Implemented M51 phase-04 in full: `GovernorConfig` gains `read_only_cycle_window` (16, `0` disables) and `read_only_cycle_distinct_max` (4, `0` disables) wired through `ModelOverride`, `resolve_for_model`, the `rexymcp init` template, and the README (template/README guard tests stay green); `hard_fail.rs` gains `HardFailSignal::ReadOnlyCycle` plus `read_only_cycle_keys` / `measure_read_only_cycle` / `check_read_only_cycle`, keyed on the existing plumbing normalizer so re-plumbed bash variants collapse while distinct `read_file` slices and `search` patterns stay distinct; the agent loop injects one `read_only_cycle` nudge at window collapse, terminates with `ReadOnlyCycle` if the next call stays inside the nudged cycle, and counts the nudge as heeded (resetting the counter) on an edit or an out-of-cycle command; `rexymcp calibrate-governor` replays `read_only_cycle_min_distinct` through the live `measure_read_only_cycle` with a lower-is-worse tail block. `LowNoveltyStall` stays advisory and `check_oscillation` is untouched.
+
+**Notes for review:**
+- One adaptation: in the agent-loop test the spec's two-command cycle used the *same* grep target with only quote variants (`grep -rn "foo" src/a.rs` / `grep -rn 'foo' src/a.rs`), which the plumbing normalizer correctly collapses to **1** distinct key, not 2 — I switched the cycle to two distinct targets (`foo`/`src/a.rs`, `bar`/`src/b.rs`) to exercise the 2-key case the acceptance criteria describe. The hard_fail unit test keeps the quote-variant pair to prove quoting collapses within one key.
+- The calibration replay samples turn-by-turn, so an edit mid-run leaves the pre-edit full-window samples in place and stops sampling afterward (asserted as `[2]`, not `[]`) — the spec's "reset by an edit → `vec![]`" only holds when the edit precedes the first full window; noted in the test.
+- E2E block ran verbatim; artifact pasted in the `(end-to-end verification)` Update Log entry — all 14 tests `ok` with `exit=0`. All four gates green (fmt/check, build, clippy `-D warnings`, test: 1847 passed, 0 failed). Status left `in-progress`; no `(complete)` entry written. Commit `1d59373`, tree clean.
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+ols::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::symbols::tests::references_exclude_substring ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::exact_match_no_substring ... ok
+test tools::symbols::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test agent::tests::read_only_cycle_nudges_once_then_terminates_if_unchanged ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1135 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.15s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `README.md` — +4 -0
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md` — +1 -1
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-04-read-only-cycle.md` — +80 -1
+- `executor/src/agent/mod.rs` — +73 -1
+- `executor/src/agent/tests.rs` — +130 -0
+- `executor/src/config.rs` — +83 -0
+- `executor/src/governor/hard_fail.rs` — +223 -0
+- `executor/src/store/sessions/event.rs` — +7 -4
+- `mcp/src/calibrate_governor.rs` — +143 -3
+- `mcp/src/init.rs` — +4 -0
+- `mcp/src/runner.rs` — +4 -0
+
+**Commit:** 1d593732c29bf3dbad26b26b8efdd5d345291729
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
