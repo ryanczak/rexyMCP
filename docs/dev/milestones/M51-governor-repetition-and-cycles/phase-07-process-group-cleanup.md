@@ -1,7 +1,7 @@
 # Phase 07: Process-group cleanup for `bash` and gate commands
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** phase-06
 **Estimated diff:** ~200 lines
 **Tags:** language=rust, kind=reliability, size=s
@@ -336,3 +336,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** ea09bf7cff53143788df647bdab60a36d000729d
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** none
+- **Calibration:** `disarmed_guard_does_not_kill_process_group_on_drop` omitted `process_group(0)` on its `sleep 30` child (low risk; `disarm()` is still exercised on normal completion in `bash` and `command` tests, and the three grandchild tests all use real process groups); started entry self-reported `Executor: Claude (executor run)` (recurring model-identity misreporting, held for milestone close); completion summary echoed a duplicated `**Summary:**` prefix (3rd occurrence, held for M51 close).
