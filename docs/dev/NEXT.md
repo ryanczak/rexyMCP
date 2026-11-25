@@ -4,7 +4,13 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-02-command-output-normalization.md`
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-03-repeat-nudge.md`
+
+**M51 phase-02 — done 2026-11-24, `approved_after_1`** (code `9bf43bc` +
+`c0d44fc`, approval `f2d631c`, GLM-5.3-Flash; 1 bounce `bug-02-1` on regex
+boundaries and prod `.unwrap()`). `executor/src/governor/normalize.rs` ships
+the shared plumbing and timing normalizers wired into `normalize_target`.
+Phase 03 drafted and ready for dispatch.
 
 **M51 phase-01 — done 2026-11-24, `approved_first_try`** (code `8679154`,
 approval `73302af`, GLM-5.3-Flash). Contract batching rule (`### Batch repeated
