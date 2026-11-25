@@ -4,7 +4,14 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-05-task-guard-and-checkpoint.md`
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-06-async-continue-phase.md`
+
+**M51 phase-05 — done 2026-11-24, `approved_first_try`** (code `40e8548`,
+approval `fb27b98`, GLM-5.3-Flash). Ships `[governor] task_no_edit_threshold`
+(default 40, 0 disables) → `HardFailSignal::TaskNoEditStall` (ignoring
+redundant `update_task(same_id, "active")`) and opt-in `[budget]
+checkpoint_turns` (default 0) returning resumable `BudgetExceeded` preserving
+partial edits on disk. Phase 06 drafted and ready for dispatch.
 
 **M51 phase-04 — done 2026-11-24, `approved_first_try`** (code `1d59373`,
 approval `e9e8441`, GLM-5.3-Flash). Ships `read_only_cycle_window` (16) /
