@@ -1,7 +1,7 @@
 # Phase 02: Shared command-plumbing & output-timing normalizer
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** in-progress *(bounced 2026-11-24 — see [bugs/bug-02-1.md](bugs/bug-02-1.md))*
 **Depends on:** phase-01
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -90,7 +90,16 @@ output. `executor/src/governor/mod.rs` re-exports the governor modules.
 
 - [ ] `executor/src/governor/normalize.rs` exists and `pub mod normalize;` is
       exported from `executor/src/governor/mod.rs`.
-- [ ] Every test named in § Test plan passes.
+- [ ] Zero `.unwrap(` calls appear in production code in
+      `executor/src/governor/normalize.rs` (`grep -n '\.unwrap(' executor/src/governor/normalize.rs`
+      exits non-zero with no matches; `LazyLock<Regex>` uses `.expect("...")`
+      with an invariant message per `STANDARDS.md` §2.1).
+- [ ] `normalize_bash_command` strips trailing `> /tmp/... && cat /tmp/...`,
+      `> "$TMPDIR/..." && cat "$TMPDIR/..."`, and `| tee /tmp/...` even without
+      a preceding `| tail`, and **never** strips non-temp paths (`src/...`) or
+      substantive stages/redirects that follow `| cat` / `| tail` / `| head` /
+      `| wc`.
+- [ ] Every test named in § Test plan passes (including the two bug-02-1 tests).
 - [ ] Preservation: `check_identical_repetition` still uses exact
       whitespace-only normalization (`identical_repetition_does_not_collapse_output_plumbing`
       passes) and every existing test passes unmodified.
@@ -105,6 +114,15 @@ output. `executor/src/governor/mod.rs` re-exports the governor modules.
     `cmd | tail -4 > /tmp/x && cat /tmp/x`, `cmd 2>&1 | tail -6`,
     `cmd | head -2`, `cmd | wc -l`, and `cmd > /tmp/x; cat /tmp/x` all
     normalize to the same string as `cmd`.
+  - `strips_temp_capture_and_cat_with_double_ampersand_and_tmpdir` — asserts
+    `cmd > /tmp/x && cat /tmp/x`, `cmd > "$TMPDIR/x" && cat "$TMPDIR/x"`,
+    `cmd 2>&1 > /tmp/x && cat /tmp/x`, and `cmd | tee /tmp/x` all normalize to
+    the same string as `cmd` (with no preceding `| tail`).
+  - `does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe` —
+    negative cases: `echo foo | cat | grep bar` != `echo foo | cat | grep baz`;
+    `cargo test | tail -4 > src/a.txt` != `cargo test | tail -4 > src/b.txt`;
+    `echo a > src/x.rs; cat src/x.rs` != `echo a > src/y.rs; cat src/y.rs`;
+    `cargo test | tee src/a.txt` != `cargo test | tee src/b.txt`.
   - `normalizes_simple_quote_differences` — asserts
     `grep -rn "refused" src/a.rs | wc -l` and
     `grep -rn 'refused' src/a.rs | head -2` normalize equal.
@@ -134,13 +152,15 @@ output. `executor/src/governor/mod.rs` re-exports the governor modules.
 ```bash
 mkdir -p target/e2e
 A=target/e2e/m51-phase-02.txt; : > "$A"
-for t in strips_trailing_tail_head_wc_and_stderr_plumbing normalizes_simple_quote_differences preserves_substantive_pipes_and_non_temp_redirects tool_args_normalizer_only_strips_plumbing_for_bash output_normalizer_ignores_bash_status_and_cargo_timings output_normalizer_preserves_exit_code_and_test_counts novelty_collapses_replumbed_bash_grep_variants identical_repetition_does_not_collapse_output_plumbing; do
+grep -n '\.unwrap(' executor/src/governor/normalize.rs >> "$A"; echo "no_unwrap exit=$?" >> "$A"
+for t in strips_trailing_tail_head_wc_and_stderr_plumbing strips_temp_capture_and_cat_with_double_ampersand_and_tmpdir does_not_strip_non_temp_capture_or_tee_or_stages_after_tail_pipe normalizes_simple_quote_differences preserves_substantive_pipes_and_non_temp_redirects tool_args_normalizer_only_strips_plumbing_for_bash output_normalizer_ignores_bash_status_and_cargo_timings output_normalizer_preserves_exit_code_and_test_counts novelty_collapses_replumbed_bash_grep_variants identical_repetition_does_not_collapse_output_plumbing; do
   cargo test -p rexymcp-executor "$t" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^test |test result: .* [1-9][0-9]* passed' >> "$A"; echo "$t exit=${PIPESTATUS[0]}" >> "$A"
 done
 ```
 
-Expected: every listed test prints `ok` with `exit=0`, and each `test result`
-line shows a non-zero passed count.
+Expected: `no_unwrap exit=1` (zero `.unwrap(` matches in `normalize.rs`), every
+listed test prints `ok` with `exit=0`, and each `test result` line shows a
+non-zero passed count.
 
 ## Authorizations
 

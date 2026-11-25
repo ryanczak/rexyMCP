@@ -65,7 +65,7 @@ Both come from local-model (GLM-5.3-Flash) runs looping on shell commands:
 | #  | Phase | Status |
 |----|-------|--------|
 | 01 | Contract batching rule & classifier coverage ([phase-01-contract-batching-rule.md](phase-01-contract-batching-rule.md)) | done |
-| 02 | Shared command-plumbing & output-timing normalizer ([phase-02-command-output-normalization.md](phase-02-command-output-normalization.md)) | review      |
+| 02 | Shared command-plumbing & output-timing normalizer ([phase-02-command-output-normalization.md](phase-02-command-output-normalization.md)) | in-progress |
 | 03 | Recoverable repeat nudge + `NudgeInjected` event & telemetry *(not yet drafted)* | todo |
 | 04 | Plumbing-normalized `ReadOnlyCycle` detector & calibration replay *(not yet drafted)* | todo |
 | 05 | Per-task no-edit guard & optional soft checkpoint *(not yet drafted)* | todo |
