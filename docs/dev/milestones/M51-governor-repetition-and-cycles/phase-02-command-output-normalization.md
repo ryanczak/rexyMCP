@@ -1,7 +1,7 @@
 # Phase 02: Shared command-plumbing & output-timing normalizer
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** phase-01
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -524,3 +524,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** c0d44fcedd044e5db2a3fd2e06a670b297137673
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_after_1
+- **Bounces:** 1 (bugs: bug-02-1 — major)
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** none (`normalize_arguments` widened from private to `pub(crate)` for reuse; accepted).
+- **Calibration:** leaked `</think>` fragment ahead of `**Summary:**` in `completion_summary` reached 3rd occurrence (M50 phase-03, M51 phase-01, M51 phase-02 — candidate runtime fix in `strip_think_blocks`, held for human sign-off at milestone close); round-2 Update Log entries were prepended above round-1 entries rather than appended at the bottom (1st occurrence, held).
