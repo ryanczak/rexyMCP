@@ -1,7 +1,7 @@
 # Phase 03: Recoverable repeat nudge + `NudgeInjected` event & telemetry
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress *(bounced 2026-11-24 — see [bugs/bug-03-1.md](bugs/bug-03-1.md))*
+**Status:** review
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -414,3 +414,103 @@ no_varied_cmd exit=0
 ```
 
 All named tests `ok` with `exit=0` and non-zero passed counts; `no_varied_cmd exit=0` (`echo run-` no longer appears in `executor/src/agent/tests.rs`).
+
+### Update — 2026-11-25 03:12 (complete, server-authored)
+
+**Summary:** **Summary:** This was a resume of M51 phase-03 after the bug-03-1 bounce; tasks 1–4 (config knob, `NudgeInjected` event + consumers, `PhaseRun` telemetry, one-shot injection loop) were already on disk and remained done. The only code change is the bug's fix: `repeat_nudge_silent_when_outputs_differ` now issues three **byte-identical** bash calls (a counter file inside the test's `TempDir`, so outputs 1/2/3 genuinely differ — `echo run-` is gone from the file) and asserts, against the session log, that all three `Parsed` records carry equal `(tool_call.name, tool_call.arguments)` and that the three `ToolResult` `output_preview`s are distinct. I ran the positive control the bug demanded: removing the output-equality conjunct from `executor/src/agent/mod.rs:1188` makes the rewritten test fail; restored, it passes — so the output-difference reset invariant is now genuinely exercised. The phase doc's E2E block ran verbatim (artifact quoted in a new end-to-end verification entry): all seven named tests plus the README/template guard tests `ok` with `exit=0` and non-zero passed counts, `no_varied_cmd exit=0`. All four gates green; committed as `156396f` (`fix:`), tree clean, status left at `in-progress`.
+
+**Notes for review:** (1) The counter-file approach uses `printf ... > counter; cat counter` — the args are identical across calls by construction (same literal command string), and the `2>/dev/null || echo 0` bootstrap makes call 1 deterministic. (2) The in-test Parsed-equality assertion uses `tool_call.arguments` as `serde_json::Value` equality, which is exactly what `normalize_tool_args_for_repeat` compares modulo whitespace — the strictest interpretation of "identical arguments" the bug asked for. (3) `update_task` progress for items 1–4 reflects work verified from the prior run's on-disk state rather than re-implemented.
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+ts::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::symbols::tests::references_exclude_substring ... ok
+test tools::symbols::tests::exact_match_no_substring ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::symbols::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test agent::tests::bash_edit_resets_read_only_stall ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1127 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.13s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-03-repeat-nudge.md` — +43 -0
+- `executor/src/agent/tests.rs` — +42 -5
+
+**Commit:** 156396f41b350916230e7513d5132f2810762a38
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
