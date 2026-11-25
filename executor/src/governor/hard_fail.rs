@@ -230,7 +230,9 @@ fn check_identical_repetition(
 /// unchanged. Object key order needs no handling — `serde_json::Map` is a
 /// `BTreeMap` (the `preserve_order` feature is off), so `Value` equality already
 /// ignores insertion order.
-fn normalize_arguments(value: &serde_json::Value) -> serde_json::Value {
+/// Crate-visible so `governor::normalize` can reuse it as the non-bash
+/// delegate; `check_identical_repetition` keeps using it directly.
+pub(crate) fn normalize_arguments(value: &serde_json::Value) -> serde_json::Value {
     use serde_json::Value;
     match value {
         Value::String(s) => Value::String(s.split_whitespace().collect::<Vec<_>>().join(" ")),
@@ -404,8 +406,11 @@ pub fn check_read_only_stall(
 ///   a path falls back to the symbol `name` it hunts).
 /// - `search`/`find_files` → the `path` scope (pattern dropped; a whole-repo
 ///   search buckets to `.`).
-/// - `bash` → the `command` with ASCII digits removed, so `sed -n '1,9p'` and
-///   `sed -n '9,20p'` collapse to one target.
+/// - `bash` → the `command` with output plumbing (`| tail`, temp-file
+///   capture-and-cat, stream redirects) normalized away via
+///   `normalize_bash_command`, then ASCII digits removed, so re-plumbed
+///   variants of the same grep (`| wc -l` vs `| head -2`) collapse to one
+///   target.
 /// - anything else → a raw `tool(arguments)` string, so novelty is never
 ///   *undercounted* for a tool we don't model.
 fn normalize_target(call: &ToolCallSnapshot) -> String {
@@ -417,7 +422,10 @@ fn normalize_target(call: &ToolCallSnapshot) -> String {
             .unwrap_or_else(|| raw_target(call)),
         Some(Category::Search) => field("path").unwrap_or(".").to_string(),
         Some(Category::Run) => match field("command") {
-            Some(cmd) => cmd.chars().filter(|c| !c.is_ascii_digit()).collect(),
+            Some(cmd) => crate::governor::normalize::normalize_bash_command(cmd)
+                .chars()
+                .filter(|c| !c.is_ascii_digit())
+                .collect(),
             None => raw_target(call),
         },
         _ => raw_target(call),
@@ -1911,5 +1919,55 @@ mod tests {
             changed_tree: false,
         };
         assert!(patch_call.made_file_progress());
+    }
+
+    // — M51 phase-02: plumbing normalization in normalize_target —
+
+    #[test]
+    fn novelty_collapses_replumbed_bash_grep_variants() {
+        let commands = [
+            r#"grep -rn "refused" src/a.rs | wc -l"#,
+            r#"grep -rn "refused" src/a.rs | head -2"#,
+            r#"grep -rn "kind" src/b.rs | wc -l"#,
+            r#"grep -rn "kind" src/b.rs | head -2"#,
+        ];
+        let mut recent = VecDeque::new();
+        for i in 0..24 {
+            recent.push_back(ToolCallSnapshot {
+                tool: "bash".to_string(),
+                arguments: serde_json::json!({"command": commands[i % commands.len()]}),
+                succeeded: true,
+                changed_tree: false,
+            });
+        }
+        let m = measure_novelty(&recent, 24).expect("window is full");
+        assert_eq!(
+            m.distinct_targets, 2,
+            "re-plumbed variants of the same grep must collapse to one target per base command"
+        );
+    }
+
+    #[test]
+    fn identical_repetition_does_not_collapse_output_plumbing() {
+        // check_identical_repetition uses whitespace-only normalize_arguments,
+        // so re-plumbed bash variants must NOT count as identical calls.
+        let commands = [
+            "cargo test | tail -4",
+            "cargo test | tail -4 > /tmp/x && cat /tmp/x",
+            "cargo test 2>&1 | tail -6",
+        ];
+        let mut recent = VecDeque::new();
+        for i in 0..6 {
+            recent.push_back(ToolCallSnapshot {
+                tool: "bash".to_string(),
+                arguments: serde_json::json!({"command": commands[i % commands.len()]}),
+                succeeded: true,
+                changed_tree: false,
+            });
+        }
+        assert!(
+            evaluate(&recent, &[], None, &GovernorConfig::default()).is_none(),
+            "re-plumbed bash variants must not trip IdenticalToolCallRepetition"
+        );
     }
 }

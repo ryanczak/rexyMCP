@@ -1,7 +1,7 @@
 # Phase 02: Shared command-plumbing & output-timing normalizer
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-01
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -162,3 +162,55 @@ No new dependencies.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-25 01:30 (started)
+
+**Executor:** Executor (phase-02 run)
+
+Status flipped to `in-progress` and the milestone README phase table updated. Beginning the Spec: new `executor/src/governor/normalize.rs` with the three pure normalizers, wiring `normalize_bash_command` into `normalize_target`, and the test-plan suites in both files.
+
+### Update — 2026-11-25 01:55 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim against the real artifacts
+(`executor/src/governor/normalize.rs`, `executor/src/governor/hard_fail.rs`).
+Artifact file: `target/e2e/m51-phase-02.txt`, contents as captured mechanically:
+
+```
+test governor::normalize::tests::strips_trailing_tail_head_wc_and_stderr_plumbing ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+strips_trailing_tail_head_wc_and_stderr_plumbing exit=0
+test governor::normalize::tests::normalizes_simple_quote_differences ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+normalizes_simple_quote_differences exit=0
+test governor::normalize::tests::preserves_substantive_pipes_and_non_temp_redirects ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+preserves_substantive_pipes_and_non_temp_redirects exit=0
+test governor::normalize::tests::tool_args_normalizer_only_strips_plumbing_for_bash ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+tool_args_normalizer_only_strips_plumbing_for_bash exit=0
+test governor::normalize::tests::output_normalizer_ignores_bash_status_and_cargo_timings ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+output_normalizer_ignores_bash_status_and_cargo_timings exit=0
+test governor::normalize::tests::output_normalizer_preserves_exit_code_and_test_counts ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+output_normalizer_preserves_exit_code_and_test_counts exit=0
+test governor::hard_fail::tests::novelty_collapses_replumbed_bash_grep_variants ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+novelty_collapses_replumbed_bash_grep_variants exit=0
+test governor::hard_fail::tests::identical_repetition_does_not_collapse_output_plumbing ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1116 filtered out; finished in 0.00s
+identical_repetition_does_not_collapse_output_plumbing exit=0
+```
+
+Every listed test prints `ok` with `exit=0`, and every `test result` line shows a
+non-zero passed count (1 passed each). Positive control: the negative-case tests
+(`preserves_substantive_pipes_and_non_temp_redirects`,
+`output_normalizer_preserves_exit_code_and_test_counts`) assert `!=` on inputs
+the normalizer must keep distinct, so a no-op normalizer would fail them; and
+`novelty_collapses_replumbed_bash_grep_variants` asserts `distinct_targets == 2`,
+which a no-op would report as 4.
+
+Gate results (separate invocations): `cargo fmt --all` clean;
+`cargo build` — `Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.49s`;
+`cargo clippy --all-targets --all-features -- -D warnings` — `Finished` with no
+warnings; `cargo test` — 708 + 1115 passed, 0 failed (plus 2 doc-tests).
