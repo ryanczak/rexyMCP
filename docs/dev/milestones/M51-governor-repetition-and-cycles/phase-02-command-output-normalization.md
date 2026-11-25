@@ -1,7 +1,7 @@
 # Phase 02: Shared command-plumbing & output-timing normalizer
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-01
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -214,3 +214,111 @@ Gate results (separate invocations): `cargo fmt --all` clean;
 `cargo build` — `Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.49s`;
 `cargo clippy --all-targets --all-features -- -D warnings` — `Finished` with no
 warnings; `cargo test` — 708 + 1115 passed, 0 failed (plus 2 doc-tests).
+
+### Update — 2026-11-25 01:42 (complete, server-authored)
+
+**Summary:** </think>Committed and clean. Final summary.</think>
+**Summary**
+
+Phase 02 is complete and committed (`feat:` commit `9bf43bc`, working tree clean). I created `executor/src/governor/normalize.rs` exporting the three pure normalizers — `normalize_bash_command` (fixed-point trailing plumbing strip for temp-file capture-and-cat, `tail`/`head`/`wc`/`cat` pipes, `2>&1`/`/dev/null` redirects, plus simple quote normalization), `normalize_tool_args_for_repeat` (full plumbing normalization for bash `command`, `normalize_arguments` delegation for every other tool), and `normalize_output_for_repeat` (strips bash status-line durations and cargo `in <t>s` clauses while preserving exit codes and pass/fail counts). `normalize_target` for `Category::Run` now passes commands through `normalize_bash_command` before digit-stripping, and `check_identical_repetition` still calls `normalize_arguments` directly. All eight tests from the spec's test plan pass, all four gates are green (`fmt`, `build`, `clippy -D warnings`, `test`: 708 + 1115 passed, 0 failed), and the E2E block ran verbatim with its artifact pasted into a dedicated `(end-to-end verification)` Update Log entry, including positive-control justification.
+
+**Notes for review**
+
+- One adaptation: `normalize_arguments` was widened from private to `pub(crate)` so the new module can reuse it as the non-bash delegate — `check_identical_repetition`'s behavior is unchanged.
+- The phase status remains `in-progress` with no hand-written `(complete)` entry, per the executor contract — the server authors that tail.
+- Mid-run I used a temporary throwaway test module to debug why the `caps.name("1")` group lookups never matched; it was removed before commit and no debug code remains (`git status` clean, `lib.rs` restored).
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+ools::update_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::symbols::tests::references_exclude_substring ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test agent::tests::bash_edit_resets_read_only_stall ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1115 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.11s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md` — +1 -1
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-02-command-output-normalization.md` — +53 -1
+- `executor/src/governor/hard_fail.rs` — +62 -4
+- `executor/src/governor/mod.rs` — +4 -0
+- `executor/src/governor/normalize.rs` — +239 -0
+
+**Commit:** 9bf43bcd6da9bac133abe80402989a4663949e09
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
