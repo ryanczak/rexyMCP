@@ -1,7 +1,7 @@
 # Phase 05: Per-task no-edit guard & optional soft checkpoint
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** phase-04
 **Estimated diff:** ~340 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -396,3 +396,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 40e8548ac43d3160cc03ea84da14cb7dffc3332e
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** none
+- **Calibration:** completion summary again carried the recurring leaked `</think>` fragment (5th occurrence, held for M51 close).
