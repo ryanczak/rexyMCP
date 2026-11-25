@@ -1,7 +1,7 @@
 # Phase 03: Recoverable repeat nudge + `NudgeInjected` event & telemetry
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -245,3 +245,118 @@ init_governor exit=0
 ```
 
 Every listed test `ok` with `exit=0` and a non-zero passed count. Positive control: the E2E run includes the two negative agent-loop cases (`repeat_nudge_silent_when_outputs_differ`, `repeat_nudge_disabled_when_threshold_zero`) and the positive ones in the same session — the suite discriminates nudge/no-nudge, so a green result is not silence. Literal grep: `"event_type":"nudge_injected"` round-trip asserted in `executor/src/store/sessions/jsonl.rs::nudge_injected_variant_round_trips_with_event_type_tag` (ok); `nudge_injected` arms present in `executor/src/agent/tests.rs:1038` and `mcp/src/log_query.rs:33`.
+
+### Update — 2026-11-25 02:51 (complete, server-authored)
+
+**Summary:** </think>Done. Final summary.</think>
+**Summary:** Implemented M51 phase-03 end to end. `[governor] repeat_nudge_threshold` (default 3, `0` allowed at load and disables the nudge) now exists on `GovernorConfig`, `ModelOverride`, `Config::resolve_for_model`, the `rexymcp init` template, and both README sample blocks — all guard tests green. `SessionEvent::NudgeInjected { kind, tool, consecutive_count }` serializes with `"event_type":"nudge_injected"` (round-trip test in `jsonl.rs`) and has arms in `event_kind`, `log_query.rs`, `dashboard/filter.rs` (mapped to `hard_fail`, `FILTER_ITEM_COUNT` unchanged), and `transcript.rs`. `PhaseRun` gained `#[serde(default)] nudges_injected`/`nudges_heeded` (schema version untouched), populated from `RunMetrics` in `emit_phase_run`. The agent loop tracks a trailing streak over `(tool, normalize_tool_args_for_repeat)` + `normalize_output_for_repeat`, consumes a pending nudge as heeded when the next call differs, and — after Step 7's hard-fail checks — injects exactly one steering message per streak, emitting the event and bumping `nudges_injected`. `check_identical_repetition` is untouched.
+
+**Notes for review:** (1) `nudges_heeded` increments only when the call *immediately after* a nudge differs from the nudged key; if the model repeats once more and then changes, that repeat still counts as unheeded-then-different (spec's "if `key != nudged_key`" reading). (2) The test helper `nudge_messages` counts per-call *deltas* of user nudge messages, since the conversation history is monotonic and a one-shot nudge reappears in every later call's message list — without that, one injection reads as N. (3) `mcp/src/profile.rs` and `mcp/src/runner.rs` test initializers needed the two new `PhaseRun`/`ModelOverride` fields (compiler-required, not spec-listed files). (4) E2E block ran verbatim with all named tests `ok`/`exit=0` (artifact quoted in the phase doc's end-to-end verification entry); all four gates green; tree clean, committed as one `feat:` commit.
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::symbols::tests::references_exclude_substring ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test ai::backends::openai::tests::is_retriable_transport_true_for_reqwest_error ... ok
+test agent::tests::bash_edit_resets_read_only_stall ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1127 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.13s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `README.md` — +2 -0
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md` — +1 -1
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-03-repeat-nudge.md` — +47 -1
+- `executor/src/agent/metrics.rs` — +6 -0
+- `executor/src/agent/mod.rs` — +66 -0
+- `executor/src/agent/tests.rs` — +321 -0
+- `executor/src/config.rs` — +84 -0
+- `executor/src/store/sessions/event.rs` — +10 -0
+- `executor/src/store/sessions/jsonl.rs` — +35 -0
+- `executor/src/store/telemetry.rs` — +31 -0
+- `mcp/src/dashboard/filter.rs` — +1 -0
+- `mcp/src/dashboard/transcript.rs` — +12 -0
+- `mcp/src/init.rs` — +2 -0
+- `mcp/src/log_query.rs` — +1 -0
+- `mcp/src/profile.rs` — +4 -0
+- `mcp/src/runner.rs` — +2 -0
+
+**Commit:** 3ef326c77d1e2c042e57b8ed6bb649d5b08cf91f
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
