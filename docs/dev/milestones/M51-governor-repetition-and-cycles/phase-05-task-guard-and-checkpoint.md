@@ -1,7 +1,7 @@
 # Phase 05: Per-task no-edit guard & optional soft checkpoint
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-04
 **Estimated diff:** ~340 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -275,3 +275,124 @@ Gates: `cargo fmt --all` clean; `cargo build` zero warnings;
 `cargo clippy --all-targets --all-features -- -D warnings` clean;
 `cargo test` — executor lib 1142 passed, rexymcp bin 710 passed,
 readme_config_reference 2 passed, 0 failures anywhere.
+
+### Update — 2026-11-25 04:12 (complete, server-authored)
+
+**Summary:** </think>Committed, tree clean. Final summary.</think>
+**Summary**
+
+M51 phase-05 is implemented and committed (`feat:` commit, working tree clean; phase doc left at `in-progress` for the server's completion bookkeeping). All five Spec tasks are done:
+
+1. **Config knobs** — `GovernorConfig::task_no_edit_threshold` (default 40; `0` allowed at load, unlike `read_only_stall_threshold`), `ModelOverride::task_no_edit_threshold` wired through `Config::resolve_for_model`, and `BudgetConfig::checkpoint_turns` (serde default `0`). Documented in `mcp/src/init.rs`'s template (`[budget]`, `[governor]`, `[models]` override comment) and README (sample config, per-model block, section-reference table).
+2. **Signal** — `HardFailSignal::TaskNoEditStall { task_id, consecutive_turns }` with the pinned `describe()` text, plus `check_task_no_edit_stall` (returns `None` on threshold 0, no active task, or below threshold) in `executor/src/governor/hard_fail.rs`.
+3. **Tracking** — `active_task_id` (seeded from post-resume states so resumed runs are bounded) and `task_no_edit_turns` in `execute_phase`; the counter increments only on edit-free, task-stable turns, resets on `made_file_progress` or a real task switch, and a redundant `update_task(same_id, "active")` does **not** reset it. Wired into Step 7's `hard_fail_signal` chain.
+4. **Soft checkpoint** — `LoopDeps.checkpoint_turns` (wired from `inp.cfg.budget.checkpoint_turns` in `mcp/src/runner.rs`; `0` in all existing test literals), `checkpoint_line()` in `outcome.rs`, and a Step 9 `else if` branch (hard cap checked first) that logs `budget_exceeded`, emits `PhaseRun`, builds artifacts preserving partial edits, and returns `budget_exceeded_result(..., checkpoint_line(...))`. No `PhaseStatus`/`Blocker` variants changed; no `unwrap`/`expect` on production paths.
+5. **E2E evidence** — pasted verbatim from `target/e2e/m51-phase-05.txt` into the phase doc's end-to-end Update Log entry: all 11 targeted tests `ok` with `exit=0` and non-zero passed counts (positive control), plus a literal grep confirming `task_no_edit_threshold`/`checkpoint_turns` landed in the template/README/config (29 matches).
+
+**Notes for review**
+
+- Two test-authoring adaptations worth knowing: the task-guard tests set `read_only_stall_threshold: 0` and `empty_completion_threshold: 50` in their governor fixture so the run-level read-only and empty-completion backstops don't fire before the per-task guard under test; and the "resets on task switch" test completes task 2 via `update_task` before the final turn because the task-coverage gate otherwise forces a `budget_exceeded` retry that masks the counter behavior.
+- The checkpoint test's turn-1 call is a `read_file` (not a bare `write_file`) because the read-before-edit gate requires a prior read; the checkpoint still fires on turn 2 as specified.
+- All four gates green: `cargo fmt --all`, `cargo build` (zero warnings), `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` (1142 executor + 710 rexymcp + 2 readme tests, 0 failures).
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::symbols::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::symbols::tests::exact_match_no_substring ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::references_exclude_substring ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::symbols::tests::references_exclude_strings_and_comments ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1142 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.16s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `README.md` — +7 -4
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md` — +1 -1
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-05-task-guard-and-checkpoint.md` — +64 -1
+- `executor/src/agent/mod.rs` — +99 -3
+- `executor/src/agent/outcome.rs` — +6 -0
+- `executor/src/agent/tests.rs` — +378 -0
+- `executor/src/config.rs` — +84 -0
+- `executor/src/governor/hard_fail.rs` — +63 -0
+- `mcp/src/init.rs` — +3 -0
+- `mcp/src/runner.rs` — +3 -0
+
+**Commit:** 40e8548ac43d3160cc03ea84da14cb7dffc3332e
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
