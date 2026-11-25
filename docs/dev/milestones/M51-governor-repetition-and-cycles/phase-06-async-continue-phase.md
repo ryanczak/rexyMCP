@@ -1,7 +1,7 @@
 # Phase 06: Async `continue_phase` (`run_id` + cancel + skill update)
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress
+**Status:** review
 **Depends on:** phase-05
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -218,3 +218,114 @@ escalate_skill_async exit=0
 Gates: `cargo fmt --all` clean; `cargo build` zero warnings;
 `cargo clippy --all-targets --all-features -- -D warnings` clean;
 `cargo test` 1142 passed, 0 failed, 2 ignored (pre-existing live-LLM ignores).
+
+### Update — 2026-11-25 04:32 (complete, server-authored)
+
+**Summary:** </think>Done. Final summary message.</think>
+**Summary**
+
+`continue_phase` is now an async job matching `execute_phase`: `continue_phase_inner` gained a `CancelSignal` parameter plus a `continue_phase_inner_with_client` variant that threads both the test client and the live signal into `RunPhaseConfig` (the stale `RunPhaseConfig.cancel` doc comment no longer claims `continue_phase` disables cancellation), and `call_tool`'s `continue_phase` branch spawns via `crate::jobs::spawn_run` + `crate::stop_watcher::watch_stop_sentinel` and returns `structured_result(&SpawnedRun { run_id })` — `roots::corroborate` and progress-callback wiring preserved. `continue_phase_tool()` now declares the `SpawnedRun` output schema and describes the poll/stop contract, and `stop_phase`'s description covers both tools. `plugin/skills/escalate/SKILL.md` step 2 and the README `continue_phase` row document the detect-and-adapt `{ run_id }` / `get_run_status` / `stop_phase` flow with the older-blocking-binary fallback. New tests: `continue_phase_tool_declares_run_id_output_schema`, `continue_phase_spawned_run_completes_via_get_run_status`, `continue_phase_spawned_run_honors_stop_phase_cancel`; existing `continue_phase_inner` call sites pass `CancelSignal::never()`.
+
+**Notes for review**
+
+- Phase doc status left at `in-progress` (server authors the completion flip); E2E block ran verbatim, artifact pasted in a separate end-to-end-verification Update Log entry — all six tests `ok`/`exit=0` and the skill grep confirms the async text landed.
+- All four gates green: fmt clean, build zero warnings, clippy `-D warnings` clean, `cargo test` 1142 passed / 0 failed / 2 pre-existing ignored.
+- One clean commit (`f138b87`); working tree verified clean afterward. No deviations from spec; no new dependencies; out-of-scope items (`execute_phase`/`JobRegistry`/`stop_watcher` behavior, process-group cleanup) untouched.
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+ate_task::tests::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::flips_pending_task_to_active ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::references_respects_max_results ... ok
+test tools::symbols::tests::kind_filter_returns_only_matching_kind ... ok
+test tools::symbols::tests::defaults_to_scope_root_when_no_path_given ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::references_no_matches_advisory ... ok
+test tools::symbols::tests::references_single_file_path ... ok
+test tools::symbols::tests::no_symbols_returns_advisory_error ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1142 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.16s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `README.md` — +1 -1
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md` — +1 -1
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-06-async-continue-phase.md` — +54 -1
+- `mcp/src/runner.rs` — +1 -1
+- `mcp/src/server.rs` — +39 -12
+- `mcp/src/server_tests.rs` — +151 -5
+- `plugin/skills/escalate/SKILL.md` — +19 -2
+
+**Commit:** f138b87dd7b14dc674be837e4b96628e70d93445
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
