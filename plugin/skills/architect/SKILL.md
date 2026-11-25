@@ -237,8 +237,9 @@ commands across every project. **Do not create a `.mcp.json` in the target
 repo** — a project-level registration duplicates the plugin's server, which
 produces duplicate tool entries and prevents the skill slash commands from
 loading. If the MCP tools are missing, the fix is to install the plugin, not
-to write `.mcp.json`. For Google Antigravity, the server is registered globally
-in `~/.gemini/antigravity/mcp_config.json` rather than per-project.
+to write `.mcp.json`. For Google Antigravity, the server is bundled in the
+installed plugin's `mcp_config.json` (under `~/.gemini/config/plugins/`) rather
+than per-project.
 
 ### Bootstrap pitfalls — five things that look fine but aren't
 

@@ -1,17 +1,14 @@
 {
   "name": "rexymcp",
-  "version": "0.1.3",
+  "displayName": "RexyMCP",
+  "version": "0.1.4",
   "description": "Architect/executor workflow over MCP — Claude Code or Google Antigravity drives a local LLM executor through structured phases, review gates, and telemetry.",
   "author": {
     "name": "Matt Ryanczak"
   },
-  "license": "MIT",
-  "keywords": [
-    "local-llm",
-    "executor",
-    "mcp",
-    "architect",
-    "workflow",
-    "phases"
+  "suggestedPrompts": [
+    "Bootstrap this project and draft the next rexyMCP phase",
+    "Dispatch the active phase to the local executor",
+    "Review the completed phase against STANDARDS.md"
   ]
 }
