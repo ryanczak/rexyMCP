@@ -4,7 +4,15 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-03-repeat-nudge.md`
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-04-read-only-cycle.md`
+
+**M51 phase-03 — done 2026-11-24, `approved_after_1`** (code `3ef326c` +
+`156396f`, approval `54f7b9f`, GLM-5.3-Flash; 1 bounce `bug-03-1` on fake
+`repeat_nudge_silent_when_outputs_differ` test). Ships `[governor]
+repeat_nudge_threshold` (default 3, 0 disables), `SessionEvent::NudgeInjected`,
+`PhaseRun` `nudges_injected`/`nudges_heeded`, and one-shot repeat-nudge
+injection ahead of `IdenticalToolCallRepetition`. Phase 04 drafted and ready
+for dispatch.
 
 **M51 phase-02 — done 2026-11-24, `approved_after_1`** (code `9bf43bc` +
 `c0d44fc`, approval `f2d631c`, GLM-5.3-Flash; 1 bounce `bug-02-1` on regex
