@@ -4,7 +4,18 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase: none.**
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-01-contract-batching-rule.md`
+
+**M51 — Governor repetition, cycles & process hygiene opened 2026-11-24** from
+[issue #18](https://github.com/ryanczak/rexyMCP/issues/18) and
+[issue #19](https://github.com/ryanczak/rexyMCP/issues/19). Seven planned phases
+(01 contract batching rule + classifier tests, 02 shared command-plumbing &
+output-timing normalizers, 03 recoverable repeat nudge + `NudgeInjected` event
+& telemetry, 04 plumbing-normalized `ReadOnlyCycle` detector + calibration
+replay, 05 per-task no-edit cap + opt-in `checkpoint_turns = 0`, 06 async
+`continue_phase`, 07 process-group cleanup for `bash` and gate commands). Design
+decisions in [M51/README.md](milestones/M51-governor-repetition-and-cycles/README.md);
+`architecture.md` §51 planning. Phase 01 drafted and ready for dispatch.
 
 **M50 — Tree-based progress closed 2026-10-27** at four phases (01
 `escalated`, 02–04 `approved_first_try`), fixing issue #14 plus the diff gaps

@@ -1233,6 +1233,26 @@ The project plan. Each entry becomes a milestone with its own
     stay non-goals (no live channel / client never sends it). The milestone
     closes with a serve restart + live handshake/dispatch smoke test, which
     doubles as the M30 live interrupt-path validation that closed unexercised.
+51. **M51 — Governor repetition, cycles & process hygiene** *(planning, opened
+    2026-11-24 from [issue #18](https://github.com/ryanczak/rexyMCP/issues/18)
+    and [issue #19](https://github.com/ryanczak/rexyMCP/issues/19))*. Local
+    executors (GLM-5.3-Flash) repeat or cycle read-only shell commands instead
+    of batching them, and the governor either stays silent until it hard-fails
+    working code (#19) or misses multi-command read-only cycles and per-task
+    no-edit stalls until `max_turns` (#18). Seven planned phases: **01**
+    executor-contract batching rule + worked examples + classifier tests (#19
+    Proposal 1); **02** shared bash output-plumbing and output-timing
+    normalizers (reused by repeat nudges, cycle detection, and `normalize_target`);
+    **03** recoverable repeat nudge before hard-fail + `NudgeInjected` event &
+    `PhaseRun` telemetry (#19 Proposal 2); **04** plumbing-normalized
+    `ReadOnlyCycle` detector (distinct from `LowNoveltyStall`, which stays
+    advisory) + calibration replay (#18 Ask 1); **05** per-task no-edit cap +
+    opt-in `[budget] checkpoint_turns` (default `0`, returning resumable
+    `BudgetExceeded`) (#18 Asks 2 & 3); **06** async `continue_phase` (`run_id`
+    + `JobRegistry` + cancel, matching `execute_phase`) (#18 related #1);
+    **07** process-group cleanup for `bash` and gate commands so deadlocked
+    test children are never orphaned (#18 related #2).
+    `docs/dev/milestones/M51-governor-repetition-and-cycles/README.md`.
 50. **M50 — Tree-based progress** *(done 2026-10-27; opened 2026-10-26 from
     [issue #14](https://github.com/ryanczak/rexyMCP/issues/14), four phases:
     01 `escalated` after two genuine stalls, 02–04 `approved_first_try`)*. The
