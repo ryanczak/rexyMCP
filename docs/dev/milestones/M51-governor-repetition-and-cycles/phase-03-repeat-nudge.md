@@ -1,7 +1,7 @@
 # Phase 03: Recoverable repeat nudge + `NudgeInjected` event & telemetry
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** in-progress *(bounced 2026-11-24 — see [bugs/bug-03-1.md](bugs/bug-03-1.md))*
 **Depends on:** phase-02
 **Estimated diff:** ~320 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -114,6 +114,13 @@ in Step 7. `executor/src/store/telemetry.rs` defines `PhaseRun`, populated by
       `"event_type":"nudge_injected"`, and `PhaseRun` records `nudges_injected`
       and `nudges_heeded` with `#[serde(default)]` backward compatibility.
 - [ ] Every test named in § Test plan passes.
+- [ ] `repeat_nudge_silent_when_outputs_differ` genuinely exercises the output-equality
+      check in `executor/src/agent/mod.rs`: it issues three **identical** tool calls
+      (same `(name, arguments)` across all three `SessionEvent::Parsed` records,
+      asserted in the test; `! grep -n 'echo run-' executor/src/agent/tests.rs`
+      exits 0) whose `SessionEvent::ToolResult` `output_preview`s are all distinct
+      (asserted in the test), stays hermetic within `TempDir`, and injects zero
+      nudges (see [bugs/bug-03-1.md](bugs/bug-03-1.md)).
 - [ ] Preservation: `check_identical_repetition` still fires at
       `identical_call_threshold` on exact repeats and does **not** fire on
       re-plumbed bash variants; all existing tests pass (including
@@ -145,8 +152,11 @@ in Step 7. `executor/src/store/telemetry.rs` defines `PhaseRun`, populated by
     `cmd | tail -4`, `cmd | tail -4 > /tmp/x && cat /tmp/x`, and
     `cmd 2>&1 | tail -6` with identical output triggers one repeat nudge and
     continues (does **not** trip `IdenticalToolCallRepetition`).
-  - `repeat_nudge_silent_when_outputs_differ` — negative case: three identical
-    calls whose tool outputs differ (not merely timing) inject zero nudges.
+  - `repeat_nudge_silent_when_outputs_differ` — negative case: three **identical**
+    calls (same tool name and equal `arguments` on all three `SessionEvent::Parsed`
+    records — asserted in the test, with no host state outside `TempDir`) whose
+    `SessionEvent::ToolResult` outputs genuinely differ (not merely timing —
+    asserted distinct in the test) inject zero nudges.
   - `repeat_nudge_disabled_when_threshold_zero` — negative case:
     `repeat_nudge_threshold = 0` injects zero nudges on three identical calls.
   - `identical_repetition_hard_fail_still_fires_after_nudge` — six byte-identical
@@ -165,10 +175,11 @@ for t in repeat_nudge_threshold_defaults_to_three_and_allows_zero phase_run_with
 done
 cargo test -p rexymcp readme_documents_every_governor_knob 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^test |test result: .* [1-9][0-9]* passed' >> "$A"; echo "readme_governor exit=${PIPESTATUS[0]}" >> "$A"
 cargo test -p rexymcp template_spells_out_every_governor_knob 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^test |test result: .* [1-9][0-9]* passed' >> "$A"; echo "init_governor exit=${PIPESTATUS[0]}" >> "$A"
+! grep -n 'echo run-' executor/src/agent/tests.rs >> "$A"; echo "no_varied_cmd exit=$?" >> "$A"
 ```
 
-Expected: every listed test prints `ok` with `exit=0`, and each `test result`
-line shows a non-zero passed count.
+Expected: every listed test prints `ok` with `exit=0`, each `test result` line
+shows a non-zero passed count, and `no_varied_cmd exit=0`.
 
 ## Authorizations
 
