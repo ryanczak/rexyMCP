@@ -4,7 +4,15 @@ Single source of truth for which phase is active. The principal engineer
 (architect) maintains this file; every session reads it (per `REXYMCP.md`
 § "Read these first") to know which phase to work next.
 
-**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-04-read-only-cycle.md`
+**Active phase:** `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-05-task-guard-and-checkpoint.md`
+
+**M51 phase-04 — done 2026-11-24, `approved_first_try`** (code `1d59373`,
+approval `e9e8441`, GLM-5.3-Flash). Ships `read_only_cycle_window` (16) /
+`read_only_cycle_distinct_max` (4), `HardFailSignal::ReadOnlyCycle` +
+`read_only_cycle_keys`/`measure_read_only_cycle`/`check_read_only_cycle`,
+staged nudge-first-then-terminate wiring in `agent/mod.rs`, and
+`read_only_cycle_min_distinct` replay in `calibrate-governor` while keeping
+`LowNoveltyStall` advisory by default. Phase 05 drafted and ready for dispatch.
 
 **M51 phase-03 — done 2026-11-24, `approved_after_1`** (code `3ef326c` +
 `156396f`, approval `54f7b9f`, GLM-5.3-Flash; 1 bounce `bug-03-1` on fake
