@@ -5,7 +5,7 @@ on repeated or cyclic read-only commands before burning hundreds of turns or
 killing working runs, and close the companion `continue_phase` timeout and
 orphaned-process gaps.
 
-**Status:** planning *(opened 2026-11-24; seven planned phases)*
+**Status:** in-progress *(opened 2026-11-24; seven planned phases)*
 
 **Depends on:** M50.
 
@@ -64,7 +64,7 @@ Both come from local-model (GLM-5.3-Flash) runs looping on shell commands:
 
 | #  | Phase | Status |
 |----|-------|--------|
-| 01 | Contract batching rule & classifier coverage ([phase-01-contract-batching-rule.md](phase-01-contract-batching-rule.md)) | review      |
+| 01 | Contract batching rule & classifier coverage ([phase-01-contract-batching-rule.md](phase-01-contract-batching-rule.md)) | done |
 | 02 | Shared command-plumbing & output-timing normalizer *(not yet drafted)* | todo |
 | 03 | Recoverable repeat nudge + `NudgeInjected` event & telemetry *(not yet drafted)* | todo |
 | 04 | Plumbing-normalized `ReadOnlyCycle` detector & calibration replay *(not yet drafted)* | todo |

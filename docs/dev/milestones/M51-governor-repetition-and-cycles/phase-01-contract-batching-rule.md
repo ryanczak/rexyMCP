@@ -1,7 +1,7 @@
 # Phase 01: Contract batching rule & classifier coverage
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** review
+**Status:** done
 **Depends on:** none
 **Estimated diff:** ~70 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -272,3 +272,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 8679154a67dcf1415bac716a4b14d3c4fd9fc837
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Review verdict — 2026-11-24
+
+- **Verdict:** approved_first_try
+- **Bounces:** none
+- **Executor:** GLM-5.3-Flash
+- **Scope deviations:** none (executor also added `detects_a_non_empty_unauthorized_placeholder` in `contract.rs` to pin the negative placeholder case directly, and joined the two stress-loop lines with `&&` in `allows_contract_batching_examples`, disclosed in Notes for review).
+- **Calibration:** leaked `</think>` fragment ahead of `**Summary:**` in `completion_summary` (2nd occurrence after M50 phase-03 — trend, held for 3rd before folding).
