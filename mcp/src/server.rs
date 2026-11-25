@@ -259,6 +259,18 @@ pub(crate) async fn continue_phase_inner(
     config_path: &Path,
     params: &ContinuePhaseParams,
     progress: Option<&dyn ProgressCallback>,
+    cancel: CancelSignal,
+) -> Result<ExecutePhaseOutput, String> {
+    continue_phase_inner_with_client(config_path, params, progress, None, cancel).await
+}
+
+/// Testable variant that accepts an optional mock client.
+pub(crate) async fn continue_phase_inner_with_client(
+    config_path: &Path,
+    params: &ContinuePhaseParams,
+    progress: Option<&dyn ProgressCallback>,
+    test_client: Option<&dyn AiClient>,
+    cancel: CancelSignal,
 ) -> Result<ExecutePhaseOutput, String> {
     let cfg = rexymcp_executor::config::Config::load_with_env(config_path)
         .map_err(|e| format!("failed to load config: {}", e))?;
@@ -292,9 +304,9 @@ pub(crate) async fn continue_phase_inner(
         telemetry_dir,
         progress,
         project_id,
-        test_client: None,
+        test_client,
         resume: Some(ctx),
-        cancel: CancelSignal::never(),
+        cancel,
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -645,7 +657,7 @@ impl RexyMcpServer {
     }
 
     #[rmcp::tool(
-        description = "Stop a spawned execute_phase run by run_id: fires the run's cooperative cancel signal so it aborts at the next turn boundary (or mid model-stream) and returns a PhaseResult with status \"cancelled\", cancellation.reason \"claude_stop\", and the partial diff (working tree left dirty). Returns {stopped:true} if the run_id was known, {stopped:false} if not. The cancel is cooperative and asynchronous — poll get_run_status to observe the terminal cancelled result."
+        description = "Stop a spawned execute_phase or continue_phase run by run_id: fires the run's cooperative cancel signal so it aborts at the next turn boundary (or mid model-stream) and returns a PhaseResult with status \"cancelled\", cancellation.reason \"claude_stop\", and the partial diff (working tree left dirty). Returns {stopped:true} if the run_id was known, {stopped:false} if not. The cancel is cooperative and asynchronous — poll get_run_status to observe the terminal cancelled result."
     )]
     async fn stop_phase(
         &self,
@@ -795,12 +807,29 @@ impl ServerHandler for RexyMcpServer {
                         }) as Box<dyn ProgressCallback>
                     });
 
-                let output =
-                    continue_phase_inner(&config_path, &params, progress_callback.as_deref())
-                        .await
-                        .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+                let run_id = crate::jobs::new_run_id();
+                let (cancel_handle, cancel_signal) = CancelSignal::new();
+                let config_path_owned = config_path.clone();
+                let params_owned = params.clone();
+                let work = async move {
+                    continue_phase_inner(
+                        &config_path_owned,
+                        &params_owned,
+                        progress_callback.as_deref(),
+                        cancel_signal,
+                    )
+                    .await
+                    .map(|o| o.result)
+                };
+                crate::jobs::spawn_run(runs.clone(), run_id.clone(), cancel_handle, work);
+                tokio::spawn(crate::stop_watcher::watch_stop_sentinel(
+                    repo_path.clone(),
+                    runs.clone(),
+                    run_id.clone(),
+                    crate::stop_watcher::STOP_POLL_INTERVAL,
+                ));
 
-                structured_result(&output.result)
+                structured_result(&SpawnedRun { run_id })
             } else {
                 let ctx = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
                 router.call(ctx).await
@@ -848,12 +877,10 @@ fn execute_phase_tool() -> rmcp::model::Tool {
 fn continue_phase_tool() -> rmcp::model::Tool {
     let tool = rmcp::model::Tool::new(
         "continue_phase",
-        "Resume a non-complete phase from a fresh briefing-seeded context. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
+        "Resume a non-complete phase from a fresh briefing-seeded context. Spawns the run inside the serve process and returns { run_id } immediately; poll it to completion with get_run_status. The architect provides distilled guidance and optionally the prior run's session log path; the tool restores task states and appends a resume preamble to the phase doc. The repo_path is corroborated against the MCP client's roots/list and CLAUDE_PROJECT_DIR; a mismatch refuses the call.",
         rmcp::handler::server::tool::schema_for_type::<Parameters<ContinuePhaseParams>>(),
     );
-    tool.with_raw_output_schema(rmcp::handler::server::tool::schema_for_output::<
-        rexymcp_executor::phase::PhaseResult,
-    >())
+    tool.with_raw_output_schema(rmcp::handler::server::tool::schema_for_output::<SpawnedRun>())
 }
 
 #[cfg(test)]

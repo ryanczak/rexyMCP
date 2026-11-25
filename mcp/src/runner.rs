@@ -350,7 +350,7 @@ pub struct RunPhaseConfig<'a> {
     /// Resume context for `continue_phase`. `None` on a normal `execute_phase`.
     pub resume: Option<crate::resume::ResumeContext>,
     /// Cooperative cancel signal for the spawned async run. `CancelSignal::never()`
-    /// disables it (the CLI `run-phase` path and `continue_phase`, for now).
+    /// disables it (the CLI `run-phase` path).
     pub cancel: CancelSignal,
 }
 

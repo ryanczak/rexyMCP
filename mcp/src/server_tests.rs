@@ -920,7 +920,7 @@ async fn continue_phase_returns_error_for_missing_phase_doc() {
         prior_log_path: None,
         model: None,
     };
-    let result = continue_phase_inner(&config_path, &params, None).await;
+    let result = continue_phase_inner(&config_path, &params, None, CancelSignal::never()).await;
 
     assert!(result.is_err());
 }
@@ -959,7 +959,7 @@ async fn continue_phase_restores_task_states_from_prior_log() {
     // This will fail because there's no real AI client, but we can verify
     // the resume context was built (the error should be about the AI call,
     // not about missing files).
-    let result = continue_phase_inner(&config_path, &params, None).await;
+    let result = continue_phase_inner(&config_path, &params, None, CancelSignal::never()).await;
 
     // The error should be about the AI backend, not about file resolution.
     if let Err(err) = result {
@@ -972,6 +972,144 @@ async fn continue_phase_restores_task_states_from_prior_log() {
             "should not be a phase doc error: {err}"
         );
     }
+}
+
+#[tokio::test]
+async fn continue_phase_spawned_run_completes_via_get_run_status() {
+    use rexymcp_executor::ai::testing::MockAiClientScript;
+
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_test_config(&temp_dir);
+    let repo_dir = temp_dir.path().join("repo");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+
+    // Prior session log marking task "1" done, so the task-coverage gate passes.
+    let log_path = temp_dir.path().join("session-prior.jsonl");
+    std::fs::write(
+        &log_path,
+        r#"{"ts":1717000000000,"turn":0,"event":{"event_type":"session_start","session_id":"s1","model":"test","phase":"p1"}}
+{"ts":1717000001000,"turn":0,"event":{"event_type":"task_update","id":"1","title":"Test task","state":"done"}}
+"#,
+    )
+    .unwrap();
+
+    let phase_path = temp_dir.path().join("phase-02-test.md");
+    std::fs::write(
+        &phase_path,
+        "# Phase 02: Test Resume\n\n**Tags:** language=rust, kind=test, size=s\n\n## Goal\n\nTest resume.\n\n## Spec\n\n1. **Test task** — already done\n\n## Acceptance criteria\n\n- [ ] It resumes.\n",
+    )
+    .unwrap();
+
+    // A clean completion: no tool call, non-empty post-think text.
+    let client = MockAiClientScript::new(vec![vec![rexymcp_executor::ai::AiEvent::Token(
+        "Resumed work verified — all acceptance criteria already met.".to_string(),
+    )]]);
+
+    let params = ContinuePhaseParams {
+        phase_doc_path: phase_path.to_str().unwrap().to_string(),
+        repo_path: repo_dir.to_str().unwrap().to_string(),
+        guidance: "continue from where we left off".to_string(),
+        prior_log_path: Some(log_path.to_str().unwrap().to_string()),
+        model: None,
+    };
+
+    let runs = std::sync::Arc::new(crate::jobs::JobRegistry::new());
+    let run_id = crate::jobs::new_run_id();
+    let (cancel_handle, cancel_signal) = CancelSignal::new();
+    let config_path_owned = config_path.clone();
+    let params_owned = params.clone();
+    let client_owned = client.clone();
+    let work = async move {
+        continue_phase_inner_with_client(
+            &config_path_owned,
+            &params_owned,
+            None,
+            Some(&client_owned),
+            cancel_signal,
+        )
+        .await
+        .map(|o| o.result)
+    };
+    crate::jobs::spawn_run(runs.clone(), run_id.clone(), cancel_handle, work);
+
+    let status_params = GetRunStatusParams {
+        run_id: run_id.clone(),
+    };
+    let out = get_run_status_inner(&runs, &status_params, Duration::from_secs(30)).await;
+
+    assert_eq!(out.state, "done", "spawned continue_phase should complete");
+    assert!(
+        out.error.is_none(),
+        "no infra error expected: {:?}",
+        out.error
+    );
+    let result = out.result.expect("done run should carry a result");
+    assert_eq!(
+        result["status"], "complete",
+        "resumed task state restored from prior log should let the task-coverage gate pass"
+    );
+}
+
+#[tokio::test]
+async fn continue_phase_spawned_run_honors_stop_phase_cancel() {
+    use rexymcp_executor::ai::AiEvent;
+    use rexymcp_executor::ai::testing::MockAiClientScript;
+
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = make_test_config(&temp_dir);
+    let repo_dir = temp_dir.path().join("repo");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+
+    let phase_path = make_phase_doc(&temp_dir);
+
+    // Scripted to execute a tool call if it ever gets a turn — the stop lands
+    // before the spawned future is first polled, so it never does.
+    let client = MockAiClientScript::new(vec![
+        vec![AiEvent::Token("working".to_string())],
+        vec![AiEvent::Token("still working".to_string())],
+    ]);
+
+    let params = ContinuePhaseParams {
+        phase_doc_path: phase_path.to_str().unwrap().to_string(),
+        repo_path: repo_dir.to_str().unwrap().to_string(),
+        guidance: "resume guidance".to_string(),
+        prior_log_path: None,
+        model: None,
+    };
+
+    let runs = std::sync::Arc::new(crate::jobs::JobRegistry::new());
+    let run_id = crate::jobs::new_run_id();
+    let (cancel_handle, cancel_signal) = CancelSignal::new();
+    let config_path_owned = config_path.clone();
+    let params_owned = params.clone();
+    let client_owned = client.clone();
+    let work = async move {
+        continue_phase_inner_with_client(
+            &config_path_owned,
+            &params_owned,
+            None,
+            Some(&client_owned),
+            cancel_signal,
+        )
+        .await
+        .map(|o| o.result)
+    };
+    crate::jobs::spawn_run(runs.clone(), run_id.clone(), cancel_handle, work);
+
+    assert!(
+        runs.request_stop(&run_id, CancelReason::ClaudeStop),
+        "request_stop should fire the live run"
+    );
+
+    let status_params = GetRunStatusParams {
+        run_id: run_id.clone(),
+    };
+    let out = get_run_status_inner(&runs, &status_params, Duration::from_secs(30)).await;
+
+    assert_eq!(out.state, "done", "a cancelled run is terminal 'done'");
+    let result = out.result.expect("cancelled run should carry a result");
+    assert_eq!(result["status"], "cancelled");
+    assert_eq!(result["cancellation"]["reason"], "claude_stop");
 }
 
 use std::time::Duration;
@@ -1141,7 +1279,7 @@ fn execute_phase_tool_declares_run_id_output_schema() {
 }
 
 #[test]
-fn continue_phase_tool_declares_phase_result_output_schema() {
+fn continue_phase_tool_declares_run_id_output_schema() {
     let tool = continue_phase_tool();
     let schema = tool
         .output_schema
@@ -1150,9 +1288,17 @@ fn continue_phase_tool_declares_phase_result_output_schema() {
         schema
             .as_ref()
             .get("properties")
-            .and_then(|p| p.get("status"))
+            .and_then(|p| p.get("run_id"))
             .is_some(),
-        "continue_phase output_schema should contain status property"
+        "continue_phase output_schema should contain run_id property"
+    );
+    assert!(
+        schema
+            .as_ref()
+            .get("properties")
+            .and_then(|p| p.get("status"))
+            .is_none(),
+        "continue_phase output_schema should NOT contain status (that's PhaseResult, not SpawnedRun)"
     );
 }
 

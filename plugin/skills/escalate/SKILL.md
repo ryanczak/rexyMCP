@@ -204,8 +204,25 @@ itself a signal the phase was mis-scoped.
      already done, what to avoid re-doing.
    - `prior_log_path`: the failed `PhaseResult.log_path`, used to restore task
      states.
-2. Treat the returned `PhaseResult` like any dispatch result: review on
-   `complete`, escalate again on failure.
+2. **Detect and adapt** on what the tool returns (same contract as
+   `dispatch/SKILL.md` §2):
+   - **`{ run_id }` present** (the run spawned asynchronously) → confirm
+     startup with a **single** `get_run_status(run_id)` (expect `running`),
+     then **stop polling and hand off**: tell the user the run is live and
+     that they watch it via `rexymcp status` / `rexymcp dashboard`. **Reap**
+     the terminal `PhaseResult` when the user signals the run finished (or on
+     your next turn) with one more `get_run_status(run_id)` — in an
+     autonomous `/rexymcp:auto` run, reap minimally, without narration or
+     log-grepping. Do not sit in a continuous poll loop. The run is
+     stoppable via `stop_phase(run_id)` (architect, enumerated reasons only)
+     or `rexymcp stop` (`.rexymcp/stop` sentinel, human). Branch on the
+     terminal state as in dispatch: `state == "done"` → `result` is the
+     `PhaseResult`; `state == "failed"` → an infrastructure error, surface
+     `error` and stop (no briefing, don't route to escalate); `state ==
+     "unknown"` → the run was lost, surface it and re-dispatch.
+   - **`status` present instead of `run_id`** (an older blocking binary) →
+     the object **is** the `PhaseResult`. Treat it like any dispatch result:
+     review on `complete`, escalate again on failure.
 
 ### Decision summary
 

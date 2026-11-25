@@ -1,7 +1,7 @@
 # Phase 06: Async `continue_phase` (`run_id` + cancel + skill update)
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** todo
+**Status:** in-progress
 **Depends on:** phase-05
 **Estimated diff:** ~160 lines
 **Tags:** language=rust, kind=feature, size=s
@@ -165,3 +165,56 @@ No new dependencies.
 (Filled in by the executor. See WORKFLOW.md § "Update Log entries".)
 
 <!-- entries appended below this line -->
+
+### Update — 2026-11-25 04:20 (progress)
+
+Started phase 06: making `continue_phase` spawn asynchronously through
+`JobRegistry` (mirroring `execute_phase`), returning `{ run_id }` immediately.
+Flipped phase status and milestone README row to `in-progress`. Next:
+cancellable/testable `continue_phase_inner`, async spawn in `call_tool`, then
+the skill/README updates.
+
+### Update — 2026-11-25 04:26 (end-to-end verification)
+
+Ran the phase doc's E2E block verbatim; artifact pasted below. Positive control:
+each listed test prints `ok` with a non-zero passed count and `exit=0` — a
+binary that never spawned the run would fail
+`continue_phase_spawned_run_completes_via_get_run_status` (state would not be
+`done`) and `continue_phase_spawned_run_honors_stop_phase_cancel` (reason would
+not be `claude_stop`), and the skill grep returning `exit=0` proves the async
+contract text landed in `escalate/SKILL.md`.
+
+```
+target/e2e/m51-phase-06.txt:
+test server::tests::continue_phase_tool_declares_run_id_output_schema ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 711 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+continue_phase_tool_declares_run_id_output_schema exit=0
+test server::tests::continue_phase_spawned_run_completes_via_get_run_status ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 711 filtered out; finished in 0.02s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+continue_phase_spawned_run_completes_via_get_run_status exit=0
+test server::tests::continue_phase_spawned_run_honors_stop_phase_cancel ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 711 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+continue_phase_spawned_run_honors_stop_phase_cancel exit=0
+test server::tests::continue_phase_returns_error_for_missing_phase_doc ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 711 filtered out; finished in 6.03s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+continue_phase_returns_error_for_missing_phase_doc exit=0
+test server::tests::continue_phase_restores_task_states_from_prior_log ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 711 filtered out; finished in 12.04s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+continue_phase_restores_task_states_from_prior_log exit=0
+test server::tests::execute_phase_tool_declares_run_id_output_schema ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 711 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+execute_phase_tool_declares_run_id_output_schema exit=0
+210:     startup with a **single** `get_run_status(run_id)` (expect `running`),
+214:     your next turn) with one more `get_run_status(run_id)` — in an
+escalate_skill_async exit=0
+```
+
+Gates: `cargo fmt --all` clean; `cargo build` zero warnings;
+`cargo clippy --all-targets --all-features -- -D warnings` clean;
+`cargo test` 1142 passed, 0 failed, 2 ignored (pre-existing live-LLM ignores).

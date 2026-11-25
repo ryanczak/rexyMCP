@@ -69,7 +69,7 @@ Both come from local-model (GLM-5.3-Flash) runs looping on shell commands:
 | 03 | Recoverable repeat nudge + `NudgeInjected` event & telemetry ([phase-03-repeat-nudge.md](phase-03-repeat-nudge.md)) | done |
 | 04 | Plumbing-normalized `ReadOnlyCycle` detector & calibration replay ([phase-04-read-only-cycle.md](phase-04-read-only-cycle.md)) | done |
 | 05 | Per-task no-edit guard & optional soft checkpoint ([phase-05-task-guard-and-checkpoint.md](phase-05-task-guard-and-checkpoint.md)) | done |
-| 06 | Async `continue_phase` (`run_id` + cancel + skill update) ([phase-06-async-continue-phase.md](phase-06-async-continue-phase.md)) | todo |
+| 06 | Async `continue_phase` (`run_id` + cancel + skill update) ([phase-06-async-continue-phase.md](phase-06-async-continue-phase.md)) | in-progress |
 | 07 | Process-group cleanup for `bash` and gate commands *(not yet drafted)* | todo |
 
 ## Notes
