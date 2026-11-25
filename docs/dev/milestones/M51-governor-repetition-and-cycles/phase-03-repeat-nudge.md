@@ -371,3 +371,46 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 **Commit:** 3ef326c77d1e2c042e57b8ed6bb649d5b08cf91f
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Update — 2026-11-25 02:57 (progress, resumed)
+
+Resumed phase-03 after the bug-03-1 bounce. Tasks 1–4 are already on disk from the prior run and stay done; the only change is rewriting `repeat_nudge_silent_when_outputs_differ` in `executor/src/agent/tests.rs` to issue three byte-identical bash calls whose outputs genuinely differ (a self-appending counter file inside the test's TempDir), then re-running the E2E block.
+
+### Update — 2026-11-25 03:02 (end-to-end verification, re-run after bug-03-1 fix)
+
+Rewrote `repeat_nudge_silent_when_outputs_differ` per bug-03-1's definition of done: three byte-identical bash calls (a counter file inside the test's TempDir, so outputs 1/2/3 genuinely differ), with in-test assertions that all three `SessionEvent::Parsed` records share equal `(tool_call.name, tool_call.arguments)` and that the three `SessionEvent::ToolResult` `output_preview`s are distinct. Positive control for the fix: with the output-equality conjunct removed from `executor/src/agent/mod.rs:1188` (`&& repeat_norm_out.as_deref() == Some(&*repeat_norm)`), the rewritten test FAILED ("different outputs on identical calls must not nudge"); restored, it passes — the output-difference reset invariant is now genuinely exercised. Artifact file `target/e2e/m51-phase-03.txt` (re-ran the phase doc's E2E block verbatim):
+
+```
+test config::tests::repeat_nudge_threshold_defaults_to_three_and_allows_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.00s
+repeat_nudge_threshold_defaults_to_three_and_allows_zero exit=0
+test store::telemetry::tests::phase_run_without_nudge_fields_deserializes_to_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.00s
+phase_run_without_nudge_fields_deserializes_to_zero exit=0
+test agent::tests::repeat_nudge_injects_once_and_resets_on_different_call ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.04s
+repeat_nudge_injects_once_and_resets_on_different_call exit=0
+test agent::tests::repeat_nudge_collapses_replumbed_bash_without_hard_fail ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+repeat_nudge_collapses_replumbed_bash_without_hard_fail exit=0
+test agent::tests::repeat_nudge_silent_when_outputs_differ ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.04s
+repeat_nudge_silent_when_outputs_differ exit=0
+test agent::tests::repeat_nudge_disabled_when_threshold_zero ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+repeat_nudge_disabled_when_threshold_zero exit=0
+test agent::tests::identical_repetition_hard_fail_still_fires_after_nudge ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1128 filtered out; finished in 0.03s
+identical_repetition_hard_fail_still_fires_after_nudge exit=0
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 708 filtered out; finished in 0.00s
+test readme_documents_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+readme_governor exit=0
+test init::tests::template_spells_out_every_governor_knob ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 707 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+init_governor exit=0
+no_varied_cmd exit=0
+```
+
+All named tests `ok` with `exit=0` and non-zero passed counts; `no_varied_cmd exit=0` (`echo run-` no longer appears in `executor/src/agent/tests.rs`).

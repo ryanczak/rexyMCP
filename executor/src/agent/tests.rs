@@ -6347,11 +6347,18 @@ async fn repeat_nudge_collapses_replumbed_bash_without_hard_fail() {
 #[tokio::test]
 async fn repeat_nudge_silent_when_outputs_differ() {
     let dir = TempDir::new().unwrap();
-    let mk = |i: usize| native("bash", json!({ "command": format!("echo run-{i}") }));
+    let counter = dir.path().join("counter.txt");
+    let counter_str = counter.to_string_lossy().to_string();
+    let mk = || {
+        native(
+            "bash",
+            json!({ "command": format!("printf '%s\\n' \"$(( ($(cat {counter_str} 2>/dev/null || echo 0) + 1) ))\" > {counter_str}; cat {counter_str}") }),
+        )
+    };
     let client = MockAiClientScript::new(vec![
-        vec![mk(1)],
-        vec![mk(2)],
-        vec![mk(3)],
+        vec![mk()],
+        vec![mk()],
+        vec![mk()],
         vec![token("done")],
     ]);
 
@@ -6371,9 +6378,39 @@ async fn repeat_nudge_silent_when_outputs_differ() {
     assert_eq!(result.status, PhaseStatus::Complete);
     assert!(
         nudge_messages(&client).is_empty(),
-        "different outputs must not nudge"
+        "different outputs on identical calls must not nudge"
     );
     assert!(nudge_events(&dir).is_empty());
+
+    // The test is only meaningful if the three calls were byte-identical
+    // (same tool name and equal arguments on every Parsed record) yet the
+    // outputs genuinely differed. Verify both against the session log.
+    let all: Vec<_> = records(dir.path())
+        .iter()
+        .filter_map(|r| match &r.event {
+            SessionEvent::Parsed { tool_call } => {
+                Some((tool_call.name.clone(), tool_call.arguments.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(all.len(), 3, "three parsed tool calls expected");
+    assert_eq!(all[0], all[1], "call 2 arguments must equal call 1");
+    assert_eq!(all[1], all[2], "call 3 arguments must equal call 2");
+    let mut previews: Vec<String> = records(dir.path())
+        .iter()
+        .filter_map(|r| match &r.event {
+            SessionEvent::ToolResult { output_preview, .. } => Some(output_preview.clone()),
+            _ => None,
+        })
+        .collect();
+    previews.sort();
+    previews.dedup();
+    assert_eq!(
+        previews.len(),
+        3,
+        "the three ToolResult output_previews must be distinct: {previews:?}"
+    );
 }
 
 #[tokio::test]
