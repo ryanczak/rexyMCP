@@ -1,7 +1,7 @@
 # Phase 02: Shared command-plumbing & output-timing normalizer
 
 **Milestone:** M51 — Governor repetition, cycles & process hygiene
-**Status:** in-progress *(bounced 2026-11-24 — see [bugs/bug-02-1.md](bugs/bug-02-1.md))*
+**Status:** review
 **Depends on:** phase-01
 **Estimated diff:** ~220 lines
 **Tags:** language=rust, kind=feature, size=m
@@ -415,5 +415,112 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 - `executor/src/governor/normalize.rs` — +239 -0
 
 **Commit:** 9bf43bcd6da9bac133abe80402989a4663949e09
+
+**Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
+
+### Update — 2026-11-25 02:21 (complete, server-authored)
+
+**Summary:** </think>Wait — the grep for spec-pinned literals: nothing pinned. Also I should verify fmt --check passed after the last write to normalize.rs — I ran cargo fmt --all before git add, good. Gates all ran. Status remains in-progress, no (complete) entry written — correct.
+
+Done. Final summary.</think>
+**Summary**
+
+Bug-02-1 is fixed and committed (`fix:` commit `c0d44fc`, working tree clean). In `executor/src/governor/normalize.rs`: `TEMP_CAT` now matches `&&`/`;` separators and restricts capture-and-cat and `| tee` targets to `/tmp/...` / `$TMPDIR/...` paths via an `is_temp_path` guard; `TAIL_PIPE` is anchored with `[^|;&>]*$` so it strips only a genuinely trailing stage and preserves substantive stages (`| grep`) and non-temp redirects after `| tail`/`| cat`; all ten production `.unwrap()` calls are gone — the `LazyLock<Regex>` initializers use `.expect(...)` with invariant messages and the two `caps.get(0).unwrap()` indexings were removed in favor of `filter_map`-based named-group extraction. Both bug-02-1 tests and the full prior test set pass, all four gates are green as separate invocations (`fmt --check` clean, `build`, `clippy -D warnings`, `test`: 708 + 2 + 1117 passed, 0 failed), and the E2E block ran verbatim with the artifact (`no_unwrap exit=1`, all ten tests `ok`/`exit=0`) pasted into a new `(end-to-end verification)` Update Log entry with positive-control justification. Phase status left at `in-progress`; no hand-written `(complete)` entry.
+
+**Notes for review**
+
+- The plumbing strip now runs to a fixed point, so multi-part plumbing (`cmd 2>&1 | tail -6 > /tmp/x && cat /tmp/x`) peels one segment per pass; `normalize_target` wiring and `check_identical_repetition` semantics from the original run are untouched.
+- One behavior worth noting: the negative test `echo foo | cat | grep bar` vs `... grep baz` passes because `| cat | grep …` keeps everything from `| grep` — the intermediate `| cat` before another pipe is left in place, matching the spec's "must not strip stages that follow `| cat`".
+
+**Executor:** GLM-5.3-Flash
+
+**Gates:** format=run, build=run, lint=run, test=run
+
+**Command output tails:**
+
+```
+FORMAT
+
+
+BUILD
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+LINT
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+
+
+TEST
+sts::invalid_args_hint_lists_incomplete_ids ... ok
+test tools::update_task::tests::flips_pending_task_to_active ... ok
+test tools::symbols::tests::exact_match_no_substring ... ok
+test tools::update_task::tests::invalid_args_hint_reports_all_complete ... ok
+test tools::update_task::tests::invalid_state_returns_advisory_error ... ok
+test tools::update_task::tests::malformed_args_returns_advisory_error ... ok
+test tools::update_task::tests::null_args_returns_recovery_hint ... ok
+test tools::update_task::tests::metadata_shape_is_unchanged ... ok
+test tools::update_task::tests::result_flags_redundant_remark ... ok
+test tools::update_task::tests::result_lists_remaining_incomplete_ids ... ok
+test tools::update_task::tests::success_output_names_task ... ok
+test tools::update_task::tests::result_reports_all_complete_when_last_done ... ok
+test tools::update_task::tests::unknown_id_returns_advisory_error ... ok
+test tools::write_file::tests::append_creates_file_if_missing ... ok
+test tools::write_file::tests::append_false_overwrites ... ok
+test tools::write_file::tests::appends_to_existing_file ... ok
+test tools::write_file::tests::creates_new_file ... ok
+test tools::write_file::tests::missing_path_returns_recovery_hint ... ok
+test tools::symbols::tests::references_finds_call_sites ... ok
+test tools::write_file::tests::non_object_args_do_not_panic ... ok
+test tools::write_file::tests::overwrites_existing_file ... ok
+test tools::write_file::tests::rejects_malformed_args ... ok
+test tools::write_file::tests::reports_missing_parent_dir ... ok
+test tools::write_file::tests::scope_escape_returns_advisory_error_and_writes_nothing ... ok
+test tools::write_file::tests::success_output_includes_line_count ... ok
+test tools::symbols::tests::finds_rust_function_by_name ... ok
+test tools::symbols::tests::caps_at_max_results ... ok
+test governor::verifier::tests::capture_baseline_dedupes_by_project_root ... ok
+test governor::verifier::tests::capture_baseline_skips_unsupported_files ... ok
+test tools::symbols::tests::finds_python_function_and_class ... ok
+test governor::verifier::tests::verify_rust_returns_checked_with_errors_on_broken_code ... ok
+test agent::tests::bash_edit_resets_read_only_stall ... ok
+test tools::symbols::tests::references_truncation_note_omits_kind_filter ... ok
+test tools::symbols::tests::reports_line_and_column ... ok
+test tools::symbols::tests::unsupported_extension_skipped_in_dir_walk ... ok
+test tools::symbols::tests::references_snippet_shows_source_line ... ok
+test tools::symbols::tests::respects_gitignore ... ok
+test tools::symbols::tests::metadata_carries_definitions_and_files_count ... ok
+test tools::symbols::tests::references_across_multiple_files ... ok
+test tools::symbols::tests::finds_rust_struct_and_trait ... ok
+test store::telemetry::tests::append_is_atomic_under_concurrent_appenders ... ok
+test ai::backends::openai::tests::first_token_stall_retries_then_succeeds ... ok
+test ai::backends::openai::tests::midstream_stall_is_not_retried ... ok
+test ai::tests::stream_next_uses_supplied_timeout ... ok
+test tools::bash::tests::arg_timeout_overrides_constructor_default ... ok
+test tools::bash::tests::default_timeout_used_when_arg_absent ... ok
+test tools::bash::tests::times_out_advisory_failure ... ok
+test ai::backends::openai::tests::first_token_stall_exhausts_retries_then_errors ... ok
+test health::tests::check_returns_unreachable_on_connection_error ... ok
+
+test result: ok. 1117 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.11s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/main.rs (target/debug/deps/rexymcp-16cf1b6da1e99042)
+     Running tests/readme_config_reference.rs (target/debug/deps/readme_config_reference-764277bf47a28483)
+     Running unittests src/lib.rs (target/debug/deps/executor-5472e17a8f71c962)
+   Doc-tests executor
+
+```
+
+**Files changed:**
+
+- `docs/dev/milestones/M51-governor-repetition-and-cycles/phase-02-command-output-normalization.md` — +75 -0
+- `executor/src/governor/normalize.rs` — +112 -31
+
+**Commit:** c0d44fcedd044e5db2a3fd2e06a670b297137673
 
 **Notes:** server-authored completion entry (executor no longer owns the bookkeeping tail; see M27 phase-03).
